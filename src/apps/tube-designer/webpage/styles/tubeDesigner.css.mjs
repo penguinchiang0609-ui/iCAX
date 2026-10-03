@@ -1921,86 +1921,208 @@ button.tube-tool-library-tube-summary { cursor:pointer; }
    switch the same scene to its exploded manufacturing view. */
 .tube-connection-library-panel,
 .tube-connection-library-editor { box-sizing:border-box; height:100%; min-height:0; overflow:hidden; }
-.tube-connection-library-panel { display:grid; grid-template-rows:auto auto minmax(0,1fr); }
-.tube-connection-library-search { display:block; padding:9px; border-bottom:1px solid #d2dfe2; background:#f7fafb; }
-.tube-connection-library-search input { box-sizing:border-box; width:100%; min-height:32px; padding:5px 8px; border:1px solid #bdcdd2; border-radius:4px; color:#2b4c55; font:inherit; font-size:11px; }
-.tube-connection-library-list { display:grid; grid-auto-rows:max-content; align-content:start; gap:8px; min-height:0; padding:8px; overflow:auto; scrollbar-gutter:stable; }
-.tube-connection-library-group { overflow:hidden; border:1px solid #cbd8dc; border-radius:6px; background:#fff; }
-.tube-connection-library-group-heading { display:flex; width:100%; min-height:35px; align-items:center; justify-content:space-between; gap:8px; padding:8px 9px; border:0; background:#e9f0f2; color:#294e57; text-align:left; cursor:pointer; }
-.tube-connection-library-group-heading small { color:#72868c; font-size:9px; }
+.tube-connection-library-panel { display:flex; flex-direction:column; }
+.tube-connection-library-panel > .tube-profile-library-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; background:#f8fbfa; border-bottom:1px solid #dbe5e4; }
+.tube-connection-library-panel > .tube-profile-library-heading span { color:#78908d; font-size:11px; }
+.tube-connection-library-panel .tube-assembly-refresh { min-width:0; padding:4px 7px; border:0; background:transparent; color:#34776e; font-size:12px; }
+.tube-connection-library-panel .tube-assembly-refresh:hover { background:#eaf3f1; }
+.tube-assembly-product-connections { display:block; max-height:180px; overflow:auto; border-bottom:1px solid #d2dfe2; background:#f4f8f8; color:#395c64; }
+.tube-assembly-product-connections > strong,
+.tube-assembly-product-connections > span { display:block; padding:0 10px; font-size:11px; line-height:1.45; }
+.tube-assembly-product-connections > strong { padding-top:8px; color:#294e57; font-size:12px; }
+.tube-assembly-product-connections > span { padding-bottom:8px; color:#70868b; }
+.tube-assembly-product-connections > span.error { color:#a64a31; }
+.tube-assembly-product-connections header { display:flex; align-items:center; justify-content:space-between; gap:5px; padding:8px 10px; font-size:12px; }
+.tube-assembly-product-connections header strong { color:#294e57; }
+.tube-assembly-product-connections header span { color:#648087; font-size:11px; }
+.tube-assembly-product-connections ol { display:grid; gap:4px; margin:0; padding:0 10px 0 10px; list-style:none; }
+.tube-assembly-product-connections li { font-size:11px; line-height:1.45; }
+.tube-assembly-product-connections li button { display:block; width:100%; padding:6px 8px; border:1px solid #c9dadc; border-radius:5px; background:#fff; color:#294e57; text-align:left; cursor:pointer; }
+.tube-assembly-product-connections li button:hover { border-color:#5a98a0; background:#edf8f8; }
+.tube-assembly-product-connections li button[aria-pressed="true"] { border-color:#37828d; background:#dff2f2; box-shadow:inset 3px 0 #37828d; }
+.tube-assembly-product-connections li button:disabled { opacity:.6; cursor:not-allowed; }
+.tube-assembly-product-connections li span { display:block; color:#648087; }
+.tube-assembly-product-connections li small { display:block; color:#6f878b; font-size:11px; }
+.tube-assembly-product-connections p { margin:5px 10px 8px; color:#6a8083; font-size:11px; line-height:1.45; }
+.tube-assembly-product-connections p.warning { color:#9a602b; }
+.tube-connection-library-search { display:block; padding:9px 10px; border-bottom:1px solid #e2e9e8; background:#fff; }
+.tube-connection-library-search input { box-sizing:border-box; width:100%; min-height:32px; padding:5px 8px; border:1px solid #bdcdd2; border-radius:4px; color:#2b4c55; font:inherit; font-size:12px; }
+.tube-connection-library-list { display:grid; flex:1 1 auto; grid-auto-rows:max-content; align-content:start; gap:6px; min-height:0; padding:8px; overflow:auto; scrollbar-gutter:stable; }
+.tube-connection-library-group { overflow:hidden; border:1px solid #d5e1e0; border-radius:4px; background:#fff; }
+.tube-connection-library-group-heading { display:flex; width:100%; min-height:32px; align-items:center; justify-content:space-between; gap:8px; padding:7px 9px; border:0; background:#f3f7f6; color:#355b5a; text-align:left; cursor:pointer; }
+.tube-connection-library-group-heading small { color:#72868c; font-size:11px; }
 .tube-connection-library-cards { display:grid; grid-template-columns:minmax(0,1fr); }
 .tube-connection-library-cards[hidden] { display:none; }
-.tube-connection-library-card { display:flex; min-width:0; min-height:56px; align-items:center; gap:9px; padding:8px 10px; border:0; border-bottom:1px solid #d9e3e5; background:#fff; color:#294e57; text-align:left; cursor:pointer; }
+.tube-connection-library-card { display:flex; min-width:0; min-height:58px; align-items:center; gap:8px; padding:7px 9px; border:0; border-bottom:1px solid #e5eceb; background:#fff; color:#294e57; text-align:left; cursor:pointer; }
 .tube-connection-library-card:last-child { border-bottom:0; }
 .tube-connection-library-card:hover { background:#eff7f5; }
-.tube-connection-library-card.selected { background:#e2f2ef; box-shadow:inset 3px 0 #1b9387; }
-.tube-connection-library-card > span:last-child { display:grid; min-width:0; gap:3px; }
-.tube-connection-library-card strong { overflow-wrap:anywhere; font-size:11px; line-height:1.25; }
-.tube-connection-library-card small { overflow-wrap:anywhere; color:#73888e; font-size:8px; line-height:1.35; }
-.tube-connection-library-card-art { display:grid; width:34px; height:34px; flex:0 0 34px; place-items:center; border:1px solid #d4e2e4; border-radius:5px; background:#edf5f5; color:#16867b; }
-.tube-connection-library-card-art svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
-.tube-connection-library-editor { display:grid; grid-template-rows:auto minmax(0,1fr); }
-.tube-connection-library-editor-heading { display:flex; min-width:0; align-items:center; justify-content:space-between; gap:9px; padding:11px 13px; border-bottom:1px solid #bcd7d5; background:#e5f2f1; }
+.tube-connection-library-card.selected { background:#eaf5f2; box-shadow:inset 2px 0 #35897f; }
+.tube-connection-library-card > span:last-child { display:grid; min-width:0; gap:2px; }
+.tube-connection-library-card strong { overflow-wrap:anywhere; font-size:12px; line-height:1.35; }
+.tube-connection-library-card small { overflow-wrap:anywhere; color:#71868a; font-size:12px; line-height:1.35; }
+.tube-connection-library-card-art { display:grid; width:48px; height:48px; flex:0 0 48px; place-items:center; border:1px solid #dce9e7; border-radius:4px; background:#f9fbfa; }
+.tube-connection-library-card-art svg { width:44px; height:44px; overflow:visible; }
+.tube-connection-library-card-art .tube-assembly-catalogue-a { fill:#dceeea; stroke:#32877b; stroke-width:1.7; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-b { fill:#b9dad3; stroke:#28776d; stroke-width:1.7; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-c { fill:#cfe4ea; stroke:#347f8e; stroke-width:1.7; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-joint { fill:none; stroke:#255f5b; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-cut { fill:none; stroke:#c7833e; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-detail { fill:none; stroke:#448f87; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.tube-connection-library-card-art .tube-assembly-catalogue-void { fill:#f9fbfa; stroke:#448f87; stroke-width:1.4; }
+.tube-connection-library-editor { display:grid; grid-template-rows:auto minmax(0,1fr); background:#fff; }
+.tube-assembly-work-mode { display:flex; gap:11px; margin-top:5px; }
+.tube-assembly-work-mode button { padding:2px 0 4px; border:0; border-bottom:2px solid transparent; background:transparent; color:#738c89; font:inherit; font-size:12px; cursor:pointer; }
+.tube-assembly-work-mode button.active { border-bottom-color:#35897f; color:#276e64; font-weight:600; }
+.tube-assembly-catalogue-warnings { padding:6px 11px; border-bottom:1px solid #e2cb9b; background:#fff7e8; color:#865e20; font-size:11px; }
+.tube-assembly-catalogue-warnings summary { cursor:pointer; font-weight:600; }
+.tube-assembly-catalogue-warnings ul { margin:6px 0 0; padding-left:18px; overflow-wrap:anywhere; }
+.tube-connection-library-card-support { justify-self:start; padding:1px 5px; border-radius:3px; background:#edf0f1; color:#6b7a7d; font-size:11px; }
+.tube-connection-library-card-support.available { background:#dfefea; color:#276f61; }
+.tube-assembly-bindings { display:grid; gap:10px; color:#35575e; font-size:12px; line-height:1.5; }
+.tube-assembly-bindings p { margin:0; }
+.tube-assembly-bindings strong, .tube-assembly-binding-parameters summary { font-size:12px; }
+.tube-assembly-bindings > section, .tube-assembly-binding-support, .tube-assembly-binding-parameters { display:grid; gap:8px; padding:9px; border:1px solid #c8dbd7; border-radius:5px; background:#fff; }
+.tube-assembly-binding-example-note { padding:7px 9px; border-left:3px solid #97b8b4; background:#edf4f3; color:#5c757a; font-size:11px; }
+.tube-assembly-binding-support { background:#f2f7f6; }
+.tube-assembly-binding-support p { font-size:11px; }
+.tube-assembly-binding-support.is-unsupported, .tube-assembly-binding-warning { padding:8px; border:1px solid #e5c8b2; border-radius:4px; background:#fff6e8; color:#895624; font-size:11px; }
+.tube-assembly-binding-notice { padding:8px; border:1px solid #b4d2cd; border-radius:4px; background:#e9f5f1; color:#28645a; }
+.tube-assembly-binding-role { display:grid; gap:7px; min-width:0; margin:0; padding:7px; border:1px solid #dbe5e3; border-radius:4px; }
+.tube-assembly-binding-role legend { padding:0 4px; color:#3c6669; font-size:12px; font-weight:700; }
+.tube-assembly-binding-role > small { color:#627b80; font-size:11px; }
+.tube-assembly-bindings .tube-designer-field { min-width:0; }
+.tube-assembly-bindings .tube-designer-field > span { font-size:11px; }
+.tube-assembly-bindings :is(input,select) { box-sizing:border-box; min-width:0; width:100%; max-width:100%; font-size:12px; }
+.tube-assembly-bindings button { min-height:28px; padding:4px 8px; border:1px solid #b6ceca; border-radius:4px; background:#f8fbfa; color:#315f5c; cursor:pointer; font:inherit; font-size:11px; }
+.tube-assembly-bindings button.primary { border-color:#287f74; background:#287f74; color:#fff; }
+.tube-assembly-bindings button:disabled { opacity:.5; cursor:default; }
+.tube-assembly-binding-actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.tube-assembly-binding-saved > ul, .tube-assembly-binding-candidate > ul { display:grid; gap:7px; margin:0; padding:0; list-style:none; }
+.tube-assembly-binding-saved li { display:grid; gap:6px; padding-bottom:8px; border-bottom:1px solid #e1eae8; }
+.tube-assembly-binding-saved li > div:first-child { display:grid; gap:2px; }
+.tube-assembly-binding-saved li small { color:#7b653f; font-size:11px; }
+.tube-assembly-manufacturing-plan { border-bottom:1px solid #dce7e4; padding-bottom:9px; }
+.tube-assembly-manufacturing-plan summary { cursor:pointer; color:#315f5c; font-size:12px; font-weight:700; }
+.tube-assembly-manufacturing-plan ul { display:grid; gap:6px; margin:8px 0 4px; padding:0; list-style:none; }
+.tube-assembly-manufacturing-plan li { display:flex; justify-content:space-between; gap:8px; font-size:11px; }
+.tube-assembly-manufacturing-plan li span, .tube-assembly-manufacturing-plan > small { color:#73898a; }
+.tube-assembly-binding-candidate > ul li { display:grid; gap:2px; padding:5px 7px; background:#f2f6f5; border-radius:3px; font-size:11px; }
+.tube-assembly-binding-candidate li[data-status="failed"], .tube-assembly-binding-candidate li[data-status="conflict"], .tube-assembly-binding-candidate li[data-status="unsupported"] { background:#fff0eb; color:#96482d; }
+.tube-assembly-binding-workflow { display:grid; gap:8px; }
+.tube-assembly-binding-workflow > section { padding-top:6px; border-top:1px solid #e0e9e7; }
+.tube-assembly-binding-workflow ul { margin:3px 0 0; padding-left:17px; font-size:11px; }
+.tube-assembly-binding-workflow p { color:#7b8b8b; font-size:11px; }
+.tube-assembly-binding-parameters summary { cursor:pointer; color:#346962; font-weight:700; }
+.tube-assembly-binding-parameters[open] summary { margin-bottom:8px; }
+.tube-connection-library-editor-heading { display:flex; min-width:0; align-items:flex-start; justify-content:space-between; gap:9px; padding:11px 13px 9px; border-bottom:1px solid #d9e5e2; background:#f7fbfa; }
 .tube-connection-library-editor-heading > div { display:grid; min-width:0; gap:3px; }
 .tube-connection-library-editor-heading > .tube-connection-library-heading-actions { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
-.tube-connection-library-heading-actions button { min-height:25px; padding:3px 7px; border:1px solid #aac5c7; border-radius:4px; background:#f6fbfa; color:#2f716c; cursor:pointer; font:inherit; font-size:9px; }
+.tube-connection-library-heading-actions button { min-height:27px; padding:3px 7px; border:1px solid #aac5c7; border-radius:4px; background:#f6fbfa; color:#2f716c; cursor:pointer; font:inherit; font-size:11px; }
 .tube-connection-library-editor-heading strong { overflow:hidden; color:#294e57; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
-.tube-connection-library-editor-heading span { color:#6e858b; font-size:9px; }
-.tube-connection-library-editor-body { display:grid; grid-auto-rows:max-content; align-content:start; gap:10px; min-height:0; padding:11px; overflow:auto; scrollbar-gutter:stable; }
-.tube-connection-library-parameter-section { display:grid; gap:8px; padding:9px; border:1px solid #c9d8dc; border-radius:5px; background:#fff; }
+.tube-connection-library-editor-heading span { color:#758c8a; font-size:11px; font-weight:400; }
+.tube-connection-library-editor-heading .tube-assembly-template-summary { display:block; overflow:hidden; max-width:100%; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-editor-body { display:grid; grid-auto-rows:max-content; align-content:start; gap:13px; min-height:0; padding:13px; overflow:auto; overflow-anchor:none; scrollbar-gutter:stable; }
+.tube-assembly-workflow-review { display:grid; gap:8px; }
+.tube-assembly-workflow-details > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 0; color:#466e69; cursor:pointer; }
+.tube-assembly-workflow-details > summary strong { font-size:12px; font-weight:600; }
+.tube-assembly-workflow-details > summary strong::before { display:inline-block; margin-right:6px; content:"›"; font-size:15px; font-weight:400; line-height:10px; }
+.tube-assembly-workflow-details[open] > summary strong::before { transform:rotate(90deg); }
+.tube-assembly-workflow-details > summary small { color:#78908d; font-size:11px; }
+.tube-assembly-workflow-details[open] > summary { margin-bottom:7px; border-bottom:1px solid #e2eae8; }
+.tube-assembly-workflow-notes { margin:0 0 9px; color:#607f7a; font-size:12px; line-height:1.4; }
+.tube-assembly-workflow-block { margin:0; padding:7px 9px; border-left:2px solid #c48655; background:#fff8f0; color:#895624; font-size:12px; line-height:1.45; }
+.tube-assembly-workflow-status { margin:0; padding:7px; border-radius:3px; background:#f2f6f6; color:#566f74; font-size:11px; line-height:1.45; }
+.tube-assembly-workflow-grid { display:grid; gap:9px; }
+.tube-assembly-workflow-group { display:grid; gap:4px; padding-top:7px; border-top:1px solid #e0e9e8; }
+.tube-assembly-workflow-group > strong { color:#345962; font-size:12px; }
+.tube-assembly-workflow-group :is(ul,ol) { display:grid; gap:4px; margin:0; padding-left:17px; }
+.tube-assembly-workflow-group li { color:#395c64; font-size:11px; line-height:1.5; }
+.tube-assembly-workflow-group li strong { font-weight:600; }
+.tube-assembly-workflow-group li span { margin-left:4px; color:#678086; }
+.tube-assembly-workflow-group p { margin:0; color:#779095; font-size:11px; line-height:1.45; }
+.tube-assembly-workflow-group li[data-assembly-check-status="error"],
+.tube-assembly-workflow-group li[data-assembly-check-status="fail"],
+.tube-assembly-workflow-group li[data-assembly-check-status="requires-definition"] { color:#a64a31; }
+.tube-assembly-workflow-group li[data-assembly-check-status="warning"],
+.tube-assembly-workflow-group li[data-assembly-check-status="warn"] { color:#986b25; }
+.tube-connection-library-parameter-section { display:grid; gap:9px; padding:0 0 13px; border:0; border-bottom:1px solid #e2eae8; border-radius:0; background:transparent; }
+.tube-assembly-scene-members { display:grid; gap:8px; min-width:0; }
+.tube-stock-operation-list { display:grid; gap:8px; min-width:0; max-height:340px; overflow:auto; }
+.tube-stock-operation { min-width:0; padding:9px; border:1px solid #dce8e5; border-radius:4px; background:#f8fbfa; }
+.tube-stock-operation > header { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.tube-stock-operation > header strong { flex:1; font-size:12px; color:#35545e; }
+.tube-stock-operation > header button { font:inherit; font-size:11px; color:#276e64; border:1px solid #bfd0d4; background:#fff; padding:3px 6px; cursor:pointer; }
+.tube-stock-operation > header button[aria-pressed="true"] { border-color:#35897f; background:#e7f5f1; }
+.tube-stock-operation .tube-connection-library-parameter-grid { padding:0; }
+.tube-assembly-scene-member { display:grid; gap:7px; min-width:0; padding:9px; border:1px solid #dce8e5; border-radius:4px; background:#f8fbfa; }
+.tube-assembly-scene-member > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; cursor:pointer; color:#35545e; }
+.tube-assembly-scene-member > summary strong { font-size:12px; }
+.tube-assembly-scene-member > summary small { color:#73888e; font-size:10px; text-align:right; }
+.tube-assembly-scene-member:not([open]) > :not(summary) { display:none; }
+.tube-assembly-scene-member[open] > summary { padding-bottom:7px; border-bottom:1px solid #dce8e5; }
+.tube-assembly-scene-diagram { min-width:0; }
+.tube-assembly-scene-diagram > small, .tube-assembly-scene-diagram-message { display:block; margin:4px 0 0; color:#73888e; font-size:10px; line-height:1.4; }
+.tube-assembly-scene-diagram .td-profile-parameter-diagram { width:100%; }
+.tube-assembly-scene-diagram .tube-profile-library-svg { display:block; width:100%; height:150px; }
+.tube-assembly-scene-member .tube-connection-library-parameter-grid { padding:0; }
+.tube-assembly-scene-member .tube-designer-field { min-width:0; }
+.tube-assembly-scene-member :is(input,select) { box-sizing:border-box; min-width:0; width:100%; }
 .tube-connection-library-parameter-section.basic > header { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 .tube-connection-library-parameter-section header strong { color:#35545e; font-size:12px; }
-.tube-connection-library-parameter-section header small { color:#73888e; font-size:9px; }
-.tube-connection-library-parameter-section > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:-9px; padding:9px; color:#39716c; background:#eaf2f2; cursor:pointer; font-size:12px; font-weight:700; }
+.tube-connection-library-parameter-section header small { color:#73888e; font-size:11px; }
+.tube-connection-library-parameter-section > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0; padding:7px 0; color:#39716c; background:transparent; cursor:pointer; font-size:12px; font-weight:600; }
+.tube-connection-library-parameter-section > summary span::before { display:inline-block; margin-right:6px; content:"›"; font-size:15px; font-weight:400; line-height:10px; }
+.tube-connection-library-parameter-section[open] > summary span::before { transform:rotate(90deg); }
 .tube-connection-library-parameter-section[open] > summary { margin-bottom:0; }
-.tube-connection-library-parameter-section > summary small { font-size:9px; font-weight:400; }
+.tube-connection-library-parameter-section > summary small { font-size:11px; font-weight:400; }
 .tube-connection-library-parameter-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
 .tube-connection-library-parameter-grid label { display:grid; min-width:0; gap:4px; }
-.tube-connection-library-parameter-grid label > span { overflow-wrap:anywhere; color:#55737b; font-size:9px; }
-.tube-connection-library-parameter-grid :is(input,select) { box-sizing:border-box; width:100%; min-width:0; min-height:29px; padding:4px 6px; border:1px solid #bdcdd2; border-radius:4px; background:#fff; color:#2b4c55; font:inherit; font-size:11px; }
+.tube-connection-library-parameter-grid label > span { overflow-wrap:anywhere; color:#55737b; font-size:12px; }
+.tube-connection-library-parameter-grid .tube-assembly-parameter-effect { color:#8b6629; font-size:11px; line-height:1.4; }
+.tube-connection-library-parameter-grid label:has(select) { grid-column:1/-1; }
+.tube-connection-library-parameter-grid :is(input,select) { box-sizing:border-box; width:100%; min-width:0; min-height:29px; padding:4px 6px; border:1px solid #bdcdd2; border-radius:4px; background:#fff; color:#2b4c55; font:inherit; font-size:12px; }
 .tube-connection-library-parameter-grid .tube-connection-library-check { display:flex; grid-column:1/-1; align-items:center; gap:6px; min-height:30px; }
 .tube-connection-library-parameter-grid .tube-connection-library-check input { width:auto; min-height:auto; }
 .tube-connection-library-processes { display:grid; gap:6px; }
 .tube-connection-library-process-section[open] > .tube-connection-library-processes { padding-top:1px; }
 .tube-connection-library-processes article { display:grid; gap:8px; padding:7px; border:1px solid #d7e2e4; border-radius:4px; background:#f8fbfb; }
 .tube-connection-library-processes article > header { display:flex; min-width:0; align-items:center; gap:7px; }
-.tube-connection-library-processes article > header > i { flex:0 0 auto; padding:3px 6px; border-radius:3px; background:#dff1ee; color:#16867b; font-size:8px; font-style:normal; }
+.tube-connection-library-processes article > header > i { flex:0 0 auto; padding:3px 6px; border-radius:3px; background:#dff1ee; color:#16867b; font-size:11px; font-style:normal; }
 .tube-connection-library-processes article > header > span { display:grid; min-width:0; gap:1px; }
-.tube-connection-library-processes article > header strong { overflow:hidden; color:#35545e; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
-.tube-connection-library-processes article > header small { overflow:hidden; color:#7a8f94; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-processes article > header strong { overflow:hidden; color:#35545e; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-processes article > header small { overflow:hidden; color:#7a8f94; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .tube-connection-library-process-advanced { display:grid; gap:8px; border:1px solid #d7e2e4; border-radius:4px; background:#f8fbfb; }
-.tube-connection-library-process-advanced > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px; color:#55737b; cursor:pointer; font-size:9px; }
-.tube-connection-library-process-advanced > summary small { color:#7a8f94; font-size:8px; }
+.tube-connection-library-process-advanced > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px; color:#55737b; cursor:pointer; font-size:11px; }
+.tube-connection-library-process-advanced > summary small { color:#7a8f94; font-size:11px; }
 .tube-connection-library-process-advanced[open] > summary { border-bottom:1px solid #d7e2e4; }
 .tube-connection-library-process-advanced > .tube-connection-library-parameter-grid { padding:7px; }
 .tube-designer-assembly-workspace .cam-render-viewport-shell { opacity:0; pointer-events:none; }
 .tube-assembly-preview { position:absolute; inset:0; z-index:3; min-width:0; min-height:0; overflow:hidden; background:#13252d; }
 .tube-assembly-preview-pane { position:relative; display:grid; min-width:0; min-height:0; grid-template-rows:auto minmax(0,1fr); overflow:hidden; background:#13252d; }
 .tube-assembly-preview-pane.scene { width:100%; height:100%; }
-.tube-assembly-preview-pane > header { z-index:2; display:flex; min-width:0; min-height:43px; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px 6px 11px; border-bottom:1px solid #35545d; background:#102a33; color:#d7e8eb; }
-.tube-assembly-preview-pane > header > div:first-child { display:grid; min-width:0; gap:2px; }
-.tube-assembly-preview-pane > header strong { font-size:12px; }
-.tube-assembly-preview-pane > header span { overflow:hidden; color:#8eabb2; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
-.tube-assembly-preview-camera { display:flex; flex:0 0 auto; gap:3px; }
-.tube-assembly-preview-toolbar { display:flex; flex:0 0 auto; align-items:center; gap:8px; }
-.tube-assembly-preview-camera button { min-height:24px; padding:3px 6px; border:1px solid #46666f; border-radius:3px; background:#183842; color:#afc6cb; cursor:pointer; font:inherit; font-size:8px; }
+.tube-assembly-preview-pane > header { z-index:2; display:grid; min-width:0; min-height:37px; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:8px; padding:4px 10px; border-bottom:1px solid #35545d; background:#102a33; color:#d7e8eb; }
+.tube-assembly-preview-toolbar { display:flex; grid-column:2; min-width:0; align-items:center; justify-content:center; }
+.tube-assembly-preview-part-select { grid-column:3; justify-self:end; width:min(240px,100%); min-height:27px; padding:3px 6px; border:1px solid #46666f; border-radius:3px; background:#183842; color:#d7e8eb; font:inherit; font-size:11px; }
+.tube-assembly-view-only-blank { color:#8eabb2; font-size:11px; }
 .tube-assembly-view-switch { display:flex; overflow:hidden; border:1px solid #46666f; border-radius:4px; }
-.tube-assembly-view-mode { min-height:25px; padding:3px 10px; border:0; border-right:1px solid #46666f; background:#183842; color:#afc6cb; cursor:pointer; font:inherit; font-size:9px; }
+.tube-assembly-view-mode { min-height:27px; padding:3px 10px; border:0; border-right:1px solid #46666f; background:#183842; color:#afc6cb; cursor:pointer; font:inherit; font-size:11px; }
 .tube-assembly-view-mode:last-child { border-right:0; }
 .tube-assembly-view-mode.active { background:#2c7169; color:#f1fffd; font-weight:700; }
 .tube-assembly-view-mode:hover,
 .tube-assembly-view-mode:focus-visible { background:#24564f; color:#e7f7f4; outline:none; }
-.tube-assembly-preview-camera button:hover,
-.tube-assembly-preview-camera button:focus-visible { border-color:#59b5aa; background:#24564f; color:#e7f7f4; outline:none; }
 .tube-assembly-preview-host { position:relative; min-width:0; min-height:0; overflow:hidden; }
 .tube-assembly-preview-host > .icax-three-viewport,
 .tube-assembly-preview-host .icax-three-viewport-canvas { width:100%; height:100%; }
 .tube-connection-library-hud { position:absolute; right:10px; bottom:10px; z-index:6; display:flex; max-width:min(420px,calc(100% - 20px)); align-items:center; gap:7px; padding:5px 9px; border:1px solid #36545d; border-radius:999px; background:rgba(13,34,42,.88); color:#a8c0c6; pointer-events:none; }
 .tube-connection-library-hud > i { width:6px; height:6px; flex:0 0 6px; border-radius:50%; background:#48b2a5; box-shadow:0 0 0 3px rgba(72,178,165,.14); }
-.tube-connection-library-hud > span { overflow:hidden; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-hud > span { overflow:hidden; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-assembly-preview-wait { position:absolute; inset:0; z-index:7; display:grid; place-items:center; box-sizing:border-box; padding:24px; background:rgba(21,39,47,.46); backdrop-filter:blur(2px); pointer-events:none; }
+.tube-assembly-preview-wait.is-background { inset:auto 12px 12px auto; display:block; width:min(320px,calc(100% - 24px)); padding:0; background:none; backdrop-filter:none; }
+.tube-assembly-preview-wait.is-background .tube-designer-export-progress-card { width:auto; padding:10px 12px; gap:3px 8px; box-shadow:0 8px 24px rgba(8,31,40,.22); }
+.tube-assembly-preview-wait.is-background .tube-designer-export-spinner { width:18px; height:18px; border-width:2px; }
 .tube-connection-library-hud.error { border-radius:5px; color:#f1b58f; }
 .tube-connection-library-hud.error > i { background:#e29468; box-shadow:0 0 0 3px rgba(226,148,104,.14); }
-.tube-connection-library-hud > button { min-height:22px; flex:0 0 auto; padding:2px 6px; border:1px solid #56747b; border-radius:3px; background:#183842; color:#d4e6e8; cursor:pointer; font:inherit; font-size:8px; pointer-events:auto; }
+.tube-connection-library-hud > button { min-height:24px; flex:0 0 auto; padding:2px 6px; border:1px solid #56747b; border-radius:3px; background:#183842; color:#d4e6e8; cursor:pointer; font:inherit; font-size:11px; pointer-events:auto; }
 .tube-connection-library-card:focus-visible,
 .tube-connection-library-group-heading:focus-visible { outline:2px solid #178f82; outline-offset:-2px; }
 
@@ -3793,6 +3915,11 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-library-diagram-drag [data-library-diagram-close] { flex:0 0 auto; width:26px; height:26px; padding:0; border:0; background:transparent; color:inherit; font-size:20px; line-height:1; cursor:pointer; }
 .tube-library-diagram-drag [data-library-diagram-close]:hover { background:#cce2df; }
 .tube-library-diagram-drag small { font-size:9px; }
+.tube-assembly-diagram-mode { display:flex; flex:0 0 auto; border-right:1px solid #8abcb6; border-left:1px solid #8abcb6; background:#edf5f3; pointer-events:auto; }
+.tube-assembly-diagram-mode button { flex:1 1 50%; min-width:0; padding:7px 6px; border:0; border-bottom:1px solid #8abcb6; background:transparent; color:#476c69; font:inherit; font-size:11px; cursor:pointer; }
+.tube-assembly-diagram-mode button + button { border-left:1px solid #c4d9d5; }
+.tube-assembly-diagram-mode button.active { border-bottom-color:#f6faf9; background:#f6faf9; color:#285f58; font-weight:600; }
+.tube-assembly-product-angle { margin:8px 0; padding:6px 0; border-bottom:1px solid #d7e4e2; color:#476c69; font-size:11px; }
 .tube-library-diagram-content { flex:1 1 auto; width:100%; min-width:0; min-height:0; height:auto; max-height:480px; overflow:auto; overscroll-behavior:contain; pointer-events:auto; box-sizing:border-box; border:1px solid #8abcb6; background:#f6faf9; box-shadow:-3px 3px 10px #07182030; }
 .tube-library-diagram-content[hidden] { display:none; }
 .tube-library-diagram-content .td-profile-parameter-diagram,

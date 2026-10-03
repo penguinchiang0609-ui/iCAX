@@ -1,4 +1,6 @@
-export function normalizeAssemblyCatalogue(items) {
+import { assemblyProcessWithInput } from "./finishedProductModel.mjs";
+
+export function normalizeAssemblyCatalogue(items, view = null) {
   const result = [];
   const seen = new Set();
   for (const value of Array.isArray(items) ? items : []) {
@@ -10,34 +12,48 @@ export function normalizeAssemblyCatalogue(items) {
     const blankParts = value.manufacturingPlan?.blankParts;
     if (!Array.isArray(blankParts) || !blankParts.length) continue;
     seen.add(id);
-    result.push({
+    result.push(assemblyProcessWithInput({
       ...value,
       parameters: Array.isArray(value.parameters) ? value.parameters : [],
       partProcesses: Array.isArray(value.partProcesses) ? value.partProcesses : [],
       assemblyPath: Array.isArray(value.assemblyPath) ? value.assemblyPath : [],
-    });
+    }, view));
   }
   return result;
 }
 
-export function assemblyCategoryOrder(templates) {
-  const preferred = [
-    "two-end-end",
-    "two-end-middle",
-    "two-middle-middle",
-    "three-end-end-end",
-    "three-end-end-middle",
-    "four-end-end-end-end",
-  ];
+const layoutShapes = new Map([
+  ["l", "L形"],
+  ["t", "T形"],
+  ["cross", "十字形"],
+  ["straight", "直线形"],
+  ["orthogonal-corner", "三向直角节点"],
+  ["pi", "Π形（双支）"],
+  ["parallel", "并行形"],
+  ["other", "其他形态"],
+]);
+
+export function assemblyShapeOrder(templates) {
+  // Presentation follows each template's declared layout, independently of
+  // category (which still describes its manufacturing/connection family).
+  const preferred = [...layoutShapes.keys()];
   const labels = new Map();
   for (const template of templates) {
-    const key = String(template.category ?? "other");
-    if (!labels.has(key)) labels.set(key, String(template.categoryName ?? key));
+    const key = assemblyPresentationShape(template);
+    if (!labels.has(key)) labels.set(key, layoutShapes.get(key));
   }
   return [...labels].sort(([left], [right]) => {
-    const leftIndex = preferred.indexOf(left), rightIndex = preferred.indexOf(right);
-    return (leftIndex < 0 ? preferred.length : leftIndex) - (rightIndex < 0 ? preferred.length : rightIndex);
+    return preferred.indexOf(left) - preferred.indexOf(right);
   });
+}
+
+export function assemblyPresentationShape(template) {
+  const shape = String(template?.layoutShape ?? "").trim().toLowerCase();
+  return layoutShapes.has(shape) ? shape : "other";
+}
+
+export function assemblyLayoutShapeLabel(template) {
+  return layoutShapes.get(assemblyPresentationShape(template));
 }
 
 export function assemblyTemplateById(templates, id) {

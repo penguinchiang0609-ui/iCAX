@@ -1,0 +1,45 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "paired-end-tabs",
+  "version": "2.0.0",
+  "displayName": "成对圆弧插舌端切",
+  "description": "在方矩管端部相对两壁各保留一个圆弧插舌；四个时端口四壁各保留一个。其余端面材料后退，不增加母材长度。",
+  "kind": "programmatic",
+  "target": "end",
+  "requiresSection": true,
+  "category": "端面",
+  "inputs": [{"key": "targetSection", "displayName": "短管截面", "valueType": "profile", "required": true}],
+  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
+  "illustration": {"viewBox": "0 0 48 48", "paths": ["M5 7H32V11H38Q43 11 43 16Q43 21 38 21H32V25H5Z", "M5 29H32V32H38Q43 32 43 37Q43 42 38 42H32V45H5Z"]},
+  "operationParameters": [
+    {"key": "trim", "displayName": "端部修剪量（mm）", "valueType": "number", "defaultValue": 0, "min": 0, "max": 100000, "step": 0.1},
+    {"key": "rotation", "displayName": "轴向旋转（°）", "valueType": "number", "defaultValue": 0, "min": -360, "max": 360, "step": 0.1}
+  ],
+  "parameters": [
+    {"key": "pairCount", "displayName": "圆弧插舌数量", "valueType": "integer", "defaultValue": 2, "min": 2, "max": 4, "options": [{"value": 2, "label": "2 个（相对两壁各 1 个）"}, {"value": 4, "label": "4 个（四壁各 1 个）"}]},
+    {"key": "tabWidth", "displayName": "插舌宽度（mm）", "valueType": "number", "defaultValue": 8, "min": 0.1, "max": 1000, "step": 0.1},
+    {"key": "tabLength", "displayName": "插舌伸出长度（mm）", "valueType": "number", "defaultValue": 12, "min": 0.1, "max": 1000, "step": 0.1}
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 220 140",
+    "paths": ["M60 20 H160 V120 H60 Z M70 30 V110 H150 V30 H70 Z"],
+    "circles": [
+      {"cx": 110, "cy": 25, "r": 5, "className": "tool-diagram-profile"},
+      {"cx": 110, "cy": 115, "r": 5, "className": "tool-diagram-profile"}
+    ],
+    "variants": [{"visibleWhen": {"op": "eq", "parameter": "pairCount", "value": 4}, "circles": [
+      {"cx": 110, "cy": 25, "r": 5, "className": "tool-diagram-profile"},
+      {"cx": 110, "cy": 115, "r": 5, "className": "tool-diagram-profile"},
+      {"cx": 65, "cy": 70, "r": 5, "className": "tool-diagram-profile"},
+      {"cx": 155, "cy": 70, "r": 5, "className": "tool-diagram-profile"}
+    ], "labels": [{"text": "端口正视：四边各一插舌", "x": 110, "y": 133}]}],
+    "labels": [{"text": "端口正视：相对两边各一插舌", "x": 110, "y": 133}],
+    "annotations": [
+      {"parameter": "pairCount", "kind": "leader", "side": "top", "point": [110, 25], "description": "两个时相对两壁各一；四个时端口四壁各一"},
+      {"parameter": "tabWidth", "kind": "leader", "side": "right", "point": [110, 25], "description": "单个插舌沿所在壁的圆弧边宽度"},
+      {"parameter": "tabLength", "kind": "leader", "side": "bottom", "point": [110, 115], "description": "插舌沿管轴相对其余端面伸出的长度"}
+    ]
+  }
+}

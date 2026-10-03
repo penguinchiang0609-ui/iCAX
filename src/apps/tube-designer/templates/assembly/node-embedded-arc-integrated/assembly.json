@@ -1,0 +1,288 @@
+{
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M27 45 A6 6 0 0 1 39 45",
+        "tone": "cut"
+      },
+      {
+        "d": "M27 45 H39",
+        "tone": "detail"
+      }
+    ]
+  },
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "node-embedded-arc-integrated",
+  "version": "1.0.2",
+  "displayName": "嵌入圆弧开槽折弯",
+  "category": "integrated",
+  "layoutShape": "l",
+  "categoryName": "一体成形 · 连续母材",
+  "summary": "在单根连续母材交界处加工一侧直斜边、一侧嵌入圆弧的槽口，再形成目标夹角。圆弧为局部槽形，不是成品折弯半径；成形需试样验证。",
+  "topology": "两逻辑管段—单根连续母材—节点折弯",
+  "interfaceType": "嵌入圆弧 V 槽 / 连续母材",
+  "lockType": "连续母材一体成形",
+  "motionType": "开槽后绕槽根折弯",
+  "participants": [
+    {
+      "role": "segmentA",
+      "label": "逻辑管段 A",
+      "responsibility": "折弯前段",
+      "count": 1
+    },
+    {
+      "role": "segmentB",
+      "label": "逻辑管段 B",
+      "responsibility": "折弯后段",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "unsupported",
+    "reason": "实际产品的两构件归并尚未实现；此工艺提供下料件及未经成形验证的目标示意，不能当作产品实体"
+  },
+  "parameters": [],
+  "partProcesses": [
+    {
+      "id": "node-slot",
+      "participants": [
+        "segmentA",
+        "segmentB"
+      ],
+      "label": "嵌入圆弧 V 槽",
+      "resource": {
+        "kind": "part-process",
+        "id": "embedded-arc-notch"
+      },
+      "parameterBindings": {
+        "angle": "$angle"
+      },
+      "parameterMode": "inherit-resource",
+      "previewPlacement": {
+        "target": "part",
+        "reference": "center",
+        "station": 0,
+        "face": "top"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "integrated",
+    "blankPartPolicy": "merge-participants",
+    "blankParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "participants": [
+          "segmentA",
+          "segmentB"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "merge",
+      "label": "将两段逻辑管段作为同一根母材下料",
+      "kind": "连续下料",
+      "direction": "连续轴线",
+      "distance": 0
+    },
+    {
+      "id": "cut",
+      "label": "在交界处加工嵌入圆弧 V 槽",
+      "kind": "嵌入圆弧 V 槽",
+      "direction": "节点槽位",
+      "distance": 0
+    },
+    {
+      "id": "form",
+      "label": "沿节点槽形成目标夹角，核对留底和干涉",
+      "kind": "槽后成形",
+      "direction": "折弯轴",
+      "distance": "$angle"
+    }
+  ],
+  "previewScene": {
+    "formedPreviewScript": "assembly.py",
+    "manufacturingParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "sourceRole": "segmentA",
+        "length": "$segmentA_length + $segmentB_length",
+        "processes": [
+          "node-slot"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-($segmentA_length + $segmentB_length) / 2 - 40",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "formedPreviews": [],
+    "annotations": [
+      {
+        "id": "blank-length",
+        "view": "blank",
+        "kind": "length-blank",
+        "blankId": "continuousBlank",
+        "label": "总下料长度"
+      },
+      {
+        "id": "node-angle",
+        "view": "finished",
+        "kind": "value-note",
+        "label": "节点折弯角",
+        "value": "$angle",
+        "unit": "°"
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        140
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -160
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M27 45 A6 6 0 0 1 39 45",
+        "className": "tool-diagram-cut-line"
+      },
+      {
+        "d": "M27 45 H39",
+        "className": "tool-diagram-detail"
+      }
+    ],
+    "labels": [
+      {
+        "x": 16,
+        "y": 52,
+        "text": "一根",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "angle",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          33,
+          45
+        ],
+        "description": "同一根母材开槽折弯后的目标夹角；图中折线只表示两段轴向，不表示成品外轮廓或真实槽根位置"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 1,
+    "partGeometry": [
+      "单根连续下料件上的嵌入圆弧 V 槽"
+    ],
+    "secondaryProcess": [
+      "嵌入圆弧 V 槽加工",
+      "成形待实体验证"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "segmentA",
+      "segmentB"
+    ],
+    "supportedInputModes": [
+      "local-parts",
+      "stock-operation"
+    ],
+    "geometryParameters": [
+      {
+        "key": "angle",
+        "displayName": "成品转角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 0,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      },
+      {
+        "key": "planeRotation",
+        "displayName": "外形平面转角",
+        "valueType": "number",
+        "defaultValue": 0,
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "unit": "°",
+        "level": "advanced"
+      }
+    ],
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "l",
+    "roles": {
+      "segmentA": "armA",
+      "segmentB": "armB"
+    },
+    "parameterBindings": {
+      "angle": "angle"
+    },
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  }
+}

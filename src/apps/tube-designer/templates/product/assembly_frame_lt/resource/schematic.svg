@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" fill="none">
+  <path d="M30 25h260v190H30z" stroke="#288e86" stroke-width="14"/>
+  <path d="M37 120h246" stroke="#288e86" stroke-width="8"/>
+  <circle cx="30" cy="25" r="5" fill="#cf8b26"/>
+  <circle cx="30" cy="120" r="5" fill="#cf8b26"/>
+  <text x="12" y="18" font-size="14" fill="#35616b">L</text>
+  <text x="12" y="111" font-size="14" fill="#35616b">T</text>
+</svg>

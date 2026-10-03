@@ -8,6 +8,14 @@
   },
   "description": "菱形直管花格直式。由独立产品模板定义，参数和真实加工零件共用同一套生成规则。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "materialGrade",
+        "plateMaterial",
+        "glassMaterial"
+      ]
+    },
     "catalog": {
       "groupOrder": 20,
       "templateOrder": 1,
@@ -27,55 +35,240 @@
     "sceneSpecificationAnnotations": {
       "schemaVersion": 1,
       "annotations": [
-        { "parameter": "sideLength1", "axis": "x", "offset": [0, -180, 0], "label": { "zh-CN": "第 1 边长度" }, "order": 10 },
-        { "parameter": "guardHeight", "axis": "z", "offset": [-180, 0, 0], "label": { "zh-CN": "护栏高度" }, "order": 20 }
+        {
+          "parameter": "sideLength1",
+          "axis": "x",
+          "offset": [
+            0,
+            -180,
+            0
+          ],
+          "label": {
+            "zh-CN": "第 1 边长度"
+          },
+          "order": 10
+        },
+        {
+          "parameter": "guardHeight",
+          "axis": "z",
+          "offset": [
+            -180,
+            0,
+            0
+          ],
+          "label": {
+            "zh-CN": "护栏高度"
+          },
+          "order": 20
+        }
       ]
     },
     "addDialog": {
-      "structureParameters": ["layout", "railCount", "cornerPostMode", "largePostMode", "pathMode"]
+      "structureParameters": [
+        "layout",
+        "railCount",
+        "cornerPostMode",
+        "largePostMode",
+        "pathMode"
+      ]
     },
     "productDiagram": {
       "schemaVersion": 1,
       "kind": "guardrail",
-      "layoutValues": { "straight": "straight", "left_l": "left_l", "right_l": "right_l", "u": "u" },
+      "layoutValues": {
+        "straight": "straight",
+        "left_l": "left_l",
+        "right_l": "right_l",
+        "u": "u"
+      },
       "bindings": {
-        "layout": "layout", "height": "guardHeight", "sideLengths": ["sideLength1", "sideLength2", "sideLength3"],
-        "sideBayCounts": ["sideBayCount1", "sideBayCount2", "sideBayCount3"], "infillType": "infillType",
-        "railCount": "railCount", "pathMode": "pathMode", "slopeAngles": ["slopeAngle", "slopeAngle2", "slopeAngle3"]
+        "layout": "layout",
+        "height": "guardHeight",
+        "sideLengths": [
+          "sideLength1",
+          "sideLength2",
+          "sideLength3"
+        ],
+        "sideBayCounts": [
+          "sideBayCount1",
+          "sideBayCount2",
+          "sideBayCount3"
+        ],
+        "infillType": "infillType",
+        "railCount": "railCount",
+        "pathMode": "pathMode",
+        "slopeAngles": [
+          "slopeAngle",
+          "slopeAngle2",
+          "slopeAngle3"
+        ]
       },
       "sceneBindings": {
-        "layout": "all", "sideLength1": "all", "sideLength2": "all", "sideLength3": "all",
-        "sideBayCount1": "all", "sideBayCount2": "all", "sideBayCount3": "all", "guardHeight": "all",
-        "pathMode": "all", "slopeAngle": "all", "slopeAngle2": "all", "slopeAngle3": "all",
-        "railCount": { "memberRolePrefixes": ["guardrail.handrail", "guardrail.cross_rail"] },
-        "infillType": { "memberRolePrefixes": ["guardrail.decorative_bar", "guardrail.horizontal_bar", "guardrail.vertical_bar", "glass.infill", "plate.infill"] }
+        "layout": "all",
+        "sideLength1": "all",
+        "sideLength2": "all",
+        "sideLength3": "all",
+        "sideBayCount1": "all",
+        "sideBayCount2": "all",
+        "sideBayCount3": "all",
+        "guardHeight": "all",
+        "pathMode": "all",
+        "slopeAngle": "all",
+        "slopeAngle2": "all",
+        "slopeAngle3": "all",
+        "railCount": {
+          "memberRolePrefixes": [
+            "guardrail.handrail",
+            "guardrail.cross_rail"
+          ]
+        },
+        "infillType": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        }
       },
       "profileRoles": {
-        "handrail": { "parameters": ["handrailProfileType", "handrailWidth", "handrailDepth", "handrailWallThickness"], "memberRolePrefixes": ["guardrail.handrail"] },
-        "post": { "parameters": ["postProfileType", "postWidth", "postDepth", "postWallThickness"], "memberRolePrefixes": ["guardrail.post"] },
-        "rail": { "parameters": ["railProfileType", "railWidth", "railDepth", "railWallThickness"], "memberRolePrefixes": ["guardrail.cross_rail"] },
-        "infill": { "parameters": ["infillProfileType", "infillWidth", "infillDepth", "infillCornerRadius", "infillWallThickness"], "memberRolePrefixes": ["guardrail.decorative_bar", "guardrail.horizontal_bar", "guardrail.vertical_bar"] }
+        "handrail": {
+          "parameters": [
+            "handrailProfileType",
+            "handrailWidth",
+            "handrailDepth",
+            "handrailWallThickness"
+          ],
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "post": {
+          "parameters": [
+            "postProfileType",
+            "postWidth",
+            "postDepth",
+            "postWallThickness"
+          ],
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "rail": {
+          "parameters": [
+            "railProfileType",
+            "railWidth",
+            "railDepth",
+            "railWallThickness"
+          ],
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "infill": {
+          "parameters": [
+            "infillProfileType",
+            "infillWidth",
+            "infillDepth",
+            "infillCornerRadius",
+            "infillWallThickness"
+          ],
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar"
+          ]
+        }
       },
       "dimensions": [
-        { "kind": "width", "parameter": "sideLength1", "label": "第 1 边长度" },
-        { "kind": "depth", "parameter": "sideLength2", "label": "第 2 边长度", "visibleWhen": { "op": "ne", "parameter": "layout", "value": "straight" } },
-        { "kind": "depth", "parameter": "sideLength3", "label": "第 3 边长度", "visibleWhen": { "op": "eq", "parameter": "layout", "value": "u" } },
-        { "kind": "height", "parameter": "guardHeight", "label": "护栏高度" }
+        {
+          "kind": "width",
+          "parameter": "sideLength1",
+          "label": "第 1 边长度"
+        },
+        {
+          "kind": "depth",
+          "parameter": "sideLength2",
+          "label": "第 2 边长度",
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        },
+        {
+          "kind": "depth",
+          "parameter": "sideLength3",
+          "label": "第 3 边长度",
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "u"
+          }
+        },
+        {
+          "kind": "height",
+          "parameter": "guardHeight",
+          "label": "护栏高度"
+        }
       ]
     },
     "resourceRoles": {
       "profiles": {
-        "handrail": { "parameter": "handrailProfileType" },
-        "post": { "parameter": "postProfileType" },
-        "rail": { "parameter": "railProfileType" },
-        "infill": { "parameter": "infillProfileType" }
+        "handrail": {
+          "parameter": "handrailProfileType"
+        },
+        "post": {
+          "parameter": "postProfileType"
+        },
+        "rail": {
+          "parameter": "railProfileType"
+        },
+        "infill": {
+          "parameter": "infillProfileType"
+        }
       }
     },
     "parameterLayout": {
       "sections": [
-        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["identity", "basic", "dimensions"] },
-        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profiles", "infill_materials"] },
-        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "components"] }
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "产品规格"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "identity",
+            "basic",
+            "dimensions"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "管材与材料"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "profiles",
+            "infill_materials"
+          ]
+        },
+        {
+          "key": "process",
+          "displayName": {
+            "zh-CN": "加工与装配工艺"
+          },
+          "order": 30,
+          "allowPresets": true,
+          "groups": [
+            "process",
+            "components"
+          ]
+        }
       ]
     },
     "modelResources": {
@@ -92,7 +285,9 @@
   "groups": [
     {
       "key": "identity",
-      "displayName": { "zh-CN": "产品标识" },
+      "displayName": {
+        "zh-CN": "产品标识"
+      },
       "order": 0
     },
     {
@@ -104,7 +299,9 @@
     },
     {
       "key": "dimensions",
-      "displayName": { "zh-CN": "尺寸参数" },
+      "displayName": {
+        "zh-CN": "尺寸参数"
+      },
       "order": 15
     },
     {
@@ -1179,63 +1376,15 @@
       "order": 160,
       "choices": [
         {
-          "value": "bars",
-          "displayName": {
-            "zh-CN": "竖杆"
-          }
-        },
-        {
-          "value": "plate",
-          "displayName": {
-            "zh-CN": "整跨封板"
-          }
-        },
-        {
-          "value": "lower_plate",
-          "displayName": {
-            "zh-CN": "下封板＋上竖杆"
-          }
-        },
-        {
-          "value": "cross",
-          "displayName": {
-            "zh-CN": "X 交叉直管花格"
-          }
-        },
-        {
           "value": "diamond",
           "displayName": {
             "zh-CN": "菱形直管花格"
           }
-        },
-        {
-          "value": "glass",
-          "displayName": {
-            "zh-CN": "玻璃栏板（外购）"
-          }
-        },
-        {
-          "value": "horizontal",
-          "displayName": {
-            "zh-CN": "横向管材／板条填充"
-          }
         }
       ],
       "readOnly": true,
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "layout",
-            "value": "straight"
-          },
-          {
-            "op": "ne",
-            "parameter": "layout",
-            "value": "straight"
-          }
-        ]
+      "presentation": {
+        "visible": false
       }
     },
     {
@@ -1576,7 +1725,16 @@
       "defaultValue": "round",
       "group": "profiles",
       "order": 280,
-      "presentation": { "editor": "profile-library", "resourceRole": "handrail" },
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "handrail",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        }
+      },
       "choices": [
         {
           "value": "rect",
@@ -1588,12 +1746,6 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
-          }
-        },
-        {
-          "value": "oval",
-          "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -1686,7 +1838,16 @@
       "defaultValue": "round",
       "group": "profiles",
       "order": 330,
-      "presentation": { "editor": "profile-library", "resourceRole": "post" },
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "post",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        }
+      },
       "choices": [
         {
           "value": "rect",
@@ -1698,12 +1859,6 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
-          }
-        },
-        {
-          "value": "oval",
-          "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -1796,7 +1951,16 @@
       "defaultValue": "round",
       "group": "profiles",
       "order": 380,
-      "presentation": { "editor": "profile-library", "resourceRole": "rail" },
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "rail",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        }
+      },
       "choices": [
         {
           "value": "rect",
@@ -1808,12 +1972,6 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
-          }
-        },
-        {
-          "value": "oval",
-          "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -1906,7 +2064,16 @@
       "defaultValue": "round",
       "group": "profiles",
       "order": 430,
-      "presentation": { "editor": "profile-library", "resourceRole": "infill" },
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "infill",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        }
+      },
       "choices": [
         {
           "value": "rect",
@@ -1918,12 +2085,6 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
-          }
-        },
-        {
-          "value": "oval",
-          "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]

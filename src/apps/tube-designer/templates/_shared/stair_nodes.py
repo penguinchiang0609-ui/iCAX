@@ -1,5 +1,18 @@
 """Section-driven stair joints. No profile-ID dispatch or bounding-box copes."""
 import math
+import hashlib
+import importlib.util
+from pathlib import Path
+import sys
+from icax_template_sdk.manufacturing import is_manufacturing_declaration
+
+def _machining():
+    path=Path(__file__).with_name("assembly_structural_machining.py")
+    name="icax_stair_joint_"+hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    if name not in sys.modules:
+        spec=importlib.util.spec_from_file_location(name,path)
+        module=importlib.util.module_from_spec(spec);sys.modules[name]=module;spec.loader.exec_module(module)
+    return sys.modules[name]
 
 
 def add(a, b): return [x+y for x,y in zip(a,b)]
@@ -34,7 +47,8 @@ class RailNetwork:
         if connect_start:self.connections.append((a,mul(horizontal,-1),pf,True))
         if connect_end:self.connections.append((b,horizontal,pf,False))
 
-    def finish(self,tube,prism,boolean,item,relationship):
+    def finish(self,tube,joint_region,boolean,item,relationship,*,manufacturing=True):
+        declaring=manufacturing and is_manufacturing_declaration()
         def ident(v):return tuple(round(x,6) for x in v)
         counts={}
         for _,a,b,_,platform in self.edges:
@@ -101,24 +115,33 @@ class RailNetwork:
             display_start=sub(a,mul(d,overlap)) if len(adjacent[ident(a)])>1 else a
             display_end=add(b,mul(d,overlap)) if len(adjacent[ident(b)])>1 else b
             display=tube(key+'.display_stock',display_start,display_end,pf,x,y)
-            raw=tube(key+'.stock',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y)
-            outer=tube(key+'.network_envelope',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y,outer=True)
+            raw=display
+            if manufacturing:
+                raw=tube(key+'.stock',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y)
+                outer=tube(key+'.network_envelope',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y,outer=True)
             ops=[]
             for end,(v,inward) in enumerate(((a,d),(b,mul(d,-1)))):
                 neighbors=[w for j,w in adjacent[ident(v)] if j!=i]
                 if len(neighbors)>1:raise ValueError("扶手连续链不能含未定义的三通节点")
-                n=unit(sub(inward,neighbors[0])) if neighbors else inward
-                # Retain the half-space pointing into this member.
-                u=unit(cross(n,[0,0,1] if abs(n[2])<.9 else [0,1,0]));w=cross(n,u)
                 extent=4*(math.dist(a,b)+pad)
-                keep=prism(key+f'.end.{end}',[[-extent,-extent],[extent,-extent],[extent,extent],[-extent,extent]],v,u,w,mul(n,extent))
-                raw=boolean(key+f'.cut.{end}',raw,[keep],'intersect')
-                outer=boolean(key+f'.envelope.cut.{end}',outer,[keep],'intersect')
-                ops.append({'kind':'miter' if neighbors else 'square','point':v,'inwardNormal':n})
+                mate=neighbors[0] if neighbors else None
+                plane={"point":list(v),"inward":list(inward),
+                       "mateDirection":list(mate) if mate is not None else None,"extent":extent}
+                if not declaring:
+                    _,n=_machining().joint_plane(v,inward,mate,extent)
+                if manufacturing:
+                    keep=joint_region(key+f'.end.{end}',v,inward,mate,extent)
+                    raw=boolean(key+f'.cut.{end}',raw,[keep],'intersect')
+                    outer=boolean(key+f'.envelope.cut.{end}',outer,[keep],'intersect')
+                ops.append({'kind':'miter' if neighbors else 'square',
+                            **({'jointPlane':plane} if declaring else {'point':v,'inwardNormal':n})})
             # Axial blank includes the extreme projection of each oblique cut.
-            extra=sum((pf.width*abs(dot(op['inwardNormal'],x))+pf.depth*abs(dot(op['inwardNormal'],y)))/(2*abs(dot(op['inwardNormal'],d))) for op in ops)
+            extra=(2*pad if declaring else
+                   _machining().joint_blank_extension([op["inwardNormal"] for op in ops],x,y,d,pf.width,pf.depth))
             item(key,'连续扶手转接' if key.startswith('transition.') else '扶手',raw,'tube',[math.dist(a,b)+extra],pf,ops,display_solid=display)
-            envelopes.append((outer,a,b,pf))
+            # Keep the manufacturing recipe metadata available to display-only
+            # callers without declaring or evaluating its cutter geometry.
+            envelopes.append((outer if manufacturing else key+'.envelope.cut.1',a,b,pf))
         for index,(point,members) in enumerate(adjacent.items()):
             if len(members)==2:
                 relationship(f'handrail.joint.{index}','weld',[self.edges[i][0] for i,_ in members],

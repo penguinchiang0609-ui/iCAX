@@ -1,0 +1,317 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "cross-through",
+  "version": "1.0.1",
+  "displayName": "贯穿连接",
+  "category": "cross-through",
+  "layoutShape": "cross",
+  "categoryName": "十字形",
+  "summary": "两根连续管在中段垂直相交，主管开贯穿轮廓口，贯穿管保持连续。",
+  "topology": "中段—中段",
+  "interfaceType": "贯穿",
+  "lockType": "焊接或结构固定",
+  "motionType": "沿贯穿管轴线装入",
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 26 H60 V38 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M26 4 H38 V60 H26 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M26 26 H38 V38 H26 Z",
+        "tone": "joint"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "role": "host",
+      "label": "主管",
+      "responsibility": "中段开贯穿轮廓口",
+      "count": 1
+    },
+    {
+      "role": "through",
+      "label": "贯穿管",
+      "responsibility": "连续穿过主管",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "X"
+      }
+    ],
+    "anchors": {
+      "host": "side",
+      "through": "side"
+    },
+    "axisAngle": {
+      "roles": [
+        "host",
+        "through"
+      ],
+      "directions": [
+        "startToEnd",
+        "startToEnd"
+      ],
+      "measure": "direct",
+      "expected": {
+        "degrees": 90
+      }
+    },
+    "processes": {
+      "through-opening": {
+        "target": "part",
+        "sectionRole": "through",
+        "parameterSources": {
+          "length": {
+            "role": "through",
+            "field": "length"
+          },
+          "azimuth": {
+            "role": "host",
+            "field": "anchor.face",
+            "map": {
+              "top": 0,
+              "bottom": 180,
+              "left": -90,
+              "right": 90
+            }
+          }
+        }
+      }
+    }
+  },
+  "parameters": [
+    {
+      "key": "fitGap",
+      "displayName": "开口单边配合间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 10,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "through-opening",
+      "participants": [
+        "host"
+      ],
+      "label": "主管贯穿轮廓口",
+      "resource": {
+        "kind": "part-process",
+        "id": "branch-profile",
+        "displayName": "支管相贯"
+      },
+      "parameterBindings": {
+        "angle": 90,
+        "azimuth": 0,
+        "roll": 0,
+        "direction": "through",
+        "length": 440,
+        "clearance": "$fitGap",
+        "offsetY": 0,
+        "offsetZ": 0
+      },
+      "previewPlacement": {
+        "target": "part",
+        "reference": "center",
+        "station": 0,
+        "face": "top",
+        "sectionRole": "through"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管下料",
+        "participants": [
+          "host"
+        ]
+      },
+      {
+        "id": "throughBlank",
+        "label": "贯穿管下料",
+        "participants": [
+          "through"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "opening",
+      "label": "在主管中段加工贯穿轮廓口",
+      "kind": "贯穿开口",
+      "direction": "主管中段",
+      "distance": "$fitGap"
+    },
+    {
+      "id": "insert",
+      "label": "将连续管穿过主管并固定",
+      "kind": "贯穿装配",
+      "direction": "贯穿管轴线",
+      "distance": 0
+    }
+  ],
+  "previewScene": {
+    "preferredView": "front",
+    "manufacturingParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管贯穿口下料",
+        "sourceRole": "host",
+        "processes": [
+          "through-opening"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$host_length / 2",
+            0,
+            -100
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "throughBlank",
+        "label": "连续贯穿管下料",
+        "sourceRole": "through",
+        "processes": [],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            "-$through_length / 2 + 100"
+          ],
+          "direction": [
+            0,
+            0,
+            1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        140
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -140
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 26 H60 V38 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M26 4 H38 V60 H26 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M26 26 H38 V38 H26 Z",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "x": 13,
+        "y": 33,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 32,
+        "y": 14,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "fitGap",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          32,
+          32
+        ],
+        "description": "主管贯穿口相对贯穿管外轮廓的单边放大量"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "主管贯穿轮廓口",
+      "连续贯穿管"
+    ],
+    "secondaryProcess": [
+      "贯穿定位",
+      "焊接或结构固定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "host",
+      "through"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [],
+    "requirements": {}
+  },
+  "exampleInput": {
+    "shapeId": "cross",
+    "roles": {
+      "host": "main",
+      "through": "through"
+    },
+    "parameterBindings": {},
+    "requirements": {}
+  }
+}

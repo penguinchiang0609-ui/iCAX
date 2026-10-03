@@ -2,12 +2,31 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "single-face-security-window",
-  "version": "3.8.0",
+  "version": "3.9.2",
   "displayName": {
     "zh-CN": "防盗窗"
   },
   "description": "支持单面、双面、三面和五面；按面型配置侧面、顶底格栅及开启口。双面、三面的其他边界需要现场封闭。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "frameJoinType",
+        "frameButtWrapMode",
+        "doorFrameJoinType",
+        "doorFrameButtWrapMode",
+        "doorLeafFrameJoinType",
+        "doorLeafFrameButtWrapMode",
+        "outerFrameGrooveTool",
+        "doorFrameGrooveTool",
+        "doorLeafFrameGrooveTool",
+        "horizontalBranchReserve",
+        "verticalBranchReserve",
+        "assemblyClearance",
+        "frameCornerJoin",
+        "tubeDesignerToolBindings"
+      ]
+    },
     "securityWindow": {
       "layoutParameter": "faceType",
       "reviewVersion": 2
@@ -28,7 +47,7 @@
       "heightParameter": "height"
     },
     "addDialog": {
-      "structureParameters": ["faceType", "frameLayout", "infillPattern", "accessDoorEnabled", "sidePosition", "accessDoorFace2", "accessDoorFace3", "accessDoorFace5"]
+      "structureParameters": ["faceType", "frameLayout", "infillPattern", "assemblyPlanningMode", "accessDoorEnabled", "sidePosition", "accessDoorFace2", "accessDoorFace3", "accessDoorFace5"]
     },
     "productDiagram": {
       "schemaVersion": 1,
@@ -143,6 +162,12 @@
           },
           "frameCornerJoin": { "memberStableKeyPrefixes": ["outer_frame."] },
           "frameManufacturingMode": { "memberStableKeyPrefixes": ["outer_frame."] },
+          "foldedPostJoint": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
+          "foldedPostInsertDepth": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
+          "foldedPostFitGap": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
+          "foldedPostTabWidth": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
+          "foldedPostTabLength": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
+          "foldedPostSideClearance": { "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."] },
           "frameJoinType": { "memberStableKeyPrefixes": ["outer_frame."] },
           "frameButtWrapMode": { "memberStableKeyPrefixes": ["outer_frame."] },
           "outerFrameGrooveTool": { "memberStableKeyPrefixes": ["outer_frame."] },
@@ -154,6 +179,15 @@
           "doorLeafFrameGrooveTool": { "memberStableKeyPrefixes": ["access_door.leaf.frame."] }
         },
         "profileRoles": {
+          "foldedPost": {
+            "parameters": ["foldedPostProfileType", "foldedPostWidth", "foldedPostDepth", "foldedPostCornerRadius", "foldedPostWallThickness"],
+            "memberStableKeyPrefixes": ["outer_frame.vertical.", "outer_frame.left.", "outer_frame.right."],
+            "typeParameter": "foldedPostProfileType",
+            "widthParameter": "foldedPostWidth",
+            "depthParameter": "foldedPostDepth",
+            "cornerRadiusParameter": "foldedPostCornerRadius",
+            "wallThicknessParameter": "foldedPostWallThickness"
+          },
           "frame": {
             "parameters": ["frameProfileType", "frameWidth", "frameDepth", "frameCornerRadius", "frameWallThickness"],
             "memberStableKeyPrefixes": ["outer_frame."],
@@ -228,6 +262,7 @@
     },
     "resourceRoles": {
       "profiles": {
+        "foldedPost": { "parameter": "foldedPostProfileType", "defaultParametersByResource": { "system:rect": { "width": 30, "depth": 30, "wallThickness": 1, "cornerRadius": 2 } } },
         "frame": { "parameter": "frameProfileType", "defaultParametersByResource": { "system:rect": { "width": 38, "depth": 38, "wallThickness": 1.2 } } },
         "horizontal": { "parameter": "horizontalProfileType", "defaultParametersByResource": { "system:rect": { "width": 22, "depth": 22, "wallThickness": 1 } } },
         "vertical": { "parameter": "verticalProfileType", "defaultParametersByResource": { "system:round": { "width": 19, "wallThickness": 1 } } },
@@ -272,8 +307,8 @@
     "parameterLayout": {
       "sections": [
         { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["identity", "structure", "overall", "grid", "main_grid", "side_grid", "top_bottom_grid", "door_position", "door_grid"] },
-        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profile_preset", "outer_profile", "horizontal_profile", "vertical_profile", "door_frame_profile", "door_leaf_profile", "door_horizontal_profile", "door_vertical_profile"] },
-        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["assembly", "outer_process", "door_process", "groove_library"] }
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profile_preset", "outer_profile", "folded_post_profile", "horizontal_profile", "vertical_profile", "door_frame_profile", "door_leaf_profile", "door_horizontal_profile", "door_vertical_profile"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["assembly", "outer_process", "folded_post_process", "door_process", "groove_library"] }
       ]
     },
     "parameterPresets": {
@@ -404,13 +439,6 @@
       "order": 21
     },
     {
-      "key": "door_assembly",
-      "displayName": {
-        "zh-CN": "开启口装配"
-      },
-      "order": 22
-    },
-    {
       "key": "door_grid",
       "displayName": {
         "zh-CN": "窗扇格栅"
@@ -451,6 +479,16 @@
         "zh-CN": "外框管材"
       },
       "order": 30
+    },
+    {
+      "key": "folded_post_profile",
+      "displayName": { "zh-CN": "插接立柱管材" },
+      "order": 35
+    },
+    {
+      "key": "folded_post_process",
+      "displayName": { "zh-CN": "立柱连接" },
+      "order": 65
     },
     {
       "key": "horizontal_profile",
@@ -930,6 +968,34 @@
           }
         ]
       }
+    },
+    {
+      "key": "assemblyPlanningMode",
+      "displayName": { "zh-CN": "装配工艺来源" },
+      "valueType": "enum",
+      "defaultValue": "builtin_rules",
+      "group": "structure",
+      "order": 11,
+      "choices": [
+        { "value": "builtin_rules", "displayName": { "zh-CN": "产品内置加工规则" } },
+        { "value": "external_templates", "displayName": { "zh-CN": "各连接节点选择工艺模板" } }
+      ],
+      "visibleWhen": { "op": "eq", "parameter": "faceType", "value": "single" },
+      "presentation": {
+        "choiceConditions": {
+          "external_templates": { "op": "all", "conditions": [
+            { "op": "eq", "parameter": "faceType", "value": "single" },
+            { "op": "eq", "parameter": "frameLayout", "value": "four_sides" },
+            { "op": "eq", "parameter": "accessDoorEnabled", "value": false },
+            { "op": "any", "conditions": [
+              { "op": "eq", "parameter": "infillPattern", "value": "horizontal" },
+              { "op": "eq", "parameter": "infillPattern", "value": "vertical" }
+            ] }
+          ] }
+        },
+        "unavailableChoiceFallback": "builtin_rules"
+      },
+      "description": "单面完整四边框、无开启口、纯横杆或纯竖杆可由各 L/T 节点独立选择装配工艺。"
     },
     {
       "key": "accessDoorEnabled",
@@ -1917,67 +1983,60 @@
       "description": "单面连续矩形框；双面为2个L框＋3柱或空间外围框＋1共享柱；三面为2个U框＋4柱或空间外围框＋2共享柱；五面为上下2个完整方框＋4根竖柱，共6件，不提供空间模式。空间模式目前支持方形闭口截面。",
       "presentation": {
         "choiceConditions": {
-          "spatial_v_notch": { "op": "any", "conditions": [
-            { "op": "eq", "parameter": "faceType", "value": "two" },
-            { "op": "eq", "parameter": "faceType", "value": "three" }
-          ] }
-        },
-        "unavailableChoiceFallback": "plane_v_notch"
-      },
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "faceType",
-            "value": "two"
-          },
-          {
-            "op": "eq",
-            "parameter": "faceType",
-            "value": "three"
-          },
-          {
-            "op": "eq",
-            "parameter": "faceType",
-            "value": "five"
-          },
-          {
-            "op": "all",
+          "spatial_v_notch": {
+            "op": "any",
             "conditions": [
               {
                 "op": "eq",
                 "parameter": "faceType",
-                "value": "single"
+                "value": "two"
               },
               {
                 "op": "eq",
-                "parameter": "frameLayout",
-                "value": "four_sides"
+                "parameter": "faceType",
+                "value": "three"
               }
             ]
           }
-        ]
-      }
-    },
-    {
-      "key": "frameJoinType",
-      "displayName": {
-        "zh-CN": "分段外框端部工艺"
+        },
+        "unavailableChoiceFallback": "plane_v_notch"
       },
-      "valueType": "enum",
-      "defaultValue": "miter_45",
-      "group": "outer_process",
-      "order": 10,
-      "presentation": { "choiceConditions": {
-        "v_groove_90:tool_library": { "op": "eq", "parameter": "frameManufacturingMode", "value": "plane_v_notch" }
-      }, "unavailableChoiceFallback": "miter_45" },
       "visibleWhen": {
         "op": "all",
         "conditions": [
           {
             "op": "any",
             "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "two"
+              },
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "three"
+              },
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "five"
+              },
               {
                 "op": "all",
                 "conditions": [
@@ -1994,11 +2053,2717 @@
                 ]
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostJoint",
+      "displayName": {
+        "zh-CN": "立柱连接"
+      },
+      "valueType": "enum",
+      "defaultValue": "weld",
+      "choices": [
+        {
+          "value": "weld",
+          "displayName": {
+            "zh-CN": "平切贴焊"
+          }
+        },
+        {
+          "value": "insert",
+          "displayName": {
+            "zh-CN": "直接插入"
+          }
+        },
+        {
+          "value": "tabs",
+          "displayName": {
+            "zh-CN": "圆弧公母插接"
+          }
+        }
+      ],
+      "group": "folded_post_process",
+      "order": 0,
+      "description": "用于分段拼接外框及连续折弯框的独立立柱。分段拼接选择直接插入或公母插接时，自动采用上下梁接收柱端；焊接保留原拼角与包边布置。连续折弯框仅处理独立折角立柱，平面框开口端通长立柱保留贴焊。插接需选较细立柱，接收框按实际截面开孔或母槽。",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "plane_v_notch"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "frameManufacturingMode",
+                "value": "spatial_v_notch"
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "frameLayout",
+                "value": "four_sides"
+              },
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "eq",
+                "parameter": "frameManufacturingMode",
+                "value": "segment_weld"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "plane_v_notch"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "frameManufacturingMode",
+                "value": "spatial_v_notch"
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "frameLayout",
+                "value": "four_sides"
+              },
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "eq",
+                "parameter": "frameManufacturingMode",
+                "value": "segment_weld"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostInsertDepth",
+      "displayName": {
+        "zh-CN": "直接插入深度"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 12,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      },
+      "group": "folded_post_process",
+      "order": 10,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostFitGap",
+      "displayName": {
+        "zh-CN": "直接插入配合间隙"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 0.2,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "group": "folded_post_process",
+      "order": 20,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostTabWidth",
+      "displayName": {
+        "zh-CN": "公母插接榫宽"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      },
+      "group": "folded_post_process",
+      "order": 30,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostTabLength",
+      "displayName": {
+        "zh-CN": "公母插接榫长"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 12,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      },
+      "group": "folded_post_process",
+      "order": 40,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostSideClearance",
+      "displayName": {
+        "zh-CN": "公母插接侧间隙"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 0.2,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "group": "folded_post_process",
+      "order": 50,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostProfileType",
+      "displayName": {
+        "zh-CN": "立柱截面"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        }
+      ],
+      "group": "folded_post_profile",
+      "order": 0,
+      "description": "分段拼接插接时用于全部独立立柱；连续折弯插接时用于独立折角立柱。焊接复用外框规格，连续平面框开口端通长立柱保留外框规格。",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "readOnly": true,
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "foldedPost",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect"
+          ],
+          "hollow": true
+        }
+      }
+    },
+    {
+      "key": "foldedPostWidth",
+      "displayName": {
+        "zh-CN": "截面宽度"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 30,
+      "constraints": {
+        "minimum": 0.1
+      },
+      "group": "folded_post_profile",
+      "order": 10,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostDepth",
+      "displayName": {
+        "zh-CN": "截面深度"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 30,
+      "constraints": {
+        "minimum": 0.1
+      },
+      "group": "folded_post_profile",
+      "order": 20,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 1,
+      "constraints": {
+        "minimum": 0.1
+      },
+      "group": "folded_post_profile",
+      "order": 30,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "foldedPostCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角半径"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 2,
+      "constraints": {
+        "minimum": 0
+      },
+      "group": "folded_post_profile",
+      "order": 40,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "segment_weld"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameManufacturingMode",
+                        "value": "plane_v_notch"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameLayout",
+                    "value": "four_sides"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "insert"
+              },
+              {
+                "op": "eq",
+                "parameter": "foldedPostJoint",
+                "value": "tabs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "frameJoinType",
+      "displayName": {
+        "zh-CN": "焊接外框端部工艺"
+      },
+      "valueType": "enum",
+      "defaultValue": "miter_45",
+      "group": "outer_process",
+      "order": 10,
+      "presentation": {
+        "choiceConditions": {
+          "v_groove_90:tool_library": {
+            "op": "eq",
+            "parameter": "frameManufacturingMode",
+            "value": "plane_v_notch"
+          }
+        },
+        "unavailableChoiceFallback": "miter_45"
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "single"
+                          },
+                          {
+                            "op": "eq",
+                            "parameter": "frameLayout",
+                            "value": "four_sides"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
           },
           {
             "op": "eq",
-            "parameter": "frameManufacturingMode",
-            "value": "segment_weld"
+            "parameter": "foldedPostJoint",
+            "value": "weld"
           }
         ]
       },
@@ -2022,12 +4787,62 @@
           }
         }
       ],
-      "description": "分段拼焊选择45°斜拼或90°直拼。连续折弯由外框制造方式决定。"
+      "description": "焊接选择45°斜拼或90°直拼；立柱直接插入、公母插接时自动采用上下梁接收柱端，保留此焊接工艺草稿。连续折弯由外框制造方式决定。",
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "single"
+                          },
+                          {
+                            "op": "eq",
+                            "parameter": "frameLayout",
+                            "value": "four_sides"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "foldedPostJoint",
+            "value": "weld"
+          }
+        ]
+      }
     },
     {
       "key": "frameButtWrapMode",
       "displayName": {
-        "zh-CN": "直拼包边方向"
+        "zh-CN": "焊接直拼包边方向"
       },
       "valueType": "enum",
       "defaultValue": "side_wraps_horizontal",
@@ -2037,30 +4852,50 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "all",
             "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
               {
                 "op": "all",
                 "conditions": [
                   {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "single"
-                  },
-                  {
-                    "op": "all",
+                    "op": "any",
                     "conditions": [
                       {
-                        "op": "eq",
-                        "parameter": "frameLayout",
-                        "value": "four_sides"
-                      },
-                      {
-                        "op": "eq",
-                        "parameter": "frameJoinType",
-                        "value": "butt_90"
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "single"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "eq",
+                                "parameter": "frameLayout",
+                                "value": "four_sides"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "frameJoinType",
+                                "value": "butt_90"
+                              }
+                            ]
+                          }
+                        ]
                       }
                     ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
                   }
                 ]
               }
@@ -2068,8 +4903,8 @@
           },
           {
             "op": "eq",
-            "parameter": "frameManufacturingMode",
-            "value": "segment_weld"
+            "parameter": "foldedPostJoint",
+            "value": "weld"
           }
         ]
       },
@@ -2086,7 +4921,68 @@
             "zh-CN": "上下框包左右框"
           }
         }
-      ]
+      ],
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "single"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "eq",
+                                "parameter": "frameLayout",
+                                "value": "four_sides"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "frameJoinType",
+                                "value": "butt_90"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "segment_weld"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "foldedPostJoint",
+            "value": "weld"
+          }
+        ]
+      },
+      "description": "仅90°直拼焊接时使用；立柱直接插入、公母插接自动采用上下梁承接立柱，此包边草稿保留并暂停使用。"
     },
     {
       "key": "doorFrameJoinType",
@@ -2552,52 +5448,62 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "eq",
+            "parameter": "assemblyPlanningMode",
+            "value": "builtin_rules"
+          },
+          {
+            "op": "all",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "all",
+                "op": "any",
                 "conditions": [
                   {
                     "op": "eq",
                     "parameter": "faceType",
-                    "value": "single"
+                    "value": "two"
                   },
                   {
                     "op": "eq",
-                    "parameter": "frameLayout",
-                    "value": "four_sides"
+                    "parameter": "faceType",
+                    "value": "three"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "frameLayout",
+                        "value": "four_sides"
+                      }
+                    ]
                   }
                 ]
-              }
-            ]
-          },
-          {
-            "op": "any",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "frameManufacturingMode",
-                "value": "plane_v_notch"
               },
               {
-                "op": "eq",
-                "parameter": "frameManufacturingMode",
-                "value": "spatial_v_notch"
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "plane_v_notch"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameManufacturingMode",
+                    "value": "spatial_v_notch"
+                  }
+                ]
               }
             ]
           }
@@ -2773,7 +5679,7 @@
         }
       ],
       "group": "outer_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "frame" },
+      "presentation": { "editor": "profile-library", "resourceRole": "frame", "profileConstraints": {"sectionKinds": ["rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -3078,7 +5984,7 @@
         }
       ],
       "group": "horizontal_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "horizontal" },
+      "presentation": { "editor": "profile-library", "resourceRole": "horizontal", "profileConstraints": {"sectionKinds": ["rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -3489,7 +6395,7 @@
         }
       ],
       "group": "vertical_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "vertical" },
+      "presentation": { "editor": "profile-library", "resourceRole": "vertical", "profileConstraints": {"sectionKinds": ["round", "rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -3974,7 +6880,7 @@
         }
       ],
       "group": "door_frame_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "doorFrame" },
+      "presentation": { "editor": "profile-library", "resourceRole": "doorFrame", "profileConstraints": {"sectionKinds": ["rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -4379,7 +7285,7 @@
         }
       ],
       "group": "door_leaf_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "doorLeafFrame" },
+      "presentation": { "editor": "profile-library", "resourceRole": "doorLeafFrame", "profileConstraints": {"sectionKinds": ["rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -4784,7 +7690,7 @@
         }
       ],
       "group": "door_horizontal_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "doorHorizontal" },
+      "presentation": { "editor": "profile-library", "resourceRole": "doorHorizontal", "profileConstraints": {"sectionKinds": ["rect"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -5390,7 +8296,7 @@
         }
       ],
       "group": "door_vertical_profile",
-      "presentation": { "editor": "profile-library", "resourceRole": "doorVertical" },
+      "presentation": { "editor": "profile-library", "resourceRole": "doorVertical", "profileConstraints": {"sectionKinds": ["round"]}},
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -5754,7 +8660,42 @@
         "step": 1
       },
       "group": "assembly",
-      "order": 10
+      "order": 10,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              },
+              {
+                "op": "eq",
+                "parameter": "faceType",
+                "value": "five"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "key": "verticalBranchReserve",
@@ -5774,41 +8715,81 @@
       "group": "assembly",
       "order": 20,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "all",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "single"
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "faceType",
+                    "value": "single"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "single"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
               }
             ]
           },
           {
-            "op": "all",
+            "op": "any",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "horizontal"
+              },
               {
                 "op": "eq",
                 "parameter": "faceType",
@@ -5834,45 +8815,65 @@
       "group": "assembly",
       "order": 30,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
-            "op": "all",
+            "op": "any",
             "conditions": [
               {
                 "op": "eq",
+                "parameter": "assemblyPlanningMode",
+                "value": "builtin_rules"
+              },
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               }
             ]
           },
           {
-            "op": "all",
+            "op": "any",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  }
+                ]
+              },
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  }
+                ]
+              },
               {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  }
+                ]
               }
             ]
           }
@@ -5882,9 +8883,9 @@
     {
       "key": "frameCornerJoin",
       "displayName": {
-        "zh-CN": "外框转角连接"
+        "zh-CN": "焊接外框转角布置"
       },
-      "description": "拼角方案由分段直管焊成，不是整根管连续折弯。目前上下框45°拼角要求方形外框截面；显示为未切角原管装配，生产零件含实际斜切。",
+      "description": "焊接时可选通长立柱直拼或上下框45°拼角夹柱；直接插入、公母插接自动采用上下框拼角夹柱，此焊接布置草稿保留并暂停使用。45°拼角要求方形外框截面。",
       "valueType": "enum",
       "defaultValue": "post_butt",
       "choices": [
@@ -5945,6 +8946,61 @@
             "op": "eq",
             "parameter": "frameManufacturingMode",
             "value": "segment_weld"
+          }
+        ]
+      },
+      "enabledWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "frameManufacturingMode",
+                "value": "segment_weld"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "foldedPostJoint",
+            "value": "weld"
           }
         ]
       }

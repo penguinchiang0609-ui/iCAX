@@ -1,0 +1,93 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "contact-outline-mark",
+  "version": "1.0.0",
+  "displayName": "贴合轮廓打标",
+  "kind": "programmatic",
+  "target": "side",
+  "requiresSection": true,
+  "category": "打标",
+  "parameters": [
+    {
+      "key": "markMode",
+      "displayName": "打标方式",
+      "valueType": "string",
+      "defaultValue": "contour",
+      "options": [
+        {
+          "value": "contour",
+          "label": "轮廓打标"
+        }
+      ]
+    },
+    {
+      "key": "lineWidth",
+      "displayName": "标记线宽",
+      "valueType": "number",
+      "defaultValue": 0.6,
+      "min": 0.1,
+      "max": 5,
+      "step": 0.1,
+      "unit": "mm"
+    }
+  ],
+  "operationParameters": [
+    {
+      "key": "blindHole",
+      "displayName": "浅层加工",
+      "valueType": "boolean",
+      "defaultValue": true
+    },
+    {
+      "key": "cutDepth",
+      "displayName": "标记深度",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0.01,
+      "max": 1,
+      "step": 0.01,
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "blindHole",
+        "value": true
+      }
+    }
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 180 120",
+    "paths": [
+      "M30 25 H150 V95 H30 Z",
+      "M37 32 H143 V88 H37 Z"
+    ],
+    "annotations": [
+      {
+        "parameter": "markMode",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          90,
+          25
+        ],
+        "description": "沿支管实际外轮廓打标，图中矩形仅示意支管截面"
+      },
+      {
+        "parameter": "lineWidth",
+        "kind": "linear",
+        "axis": "x",
+        "side": "bottom",
+        "from": [
+          143,
+          60
+        ],
+        "to": [
+          150,
+          60
+        ],
+        "description": "从支管外轮廓向内偏置的标记带宽"
+      }
+    ]
+  }
+}

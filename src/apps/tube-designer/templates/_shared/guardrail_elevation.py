@@ -108,6 +108,7 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
     posts_by_key = {post.key: post for post in built.posts}
     old_posts = {t.key: t for t in built.tubes if t.category == "guardrail.post"}
     new_tubes = []
+    elevated_butt_contacts = []
     placed_panels = set()
     placed_clips = set()
     built.volumes.clear()
@@ -195,6 +196,9 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
             # intersecting receiving pipes from each other.
             tube.extra_keep_volumes = corner_limits(bay.left, direction) + corner_limits(bay.right, tuple(-v for v in direction))
             new_tubes.append(tube)
+            if profile.kind == "rect":
+                elevated_butt_contacts.extend((tube.key, post.key) for post in (bay.left, bay.right)
+                                              if post.profile.kind == "rect")
             return tube
 
         cap = beam(".elevation.cap", "分跨扶手", cap_profile, cap_center, "guardrail.handrail")
@@ -308,12 +312,12 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
                 new_tubes.append(tube)
 
     ground_by_key, top_by_key = {}, {}
+    replacements = {}
     # Merge collinear cap pieces into physical stock before resolving receivers.
     # Corners and changes of grade remain actual cut joints, not a bent tube.
     if p.get("handrailMode", "per_bay") == "continuous":
         if mode != "continuous":
             raise ValueError("跨柱连续扶手适用于连续顺坡；阶梯分跨请使用分跨扶手")
-        replacements = {}
         caps = [tube for tube in new_tubes if tube.category == "guardrail.handrail"]
         for index, s in enumerate(segments):
             group = [tube for tube in caps if tube.group.startswith(f"segment.{index+1}.")]
@@ -375,6 +379,10 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
     if len(new_tubes) + len(built.plates) + len(built.components) > 2000:
         raise ValueError("高程排布后的零件总数超过2000，请分段建模")
     built.tubes = new_tubes
+    # Elevation replaces the level caps and cross rails. Keep their actual
+    # endpoint contacts, including the identity of a merged continuous cap.
+    built.butt_contacts = list(dict.fromkeys((replacements.get(member, member), post)
+                                            for member, post in elevated_butt_contacts))
 
     for plate in built.plates:
         if plate.key in placed_panels:

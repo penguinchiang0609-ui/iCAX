@@ -69,4 +69,18 @@ namespace iCAX::TubeDesigner
         const iCAX::Data::ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
         const std::filesystem::path& UserRoot_,
         iCAX::Application::IProductUserDataStore* Store_, const iCAX::Data::ObjectMap* Frozen_);
+    // Pure script results keep only resolved BRep resource geometry in the document.
+    // Library provenance and classification belong to the generation run.
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ResolveScriptComponentResources(
+        iCAX::Data::ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const iCAX::Data::ObjectMap& DescriptorExtensions_, const std::string& TemplateID_,
+        const std::filesystem::path& SystemRoot_, const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const iCAX::Data::ObjectMap* Frozen_ = nullptr);
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ResolveDisplayComponentResources(
+        iCAX::Data::ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const iCAX::Data::ObjectMap& DescriptorExtensions_, const std::string& TemplateID_,
+        const std::filesystem::path& SystemRoot_, const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const iCAX::Data::ObjectMap* Frozen_ = nullptr);
+    _TUBE_DESIGNER_EXP void ApplyResolvedComponentMetadata(
+        iCAX::TemplateRuntime::SNeutralModel& Model_, const iCAX::Data::ObjectMap& Snapshots_);
 }

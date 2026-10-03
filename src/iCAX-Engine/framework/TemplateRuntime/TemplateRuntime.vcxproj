@@ -63,6 +63,10 @@
     <None Include="python\icax_template_worker.py" />
     <None Include="python\icax_template_sdk\__init__.py" />
     <None Include="python\icax_template_sdk\model.py" />
+    <None Include="python\icax_template_sdk\resources.py" />
+    <None Include="python\icax_template_sdk\display.py" />
+    <None Include="python\icax_template_sdk\profile_constraints.py" />
+    <None Include="python\icax_template_sdk\manufacturing.py" />
   </ItemGroup>
   <Target Name="PrepareEmbeddedPythonRuntime" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\..\tools\build\prepare_embedded_python_runtime.ps1&quot; -OutputDirectory &quot;$(OutDir)runtime&quot;" />

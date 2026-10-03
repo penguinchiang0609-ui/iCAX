@@ -1,0 +1,815 @@
+{
+  "schema": "icax.finished-product-shapes",
+  "schemaVersion": 1,
+  "shapes": [
+    {
+      "id": "l",
+      "displayName": "L 形",
+      "layoutShape": "l",
+      "parameters": [
+        {
+          "key": "angle",
+          "displayName": "成品转角",
+          "valueType": "number",
+          "defaultValue": 90,
+          "min": 0,
+          "max": 179,
+          "step": 1,
+          "unit": "°",
+          "level": "basic"
+        },
+        {
+          "key": "planeRotation",
+          "displayName": "外形平面转角",
+          "valueType": "number",
+          "defaultValue": 0,
+          "min": -180,
+          "max": 180,
+          "step": 1,
+          "unit": "°",
+          "level": "advanced"
+        }
+      ],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 60,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 260,
+          "pose": {
+            "origin": [
+              "-$armA_length",
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "armA",
+          "label": "A 边"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 60,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 260,
+          "pose": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "bendAngle": "-$angle",
+            "bendPlaneRotation": "$planeRotation"
+          },
+          "id": "armB",
+          "label": "B 边"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M10 64 H46 V8 H64 V82 H10 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": [
+          {
+            "parameter": "angle",
+            "kind": "leader",
+            "side": "right",
+            "point": [
+              64,
+              48
+            ],
+            "description": "成品转角"
+          },
+          {
+            "parameter": "planeRotation",
+            "kind": "leader",
+            "side": "right",
+            "point": [
+              64,
+              48
+            ],
+            "description": "外形平面转角"
+          }
+        ]
+      }
+    },
+    {
+      "id": "t",
+      "displayName": "T 形",
+      "layoutShape": "t",
+      "parameters": [
+        {
+          "key": "intersectionAngle",
+          "displayName": "成品轴线夹角",
+          "valueType": "number",
+          "defaultValue": 90,
+          "min": 1,
+          "max": 179,
+          "step": 1,
+          "unit": "°",
+          "level": "basic"
+        }
+      ],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 80,
+            "depth": 40,
+            "wallThickness": 3,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 440,
+          "pose": {
+            "origin": [
+              "-$main_length / 2",
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "main",
+          "label": "横向外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 40,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 220,
+          "pose": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "bendAngle": "180 - $intersectionAngle",
+            "bendPlaneRotation": 0,
+            "axialTranslation": "-$branch_length - $main_depth / 2 / sin($intersectionAngle * pi / 180)"
+          },
+          "id": "branch",
+          "label": "支向外形"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M8 62 H88 V80 H8 Z",
+            "className": "tool-diagram-part-a"
+          },
+          {
+            "d": "M39 8 H57 V62 H39 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": [
+          {
+            "parameter": "intersectionAngle",
+            "kind": "leader",
+            "side": "right",
+            "point": [
+              64,
+              48
+            ],
+            "description": "成品轴线夹角"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cross",
+      "displayName": "十字形",
+      "layoutShape": "cross",
+      "parameters": [],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 80,
+            "depth": 40,
+            "wallThickness": 3,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 440,
+          "pose": {
+            "origin": [
+              "-$main_length / 2",
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "main",
+          "label": "横向外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 30,
+            "depth": 30,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 440,
+          "pose": {
+            "origin": [
+              0,
+              0,
+              "-$through_length / 2"
+            ],
+            "direction": [
+              0,
+              0,
+              1
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "through",
+          "label": "纵向外形"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M8 39 H88 V57 H8 Z",
+            "className": "tool-diagram-part-a"
+          },
+          {
+            "d": "M39 8 H57 V88 H39 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": []
+      }
+    },
+    {
+      "id": "straight",
+      "displayName": "直线形",
+      "layoutShape": "straight",
+      "parameters": [],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 60,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 280,
+          "pose": {
+            "origin": [
+              "-$first_length",
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "first",
+          "label": "A 段外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 60,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 280,
+          "pose": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "second",
+          "label": "B 段外形"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M8 38 H88 V58 H8 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": []
+      }
+    },
+    {
+      "id": "orthogonal-corner",
+      "displayName": "三向直角节点",
+      "layoutShape": "orthogonal-corner",
+      "parameters": [],
+      "spans": [
+        {
+          "id": "armA",
+          "label": "A 边 · X 向",
+          "profileRef": { "scope": "system", "id": "rect" },
+          "parameters": {
+            "width": 80,
+            "depth": 40,
+            "wallThickness": 3,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 260,
+          "pose": {
+            "origin": ["-$armA_length", 0, 0],
+            "direction": [1, 0, 0],
+            "up": [0, 1, 0]
+          }
+        },
+        {
+          "id": "armB",
+          "label": "B 边 · Z 向",
+          "profileRef": { "scope": "system", "id": "rect" },
+          "parameters": {
+            "width": 80,
+            "depth": 40,
+            "wallThickness": 3,
+            "cornerRadius": 3,
+            "innerRadius": 1
+          },
+          "length": 260,
+          "pose": {
+            "origin": [0, 0, 0],
+            "direction": [0, 0, 1],
+            "up": [0, 1, 0]
+          }
+        },
+        {
+          "id": "armC",
+          "label": "C 边 · Y 向",
+          "profileRef": { "scope": "system", "id": "rect" },
+          "parameters": {
+            "width": 20,
+            "depth": 20,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 0
+          },
+          "length": 220,
+          "pose": {
+            "origin": [0, 0, 0],
+            "direction": [0, 1, 0],
+            "up": [0, 0, -1]
+          }
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          { "d": "M8 64 L44 43 L52 48 L16 70 Z", "className": "tool-diagram-part-a" },
+          { "d": "M44 43 L79 63 L87 58 L52 38 Z", "className": "tool-diagram-part-a" },
+          { "d": "M44 43 V9 L52 4 V38 Z", "className": "tool-diagram-part-a" }
+        ],
+        "annotations": []
+      }
+    },
+    {
+      "id": "parallel",
+      "displayName": "并行形",
+      "layoutShape": "parallel",
+      "parameters": [
+        {
+          "key": "overlapLength",
+          "displayName": "轴向重合长度",
+          "valueType": "number",
+          "defaultValue": 440,
+          "min": 1,
+          "max": 100000,
+          "step": 1,
+          "unit": "mm"
+        }
+      ],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 80,
+            "depth": 20,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 440,
+          "pose": {
+            "origin": [
+              "-$lower_length / 2",
+              0,
+              "-$lower_depth / 2"
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "lower",
+          "label": "下方外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 80,
+            "depth": 20,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 440,
+          "pose": {
+            "origin": [
+              "$lower_length / 2 - $overlapLength",
+              0,
+              "$upper_depth / 2"
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "upper",
+          "label": "上方外形"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M8 26 H88 V44 H8 Z",
+            "className": "tool-diagram-part-a"
+          },
+          {
+            "d": "M8 48 H88 V66 H8 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": [
+          {
+            "parameter": "overlapLength",
+            "kind": "leader",
+            "side": "right",
+            "point": [
+              64,
+              48
+            ],
+            "description": "轴向重合长度"
+          }
+        ]
+      }
+    },
+    {
+      "id": "four-way",
+      "displayName": "四向形",
+      "layoutShape": "cross",
+      "parameters": [
+        {
+          "key": "nodeLayout",
+          "displayName": "节点布局",
+          "valueType": "choice",
+          "defaultValue": "planarCross",
+          "options": [
+            {
+              "value": "planarCross",
+              "label": "平面十字"
+            },
+            {
+              "value": "spatialFour",
+              "label": "空间四向"
+            }
+          ],
+          "level": "basic"
+        }
+      ],
+      "spans": [
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 50,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 240,
+          "pose": {
+            "origin": [
+              "-$left_length",
+              0,
+              0
+            ],
+            "direction": [
+              1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "left",
+          "label": "左侧外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 50,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 240,
+          "pose": {
+            "origin": [
+              "$right_length",
+              0,
+              0
+            ],
+            "direction": [
+              -1,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "id": "right",
+          "label": "右侧外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 50,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 240,
+          "pose": {
+            "origin": [
+              0,
+              "$up_length",
+              0
+            ],
+            "direction": [
+              0,
+              -1,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "id": "up",
+          "label": "上侧外形"
+        },
+        {
+          "profileRef": {
+            "scope": "system",
+            "id": "rect"
+          },
+          "parameters": {
+            "width": 50,
+            "depth": 40,
+            "wallThickness": 2,
+            "cornerRadius": 2,
+            "innerRadius": 1
+          },
+          "length": 240,
+          "pose": {
+            "origin": [
+              0,
+              "-$down_length",
+              0
+            ],
+            "direction": [
+              0,
+              1,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "poseVariants": [
+            {
+              "when": {
+                "op": "eq",
+                "parameter": "nodeLayout",
+                "value": "spatialFour"
+              },
+              "value": {
+                "origin": [
+                  0,
+                  0,
+                  "$down_length"
+                ],
+                "direction": [
+                  0,
+                  0,
+                  -1
+                ],
+                "up": [
+                  0,
+                  1,
+                  0
+                ]
+              }
+            }
+          ],
+          "id": "down",
+          "label": "下侧外形"
+        }
+      ],
+      "parameterDiagram": {
+        "schemaVersion": 2,
+        "viewBox": "0 0 96 96",
+        "paths": [
+          {
+            "d": "M8 39 H39 V8 H57 V39 H88 V57 H57 V88 H39 V57 H8 Z",
+            "className": "tool-diagram-part-a"
+          }
+        ],
+        "annotations": [
+          {
+            "parameter": "nodeLayout",
+            "kind": "leader",
+            "side": "right",
+            "point": [
+              64,
+              48
+            ],
+            "description": "节点布局"
+          }
+        ]
+      }
+    }
+  ]
+}

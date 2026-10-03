@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -274,7 +275,7 @@ public:
             throw std::invalid_argument("embedded Python runtime paths cannot be empty");
     }
 
-    ObjectMap Invoke(const ObjectMap& Request_)
+    ObjectMap Invoke(const ObjectMap& Request_, std::vector<std::string>* ProfileRolesConsumed_)
     {
         std::scoped_lock _Lock(Mutex);
         EnsureStarted();
@@ -340,6 +341,25 @@ public:
         const auto _Result = _Response.find("result");
         if (_Result == _Response.end() || !_Result->second.Is<ObjectMap>())
             throw std::runtime_error("embedded Python template response has no result object");
+        if (ProfileRolesConsumed_)
+        {
+            const auto _Roles = _Response.find("profileRolesConsumed");
+            if (_Roles == _Response.end() || !_Roles->second.Is<iCAX::Data::VariantArray>())
+                throw std::runtime_error("product template response requires profileRolesConsumed array");
+            const auto _Values = _Roles->second.To<iCAX::Data::VariantArray>();
+            if (_Values.size() > 64) throw std::runtime_error("product template consumed too many profile roles");
+            std::vector<std::string> _Validated;
+            std::set<std::string> _Seen;
+            for (const auto& _Value : _Values)
+            {
+                if (!_Value.Is<std::string>()) throw std::runtime_error("product template consumed role must be a string");
+                const auto _Role = _Value.To<std::string>();
+                if (_Role.empty() || _Role.size() > 80 || !_Seen.insert(_Role).second)
+                    throw std::runtime_error("product template consumed roles must be distinct valid keys");
+                _Validated.push_back(_Role);
+            }
+            *ProfileRolesConsumed_ = std::move(_Validated);
+        }
         return _Result->second.To<ObjectMap>();
     }
 
@@ -401,9 +421,9 @@ iCAX::TemplateRuntime::CPythonTemplateHost::CPythonTemplateHost(
 iCAX::TemplateRuntime::CPythonTemplateHost::~CPythonTemplateHost() = default;
 
 iCAX::Data::ObjectMap iCAX::TemplateRuntime::CPythonTemplateHost::Invoke(
-    const iCAX::Data::ObjectMap& Request_)
+    const iCAX::Data::ObjectMap& Request_, std::vector<std::string>* ProfileRolesConsumed_)
 {
-    return m_pImpl->Invoke(Request_);
+    return m_pImpl->Invoke(Request_, ProfileRolesConsumed_);
 }
 
 bool iCAX::TemplateRuntime::CPythonTemplateHost::IsRunning() const noexcept

@@ -229,6 +229,7 @@ export class ThreeRenderViewport {
     this.dimensionContent = new THREE.Group();
     this.dimensionContent.name = "iCAX Dimension Overlay";
     this.scene.add(this.dimensionContent);
+    this.outsideDimensionLabels = [];
     this.specificationContent = new THREE.Group();
     this.specificationContent.name = "iCAX Interactive Specification Overlay";
     this.scene.add(this.specificationContent);
@@ -272,6 +273,12 @@ export class ThreeRenderViewport {
     this.renderer.domElement.className = "icax-three-viewport-canvas";
     this.renderer.domElement.tabIndex = 0;
     this.root.appendChild(this.renderer.domElement);
+    this.dimensionLabelLayer = document.createElement("div");
+    this.dimensionLabelLayer.className = "icax-three-dimension-label-layer";
+    this.dimensionLeaderSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    this.dimensionLeaderSvg.classList.add("icax-three-dimension-leaders");
+    this.dimensionLabelLayer.appendChild(this.dimensionLeaderSvg);
+    this.root.appendChild(this.dimensionLabelLayer);
     this.specificationLabelLayer = document.createElement("div");
     this.specificationLabelLayer.className = "icax-three-specification-label-layer";
     this.specificationLabelLayer.setAttribute("aria-label", "产品规格标注");
@@ -708,6 +715,18 @@ export class ThreeRenderViewport {
     return true;
   }
 
+  getVisibleBounds() {
+    const bounds = new THREE.Box3();
+    for (const object of this.sceneObjects.values()) {
+      if (object.visible) bounds.expandByObject(object, true);
+    }
+    if (bounds.isEmpty()) return null;
+    return {
+      min: [bounds.min.x, bounds.min.y, bounds.min.z],
+      max: [bounds.max.x, bounds.max.y, bounds.max.z],
+    };
+  }
+
   fitViewToViewport(padding = 1.18) {
     const bounds = new THREE.Box3();
     for (const object of this.sceneObjects.values()) {
@@ -900,6 +919,25 @@ export class ThreeRenderViewport {
       const end = toFiniteVector3(annotation?.end);
       if (!start || !end || start.distanceToSquared(end) <= Number.EPSILON) continue;
       const offset = toFiniteVector3(annotation?.offset) ?? new THREE.Vector3();
+      const label = String(annotation?.label ?? "").trim();
+      if (annotation?.placement === "outside" && label) {
+        const color = new THREE.Color(annotation?.color ?? 0xffc857);
+        const element = document.createElement("div");
+        element.className = "icax-three-dimension-label";
+        element.dataset.icaxDimensionAnnotation = String(annotation?.id ?? "");
+        element.style.setProperty("--icax-dimension-color", `#${color.getHexString()}`);
+        element.textContent = label;
+        const leader = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        leader.setAttribute("stroke", `#${color.getHexString()}`);
+        leader.setAttribute("fill", "none");
+        leader.setAttribute("stroke-width", "1.5");
+        leader.setAttribute("stroke-linecap", "round");
+        leader.dataset.icaxDimensionLeader = String(annotation?.id ?? "");
+        this.dimensionLeaderSvg.appendChild(leader);
+        this.dimensionLabelLayer.appendChild(element);
+        this.outsideDimensionLabels.push({ element, leader, start, end, offset });
+        continue;
+      }
       const displayStart = start.clone().add(offset);
       const displayEnd = end.clone().add(offset);
       const color = new THREE.Color(annotation?.color ?? 0xffc857);
@@ -935,7 +973,6 @@ export class ThreeRenderViewport {
       lines.renderOrder = 120;
       this.dimensionContent.add(lines);
 
-      const label = String(annotation?.label ?? "").trim();
       if (label) {
         const sprite = this.#createDimensionLabel(label, color);
         sprite.position.copy(displayStart).lerp(displayEnd, 0.5);
@@ -957,6 +994,9 @@ export class ThreeRenderViewport {
         material?.dispose?.();
       }
     }
+    this.outsideDimensionLabels = [];
+    this.dimensionLeaderSvg?.replaceChildren?.();
+    this.dimensionLabelLayer?.replaceChildren?.(this.dimensionLeaderSvg);
     if (render) this.#renderOnce();
     return this;
   }
@@ -1510,7 +1550,7 @@ export class ThreeRenderViewport {
       projectionToggleVisible: Boolean(this.projectionToggle && !this.projectionToggle.hidden),
       orbitConstrained: this.options.constrainOrbit !== false,
       animationFrameActive: Boolean(this.animationFrame),
-      dimensionAnnotationCount: this.dimensionContent.children.filter(
+      dimensionAnnotationCount: this.outsideDimensionLabels.length + this.dimensionContent.children.filter(
         (object) => object.userData?.dimensionLabel,
       ).length,
       specificationAnnotationCount: this.specificationLabels.length,
@@ -2816,6 +2856,7 @@ export class ThreeRenderViewport {
   #renderOnce() {
     this.#updateSelectionHelper();
     this.#updateDimensionLabelScales();
+    this.#updateOutsideDimensionPositions();
     this.#updateSpecificationLabelPositions();
     this.renderer.render(this.scene, this.camera);
     this.#renderOrientationGizmo();
@@ -2831,6 +2872,134 @@ export class ThreeRenderViewport {
       if (!object.userData?.dimensionLabel) continue;
       const aspect = Math.max(1, Number(object.userData.dimensionLabelAspect ?? 1));
       object.scale.set(labelHeight * aspect, labelHeight, 1);
+    }
+  }
+
+  #updateOutsideDimensionPositions() {
+    if (!this.outsideDimensionLabels.length) return;
+    const canvas = this.renderer.domElement;
+    const width = Math.max(1, canvas.clientWidth);
+    const height = Math.max(1, canvas.clientHeight);
+    const worldPerPixel = Math.max(0.001, this.#visibleHeightAtTarget() / height);
+    this.camera.updateMatrixWorld(true);
+    const project = (point) => {
+      const projected = point.clone().project(this.camera);
+      return { x: (projected.x * 0.5 + 0.5) * width,
+        y: (-projected.y * 0.5 + 0.5) * height, z: projected.z };
+    };
+    const projected = this.outsideDimensionLabels.map((entry) => ({
+      ...entry, startScreen: project(entry.start), endScreen: project(entry.end),
+    }));
+    const visible = projected.filter(({ startScreen, endScreen }) =>
+      [startScreen, endScreen].every((point) => Number.isFinite(point.x)
+        && Number.isFinite(point.y) && Number.isFinite(point.z)
+        && point.z >= -1 && point.z <= 1)
+      && [startScreen, endScreen].some((point) => point.x >= -width * 0.12
+        && point.x <= width * 1.12 && point.y >= -height * 0.12
+        && point.y <= height * 1.12));
+    // Screen-space geometry bounds keep captions clear of the tubes even when
+    // their world-space offset projects straight toward the camera.
+    const geometryRects = this.content.children.filter((object) => object.visible)
+      .flatMap((object) => {
+        const bounds = new THREE.Box3().setFromObject(object);
+        if (bounds.isEmpty()) return [];
+        const corners = [];
+        for (const x of [bounds.min.x, bounds.max.x]) {
+          for (const y of [bounds.min.y, bounds.max.y]) {
+            for (const z of [bounds.min.z, bounds.max.z]) {
+              corners.push(project(new THREE.Vector3(x, y, z)));
+            }
+          }
+        }
+        if (!corners.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) return [];
+        return [{ left: Math.min(...corners.map((point) => point.x)),
+          right: Math.max(...corners.map((point) => point.x)),
+          top: Math.min(...corners.map((point) => point.y)),
+          bottom: Math.max(...corners.map((point) => point.y)) }];
+      });
+    const center = visible.length ? visible.reduce((sum, entry) => ({
+      x: sum.x + (entry.startScreen.x + entry.endScreen.x) / (2 * visible.length),
+      y: sum.y + (entry.startScreen.y + entry.endScreen.y) / (2 * visible.length),
+    }), { x: 0, y: 0 }) : { x: width / 2, y: height / 2 };
+    const occupied = [];
+    const overlaps = (a, b) => a.left < b.right + 8 && a.right + 8 > b.left
+      && a.top < b.bottom + 8 && a.bottom + 8 > b.top;
+    const inside = (rect) => rect.left >= 8 && rect.top >= 8
+      && rect.right <= width - 8 && rect.bottom <= height - 8;
+    for (const [index, entry] of projected.entries()) {
+      const { element, leader, startScreen: a, endScreen: b } = entry;
+      if (!visible.includes(entry)) {
+        element.hidden = true;
+        leader.style.display = "none";
+        continue;
+      }
+      element.hidden = false;
+      leader.style.display = "";
+      const labelWidth = element.offsetWidth;
+      const labelHeight = element.offsetHeight;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      const radial = { x: mid.x - center.x, y: mid.y - center.y };
+      const tangent = length > 5
+        ? { x: (b.x - a.x) / length, y: (b.y - a.y) / length }
+        : Math.hypot(radial.x, radial.y) > 5
+          ? { x: -radial.y / Math.hypot(radial.x, radial.y),
+            y: radial.x / Math.hypot(radial.x, radial.y) }
+          : { x: 1, y: 0 };
+      const normal = { x: -tangent.y, y: tangent.x };
+      // Prefer the side facing away from the combined assembly. Use the
+      // template's offset only when the part lies near the assembly center.
+      let outward = radial.x * normal.x + radial.y * normal.y;
+      if (Math.abs(outward) < 8) {
+        const hint = project(entry.start.clone().lerp(entry.end, 0.5).add(entry.offset));
+        outward = (hint.x - mid.x) * normal.x + (hint.y - mid.y) * normal.y;
+      }
+      const preferredSign = Math.abs(outward) >= 3 ? Math.sign(outward) : index % 2 ? 1 : -1;
+      const railGap = Math.max(40, Math.min(125, entry.offset.length() / worldPerPixel));
+      const extent = Math.abs(normal.x) * labelWidth / 2 + Math.abs(normal.y) * labelHeight / 2;
+      let chosen = null;
+      for (const sign of [preferredSign, -preferredSign]) {
+        if (chosen) break;
+        for (const extra of [0, 42, 84, 126]) {
+          if (chosen) break;
+          for (const shift of [0, -46, 46, -92, 92, -138, 138]) {
+            const x = mid.x + normal.x * sign * (railGap + 14 + extent + extra)
+              + tangent.x * shift;
+            const y = mid.y + normal.y * sign * (railGap + 14 + extent + extra)
+              + tangent.y * shift;
+            const rect = { left: x - labelWidth / 2, right: x + labelWidth / 2,
+              top: y - labelHeight / 2, bottom: y + labelHeight / 2 };
+            if (inside(rect) && occupied.every((other) => !overlaps(rect, other))
+                && geometryRects.every((other) => !overlaps(rect, other))) {
+              chosen = { x, y, rect, sign, railGap: railGap + extra };
+              break;
+            }
+          }
+        }
+      }
+      if (!chosen) {
+        const sign = preferredSign;
+        const x = Math.max(labelWidth / 2 + 8, Math.min(width - labelWidth / 2 - 8,
+          mid.x + normal.x * sign * (railGap + 14 + extent)));
+        const y = Math.max(labelHeight / 2 + 8, Math.min(height - labelHeight / 2 - 8,
+          mid.y + normal.y * sign * (railGap + 14 + extent)));
+        chosen = { x, y, sign, railGap,
+          rect: { left: x - labelWidth / 2, right: x + labelWidth / 2,
+            top: y - labelHeight / 2, bottom: y + labelHeight / 2 } };
+      }
+      occupied.push(chosen.rect);
+      element.style.left = `${chosen.x}px`;
+      element.style.top = `${chosen.y}px`;
+      const nx = normal.x * chosen.sign, ny = normal.y * chosen.sign;
+      const railA = { x: a.x + nx * chosen.railGap, y: a.y + ny * chosen.railGap };
+      const railB = { x: b.x + nx * chosen.railGap, y: b.y + ny * chosen.railGap };
+      const railMid = { x: (railA.x + railB.x) / 2, y: (railA.y + railB.y) / 2 };
+      leader.setAttribute("d", `M ${a.x} ${a.y} L ${railA.x} ${railA.y}`
+        + ` M ${b.x} ${b.y} L ${railB.x} ${railB.y}`
+        + ` M ${railA.x} ${railA.y} L ${railB.x} ${railB.y}`
+        + ` M ${railA.x - nx * 4} ${railA.y - ny * 4} L ${railA.x + nx * 4} ${railA.y + ny * 4}`
+        + ` M ${railB.x - nx * 4} ${railB.y - ny * 4} L ${railB.x + nx * 4} ${railB.y + ny * 4}`
+        + ` M ${railMid.x} ${railMid.y} L ${chosen.x} ${chosen.y}`);
     }
   }
 
@@ -3077,6 +3246,37 @@ function ensureThreeViewportStyles() {
       color: #dce7ed;
       font-size: 12px;
       pointer-events: none;
+    }
+
+    .icax-three-dimension-label-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .icax-three-dimension-leaders {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .icax-three-dimension-label {
+      position: absolute;
+      max-width: min(340px, calc(100% - 24px));
+      padding: 4px 9px;
+      border: 1px solid var(--icax-dimension-color);
+      border-radius: 5px;
+      background: rgba(14, 31, 38, 0.94);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+      color: #f7fbfc;
+      font: 600 12px/17px system-ui, sans-serif;
+      text-align: center;
+      overflow-wrap: anywhere;
+      transform: translate(-50%, -50%);
     }
 
     .icax-three-specification-label-layer {

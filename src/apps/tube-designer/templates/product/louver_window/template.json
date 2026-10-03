@@ -2,12 +2,20 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "louver-window",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "displayName": {
     "zh-CN": "百叶窗"
   },
-  "description": "矩形管框固定百叶：横向、竖向、任意斜向及独立截面滚转；中心距、净缝、搭接、数量阵列；顶接、插槽、穿透及中间分格，输出实际加工管件。",
+  "description": "矩形管框固定百叶：横向、竖向、任意斜向及独立截面滚转；中心距、净缝、搭接、数量阵列；顶接、插槽、穿透及中间分格。水平或竖直顶接叶片可由独立 L/T 节点规划工艺。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "frameMaterial",
+        "bladeMaterial",
+        "slotClearance"
+      ]
+    },
     "catalog": {
       "categoryPath": [
         "窗"
@@ -164,6 +172,7 @@
       "valueType": "enum",
       "defaultValue": "side_wrap",
       "group": "frame_process",
+      "visibleWhen": { "op": "ne", "parameter": "assemblyPlanningMode", "value": "external_templates" },
       "choices": [
         {
           "value": "side_wrap",
@@ -186,13 +195,41 @@
       ]
     },
     {
+      "key": "assemblyPlanningMode",
+      "displayName": { "zh-CN": "装配工艺来源" },
+      "valueType": "enum",
+      "defaultValue": "builtin_rules",
+      "group": "frame_process",
+      "choices": [
+        { "value": "builtin_rules", "displayName": { "zh-CN": "产品内置加工规则" } },
+        { "value": "external_templates", "displayName": { "zh-CN": "各连接节点选择工艺模板" } }
+      ],
+      "presentation": {
+        "choiceConditions": {
+          "external_templates": { "op": "all", "conditions": [
+            { "op": "eq", "parameter": "bladeConnection", "value": "face_weld" },
+            { "op": "in", "parameter": "bladeDirectionAngle", "values": [0, 90, -90, 180, -180] },
+            { "op": "any", "conditions": [
+              { "op": "eq", "parameter": "supportMode", "value": "split" },
+              { "op": "all", "conditions": [
+                { "op": "eq", "parameter": "middlePostCount", "value": 0 },
+                { "op": "eq", "parameter": "middleBeamCount", "value": 0 }
+              ] }
+            ] }
+          ] }
+        },
+        "unavailableChoiceFallback": "builtin_rules"
+      },
+      "description": "仅支持水平或竖直顶接叶片，以及分格分段的中间支撑。提供未加工原管与 L/T 节点；斜向端切、插槽和穿透仍需产品内置加工规则。"
+    },
+    {
       "key": "frameProfileType",
       "displayName": {
         "zh-CN": "截面类型"
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "frame" },
+      "presentation": { "editor": "profile-library", "resourceRole": "frame", "profileConstraints": {"sectionKinds": ["rect"]}},
       "group": "frame_profile",
       "choices": [
         {
@@ -280,7 +317,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "blade" },
+      "presentation": { "editor": "profile-library", "resourceRole": "blade", "profileConstraints": {"sectionKinds": ["rect"]}},
       "group": "blade_profile",
       "choices": [
         {
@@ -656,11 +693,10 @@
         "minimum": 0,
         "maximum": 10
       },
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "bladeConnection",
-        "value": "face_weld"
-      }
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "bladeConnection", "value": "face_weld" },
+        { "op": "ne", "parameter": "assemblyPlanningMode", "value": "external_templates" }
+      ] }
     },
     {
       "key": "insertDepth",

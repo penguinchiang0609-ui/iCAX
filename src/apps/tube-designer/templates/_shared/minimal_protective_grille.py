@@ -1,13 +1,12 @@
-"""Reusable topology, layout, joint, hole and BOM rules for minimal tube grilles.
+"""Product topology and layout for minimal tube grilles.
 
-The product template owns the assembly topology.  This shared module owns the
-manufacturing recipes so the same half-hole joint and face-hole pattern can be
-reused by future railings, racks and frames without naming a product family.
+The product arranges actual local stocks and node locations. Independent
+assembly machining functions own half-hole joints, male heads and drill tools.
 """
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import importlib.util
 import json
@@ -17,46 +16,12 @@ import sys
 from typing import Any
 
 from icax_template_sdk import NeutralModel
+from icax_template_sdk.manufacturing import is_manufacturing_declaration
 
 
 TEMPLATE_ID = "minimal-protective-grille"
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.2.0"
 EPS = 1.0e-7
-
-
-def _path(points):
-    return {"kind": "path", "closed": True, "segments": [
-        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
-        for i in range(len(points))
-    ]}
-
-
-def _circle_path(radius):
-    k = radius / math.sqrt(2.0)
-    return {"kind": "path", "closed": True, "segments": [
-        {"kind": "arc", "start": [radius, 0], "middle": [k, k], "end": [0, radius]},
-        {"kind": "arc", "start": [0, radius], "middle": [-k, k], "end": [-radius, 0]},
-        {"kind": "arc", "start": [-radius, 0], "middle": [-k, -k], "end": [0, -radius]},
-        {"kind": "arc", "start": [0, -radius], "middle": [k, -k], "end": [radius, 0]},
-    ]}
-
-
-def _rounded_rectangle_path(width, height, radius):
-    if radius <= EPS:
-        return _path([[-width/2, -height/2], [width/2, -height/2],
-                      [width/2, height/2], [-width/2, height/2]])
-    q = radius / math.sqrt(2.0)
-    x, y = width/2, height/2
-    return {"kind": "path", "closed": True, "segments": [
-        {"kind": "line", "start": [-x+radius, -y], "end": [x-radius, -y]},
-        {"kind": "arc", "start": [x-radius, -y], "middle": [x-radius+q, -y+radius-q], "end": [x, -y+radius]},
-        {"kind": "line", "start": [x, -y+radius], "end": [x, y-radius]},
-        {"kind": "arc", "start": [x, y-radius], "middle": [x-radius+q, y-radius+q], "end": [x-radius, y]},
-        {"kind": "line", "start": [x-radius, y], "end": [-x+radius, y]},
-        {"kind": "arc", "start": [-x+radius, y], "middle": [-x+radius-q, y-radius+q], "end": [-x, y-radius]},
-        {"kind": "line", "start": [-x, y-radius], "end": [-x, -y+radius]},
-        {"kind": "arc", "start": [-x, -y+radius], "middle": [-x+radius-q, -y+radius-q], "end": [-x+radius, -y]},
-    ]}
 
 
 def _load_shared(filename: str):
@@ -75,6 +40,7 @@ def _load_shared(filename: str):
 _catalog = _load_shared("tube_profile_catalog.py")
 _frames = _load_shared("security_window_frame_geometry.py")
 _shared_geometry = _load_shared("shared_tube_geometry.py")
+_stock_rules = _load_shared("assembly_stock_allowance.py")
 Profile = _catalog.Profile
 Part = _frames.Part
 SharedTubeGeometry = _shared_geometry.SharedTubeGeometry
@@ -320,6 +286,31 @@ def _frame_parts(width: float, height: float, profile: Profile, frame_type: str,
     return parts
 
 
+def _assembly_stock_parts(width: float, height: float, profile: Profile,
+                          frame_type: str) -> list[ProductPart]:
+    """Uncut centerline members; the product does not choose corner tooling."""
+    half = profile.width / 2
+    low, high = (half, height-half) if frame_type == "closed_frame" else (0.0, height)
+    parts = [
+        ProductPart(Part("frame.left.0001", "左边框", (half, 0, low),
+                         (half, 0, high), profile, "frame", "frame.vertical", "边框竖管"),
+                    "frame.left", ""),
+        ProductPart(Part("frame.right.0001", "右边框", (width-half, 0, low),
+                         (width-half, 0, high), profile, "frame", "frame.vertical", "边框竖管"),
+                    "frame.right", ""),
+    ]
+    if frame_type == "closed_frame":
+        parts.extend([
+            ProductPart(Part("frame.bottom.0001", "下边框", (half, 0, half),
+                             (width-half, 0, half), profile, "frame", "frame.horizontal", "边框横管"),
+                        "frame.bottom", ""),
+            ProductPart(Part("frame.top.0001", "上边框", (width-half, 0, height-half),
+                             (half, 0, height-half), profile, "frame", "frame.horizontal", "边框横管"),
+                        "frame.top", ""),
+        ])
+    return parts
+
+
 def _handle_interval(parameters: dict[str, Any], low: float, high: float) -> tuple[float, float] | None:
     if not _boolean(parameters, "handleEnabled"):
         return None
@@ -336,93 +327,38 @@ def _handle_interval(parameters: dict[str, Any], low: float, high: float) -> tup
     return bottom, top
 
 
-def _head_contour(left: float, right: float, width: float, corner: str, size: float,
-                  tip: str, center_z: float) -> dict[str, Any]:
-    length = right - left
-    if length <= EPS or width <= EPS:
-        raise ValueError("公头尺寸必须大于0")
-    if corner == "round":
-        radius = min(size, length / 2 - EPS, width / 2 - EPS)
-        if radius <= 0:
-            raise ValueError("公头圆角尺寸无效")
-        return {**_rounded_rectangle_path(length, width, radius),
-                "center": [(left+right)/2, center_z]}
-    half = width / 2
-    if corner == "chamfer":
-        leg = min(size, length-EPS, half-EPS)
-        if leg <= 0:
-            raise ValueError("公头倒角尺寸无效")
-        if tip == "left":
-            points = [[left, center_z-half+leg], [left+leg, center_z-half],
-                      [right, center_z-half], [right, center_z+half],
-                      [left+leg, center_z+half], [left, center_z+half-leg]]
-        else:
-            points = [[left, center_z-half], [right-leg, center_z-half],
-                      [right, center_z-half+leg], [right, center_z+half-leg],
-                      [right-leg, center_z+half], [left, center_z+half]]
-        cx = (left + right) / 2
-        return {**_path([[x-cx, z-center_z] for x, z in points]), "center": [cx, center_z]}
-    cx = (left + right) / 2
-    return {**_path([[left-cx,-half],[right-cx,-half],
-                     [right-cx,half],[left-cx,half]]), "center": [cx, center_z]}
+def _process(model, target, key, function_id, part, geometry, parameters=None):
+    process_input = {"schema":"icax.assembly-process-input","schemaVersion":1,
+        "parts":{"stock":{"length":part.length,"start":list(part.start),"end":list(part.end),
+                          "section":part.profile.properties()}},"geometry":geometry}
+    return _load_shared("assembly_geometry_process_runtime.py").invoke(
+        model,target,function_id,process_input,parameters or {},key,part.key)
 
 
-def _xz_prism(model: NeutralModel, key: str, contour: dict[str, Any], depth: float) -> str:
-    contour = deepcopy(contour)
-    center = contour.pop("center", [0.0, 0.0])
-    if (not isinstance(center, list) or len(center) != 2
-            or any(isinstance(value, bool) or not isinstance(value, (int, float))
-                   or not math.isfinite(value) for value in center)):
-        raise ValueError("二维加工包络中心必须包含两个有限坐标")
-    profile = model.geometry(f"{key}.profile", "profile2d", arguments={
-        "placement": {"origin": [float(center[0]), -depth/2, float(center[1])],
-                      "xAxis": [1.0,0.0,0.0], "yAxis": [0.0,0.0,1.0]},
-        "contours": [contour],
-    })
-    return model.geometry(f"{key}.solid", "extrude", inputs=[profile], arguments={"vector": [0.0,depth,0.0]})
+def _declare_planar_miters(model, raw, part, frame_parts):
+    """Declare actual end datums without evaluating any end-plane provider."""
+    profile_arguments = lambda member: _frames._profile_arguments(
+        member.start, member.end, member.profile)
+    stock = _frames._machining.actual_part(model, part, profile_arguments)
+    runtime = _load_shared("assembly_geometry_process_runtime.py")
+    for end, station, adjacent in _frames._machining.planar_miter_ends(part, frame_parts):
+        process_input = _frames._machining.input_of({"stock":stock}, {
+            "mode":"miter", "end":end, "station":station,
+            "mateDirection":list(adjacent)})
+        raw = runtime.invoke(model,raw,"tube-end-joint",process_input,{},
+                             part.key+".end."+end,part.key)
+    return raw
 
 
-def emit_male_head(model: NeutralModel, raw: str, key: str, visible_left: float, visible_right: float,
-                   center_z: float, profile: Profile, length: float, width: float,
-                   corner: str, size: float) -> str:
-    """Keep the full middle stock and machine a centred head at both ends."""
-    depth = profile.depth + max(4.0, profile.wall * 4)
-    body = _xz_prism(model, f"{key}.male.body", _path([
-        [visible_left-EPS,center_z-profile.width], [visible_right+EPS,center_z-profile.width],
-        [visible_right+EPS,center_z+profile.width], [visible_left-EPS,center_z+profile.width],
-    ]), depth)
-    left = _xz_prism(model, f"{key}.male.left",
-                     _head_contour(visible_left-length, visible_left+EPS, width,
-                                   corner, size, "left", center_z), depth)
-    right_contour = _head_contour(
-        visible_right-EPS, visible_right+length, width, corner, size, "right", center_z)
-    right = _xz_prism(model, f"{key}.male.right", right_contour, depth)
-    envelope = model.geometry(f"{key}.male.envelope", "boolean", inputs=[body,left,right],
-                              arguments={"operation":"union"})
-    return model.geometry(f"{key}.male.finished", "boolean", inputs=[raw,envelope],
-                          arguments={"operation":"intersect", "target":raw, "tools":[envelope]})
-
-
-def emit_half_hole(model: NeutralModel, key: str, *, x: float, z: float, wall: float,
-                   hole_depth: float, hole_height: float, radius: float = 0.0) -> str:
-    contour = _rounded_rectangle_path(
-        hole_depth, hole_height, min(radius, hole_depth/2-EPS, hole_height/2-EPS))
-    profile = model.geometry(f"{key}.profile", "profile2d", arguments={
-        "placement":{"origin":[x-EPS,0.0,z], "xAxis":[0.0,1.0,0.0], "yAxis":[0.0,0.0,1.0]},
-        "contours":[contour],
-    })
-    return model.geometry(f"{key}.solid", "extrude", inputs=[profile],
-                          arguments={"vector":[wall+2*EPS,0.0,0.0]})
-
-
-def emit_round_wall_hole(model: NeutralModel, key: str, *, origin: tuple[float,float,float],
-                         x_axis: tuple[float,float,float], y_axis: tuple[float,float,float],
-                         vector: tuple[float,float,float], diameter: float) -> str:
-    profile = model.geometry(f"{key}.profile", "profile2d", arguments={
-        "placement":{"origin":list(origin), "xAxis":list(x_axis), "yAxis":list(y_axis)},
-        "contours":[_circle_path(diameter/2)],
-    })
-    return model.geometry(f"{key}.solid", "extrude", inputs=[profile], arguments={"vector":list(vector)})
+def emit_male_head(model, raw, key, visible_left, visible_right, center_z, profile,
+                   length, width, corner, size):
+    process_input = {"schema":"icax.assembly-process-input","schemaVersion":1,
+        "parts":{"stock":{"section":profile.properties(),"length":visible_right-visible_left+2*length}},
+        "geometry":{"visibleLeft":visible_left,"visibleRight":visible_right,"centerZ":center_z,
+                    "profileWidth":profile.width,"profileDepth":profile.depth,"wall":profile.wall}}
+    return _load_shared("assembly_geometry_process_runtime.py").invoke(
+        model,raw,"structural-male-head",process_input,
+        {"length":length,"width":width,"corner":corner,"size":size},key+".male-head",key)
 
 
 def _hole_positions(parameters: dict[str, Any], height: float, radius: float,
@@ -475,9 +411,12 @@ def _layout(parameters: dict[str, Any]) -> dict[str, Any]:
     height = _number(parameters, "height", 100.0, 10000.0)
     frame = _load_profile(parameters, "frame")
     inner = _load_profile(parameters, "inner")
+    planning_mode = _choice(parameters, "assemblyPlanningMode",
+                            ("builtin_rules", "external_templates"))
+    external = planning_mode == "external_templates"
     frame_type = _choice(parameters, "frameType", ("two_vertical", "closed_frame"))
     corner = (_choice(parameters, "frameCornerJoint", ("miter_45", "horizontal_wrap", "vertical_wrap"))
-              if frame_type == "closed_frame" else "open")
+              if frame_type == "closed_frame" and not external else "unassigned" if external else "open")
     if width <= 2*frame.width+inner.width+EPS:
         raise ValueError("成品宽度不足以容纳两侧边框和内杆")
     if height <= (2*frame.width if frame_type == "closed_frame" else 0)+inner.width+EPS:
@@ -486,41 +425,48 @@ def _layout(parameters: dict[str, Any]) -> dict[str, Any]:
     high = height-frame.width if frame_type == "closed_frame" else height
     handle = _handle_interval(parameters, low, high)
     linear = solve_linear_layout(low, high, inner.width, parameters, handle)
-    joint = "male_female_half_hole"
-    head_length = _number(parameters, "maleHeadLength", 0.1, 200.0)
-    head_width = _number(parameters, "maleHeadWidth", 0.1, inner.width)
-    corner_type = _choice(parameters, "maleCornerType", ("round", "chamfer", "square"))
-    corner_size = (_number(parameters, "maleCornerSize", 0.0, min(head_length,head_width)/2)
-                   if corner_type != "square" else 0.0)
-    clearance_depth = _number(parameters, "holeTotalClearanceDepth", 0.0, 10.0)
-    clearance_height = _number(parameters, "holeTotalClearanceHeight", 0.0, 10.0)
-    if not _rectangular_tube(frame) or not _rectangular_tube(inner):
-        raise ValueError("公母管半孔当前要求接收管和插入管具有可判定的方矩管面")
-    if not frame.wall+EPS < head_length < frame.width-frame.wall-EPS:
-        raise ValueError("公头长度必须穿过进入侧壁并保留接收管对侧壁")
+    joint = "unassigned" if external else "male_female_half_hole"
+    head_length = head_width = corner_size = clearance_depth = clearance_height = 0.0
+    corner_type = "square"
+    if not external:
+        head_length = _number(parameters, "maleHeadLength", 0.1, 200.0)
+        head_width = _number(parameters, "maleHeadWidth", 0.1, inner.width)
+        corner_type = _choice(parameters, "maleCornerType", ("round", "chamfer", "square"))
+        corner_size = (_number(parameters, "maleCornerSize", 0.0, min(head_length,head_width)/2)
+                       if corner_type != "square" else 0.0)
+        clearance_depth = _number(parameters, "holeTotalClearanceDepth", 0.0, 10.0)
+        clearance_height = _number(parameters, "holeTotalClearanceHeight", 0.0, 10.0)
+        if not _rectangular_tube(frame) or not _rectangular_tube(inner):
+            raise ValueError("公母管半孔当前要求接收管和插入管具有可判定的方矩管面")
+        if not frame.wall+EPS < head_length < frame.width-frame.wall-EPS:
+            raise ValueError("公头长度必须穿过进入侧壁并保留接收管对侧壁")
+        flat_face = frame.depth-2*frame.radius
+        if inner.depth+clearance_depth >= flat_face-EPS:
+            raise ValueError("母孔深向尺寸超过边框进入侧的平直管面")
+        if head_width <= inner.wall*2+EPS:
+            raise ValueError("公头宽度过小，剩余壁料不足")
     hole_depth = inner.depth+clearance_depth
     hole_height = inner.width+clearance_height
-    flat_face = frame.depth-2*frame.radius
-    if hole_depth >= flat_face-EPS:
-        raise ValueError("母孔深向尺寸超过边框进入侧的平直管面")
-    if head_width <= inner.wall*2+EPS:
-        raise ValueError("公头宽度过小，剩余壁料不足")
 
     visible_left, visible_right = frame.width, width-frame.width
-    parts = _frame_parts(width, height, frame, frame_type, corner)
+    parts = (_assembly_stock_parts(width, height, frame, frame_type) if external
+             else _frame_parts(width, height, frame, frame_type, corner))
     for item in parts:
         item.material = str(parameters["frameMaterial"])
     for index, z in enumerate(linear.centers, start=1):
-        start = visible_left-head_length
-        end = visible_right+head_length
+        # An uncut branch reaches the vertical members' centerline nodes. The
+        # The male-head recipe retains its original preprocessed extents.
+        start = frame.width/2 if external else visible_left-head_length
+        end = width-frame.width/2 if external else visible_right+head_length
         features = {"layoutIndex":index, "centerHeight":z, "joint":joint}
-        features["maleHeads"] = {"length":head_length, "width":head_width,
-            "cornerType":corner_type, "cornerSize":corner_size}
+        if not external:
+            features["maleHeads"] = {"length":head_length, "width":head_width,
+                "cornerType":corner_type, "cornerSize":corner_size}
         parts.append(ProductPart(Part(f"inner.bar.{index:04d}", f"内横杆 {index}",
             (start,0,z),(end,0,z),inner,"inner","inner.bar","内横杆"),
             "inner.bar",str(parameters["innerMaterial"]),features))
 
-    install_enabled = _boolean(parameters, "installHoleEnabled")
+    install_enabled = _boolean(parameters, "installHoleEnabled") if not external else False
     installation: dict[str, Any] = {
         "enabled":install_enabled,"positionsBySide":{"left":[],"right":[]},
         "adjustmentsBySide":{"left":[],"right":[]}}
@@ -555,6 +501,7 @@ def _layout(parameters: dict[str, Any]) -> dict[str, Any]:
                 "enabled":True,"orientation":orientation,"largeDiameter":large,
                 "smallDiameter":small,"positions":deepcopy(installation["positionsBySide"][side])}
     return {"width":width,"height":height,"frame":frame,"inner":inner,"frameType":frame_type,
+            "planningMode":planning_mode,"external":external,
             "corner":corner,"linear":linear,"handle":handle,"joint":joint,
             "headLength":head_length,"headWidth":head_width,"headCorner":corner_type,
             "headCornerSize":corner_size,"holeDepth":hole_depth,"holeHeight":hole_height,
@@ -575,7 +522,7 @@ def _signature(part: ProductPart) -> str:
                        "features":relevant},sort_keys=True,ensure_ascii=True,separators=(",",":"))
 
 
-def _emit_install_holes(model: NeutralModel, state: dict[str, Any], item: ProductPart) -> list[str]:
+def _install_holes(state: dict[str, Any], item: ProductPart) -> list[dict[str, Any]]:
     installation = state["installation"]
     if not installation["enabled"] or item.role not in {"frame.left", "frame.right"}:
         return []
@@ -583,29 +530,30 @@ def _emit_install_holes(model: NeutralModel, state: dict[str, Any], item: Produc
     side = "left" if left else "right"
     center_x = state["frame"].width/2 if left else state["width"]-state["frame"].width/2
     frame = state["frame"]
-    tools: list[str] = []
+    holes: list[dict[str, Any]] = []
+    def hole(origin, x_axis, y_axis, vector, diameter):
+        return {"diameter":diameter,"placement":{"origin":list(origin),"xAxis":list(x_axis),"yAxis":list(y_axis)},"vector":list(vector)}
     for index,z in enumerate(installation["positionsBySide"][side], start=1):
-        prefix = f"{item.part.key}.install.{index:04d}"
         if installation["orientation"] == "front":
-            tools.append(emit_round_wall_hole(model,prefix+".large",
+            holes.append(hole(
                 origin=(center_x,-frame.depth/2-EPS,z),x_axis=(1,0,0),y_axis=(0,0,1),
                 vector=(0,frame.wall+2*EPS,0),diameter=installation["largeDiameter"]))
-            tools.append(emit_round_wall_hole(model,prefix+".small",
+            holes.append(hole(
                 origin=(center_x,frame.depth/2-frame.wall-EPS,z),x_axis=(1,0,0),y_axis=(0,0,1),
                 vector=(0,frame.wall+2*EPS,0),diameter=installation["smallDiameter"]))
         else:
             outer = -EPS if left else state["width"]-frame.wall-EPS
             inner = frame.width-frame.wall-EPS if left else state["width"]-frame.width-EPS
-            tools.append(emit_round_wall_hole(model,prefix+".large",origin=(outer,0,z),
+            holes.append(hole(origin=(outer,0,z),
                 x_axis=(0,1,0),y_axis=(0,0,1),vector=(frame.wall+2*EPS,0,0),
                 diameter=installation["largeDiameter"]))
-            tools.append(emit_round_wall_hole(model,prefix+".small",origin=(inner,0,z),
+            holes.append(hole(origin=(inner,0,z),
                 x_axis=(0,1,0),y_axis=(0,0,1),vector=(frame.wall+2*EPS,0,0),
                 diameter=installation["smallDiameter"]))
-    return tools
+    return holes
 
 
-def _emit_half_holes(model: NeutralModel, state: dict[str, Any], item: ProductPart) -> list[str]:
+def _half_holes(state: dict[str, Any], item: ProductPart) -> list[dict[str, Any]]:
     if state["joint"] != "male_female_half_hole" or item.role not in {"frame.left","frame.right"}:
         return []
     left = item.role == "frame.left"
@@ -613,9 +561,31 @@ def _emit_half_holes(model: NeutralModel, state: dict[str, Any], item: ProductPa
     radius = max(0.0, state["inner"].radius + min(
         state["holeDepth"]-state["inner"].depth,
         state["holeHeight"]-state["inner"].width)/2)
-    return [emit_half_hole(model,f"{item.part.key}.half-hole.{index:04d}",x=x,z=z,
-        wall=state["frame"].wall,hole_depth=state["holeDepth"],hole_height=state["holeHeight"],radius=radius)
-        for index,z in enumerate(state["linear"].centers,start=1)]
+    return [{"width":state["holeDepth"],"height":state["holeHeight"],"radius":radius,
+             "placement":{"origin":[x-EPS,0,z],"xAxis":[0,1,0],"yAxis":[0,0,1]},
+             "vector":[state["frame"].wall+2*EPS,0,0]} for z in state["linear"].centers]
+
+
+def _end_anchor(part: Part, end: str, point: tuple[float, float, float],
+                approach_face: str | None = None,
+                stock_allowance: float = 0.0) -> dict[str, Any]:
+    anchor = {"kind": "end", "end": end, "stockAllowance": stock_allowance}
+    if approach_face is not None:
+        anchor["approachFace"] = approach_face
+        anchor["contactInset"] = stock_allowance
+    return {"itemKey": part.key, "kind": "end", "end": end, "anchor": anchor,
+            "localAxialStation": 0.0 if end == "start" else part.length,
+            "centerlinePoint": list(point)}
+
+
+def _side_anchor(part: Part, point: tuple[float, float, float], face: str,
+                 normal: tuple[float, float, float],
+                 contact: tuple[float, float, float]) -> dict[str, Any]:
+    station = math.dist(part.start, point)
+    return {"itemKey": part.key, "kind": "side", "face": face,
+            "anchor": {"kind": "side", "face": face, "reference": "start", "station": station},
+            "localAxialStation": station, "centerlinePoint": list(point),
+            "faceNormal": list(normal), "contactPoint": list(contact)}
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -627,28 +597,52 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     item_keys: list[str] = []
     groups: dict[str,dict[str,Any]] = {}
     bar_items = [item for item in state["parts"] if item.role == "inner.bar"]
+    stock_spans = {}
+    if state["external"]:
+        frame = state["frame"]
+        horizontal_section = _frames._profile_arguments((0, 0, 0), (1, 0, 0), frame)
+        vertical_section = _frames._profile_arguments((0, 0, 0), (0, 0, 1), frame)
+        vertical_allowance = _stock_rules.opposing_half_extent(horizontal_section, (0, 0, 1), node_point=(0, 0, 0))
+        horizontal_allowance = _stock_rules.opposing_half_extent(vertical_section, (1, 0, 0), node_point=(0, 0, 0))
+        for item in state["parts"]:
+            part = item.part
+            allowance = vertical_allowance if part.vertical else horizontal_allowance
+            if state["frameType"] != "closed_frame" and item.role.startswith("frame."):
+                allowance = 0.0  # open-frame posts have no end node
+            stock_spans[part.key] = _stock_rules.stock_span(part.start, part.end,
+                                                             allowance, allowance)
     for item in state["parts"]:
         part = item.part
-        raw = _frames._emit_tube_geometry(model,part,geometry)[1]
+        span = stock_spans.get(part.key)
+        if span and purpose == 'display':
+            span = _stock_rules.stock_span(part.start, part.end)
+        source_part = replace(part, start=tuple(span["start"]), end=tuple(span["end"])) if span else part
+        raw = _frames._emit_tube_geometry(model,source_part,geometry)[1]
         display = raw
         export = raw
-        cutters: list[str] = []
-        if purpose != "display":
-            cutters.extend(_emit_half_holes(model,state,item))
-            cutters.extend(_emit_install_holes(model,state,item))
+        if purpose != "display" and not state["external"]:
+            holes = _half_holes(state,item) + _install_holes(state,item)
+            if holes:
+                export = _process(model,export,part.key+".apertures","structural-apertures",
+                                  part,{"holes":holes})
             if state["corner"] == "miter_45" and item.role.startswith("frame."):
-                cutters.extend(_frames._emit_miter_cutters(model,part))
-            if cutters:
-                export = model.geometry(f"{part.key}.manufacturing.cut", "boolean", inputs=[export,*cutters],
-                    arguments={"operation":"subtract","target":export,"tools":cutters})
+                frame_parts = [candidate.part for candidate in state["parts"]
+                               if candidate.role.startswith("frame.")]
+                if is_manufacturing_declaration():
+                    export = _declare_planar_miters(model,export,part,frame_parts)
+                else:
+                    export = _frames._machining.planar_part(model,export,part,[],0,
+                        frame_parts,lambda member: _frames._profile_arguments(member.start,member.end,member.profile))
             if item.role == "inner.bar" and state["joint"] == "male_female_half_hole":
                 export = emit_male_head(model,export,part.key,state["visibleLeft"],state["visibleRight"],
                     part.start[2],state["inner"],state["headLength"],state["headWidth"],
                     state["headCorner"],state["headCornerSize"])
         signature = _signature(item)
+        if span:
+            signature += f"|stock:{span['length']:.6f}"
         group = groups.setdefault(signature,{"key":f"bom.{len(groups)+1:04d}","members":[],"values":{
             "partNumber":f"{parameters['productCode']}-{len(groups)+1:03d}","name":part.category_name or part.name,
-            "quantity":0,"length":round(part.length,3),"profile":part.profile.specification,
+            "quantity":0,"length":round(span["length"] if span else part.length,3),"profile":part.profile.specification,
             "material":item.material,"features":""}})
         group["members"].append(part.key)
         group["values"]["quantity"] += 1
@@ -658,27 +652,73 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         if item.features.get("installationHoles"):
             feature_names.append(f"大小安装孔×{len(item.features['installationHoles']['positions'])}")
         if state["corner"] == "miter_45" and item.role.startswith("frame."): feature_names.append("45°端切")
-        group["values"]["features"] = "、".join(feature_names) or "平口"
+        group["values"]["features"] = "原管待分配装配工艺" if state["external"] else "、".join(feature_names) or "平口"
         properties = {"partNumber":group["values"]["partNumber"],"quantity":1,
-            "length":round(part.length,3),"manufacturing.partKind":"tube",
+            "length":(part.length if purpose == 'display' else round(span["length"] if span else part.length,3)),"manufacturing.partKind":"tube",
             "manufacturing.materialCategory":"tube","manufacturing.materialGrade":item.material,
             "manufacturing.sourcing":"made","manufacturing.categoryKey":part.category_key,
             "manufacturing.categoryName":part.category_name or part.name,
             "tubeDesigner.profile":part.profile.properties(),
             "tubeDesigner.endProcess":{"startCut":part.start_cut,"endCut":part.end_cut,"lengthBasis":"blank_axial_extent"},
             "tubeDesigner.productRule":{"product":"minimal-protective-grille","role":item.role,**deepcopy(item.features)}}
+        if state["external"]:
+            axis = [(part.end[i]-part.start[i])/part.length for i in range(3)]
+            properties.update({
+                "tubeDesigner.manufacturingAxis": axis,
+                "tubeDesigner.manufacturingStartToEnd": axis,
+                "tubeDesigner.assemblyPlanning": {"stockState": "uncut", "ready": False},
+                "assemblyFrame.member": {"start": list(part.start), "end": list(part.end),
+                                         "stockState": "uncut", "axisLength": part.length,
+                                         "stockInterval": span["stockInterval"]},
+            })
         item_keys.append(model.item(part.key,part.name,representations={"display":display,"export":export},properties=properties))
 
-    for index,bar in enumerate(bar_items,start=1):
-        for side in ("left","right"):
-            model.relationship(f"joint.{index:04d}.{side}",
-                "assembly" if state["joint"] == "male_female_half_hole" else "weld",
-                [bar.part.key,f"frame.{side}.0001"],properties={
-                    "recipe":state["joint"],"participantRoles":["inserted","receiver"],
-                    "halfHole":state["joint"] == "male_female_half_hole",
-                    "insertionDepth":state["headLength"],"totalClearanceDepth":state["holeDepth"]-state["inner"].depth,
-                    "totalClearanceHeight":state["holeHeight"]-state["inner"].width})
-    if state["frameType"] == "closed_frame":
+    if state["external"]:
+        by_key = {item.part.key: item.part for item in state["parts"]}
+        half = state["frame"].width/2
+        width, height = state["width"], state["height"]
+        if state["frameType"] == "closed_frame":
+            corners = (
+                ("bottom-left", "frame.left.0001", "start", "bottom", "frame.bottom.0001", "start", "top", (half,0,half)),
+                ("bottom-right", "frame.right.0001", "start", "top", "frame.bottom.0001", "end", "top", (width-half,0,half)),
+                ("top-left", "frame.left.0001", "end", "bottom", "frame.top.0001", "end", "bottom", (half,0,height-half)),
+                ("top-right", "frame.right.0001", "end", "top", "frame.top.0001", "start", "bottom", (width-half,0,height-half)),
+            )
+            for label, vertical, vertical_end, vertical_face, horizontal, horizontal_end, horizontal_face, point in corners:
+                model.relationship(f"frame.corner.{label}", "assembly", [vertical, horizontal],
+                    properties={"topology": "L", "centerlinePoint": list(point),
+                        "participantAnchors": [
+                            _end_anchor(by_key[vertical], vertical_end, point, vertical_face,
+                                        stock_spans[vertical]["allowances"][vertical_end]),
+                            _end_anchor(by_key[horizontal], horizontal_end, point, horizontal_face,
+                                        stock_spans[horizontal]["allowances"][horizontal_end]),
+                        ]})
+        for index, bar in enumerate(bar_items, start=1):
+            z = bar.part.start[2]
+            for side, branch_end, x, face, normal, wall_x in (
+                    ("left", "start", half, "bottom", (1,0,0), state["frame"].width),
+                    ("right", "end", width-half, "top", (-1,0,0), width-state["frame"].width)):
+                host = by_key[f"frame.{side}.0001"]
+                point = (x, 0, z)
+                model.relationship(f"frame.junction.bar-{index:04d}-{side}", "assembly",
+                    [host.key, bar.part.key], properties={
+                        "topology": "T", "centerlinePoint": list(point),
+                        "participantAnchors": [
+                            _side_anchor(host, point, face, normal, (wall_x, 0, z)),
+                            _end_anchor(bar.part, branch_end, point,
+                                        stock_allowance=stock_spans[bar.part.key]["allowances"][branch_end]),
+                        ]})
+    else:
+        for index,bar in enumerate(bar_items,start=1):
+            for side in ("left","right"):
+                model.relationship(f"joint.{index:04d}.{side}",
+                    "assembly" if state["joint"] == "male_female_half_hole" else "weld",
+                    [bar.part.key,f"frame.{side}.0001"],properties={
+                        "recipe":state["joint"],"participantRoles":["inserted","receiver"],
+                        "halfHole":state["joint"] == "male_female_half_hole",
+                        "insertionDepth":state["headLength"],"totalClearanceDepth":state["holeDepth"]-state["inner"].depth,
+                        "totalClearanceHeight":state["holeHeight"]-state["inner"].width})
+    if state["frameType"] == "closed_frame" and not state["external"]:
         for index,(a,b) in enumerate((("frame.left.0001","frame.bottom.0001"),("frame.left.0001","frame.top.0001"),
                                      ("frame.right.0001","frame.bottom.0001"),("frame.right.0001","frame.top.0001")),start=1):
             model.relationship(f"frame.corner.{index:04d}","weld",[a,b],properties={"recipe":state["corner"]})
@@ -701,7 +741,8 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                 parameter_keys=["installHoleMaximumShift"])
     document = finish_geometry_request(model,context)
     document.setdefault("extensions",{})["protectiveGrille"] = {
-        "schemaVersion":1,"frameType":state["frameType"],"cornerRecipe":state["corner"],
+        "schemaVersion":1,"frameType":state["frameType"],"assemblyPlanningMode":state["planningMode"],
+        "cornerRecipe":state["corner"],
         "jointRecipe":state["joint"],"barCenters":list(state["linear"].centers),
         "removedBarCenters":list(state["linear"].removed_centers),
         "actualMaximumClearGap":state["linear"].actual_max_clear_gap,
@@ -716,5 +757,4 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     return document
 
 
-__all__ = ["OrientedProfile","LinearLayout","solve_linear_layout","emit_male_head","emit_half_hole",
-           "emit_round_wall_hole","generate"]
+__all__ = ["OrientedProfile","LinearLayout","solve_linear_layout","emit_male_head","generate"]

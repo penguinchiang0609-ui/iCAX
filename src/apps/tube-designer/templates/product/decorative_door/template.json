@@ -8,6 +8,14 @@
   },
   "description": "参数化门扇与门面装饰：铣线格栅、几何圆景、菱形／八角花格、直壁池板扣线及玻璃门花。包含加工几何与板件拆单，不包含艺术浮雕、门框五金选型或雕刻机NC刀路。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "material",
+        "finish",
+        "glassType"
+      ]
+    },
     "catalog": {
       "categoryPath": [
         "门"

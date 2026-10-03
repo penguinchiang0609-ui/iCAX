@@ -51,6 +51,8 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, Status, std::string("Current"), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, iCAX::Data::ObjectMap, Parameters, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, iCAX::Data::ObjectMap, Sketches, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        // Product process choices are separate from normalized template inputs.
+        DECLARED_ICAX_FIELD(CProductInstanceComponent, iCAX::Data::ObjectMap, AssemblyBindings, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, iCAX::Data::uuid, ActiveGenerationRunID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
     };
 
@@ -188,6 +190,18 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CGenerationRunComponent, unsigned long long, IssueCount, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, std::string, PackageDigest, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, NeutralModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        // Host-owned input and library snapshots accompany the pure display
+        // recipe without becoming part of the script's display result.
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, GeneratedParameters, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ResolvedComponentModels, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        // The pure script definition and host-owned manufacturing inputs are
+        // persisted separately from the host's frozen execution recipe.
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ManufacturingDefinition, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ManufacturingParameters, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
         DECLARED_ICAX_OBSERVABLE_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ManufacturingModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        // Frozen at disassembly; recovery must replay this snapshot rather than
+        // later product edits or the currently installed process templates.
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, AppliedAssemblyBindings, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, AssemblyManufacturingModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 }

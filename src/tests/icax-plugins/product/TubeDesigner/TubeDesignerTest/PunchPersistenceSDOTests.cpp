@@ -1,21 +1,32 @@
 #include "pch.h"
 #include <ApplicationContext/IApplicationContext.h>
+#include <ApplicationContext/UserDataStore.h>
+#include <ProductContext/IProductContext.h>
+#pragma comment(lib, "ProductContext.lib")
 #include <Data/VariantSerializer.h>
 #include <Database/IRepository.h>
 #include <Database/MetaRegistrationCatalog.h>
 #include <GeometryData/BRepPersistence.h>
+#include <GeometryData/GeometryData.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
+#include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
 #include <ProjectContext/ISceneContext.h>
 #include <ProjectFile/ProjectFile.h>
 #include <Resources/ResourceLibrary.h>
+#include <Resources/ResourceLoaderRegistry.h>
+#include <Resources/ResourceLoaderRegistrationCatalog.h>
 #include <Resources/FlatBufferResource.h>
 #include <RenderData/RenderData.h>
+#include <RenderInteraction/RenderInteractionComponents.h>
 #include <SDO/SDORegistrationCatalog.h>
 #include <TemplateRuntime/PythonTemplateHost.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
+#include <TemplateRuntime/TemplateCodec.h>
 #include <TubeDesigner/TubeDesigner.h>
 #include <TubeDesigner/TubeDesignerComponents.h>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -24,10 +35,13 @@
 #include <TopoDS.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
+#include <cmath>
+#include <STEPControl_Reader.hxx>
 #include <TopExp_Explorer.hxx>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <chrono>
 #include <array>
 #include <map>
@@ -57,9 +71,14 @@ private:
 
 class Scene final : public iCAX::Project::ISceneContext {
 public:
-    Scene(iCAX::Data::uuid projectId=iCAX::Data::GenerateNewUUID(),iCAX::Data::uuid sceneId=iCAX::Data::GenerateNewUUID(),bool root=true)
+    Scene(iCAX::Data::uuid projectId=iCAX::Data::GenerateNewUUID(),iCAX::Data::uuid sceneId=iCAX::Data::GenerateNewUUID(),bool root=true,bool resourceExporters=false)
         : project(projectId),id(sceneId) {
         (void)iCAX::TubeDesigner::GetTubeDesignerContractVersion();
+        if(resourceExporters) {
+            auto registry=std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+            iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayAll(*registry);
+            resources=iCAX::Resource::CResourceLibrary(std::move(registry));
+        }
         auto registry=iCAX::Database::CreateMetaRegistry();
         wchar_t exe[32768]{},dbModule[32768]{},renderModule[32768]{},transformModule[32768]{};
         GetModuleFileNameW(nullptr,exe,32768);GetModuleFileNameW(GetModuleHandleW(L"Database.dll"),dbModule,32768);
@@ -135,18 +154,32 @@ TEST(ProfileLibrarySDOTest, SystemCatalogDoesNotRequirePersonalData)
     }
 }
 
-ObjectMap runtime(const std::string& file,const ObjectMap& input) {
+std::filesystem::path acceptanceRuntimePath(const std::vector<std::filesystem::path>& candidates) {
     const auto root=std::filesystem::current_path();
-    const auto worker=root/"src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py";
-    iCAX::TemplateRuntime::CPythonTemplateHost host({root/"src/x64/Debug/runtime/python/python312.dll",worker,worker.parent_path()});
+    for(const auto& candidate:candidates) {
+        const auto path=root/candidate;
+        if(std::filesystem::exists(path))return path;
+    }
+    throw std::runtime_error("Acceptance runtime file was not found in the working directory");
+}
+ObjectMap runtime(const std::string& file,const ObjectMap& input) {
+    const auto worker=acceptanceRuntimePath({"runtime/template-python/icax_template_worker.py",
+        "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py"});
+    const auto python=acceptanceRuntimePath({"runtime/python/python312.dll",
+        "src/x64/Debug/runtime/python/python312.dll","src/x64/Release/runtime/python/python312.dll"});
+    const auto shared=acceptanceRuntimePath({"apps/tube-designer/templates/_shared",
+        "src/apps/tube-designer/templates/_shared"});
+    iCAX::TemplateRuntime::CPythonTemplateHost host({python,worker,worker.parent_path()});
     return host.Invoke({{"protocol",std::string("icax.template-runtime")},{"protocolVersion",1ull},{"operation",std::string("evaluate")},
-        {"templatePath",(root/"src/apps/tube-designer/templates/_shared"/file).string()},
+        {"templatePath",(shared/file).string()},
         {"template",ObjectMap{{"id",std::string("persistence-test")},{"version",std::string("1.0.0")},{"packageDigest",std::string("test")}}},
         {"parameters",input},{"context",ObjectMap{}}});
 }
 ObjectMap systemProfile(const std::string& id,ObjectMap values={}) {
+    const auto profileRoot=acceptanceRuntimePath({"apps/tube-designer/templates/profile",
+        "src/apps/tube-designer/templates/profile"});
     return runtime("profile_package_runtime.py",{{"action",std::string("evaluate-system")},{"systemProfileId",id},{"values",values},
-        {"profileRoot",(std::filesystem::current_path()/"src/apps/tube-designer/templates/profile").string()}}).at("profile").To<ObjectMap>();
+        {"profileRoot",profileRoot.string()}}).at("profile").To<ObjectMap>();
 }
 
 TEST(ProfileLibrarySDOTest, DirectRecognitionReturnsParametersAndPoseWithoutGeneratingCandidates)
@@ -242,16 +275,19 @@ ObjectMap resolveAssemblyRequestSections(ObjectMap planned) {
     return planned;
 }
 
-ObjectMap previewAssemblyManufacturingPart(Scene& scene,const ObjectMap& planned) {
+ObjectMap previewAssemblyManufacturingPart(Scene& scene,const ObjectMap& planned,
+    const std::string& previewResourceKey={}) {
     const auto request=resolveAssemblyRequestSections(planned);
     const auto reference=request.at("profileRef").To<ObjectMap>();
     const auto parameters=request.at("parameters").To<ObjectMap>();
-    return invoke(scene,"PreviewPunchWizard",ObjectMap{
+    ObjectMap payload{
         {"name",std::string("合并装配模板原生预览")},{"quantity",1ull},{"material",std::string("acceptance-only")},
         {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",request.at("length")},
             {"section",section(systemProfile(reference.at("id").To<std::string>(),parameters))}}},
         {"features",request.at("features")},{"ends",request.at("ends")},{"diagnosticBooleanPreview",true},
-    });
+    };
+    if(!previewResourceKey.empty())payload["previewResourceKey"]=previewResourceKey;
+    return invoke(scene,"PreviewPunchWizard",payload);
 }
 
 TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
@@ -261,6 +297,21 @@ TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
     EXPECT_TRUE(catalogue.at("errors").To<VariantArray>().empty());
     const auto assemblies=catalogue.at("assemblies").To<VariantArray>();
     ASSERT_GE(assemblies.size(),5u);
+    const auto findAssembly=[&](const std::string& id) -> ObjectMap {
+        for(const auto& value:assemblies) {
+            const auto item=value.To<ObjectMap>();
+            if(item.at("id").To<std::string>()==id)return item;
+        }
+        throw std::runtime_error("Missing assembly template: "+id);
+    };
+    const auto coldBend=findAssembly("bend");
+    const auto segmentedBend=findAssembly("segmented-bend");
+    for(const auto& value:coldBend.at("parameters").To<VariantArray>()) {
+        const auto key=value.To<ObjectMap>().at("key").To<std::string>();
+        EXPECT_NE(key,"bendMethod");
+        EXPECT_NE(key,"slotProcess");
+    }
+    EXPECT_NE(coldBend.at("id").To<std::string>(),segmentedBend.at("id").To<std::string>());
 
     const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
         {"templateId",std::string("mechanical-fastener")},
@@ -270,6 +321,12 @@ TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
     });
     EXPECT_EQ(plan.at("schema").To<std::string>(),"icax.assembly-preview-plan");
     EXPECT_EQ(plan.at("templateId").To<std::string>(),"mechanical-fastener");
+    const auto workflow=plan.at("resolvedWorkflow").To<ObjectMap>();
+    EXPECT_EQ(workflow.at("scope").To<std::string>(),"template-example");
+    EXPECT_EQ(workflow.at("blankParts").To<VariantArray>().size(),2u);
+    EXPECT_EQ(workflow.at("partOperations").To<VariantArray>().size(),2u);
+    EXPECT_FALSE(workflow.at("assemblySteps").To<VariantArray>().empty());
+    EXPECT_FALSE(workflow.at("bom").To<VariantArray>().empty());
     const auto design=plan.at("designParts").To<VariantArray>();
     const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
     ASSERT_EQ(design.size(),2u);
@@ -290,14 +347,12 @@ TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
     EXPECT_TRUE(preview.contains("geometry"));
     if(preview.contains("resultValid"))EXPECT_TRUE(preview.at("resultValid").To<bool>());
 
-    // The assembly bend radius describes the finished product.  The embedded
-    // notch's retained local arc has its own parameter and must use the tool
-    // default (or its own draft), otherwise the default 40 mm assembly radius
-    // is invalid for the standard 40 mm-deep preview tube.
+    // The embedded notch's retained local arc is a tool parameter, not the
+    // finished bend radius.  Its default must remain valid for the standard
+    // 40 mm-deep preview tube when selected as its own assembly template.
     const auto embeddedPlan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
-        {"templateId",std::string("bend")},
-        {"parameters",ObjectMap{{"bendMethod",std::string("notched")},{"angle",90.0},
-            {"bendRadius",40.0},{"bendFactor",0.5},{"slotProcess",std::string("embedded-arc-notch")}}},
+        {"templateId",std::string("node-embedded-arc-integrated")},
+        {"parameters",ObjectMap{{"angle",90.0}}},
         {"processDrafts",ObjectMap{}},
     });
     const auto embeddedParts=embeddedPlan.at("manufacturingParts").To<VariantArray>();
@@ -324,13 +379,12 @@ TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
     EXPECT_TRUE(embeddedPreview.at("previewComputed").To<bool>());
     EXPECT_TRUE(embeddedPreview.contains("geometry"));
 
-    // 边弧槽也是折弯可选的单件槽口工艺。装配只传折弯角度，
-    // 留底、圆弧侧及释放加工继续使用边弧槽自己的参数契约。
+    // The edge-arc fold is an independent assembly template.  Its bridge and
+    // relief still come from the linked single-part groove resource.
     const auto edgeArcPlan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
-        {"templateId",std::string("bend")},
-        {"parameters",ObjectMap{{"bendMethod",std::string("notched")},{"angle",90.0},
-            {"bendRadius",40.0},{"bendFactor",0.5},{"slotProcess",std::string("edge-arc-groove")}}},
-        {"processDrafts",ObjectMap{{"bend-slot",ObjectMap{{"edge-arc-groove",ObjectMap{
+        {"templateId",std::string("node-edge-arc-integrated")},
+        {"parameters",ObjectMap{{"angle",90.0}}},
+        {"processDrafts",ObjectMap{{"node-slot",ObjectMap{{"edge-arc-groove",ObjectMap{
             {"bridge",2.0},{"reliefDiameter",10.0},{"reliefLift",0.0},{"reliefDepth",0.0},
             {"reliefSide",std::string("negative")},{"bottomCut",false}}}}}}},
     });
@@ -359,6 +413,426 @@ TEST(AssemblyTemplateSDOTest, ResolvesScenePartsAndBuildsManufacturingGeometry)
     EXPECT_TRUE(edgeArcPreview.contains("geometry"));
 }
 
+TEST(AssemblyTemplateSDOTest, PlainAssemblyPreviewReusesItsBlankGeometry)
+{
+    Scene scene;
+    auto payload = request("无加工装配构件", "rect");
+    payload["previewResourceKey"] = std::string("plain-assembly-member");
+    payload["diagnosticBooleanPreview"] = true;
+    const auto first = invoke(scene, "PreviewPunchWizard", payload);
+    ASSERT_TRUE(first.at("previewComputed").To<bool>());
+    ASSERT_TRUE(first.at("resultValid").To<bool>());
+    EXPECT_EQ(first.at("baseGeometry"), first.at("geometry"));
+    EXPECT_EQ(first.at("toolCount").To<unsigned long long>(), 0ull);
+    const auto second = invoke(scene, "PreviewPunchWizard", payload);
+    EXPECT_EQ(second.at("baseGeometry"), second.at("geometry"));
+    EXPECT_EQ(first.at("baseGeometry"), second.at("baseGeometry"));
+}
+
+TEST(AssemblyTemplateSDOTest, CrossThroughCutsOneContinuousHostAndKeepsTheOtherBlank)
+{
+    Scene scene;
+    const auto plan = invoke(scene, "ResolveAssemblyTemplatePreview", ObjectMap{
+        {"templateId", std::string("cross-through")},
+        {"parameters", ObjectMap{{"fitGap", 0.2}}},
+    });
+    ASSERT_TRUE(plan.contains("designParts"));
+    ASSERT_TRUE(plan.contains("manufacturingParts"));
+    const auto design = plan.at("designParts").To<VariantArray>();
+    const auto manufacturing = plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(design.size(), 2u);
+    ASSERT_EQ(manufacturing.size(), 2u);
+    const auto host = manufacturing[0].To<ObjectMap>();
+    const auto through = manufacturing[1].To<ObjectMap>();
+    ASSERT_TRUE(host.contains("request"));
+    ASSERT_TRUE(through.contains("request"));
+    const auto hostRequest = host.at("request").To<ObjectMap>();
+    const auto throughRequest = through.at("request").To<ObjectMap>();
+    ASSERT_TRUE(hostRequest.contains("features"));
+    ASSERT_TRUE(throughRequest.contains("features"));
+    ASSERT_TRUE(hostRequest.contains("length"));
+    ASSERT_TRUE(throughRequest.contains("length"));
+    ASSERT_EQ(hostRequest.at("features").To<VariantArray>().size(), 1u);
+    EXPECT_TRUE(throughRequest.at("features").To<VariantArray>().empty());
+    EXPECT_EQ(hostRequest.at("length").To<double>(), 440.0);
+    EXPECT_EQ(throughRequest.at("length").To<double>(), 440.0);
+
+    const auto hostPreview = previewAssemblyManufacturingPart(scene, hostRequest, "cross-through-host");
+    ASSERT_TRUE(hostPreview.at("previewComputed").To<bool>());
+    ASSERT_TRUE(hostPreview.at("resultValid").To<bool>());
+    EXPECT_GT(hostPreview.at("toolCount").To<unsigned long long>(), 0ull);
+    EXPECT_NE(hostPreview.at("baseGeometry"), hostPreview.at("geometry"));
+    const auto throughPreview = previewAssemblyManufacturingPart(scene, throughRequest, "cross-through-plain");
+    ASSERT_TRUE(throughPreview.at("previewComputed").To<bool>());
+    ASSERT_TRUE(throughPreview.at("resultValid").To<bool>());
+    EXPECT_EQ(throughPreview.at("baseGeometry"), throughPreview.at("geometry"));
+
+    const auto hostModel = scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL(
+        "tube-designer/punch-preview/assembly/cross-through-host"));
+    const auto throughModel = scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL(
+        "tube-designer/punch-preview/assembly/cross-through-plain/base"));
+    ASSERT_TRUE(hostModel);
+    ASSERT_TRUE(throughModel);
+    const auto hostShape = iCAX::OpenCascade::BuildOpenCascadeShape(*hostModel);
+    const auto throughShape = iCAX::OpenCascade::BuildOpenCascadeShape(*throughModel);
+    ASSERT_TRUE(hostShape.bOK);
+    ASSERT_TRUE(throughShape.bOK);
+    const auto place = [](const TopoDS_Shape& shape, const ObjectMap& designPart) {
+        const auto matrix = designPart.at("matrix").To<VariantArray>();
+        const auto number = [](const iCAX::Data::Variant& value) -> double {
+            if (value.Is<double>()) return value.To<double>();
+            if (value.Is<std::int64_t>()) return static_cast<double>(value.To<std::int64_t>());
+            if (value.Is<std::uint64_t>()) return static_cast<double>(value.To<std::uint64_t>());
+            return static_cast<double>(value.To<int>());
+        };
+        gp_Trsf transform;
+        transform.SetValues(number(matrix[0]), number(matrix[1]), number(matrix[2]), number(matrix[3]),
+            number(matrix[4]), number(matrix[5]), number(matrix[6]), number(matrix[7]),
+            number(matrix[8]), number(matrix[9]), number(matrix[10]), number(matrix[11]));
+        return BRepBuilderAPI_Transform(shape, transform, true).Shape();
+    };
+    const auto finishedHost = place(hostShape.Shape, design[0].To<ObjectMap>());
+    const auto finishedThrough = place(throughShape.Shape, design[1].To<ObjectMap>());
+    BRepAlgoAPI_Common overlap(finishedHost, finishedThrough);
+    ASSERT_TRUE(overlap.IsDone());
+    GProp_GProps overlapVolume;
+    BRepGProp::VolumeProperties(overlap.Shape(), overlapVolume);
+    EXPECT_NEAR(overlapVolume.Mass(), 0.0, 0.1);
+}
+
+TEST(AssemblyTemplateSDOTest, SceneStockOverridesStaySeparateFromMiterProcessParameters)
+{
+    Scene scene;
+    const ObjectMap sectionParameters{
+        {"width",72.0},{"depth",44.0},{"wallThickness",2.0},
+        {"cornerRadius",3.0},{"innerRadius",1.0},
+    };
+    const ObjectMap profileRef{{"scope",std::string("system")},{"id",std::string("rect")}};
+    const ObjectMap sceneParts{
+        {"memberA",ObjectMap{{"profileRef",profileRef},{"parameters",sectionParameters},{"length",310.0}}},
+        {"memberB",ObjectMap{{"profileRef",profileRef},{"parameters",sectionParameters},{"length",190.0}}},
+    };
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("two-end-end-angle")},
+        {"parameters",ObjectMap{{"fitGap",0.0}}},
+        {"sceneParameters",ObjectMap{{"jointAngle",90.0},{"planeRotation",0.0}}},
+        {"processDrafts",ObjectMap{}},
+        {"sceneParts",sceneParts},
+    });
+    const auto processParameters=plan.at("parameters").To<ObjectMap>();
+    ASSERT_EQ(processParameters.size(),1u);
+    EXPECT_DOUBLE_EQ(processParameters.at("fitGap").To<double>(),0.0);
+    EXPECT_FALSE(processParameters.contains("jointAngle"));
+    EXPECT_FALSE(processParameters.contains("planeRotation"));
+    EXPECT_FALSE(processParameters.contains("width"));
+    EXPECT_FALSE(processParameters.contains("length"));
+    const auto resolvedSceneParameters=plan.at("sceneParameters").To<ObjectMap>();
+    ASSERT_EQ(resolvedSceneParameters.size(),2u);
+    EXPECT_DOUBLE_EQ(resolvedSceneParameters.at("jointAngle").To<double>(),90.0);
+    EXPECT_FALSE(resolvedSceneParameters.contains("fitGap"));
+    EXPECT_DOUBLE_EQ(resolvedSceneParameters.at("planeRotation").To<double>(),0.0);
+
+    const auto resolvedScene=plan.at("sceneParts").To<ObjectMap>();
+    ASSERT_EQ(resolvedScene.size(),2u);
+    for(const auto& [role,length]:std::array<std::pair<const char*,double>,2>{{
+            {"memberA",310.0},{"memberB",190.0}}}) {
+        const auto part=resolvedScene.at(role).To<ObjectMap>();
+        EXPECT_EQ(part.at("profileRef").To<ObjectMap>().at("id").To<std::string>(),"rect");
+        EXPECT_DOUBLE_EQ(part.at("length").To<double>(),length);
+        const auto parameters=part.at("parameters").To<ObjectMap>();
+        EXPECT_DOUBLE_EQ(parameters.at("width").To<double>(),72.0);
+        EXPECT_DOUBLE_EQ(parameters.at("depth").To<double>(),44.0);
+    }
+
+    const auto expectRequest=[&](const ObjectMap& part,const std::string& role) {
+        const auto request=part.at("request").To<ObjectMap>();
+        const double expectedLength=role=="memberA"?310.0:190.0;
+        EXPECT_DOUBLE_EQ(request.at("length").To<double>(),expectedLength);
+        EXPECT_EQ(request.at("profileRef").To<ObjectMap>().at("id").To<std::string>(),"rect");
+        const auto parameters=request.at("parameters").To<ObjectMap>();
+        EXPECT_DOUBLE_EQ(parameters.at("width").To<double>(),72.0);
+        EXPECT_DOUBLE_EQ(parameters.at("depth").To<double>(),44.0);
+    };
+    const auto designs=plan.at("designParts").To<VariantArray>();
+    ASSERT_EQ(designs.size(),2u);
+    for(const auto& value:designs) {
+        const auto part=value.To<ObjectMap>();
+        expectRequest(part,part.at("role").To<std::string>());
+    }
+    const auto blanks=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(blanks.size(),2u);
+    for(const auto& value:blanks) {
+        const auto part=value.To<ObjectMap>();
+        expectRequest(part,part.at("sourceRole").To<std::string>());
+    }
+
+    const ObjectMap roundRef{{"scope",std::string("system")},{"id",std::string("round")}};
+    const ObjectMap roundParameters{
+        {"width",50.0},{"wallThickness",2.0},{"innerOffsetX",0.0},{"innerOffsetY",0.0},
+    };
+    const auto round=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("two-end-end-angle")},
+        {"parameters",ObjectMap{{"fitGap",0.0}}},
+        {"sceneParameters",ObjectMap{{"jointAngle",90.0},{"planeRotation",0.0}}},
+        {"sceneParts",ObjectMap{
+            {"memberA",ObjectMap{{"profileRef",roundRef},{"parameters",roundParameters},{"length",340.0}}},
+            {"memberB",ObjectMap{{"profileRef",roundRef},{"parameters",roundParameters},{"length",210.0}}},
+        }},
+    });
+    const auto roundScene=round.at("sceneParts").To<ObjectMap>();
+    ASSERT_EQ(roundScene.size(),2u);
+    for(const auto& [role,length]:std::array<std::pair<const char*,double>,2>{{
+            {"memberA",340.0},{"memberB",210.0}}}) {
+        const auto stock=roundScene.at(role).To<ObjectMap>();
+        EXPECT_EQ(stock.at("profileRef").To<ObjectMap>().at("id").To<std::string>(),"round");
+        EXPECT_DOUBLE_EQ(stock.at("length").To<double>(),length);
+        EXPECT_DOUBLE_EQ(stock.at("parameters").To<ObjectMap>().at("width").To<double>(),50.0);
+        EXPECT_DOUBLE_EQ(stock.at("parameters").To<ObjectMap>().at("wallThickness").To<double>(),2.0);
+    }
+    for(const auto& field:std::array<const char*,2>{"designParts","manufacturingParts"}) {
+        const auto parts=round.at(field).To<VariantArray>();
+        ASSERT_EQ(parts.size(),2u);
+        for(const auto& value:parts) {
+            const auto part=value.To<ObjectMap>();
+            const auto role=part.at(field==std::string("designParts")?"role":"sourceRole").To<std::string>();
+            const auto request=part.at("request").To<ObjectMap>();
+            EXPECT_EQ(request.at("profileRef").To<ObjectMap>().at("id").To<std::string>(),"round");
+            EXPECT_DOUBLE_EQ(request.at("length").To<double>(),role=="memberA"?340.0:210.0);
+            EXPECT_DOUBLE_EQ(request.at("parameters").To<ObjectMap>().at("width").To<double>(),50.0);
+        }
+    }
+
+    const auto legacy=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("two-end-end-angle")},
+        {"parameters",ObjectMap{{"jointAngle",75.0},{"fitGap",2.0},{"planeRotation",0.0}}},
+    });
+    const auto legacyEcho=legacy.at("parameters").To<ObjectMap>();
+    ASSERT_EQ(legacyEcho.size(),3u);
+    EXPECT_DOUBLE_EQ(legacyEcho.at("jointAngle").To<double>(),75.0);
+    EXPECT_DOUBLE_EQ(legacyEcho.at("fitGap").To<double>(),2.0);
+    EXPECT_DOUBLE_EQ(legacyEcho.at("planeRotation").To<double>(),0.0);
+}
+
+TEST(AssemblyTemplateSDOTest, SleeveClearanceAndLockingResolveThroughNativeInterface)
+{
+    Scene scene;
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("insert-sleeve")},
+        {"parameters",ObjectMap{{"fitClearance",2.0},{"lockMethod",std::string("bolt")}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(manufacturing.size(),2u);
+    const auto deeper=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("insert-sleeve")},
+        {"parameters",ObjectMap{{"fitClearance",2.0},{"lockMethod",std::string("bolt")},{"insertDepth",150.0}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    EXPECT_FALSE(deeper.at("sceneParameters").To<ObjectMap>().contains("insertDepth"));
+    EXPECT_DOUBLE_EQ(deeper.at("parameters").To<ObjectMap>().at("insertDepth").To<double>(),150.0);
+    const auto productParts=plan.at("designParts").To<VariantArray>();
+    const auto deeperParts=deeper.at("designParts").To<VariantArray>();
+    ASSERT_EQ(productParts.size(),deeperParts.size());
+    for (std::size_t part=0;part<productParts.size();++part) {
+        const auto initial=productParts[part].To<ObjectMap>().at("matrix").To<VariantArray>();
+        const auto changed=deeperParts[part].To<ObjectMap>().at("matrix").To<VariantArray>();
+        ASSERT_EQ(initial.size(),changed.size());
+        for (std::size_t component=0;component<initial.size();++component)
+            EXPECT_NEAR(initial[component].To<double>(),changed[component].To<double>(),1e-7);
+    }
+    const auto receive=manufacturing[1].To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto section=receive.at("parameters").To<ObjectMap>();
+    EXPECT_NEAR(section.at("width").To<double>(),34.6,1e-7);
+    const auto workflow=plan.at("resolvedWorkflow").To<ObjectMap>();
+    EXPECT_EQ(workflow.at("validationStatus").To<std::string>(),"failed");
+    const auto bom=workflow.at("bom").To<VariantArray>();
+    ASSERT_EQ(bom.size(),1u);
+    EXPECT_EQ(bom.front().To<ObjectMap>().at("label").To<std::string>(),"套接锁止螺栓");
+    const auto checks=workflow.at("checks").To<VariantArray>();
+    EXPECT_TRUE(std::any_of(checks.begin(),checks.end(),[](const auto& value) {
+        return value.To<ObjectMap>().at("status").To<std::string>()=="requires-definition";
+    }));
+    const auto fitted=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("insert-sleeve")},
+        {"parameters",ObjectMap{{"fitClearance",2.0},{"lockMethod",std::string("bolt")}}},
+        {"sceneParts",ObjectMap{{"receivePart",ObjectMap{
+            {"parameters",ObjectMap{{"width",38.0}}},
+        }}}},
+    });
+    const auto fittedScene=fitted.at("sceneParts").To<ObjectMap>();
+    const auto fittedReceive=fittedScene.at("receivePart").To<ObjectMap>();
+    const auto fittedParameters=fittedReceive.at("parameters").To<ObjectMap>();
+    EXPECT_NEAR(fittedParameters.at("width").To<double>(),38.0,1e-7);
+    const auto& wallThickness=fittedParameters.at("wallThickness");
+    const auto wallThicknessValue=wallThickness.Is<double>() ? wallThickness.To<double>()
+        : wallThickness.Is<std::int64_t>() ? static_cast<double>(wallThickness.To<std::int64_t>())
+        : wallThickness.Is<std::uint64_t>() ? static_cast<double>(wallThickness.To<std::uint64_t>())
+        : static_cast<double>(wallThickness.To<int>());
+    EXPECT_DOUBLE_EQ(wallThicknessValue,2.0);
+    EXPECT_EQ(fitted.at("resolvedWorkflow").To<ObjectMap>().at("validationStatus").To<std::string>(),
+        "requires-definition");
+}
+
+TEST(AssemblyTemplateSDOTest, SaddleSceneAngleChangesPoseAndEndCutWithoutChangingProcessInputs)
+{
+    Scene scene;
+    const auto resolve=[&](double angle) {
+        return invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",std::string("saddle-weld")},
+            {"parameters",ObjectMap{{"fitGap",0.5}}},
+            {"sceneParameters",ObjectMap{{"intersectionAngle",angle}}},
+        });
+    };
+    const auto perpendicular=resolve(90.0);
+    const auto angled=resolve(60.0);
+    const auto baselineProcess=perpendicular.at("parameters").To<ObjectMap>();
+    const auto angledProcess=angled.at("parameters").To<ObjectMap>();
+    EXPECT_EQ(baselineProcess.size(),angledProcess.size());
+    EXPECT_FALSE(angledProcess.contains("intersectionAngle"));
+    EXPECT_DOUBLE_EQ(angledProcess.at("fitGap").To<double>(),0.5);
+    EXPECT_DOUBLE_EQ(perpendicular.at("sceneParameters").To<ObjectMap>()
+        .at("intersectionAngle").To<double>(),90.0);
+    EXPECT_DOUBLE_EQ(angled.at("sceneParameters").To<ObjectMap>()
+        .at("intersectionAngle").To<double>(),60.0);
+
+    const auto baselineDesign=perpendicular.at("designParts").To<VariantArray>();
+    const auto angledDesign=angled.at("designParts").To<VariantArray>();
+    ASSERT_EQ(baselineDesign.size(),2u);
+    ASSERT_EQ(angledDesign.size(),2u);
+    const auto baselineMatrix=baselineDesign[0].To<ObjectMap>().at("matrix").To<VariantArray>();
+    const auto angledMatrix=angledDesign[0].To<ObjectMap>().at("matrix").To<VariantArray>();
+    EXPECT_NEAR(baselineMatrix[0].To<double>(),0.0,1e-7);
+    EXPECT_NEAR(angledMatrix[0].To<double>(),0.5,1e-7);
+
+    const auto cutAngle=[](const ObjectMap& plan) {
+        const auto blanks=plan.at("manufacturingParts").To<VariantArray>();
+        const auto request=blanks[0].To<ObjectMap>().at("request").To<ObjectMap>();
+        const auto ends=request.at("ends").To<ObjectMap>();
+        return ends.at("start").To<ObjectMap>().at("angle").To<double>();
+    };
+    EXPECT_DOUBLE_EQ(cutAngle(perpendicular),90.0);
+    EXPECT_DOUBLE_EQ(cutAngle(angled),60.0);
+}
+
+TEST(AssemblyTemplateSDOTest, SegmentedBendReturnsTemplateOwnedTargetAndCutEnvelopeLength)
+{
+    Scene scene;
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("segmented-bend")},
+        {"parameters",ObjectMap{{"angle",90.0},{"bendRadius",40.0}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(manufacturing.size(),1u);
+    const auto request=manufacturing.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto length=request.at("length").To<double>();
+    EXPECT_NEAR(length,608.058,0.01);
+    const auto features=request.at("features").To<VariantArray>();
+    ASSERT_EQ(features.size(),1u);
+    EXPECT_EQ(features.front().To<ObjectMap>().at("toolRef").To<ObjectMap>().at("id").To<std::string>(),
+              "segmented-bend");
+    ASSERT_TRUE(plan.contains("formedPreviewMesh"));
+    const auto mesh=plan.at("formedPreviewMesh").To<ObjectMap>();
+    EXPECT_FALSE(mesh.at("positions").To<VariantArray>().empty());
+    EXPECT_FALSE(mesh.at("indices").To<VariantArray>().empty());
+    const auto metadata=mesh.at("metadata").To<ObjectMap>();
+    EXPECT_EQ(metadata.at("previewKind").To<std::string>(),"target-shape");
+    EXPECT_EQ(metadata.at("formingValidation").To<std::string>(),"not-performed");
+}
+
+TEST(AssemblyTemplateSDOTest, FlexibleSlitBendReturnsTargetAndCuttableContinuousBlank)
+{
+    Scene scene;
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("flexible-slit-bend-integrated")},
+        {"parameters",ObjectMap{{"angle",90.0},{"bendRadius",40.0}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    const auto parameters=plan.at("parameters").To<ObjectMap>();
+    EXPECT_EQ(parameters.at("angle").To<double>(),90.0);
+    EXPECT_EQ(parameters.at("bendRadius").To<double>(),40.0);
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(manufacturing.size(),1u);
+    const auto request=manufacturing.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    EXPECT_NEAR(request.at("length").To<double>(),520.0+40.0*std::acos(-1.0)/2.0,0.01);
+    const auto features=request.at("features").To<VariantArray>();
+    ASSERT_EQ(features.size(),1u);
+    EXPECT_EQ(features.front().To<ObjectMap>().at("toolRef").To<ObjectMap>().at("id").To<std::string>(),
+              "flexible-slit-bend");
+    ASSERT_TRUE(plan.contains("formedPreviewMesh"));
+    const auto mesh=plan.at("formedPreviewMesh").To<ObjectMap>();
+    EXPECT_FALSE(mesh.at("positions").To<VariantArray>().empty());
+    EXPECT_FALSE(mesh.at("indices").To<VariantArray>().empty());
+    const auto metadata=mesh.at("metadata").To<ObjectMap>();
+    EXPECT_EQ(metadata.at("previewKind").To<std::string>(),"target-shape");
+    EXPECT_EQ(metadata.at("formingValidation").To<std::string>(),"calibration-required");
+    const auto preview=previewAssemblyManufacturingPart(scene,request);
+    EXPECT_FALSE(preview.contains("resultError"))
+        <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+    EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+    EXPECT_TRUE(preview.contains("geometry"));
+    if(preview.contains("geometry"))
+        EXPECT_NE(preview.at("baseGeometry").To<ObjectMap>().at("url").To<std::string>(),
+                  preview.at("geometry").To<ObjectMap>().at("url").To<std::string>());
+
+    for(const std::string mode:{"straight","u"}) {
+        SCOPED_TRACE(mode);
+        const auto variant=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",std::string("flexible-slit-bend-integrated")},
+            {"parameters",ObjectMap{{"angle",90.0},{"bendRadius",40.0}}},
+            {"processDrafts",ObjectMap{{"node-slot",ObjectMap{{"flexible-slit-bend",ObjectMap{
+                {"slitMode",mode}}}}}}},
+        });
+        const auto variantMesh=variant.at("formedPreviewMesh").To<ObjectMap>();
+        EXPECT_EQ(variantMesh.at("metadata").To<ObjectMap>().at("slitMode").To<std::string>(),mode);
+        const auto variantPart=variant.at("manufacturingParts").To<VariantArray>().front().To<ObjectMap>();
+        const auto variantPreview=previewAssemblyManufacturingPart(scene,variantPart.at("request").To<ObjectMap>());
+        EXPECT_FALSE(variantPreview.contains("resultError"))
+            <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(variantPreview);
+        EXPECT_TRUE(variantPreview.at("previewComputed").To<bool>());
+        if(variantPreview.contains("geometry"))
+            EXPECT_NE(variantPreview.at("baseGeometry").To<ObjectMap>().at("url").To<std::string>(),
+                      variantPreview.at("geometry").To<ObjectMap>().at("url").To<std::string>());
+    }
+}
+
+TEST(AssemblyTemplateSDOTest, EmbeddedArcFoldReturnsTemplateTargetAndRealCut)
+{
+    Scene scene;
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("node-embedded-arc-integrated")},
+        {"parameters",ObjectMap{{"angle",90.0}}},
+        {"processDrafts",ObjectMap{{"node-slot",ObjectMap{{"embedded-arc-notch",ObjectMap{
+            {"arcRadius",8.0},{"rightArc",false}}}}}}},
+    });
+    EXPECT_EQ(plan.at("parameters").To<ObjectMap>().at("angle").To<double>(),90.0);
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(manufacturing.size(),1u);
+    const auto request=manufacturing.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    EXPECT_NEAR(request.at("length").To<double>(),594.0,0.01);
+    const auto features=request.at("features").To<VariantArray>();
+    ASSERT_EQ(features.size(),1u);
+    const auto feature=features.front().To<ObjectMap>();
+    EXPECT_EQ(feature.at("toolRef").To<ObjectMap>().at("id").To<std::string>(),"embedded-arc-notch");
+    const auto toolParameters=feature.at("toolParameters").To<ObjectMap>();
+    EXPECT_EQ(toolParameters.at("arcRadius").To<double>(),8.0);
+    EXPECT_FALSE(toolParameters.at("rightArc").To<bool>());
+    ASSERT_TRUE(plan.contains("formedPreviewMesh"));
+    const auto mesh=plan.at("formedPreviewMesh").To<ObjectMap>();
+    EXPECT_FALSE(mesh.at("positions").To<VariantArray>().empty());
+    EXPECT_FALSE(mesh.at("indices").To<VariantArray>().empty());
+    const auto metadata=mesh.at("metadata").To<ObjectMap>();
+    EXPECT_EQ(metadata.at("previewKind").To<std::string>(),"target-shape");
+    EXPECT_EQ(metadata.at("formingValidation").To<std::string>(),"not-performed");
+    const auto preview=previewAssemblyManufacturingPart(scene,request);
+    EXPECT_FALSE(preview.contains("resultError"))
+        <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+    EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+    if(preview.contains("geometry"))
+        EXPECT_NE(preview.at("baseGeometry").To<ObjectMap>().at("url").To<std::string>(),
+                  preview.at("geometry").To<ObjectMap>().at("url").To<std::string>());
+}
+
 TEST(AssemblyTemplateSDOTest, MergedFamiliesProduceNativeManufacturingGeometry)
 {
     Scene scene;
@@ -366,14 +840,14 @@ TEST(AssemblyTemplateSDOTest, MergedFamiliesProduceNativeManufacturingGeometry)
         {"insert-sleeve",{{"connectionMode",std::string("sleeve")}}},
         {"two-end-end-angle",{{"jointAngle",90.0}}},
         {"two-end-middle",{{"interfaceMode",std::string("singleInsert")}}},
+        {"two-end-middle",{{"interfaceMode",std::string("throughInsert")},{"fitGap",10.0}}},
         {"two-end-middle",{{"interfaceMode",std::string("saddle")}}},
         {"mechanical-fastener",{{"fastenerType",std::string("adjustableBolt")},{"adjustment",18.0}}},
         {"weld-interface",{{"weldType",std::string("lap")}}},
         {"weld-interface",{{"weldType",std::string("plug")}}},
         {"weld-interface",{{"weldType",std::string("slot")}}},
-        {"bend",{{"bendPlane",std::string("spatial")},{"planeRotation",45.0},{"angle",75.0}}},
-        {"three-end-end-end",{}},
-        {"three-end-end-middle",{}},
+        {"bend",{{"angle",75.0}}},
+        {"segmented-bend",{{"angle",75.0},{"bendRadius",40.0}}},
         {"four-end-end-end-end",{}},
     };
     for(const auto& [templateId,parameters]:cases) {
@@ -393,6 +867,168 @@ TEST(AssemblyTemplateSDOTest, MergedFamiliesProduceNativeManufacturingGeometry)
             EXPECT_TRUE(preview.contains("baseGeometry"));
             EXPECT_TRUE(preview.contains("geometry"));
         }
+    }
+}
+
+TEST(AssemblyTemplateSDOTest, NodeJointTemplatesBuildNativeManufacturingGeometry)
+{
+    Scene scene;
+    struct TemplateCase {
+        std::string id;
+        ObjectMap parameters;
+        std::size_t blankCount;
+    };
+    const std::vector<TemplateCase> cases{
+        {"wrap-a-over-b",{},2},
+        {"wrap-a-over-b",{{"maleFemale",true},{"pairCount",std::string("two")}},2},
+        {"wrap-a-over-b",{{"maleFemale",true},{"pairCount",std::string("four")}},2},
+        {"node-v-notch-integrated",{{"angle",75.0}},1},
+        {"node-embedded-arc-integrated",{{"angle",75.0}},1},
+        {"node-edge-arc-integrated",{{"angle",75.0}},1},
+        {"flexible-slit-bend-integrated",{{"angle",75.0}},1},
+    };
+    for(const auto& item:cases) {
+        SCOPED_TRACE(item.id);
+        SCOPED_TRACE(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(item.parameters));
+        const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",item.id},{"parameters",item.parameters},{"processDrafts",ObjectMap{}},
+        });
+        EXPECT_EQ(plan.at("templateId").To<std::string>(),item.id);
+        const auto returned=plan.at("parameters").To<ObjectMap>();
+        for(const auto& [key,value]:item.parameters) {
+            ASSERT_TRUE(returned.contains(key));
+            if(value.Is<bool>())EXPECT_EQ(returned.at(key).To<bool>(),value.To<bool>());
+            else if(value.Is<std::string>())EXPECT_EQ(returned.at(key).To<std::string>(),value.To<std::string>());
+            else EXPECT_DOUBLE_EQ(returned.at(key).To<double>(),value.To<double>());
+        }
+        const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+        ASSERT_EQ(manufacturing.size(),item.blankCount);
+        for(const auto& value:manufacturing) {
+            const auto planned=value.To<ObjectMap>().at("request").To<ObjectMap>();
+            const auto preview=previewAssemblyManufacturingPart(scene,planned);
+            EXPECT_FALSE(preview.contains("resultError"))
+                <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+            ASSERT_TRUE(preview.contains("previewComputed"));
+            EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+            EXPECT_TRUE(preview.contains("baseGeometry"));
+            EXPECT_TRUE(preview.contains("geometry"));
+        }
+    }
+}
+
+TEST(AssemblyTemplateSDOTest, TeeTabSlotTemplateBuildsRealTwoAndFourWallCuts)
+{
+    Scene scene;
+    const auto number=[](const iCAX::Data::Variant& value) {
+        if(value.Is<double>())return value.To<double>();
+        if(value.Is<int>())return static_cast<double>(value.To<int>());
+        if(value.Is<std::int64_t>())return static_cast<double>(value.To<std::int64_t>());
+        if(value.Is<std::uint64_t>())return static_cast<double>(value.To<std::uint64_t>());
+        throw std::runtime_error("T tab-slot parameter is not numeric");
+    };
+    for (const auto& [choice,count] : std::vector<std::pair<std::string,int>>{
+        {"two",2},{"four",4}}) {
+        SCOPED_TRACE(choice);
+        const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",std::string("end-side-tab-slot")},
+            {"parameters",ObjectMap{{"pairCount",choice}}},
+            {"processDrafts",ObjectMap{}},
+        });
+        EXPECT_EQ(plan.at("templateId").To<std::string>(),"end-side-tab-slot");
+        const auto design=plan.at("designParts").To<VariantArray>();
+        const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+        ASSERT_EQ(design.size(),2u);
+        ASSERT_EQ(manufacturing.size(),2u);
+        const auto host=manufacturing[0].To<ObjectMap>().at("request").To<ObjectMap>();
+        const auto branch=manufacturing[1].To<ObjectMap>().at("request").To<ObjectMap>();
+        const auto hostFeatures=host.at("features").To<VariantArray>();
+        ASSERT_EQ(hostFeatures.size(),1u);
+        const auto slots=hostFeatures[0].To<ObjectMap>();
+        EXPECT_EQ(slots.at("toolRef").To<ObjectMap>().at("id").To<std::string>(),"paired-side-slots");
+        EXPECT_EQ(slots.at("reference").To<std::string>(),"center");
+        EXPECT_DOUBLE_EQ(number(slots.at("station")),0.0);
+        EXPECT_EQ(slots.at("face").To<std::string>(),"top");
+        const auto slotParameters=slots.at("toolParameters").To<ObjectMap>();
+        EXPECT_EQ(number(slotParameters.at("pairCount")),count);
+        EXPECT_FALSE(slotParameters.at("allowEndOpening").To<bool>());
+        const auto branchEnds=branch.at("ends").To<ObjectMap>();
+        const auto tabs=branchEnds.at("end").To<ObjectMap>();
+        EXPECT_EQ(tabs.at("toolRef").To<ObjectMap>().at("id").To<std::string>(),"paired-end-tabs");
+        EXPECT_EQ(number(tabs.at("toolParameters").To<ObjectMap>().at("pairCount")),count);
+        EXPECT_EQ(number(branch.at("length")),232.0);
+        std::array<TopoDS_Shape,2> finished;
+        for (std::size_t index=0;index<finished.size();++index) {
+            const auto resourceKey="tee-tab-slot-"+choice+"-"+std::to_string(index);
+            const auto preview=previewAssemblyManufacturingPart(scene,
+                index==0 ? host : branch,resourceKey);
+            EXPECT_FALSE(preview.contains("resultError"))
+                <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+            ASSERT_TRUE(preview.contains("previewComputed"));
+            EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+            EXPECT_TRUE(preview.contains("baseGeometry"));
+            EXPECT_TRUE(preview.contains("geometry"));
+            const auto data=scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL(
+                "tube-designer/punch-preview/assembly/"+resourceKey));
+            ASSERT_TRUE(data);
+            const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(*data);
+            ASSERT_TRUE(rebuilt.bOK);
+            ASSERT_FALSE(rebuilt.Shape.IsNull());
+            ASSERT_TRUE(BRepCheck_Analyzer(rebuilt.Shape).IsValid());
+            const auto pose=design[index].To<ObjectMap>().at("matrix").To<VariantArray>();
+            gp_Trsf transform;
+            transform.SetValues(number(pose[0]),number(pose[1]),number(pose[2]),number(pose[3]),
+                number(pose[4]),number(pose[5]),number(pose[6]),number(pose[7]),
+                number(pose[8]),number(pose[9]),number(pose[10]),number(pose[11]));
+            finished[index]=BRepBuilderAPI_Transform(rebuilt.Shape,transform,true).Shape();
+        }
+        BRepAlgoAPI_Common overlap(finished[0],finished[1]);
+        ASSERT_TRUE(overlap.IsDone());
+        GProp_GProps material;
+        BRepGProp::VolumeProperties(overlap.Shape(),material);
+        EXPECT_LE(material.Mass(),1.0e-4)
+            <<"The T template example must assemble without intersecting material";
+    }
+}
+
+TEST(AssemblyTemplateSDOTest, TeeProfileInsertCutsTopOpeningAndBranchBlank)
+{
+    Scene scene;
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("t-profile-insert")},
+        {"parameters",ObjectMap{{"intersectionAngle",90.0},
+            {"insertDepth",12.0},{"fitGap",0.2}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    const auto design=plan.at("designParts").To<VariantArray>();
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(design.size(),2u);
+    ASSERT_EQ(manufacturing.size(),2u);
+    const auto branchDesign=design[1].To<ObjectMap>();
+    const auto matrix=branchDesign.at("matrix").To<VariantArray>();
+    EXPECT_DOUBLE_EQ(matrix[8].To<double>(),-1.0)
+        <<"the upright branch must approach the host from +Z";
+    const auto host=manufacturing[0].To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto branch=manufacturing[1].To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto openings=host.at("features").To<VariantArray>();
+    ASSERT_EQ(openings.size(),1u);
+    const auto opening=openings[0].To<ObjectMap>();
+    EXPECT_EQ(opening.at("face").To<std::string>(),"top");
+    EXPECT_EQ(opening.at("reference").To<std::string>(),"center");
+    EXPECT_EQ(opening.at("direction").To<std::string>(),"positive");
+    EXPECT_DOUBLE_EQ(opening.at("clearance").To<double>(),0.2);
+    EXPECT_DOUBLE_EQ(branch.at("length").To<double>(),232.0);
+    const auto branchEnd=branch.at("ends").To<ObjectMap>()
+        .at("end").To<ObjectMap>();
+    EXPECT_EQ(branchEnd.at("toolRef").To<ObjectMap>()
+        .at("id").To<std::string>(),"end-miter");
+    for(const auto& request:{host,branch}) {
+        const auto preview=previewAssemblyManufacturingPart(scene,request);
+        EXPECT_FALSE(preview.contains("resultError"))
+            <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+        ASSERT_TRUE(preview.contains("previewComputed"));
+        EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+        EXPECT_TRUE(preview.contains("baseGeometry"));
+        EXPECT_TRUE(preview.contains("geometry"));
     }
 }
 
@@ -418,7 +1054,12 @@ TEST(AssemblyTemplateSDOTest, FinishedInterfacesMeetAndExplosionUsesBlankPlaceme
     });
     const auto angledDesign=angled.at("designParts").To<VariantArray>();
     ASSERT_EQ(angledDesign.size(),2u);
-    expectSame(point(angledDesign[0].To<ObjectMap>(),260.0),point(angledDesign[1].To<ObjectMap>(),0.0));
+    // Mitered end faces meet across their full section.  Their uncut axial
+    // datum centers are deliberately offset, so equating those centers would
+    // accept an overlapping corner and reject a correctly fitted miter.
+    const auto angledA=point(angledDesign[0].To<ObjectMap>(),260.0);
+    const auto angledB=point(angledDesign[1].To<ObjectMap>(),0.0);
+    EXPECT_GT(std::hypot(angledA[0]-angledB[0],angledA[2]-angledB[2]),1.0);
     const auto angledBlanks=angled.at("manufacturingParts").To<VariantArray>();
     ASSERT_EQ(angledBlanks.size(),2u);
     const auto aEnds=angledBlanks[0].To<ObjectMap>().at("request").To<ObjectMap>().at("ends").To<ObjectMap>();
@@ -431,7 +1072,7 @@ TEST(AssemblyTemplateSDOTest, FinishedInterfacesMeetAndExplosionUsesBlankPlaceme
     });
     const auto tabSlotDesign=tabSlot.at("designParts").To<VariantArray>();
     ASSERT_EQ(tabSlotDesign.size(),2u);
-    expectSame(point(tabSlotDesign[0].To<ObjectMap>(),250.0),point(tabSlotDesign[1].To<ObjectMap>(),0.0));
+    expectSame(point(tabSlotDesign[0].To<ObjectMap>(),280.0),point(tabSlotDesign[1].To<ObjectMap>(),0.0));
 
     const auto endMiddle=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
         {"templateId",std::string("two-end-middle")},
@@ -449,6 +1090,349 @@ TEST(AssemblyTemplateSDOTest, FinishedInterfacesMeetAndExplosionUsesBlankPlaceme
     EXPECT_LT(explodedTab[0],explodedSlot[0]);
     EXPECT_NEAR(explodedTab[1],explodedSlot[1],1e-7);
     EXPECT_NEAR(explodedTab[2],explodedSlot[2],1e-7);
+}
+
+TEST(AssemblyTemplateSDOTest, MiteredLEndJoinCutFacesContactWithoutSolidOverlap)
+{
+    const auto number=[](const iCAX::Data::Variant& value) -> double {
+        if(value.Is<double>())return value.To<double>();
+        if(value.Is<std::int64_t>())return static_cast<double>(value.To<std::int64_t>());
+        if(value.Is<std::uint64_t>())return static_cast<double>(value.To<std::uint64_t>());
+        if(value.Is<int>())return static_cast<double>(value.To<int>());
+        return static_cast<double>(value.To<unsigned int>());
+    };
+    const auto worldShape=[&](Scene& scene,const ObjectMap& blank,const ObjectMap& design,
+            const std::string& resourceKey) {
+        const auto request=blank.at("request").To<ObjectMap>();
+        const auto preview=previewAssemblyManufacturingPart(scene,request,resourceKey);
+        EXPECT_FALSE(preview.contains("resultError"))
+            <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+        EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+        const auto data=scene.Resources().Get<BRepModel>(
+            scene.Resources().MakeNamedResourceURL("tube-designer/punch-preview/assembly/"+resourceKey));
+        if(!data)throw std::runtime_error("Mitered assembly preview has no manufactured BRep");
+        const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(*data);
+        if(!rebuilt.bOK||rebuilt.Shape.IsNull())
+            throw std::runtime_error("Mitered assembly BRep cannot rebuild");
+        EXPECT_TRUE(BRepCheck_Analyzer(rebuilt.Shape).IsValid());
+        GProp_GProps localProperties;
+        BRepGProp::VolumeProperties(rebuilt.Shape,localProperties);
+        EXPECT_GT(localProperties.Mass(),1.0);
+        const auto matrix=design.at("matrix").To<VariantArray>();
+        gp_Trsf transform;
+        transform.SetValues(number(matrix[0]),number(matrix[1]),number(matrix[2]),number(matrix[3]),
+            number(matrix[4]),number(matrix[5]),number(matrix[6]),number(matrix[7]),
+            number(matrix[8]),number(matrix[9]),number(matrix[10]),number(matrix[11]));
+        return BRepBuilderAPI_Transform(rebuilt.Shape,transform,true).Shape();
+    };
+    for(const auto& [angle,plane]:std::array<std::pair<double,double>,4>{{
+            {0.0,0.0},{60.0,35.0},{90.0,0.0},{120.0,25.0}}}) {
+      for(const double gap:std::array<double,2>{{0.0,2.0}}) {
+        SCOPED_TRACE("jointAngle="+std::to_string(angle)+", fitGap="+
+            std::to_string(gap)+", planeRotation="+std::to_string(plane));
+        Scene scene;
+        const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",std::string("two-end-end-angle")},
+            {"parameters",ObjectMap{{"jointAngle",angle},{"fitGap",gap},{"planeRotation",plane}}},
+            {"processDrafts",ObjectMap{}},
+        });
+        const auto designs=plan.at("designParts").To<VariantArray>();
+        const auto blanks=plan.at("manufacturingParts").To<VariantArray>();
+        ASSERT_EQ(designs.size(),2u);
+        ASSERT_EQ(blanks.size(),2u);
+        const double axialRetreat=gap/(2.0*std::cos(angle*std::acos(-1.0)/360.0));
+        const auto aEnds=blanks[0].To<ObjectMap>().at("request").To<ObjectMap>()
+            .at("ends").To<ObjectMap>();
+        const auto bEnds=blanks[1].To<ObjectMap>().at("request").To<ObjectMap>()
+            .at("ends").To<ObjectMap>();
+        EXPECT_NEAR(number(aEnds.at("end").To<ObjectMap>().at("trim")),axialRetreat,1e-7);
+        EXPECT_NEAR(number(bEnds.at("start").To<ObjectMap>().at("trim")),axialRetreat,1e-7);
+        const auto a=worldShape(scene,blanks[0].To<ObjectMap>(),designs[0].To<ObjectMap>(),"miter-l-a");
+        const auto b=worldShape(scene,blanks[1].To<ObjectMap>(),designs[1].To<ObjectMap>(),"miter-l-b");
+        ASSERT_FALSE(a.IsNull());
+        ASSERT_FALSE(b.IsNull());
+        BRepAlgoAPI_Common common(a,b);
+        ASSERT_TRUE(common.IsDone());
+        GProp_GProps overlap;
+        BRepGProp::VolumeProperties(common.Shape(),overlap);
+        EXPECT_NEAR(overlap.Mass(),0.0,0.1)
+            <<"The two finished cut tubes must not interpenetrate";
+        BRepExtrema_DistShapeShape contact(a,b);
+        contact.Perform();
+        ASSERT_TRUE(contact.IsDone());
+        EXPECT_NEAR(contact.Value(),gap,0.05)
+            <<"The manufactured cut ends must have the requested physical face gap";
+        // OpenCascade's solid/solid Common omits a shared face when the
+        // intersection has no volume.  Probe four separated points on the
+        // actual cut wall instead: both side walls and both top/bottom walls
+        // must be ON each finished BRep, ruling out a single-tip contact.
+        const auto aRequest=blanks[0].To<ObjectMap>().at("request").To<ObjectMap>();
+        const auto sectionParameters=aRequest.at("parameters").To<ObjectMap>();
+        const double width=number(sectionParameters.at("width"));
+        const double depth=number(sectionParameters.at("depth"));
+        const double wall=number(sectionParameters.at("wallThickness"));
+        const double radius=number(sectionParameters.at("cornerRadius"));
+        const double phi=plane*std::acos(-1.0)/180.0;
+        const double halfSpan=(width/2-radius)*std::abs(std::sin(phi))
+            +(depth/2-radius)*std::abs(std::cos(phi))+radius;
+        const double slope=std::tan(angle*std::acos(-1.0)/360.0);
+        const double length=number(aRequest.at("length"));
+        const auto aMatrix=designs[0].To<ObjectMap>().at("matrix").To<VariantArray>();
+        const auto seamPoint=[&](double localY,double localZ) {
+            const double transverse=-std::sin(phi)*localY+std::cos(phi)*localZ;
+            const double localX=length-halfSpan*slope-slope*transverse;
+            return gp_Pnt(
+                number(aMatrix[0])*localX+number(aMatrix[1])*localY+number(aMatrix[2])*localZ+number(aMatrix[3]),
+                number(aMatrix[4])*localX+number(aMatrix[5])*localY+number(aMatrix[6])*localZ+number(aMatrix[7]),
+                number(aMatrix[8])*localX+number(aMatrix[9])*localY+number(aMatrix[10])*localZ+number(aMatrix[11]));
+        };
+        if(gap>0.0)continue;
+        for(const auto& [localY,localZ]:std::array<std::pair<double,double>,4>{{
+                {width/2-wall/2,0.0},{-width/2+wall/2,0.0},
+                {0.0,depth/2-wall/2},{0.0,-depth/2+wall/2}}}) {
+            const auto point=seamPoint(localY,localZ);
+            SCOPED_TRACE("seam wall sample y="+std::to_string(localY)+
+                ", z="+std::to_string(localZ));
+            EXPECT_EQ(BRepClass3d_SolidClassifier(a,point,0.05).State(),TopAbs_ON);
+            EXPECT_EQ(BRepClass3d_SolidClassifier(b,point,0.05).State(),TopAbs_ON);
+        }
+      }
+    }
+}
+
+TEST(AssemblyTemplateSDOTest, WrapConnectionFinishedPreviewUsesContactingNativeParts)
+{
+    struct Bounds { std::array<double,3> low{}, high{}; };
+    struct NativePart { Bounds bounds; std::string geometryUrl; std::string baseUrl;
+        TopoDS_Shape finished, base; };
+    const auto nativeBounds=[](Scene& scene,const ObjectMap& planned,const std::string& key) {
+        const auto preview=previewAssemblyManufacturingPart(scene,planned,key);
+        if(preview.contains("resultError"))throw std::runtime_error(preview.at("resultError").To<std::string>());
+        if(!preview.at("previewComputed").To<bool>())throw std::runtime_error("Wrap manufacturing preview did not compute");
+        const auto model=scene.Resources().Get<BRepModel>(
+            scene.Resources().MakeNamedResourceURL("tube-designer/punch-preview/assembly/"+key));
+        const auto baseModel=scene.Resources().Get<BRepModel>(
+            scene.Resources().MakeNamedResourceURL("tube-designer/punch-preview/assembly/"+key+"/base"));
+        if(!model)throw std::runtime_error("Wrap manufacturing BRep is missing");
+        if(!baseModel)throw std::runtime_error("Wrap base BRep is missing");
+        const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(*model);
+        const auto rebuiltBase=iCAX::OpenCascade::BuildOpenCascadeShape(*baseModel);
+        if(!rebuilt.bOK||rebuilt.Shape.IsNull())throw std::runtime_error("Wrap manufacturing BRep cannot rebuild");
+        if(!rebuiltBase.bOK||rebuiltBase.Shape.IsNull())throw std::runtime_error("Wrap base BRep cannot rebuild");
+        Bnd_Box box;
+        BRepBndLib::AddOptimal(rebuilt.Shape,box,false,false);
+        box.SetGap(0);
+        double x0,y0,z0,x1,y1,z1;
+        box.Get(x0,y0,z0,x1,y1,z1);
+        return NativePart{Bounds{{x0,y0,z0},{x1,y1,z1}},
+            preview.at("geometry").To<ObjectMap>().at("url").To<std::string>(),
+            preview.at("baseGeometry").To<ObjectMap>().at("url").To<std::string>(),
+            rebuilt.Shape,rebuiltBase.Shape};
+    };
+    const auto designPose=[](const ObjectMap& design) {
+        const auto values=design.at("matrix").To<VariantArray>();
+        gp_Trsf pose;
+        pose.SetValues(values[0].To<double>(),values[1].To<double>(),values[2].To<double>(),values[3].To<double>(),
+            values[4].To<double>(),values[5].To<double>(),values[6].To<double>(),values[7].To<double>(),
+            values[8].To<double>(),values[9].To<double>(),values[10].To<double>(),values[11].To<double>());
+        return pose;
+    };
+    const auto worldShape=[&](const TopoDS_Shape& shape,const ObjectMap& design) {
+        return BRepBuilderAPI_Transform(shape,designPose(design),true).Shape();
+    };
+    const auto solidVolume=[](const TopoDS_Shape& shape) {
+        GProp_GProps properties;
+        BRepGProp::VolumeProperties(shape,properties);
+        return properties.Mass();
+    };
+    const auto worldBounds=[](const Bounds& local,const ObjectMap& design) {
+        const auto values=design.at("matrix").To<VariantArray>();
+        std::array<double,16> matrix{};
+        for(std::size_t index=0;index<matrix.size();++index)matrix[index]=values[index].To<double>();
+        Bounds world{{1e100,1e100,1e100},{-1e100,-1e100,-1e100}};
+        for(int x=0;x<2;++x)for(int y=0;y<2;++y)for(int z=0;z<2;++z) {
+            const std::array<double,3> point{x?local.high[0]:local.low[0],
+                y?local.high[1]:local.low[1],z?local.high[2]:local.low[2]};
+            for(std::size_t axis=0;axis<3;++axis) {
+                const auto value=matrix[axis*4]*point[0]+matrix[axis*4+1]*point[1]
+                    +matrix[axis*4+2]*point[2]+matrix[axis*4+3];
+                world.low[axis]=std::min(world.low[axis],value);
+                world.high[axis]=std::max(world.high[axis],value);
+            }
+        }
+        return world;
+    };
+    for(const auto& id:{"wrap-a-over-b"}) {
+        const std::string longRole="memberA";
+        const std::string shortRole="memberB";
+        for(const auto& [male,pairs]:std::vector<std::pair<bool,std::string>>{
+                {false,""},{true,""},{true,"two"},{true,"four"}}) {
+            SCOPED_TRACE(id);
+            SCOPED_TRACE(male?(pairs.empty()?"default-two":pairs):"plain");
+            Scene scene;
+            ObjectMap parameters{{"maleFemale",male}};
+            if(!pairs.empty())parameters["pairCount"]=pairs;
+            const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+                {"templateId",std::string(id)},
+                {"parameters",parameters},
+                {"processDrafts",ObjectMap{}},
+            });
+            const auto resolvedParameters=plan.at("parameters").To<ObjectMap>();
+            std::set<std::string> returnedKeys;
+            for(const auto& entry:resolvedParameters)returnedKeys.insert(entry.first);
+            EXPECT_EQ(returnedKeys,(std::set<std::string>{"maleFemale","pairCount",
+                "tabWidth","tabLength","sideClearance"}))
+                << "Derived geometry values must not leak into normalized template parameters";
+            EXPECT_FALSE(resolvedParameters.contains("setback"));
+            EXPECT_FALSE(resolvedParameters.contains("memberA_depth"));
+            EXPECT_FALSE(resolvedParameters.contains("memberB_depth"));
+            EXPECT_EQ(resolvedParameters.at("maleFemale").To<bool>(),male);
+            if(!pairs.empty())
+                EXPECT_EQ(resolvedParameters.at("pairCount").To<std::string>(),pairs);
+            std::map<std::string,ObjectMap> designs,blanks;
+            for(const auto& value:plan.at("designParts").To<VariantArray>()) {
+                const auto part=value.To<ObjectMap>();
+                designs.emplace(part.at("role").To<std::string>(),part);
+            }
+            for(const auto& value:plan.at("manufacturingParts").To<VariantArray>()) {
+                const auto part=value.To<ObjectMap>();
+                blanks.emplace(part.at("sourceRole").To<std::string>(),part);
+            }
+            ASSERT_EQ(designs.size(),2u);
+            ASSERT_EQ(blanks.size(),2u);
+            ASSERT_TRUE(designs.contains(longRole));
+            ASSERT_TRUE(designs.contains(shortRole));
+            ASSERT_TRUE(blanks.contains(longRole));
+            ASSERT_TRUE(blanks.contains(shortRole));
+            const auto longRequest=blanks.at(longRole).at("request").To<ObjectMap>();
+            const auto shortRequest=blanks.at(shortRole).at("request").To<ObjectMap>();
+            const auto longNative=nativeBounds(scene,longRequest,"long-part");
+            const auto shortNative=nativeBounds(scene,shortRequest,"short-part");
+            EXPECT_NE(longNative.geometryUrl,shortNative.geometryUrl);
+            EXPECT_NE(longNative.baseUrl,shortNative.baseUrl);
+            const auto& longLocal=longNative.bounds;
+            const auto& shortLocal=shortNative.bounds;
+            const auto longer=worldBounds(longLocal,designs.at(longRole));
+            const auto shorter=worldBounds(shortLocal,designs.at(shortRole));
+            // These are the BRep solids shown by assemblyFinishedRows, not logical
+            // uncut members or a purely declarative previewScene.
+            EXPECT_GT(longLocal.high[0]-longLocal.low[0],
+                1.5*(shortLocal.high[0]-shortLocal.low[0]));
+            EXPECT_GT(longer.high[0]-longer.low[0],300.0);
+            EXPECT_LT(longer.high[2]-longer.low[2],60.0);
+            EXPECT_NEAR(shorter.high[2]-shorter.low[2],180.0,0.5)
+                << "The short tube stock must not shrink by a virtual setback";
+            EXPECT_LT(shorter.high[0]-shorter.low[0],60.0);
+            EXPECT_GT(std::min(longer.high[0],shorter.high[0])
+                -std::max(longer.low[0],shorter.low[0]),30.0);
+            EXPECT_GT(std::min(longer.high[1],shorter.high[1])
+                -std::max(longer.low[1],shorter.low[1]),30.0);
+            EXPECT_NEAR(longer.high[0],shorter.high[0],0.5)
+                << "An L corner must not leave a horizontal tail past the upright";
+            EXPECT_GT(shorter.low[0]-longer.low[0],300.0)
+                << "The upright must meet the terminal region of the horizontal member";
+            const auto sideGap=shorter.low[2]-longer.high[2];
+            if(male) {
+                const auto expectedPairs=pairs.empty()?"two":pairs;
+                const bool four=expectedPairs=="four";
+                EXPECT_EQ(plan.at("parameters").To<ObjectMap>().at("pairCount").To<std::string>(),expectedPairs);
+                EXPECT_LE(sideGap,0.5);
+                EXPECT_GE(sideGap,-13.0); // nominal 12 mm tab insertion
+                EXPECT_GT(solidVolume(longNative.base)-solidVolume(longNative.finished),1.0)
+                    << "The long tube must contain actual cut side sockets";
+                EXPECT_GT(solidVolume(shortNative.base)-solidVolume(shortNative.finished),1.0)
+                    << "The short tube must retain rounded ears after end cutting";
+                const auto features=longRequest.at("features").To<VariantArray>();
+                ASSERT_EQ(features.size(),1u);
+                const auto socket=features.front().To<ObjectMap>();
+                ASSERT_EQ(socket.at("reference").To<std::string>(),"start");
+                const auto number=[](const auto& value) -> double {
+                    if(value.template Is<double>())return value.template To<double>();
+                    if(value.template Is<float>())return value.template To<float>();
+                    if(value.template Is<std::int64_t>())return static_cast<double>(value.template To<std::int64_t>());
+                    if(value.template Is<std::uint64_t>())return static_cast<double>(value.template To<std::uint64_t>());
+                    if(value.template Is<int>())return static_cast<double>(value.template To<int>());
+                    return static_cast<double>(value.template To<unsigned int>());
+                };
+                const double station=longLocal.low[0]+number(socket.at("station"));
+                const double faceZ=longLocal.high[2]-1.0; // 2 mm receiving wall
+                const double across=(longLocal.low[1]+longLocal.high[1])/2;
+                const double shortY=(shortLocal.low[1]+shortLocal.high[1])/2;
+                const double shortZ=(shortLocal.low[2]+shortLocal.high[2])/2;
+                const double earTipX=shortLocal.high[0]-3.0;
+                const double tabLength=number(plan.at("parameters").To<ObjectMap>().at("tabLength"));
+                const double earAtHostWallX=shortLocal.high[0]-tabLength+1.0;
+                const auto classified=[](const TopoDS_Shape& shape,const gp_Pnt& p) {
+                    return BRepClass3d_SolidClassifier(shape,p,1e-6).State();
+                };
+                const auto expectState=[&](const TopoDS_Shape& shape,const gp_Pnt& p,
+                        TopAbs_State expected,const char* feature) {
+                    SCOPED_TRACE(std::string(feature)+" ("+std::to_string(p.X())+","+
+                        std::to_string(p.Y())+","+std::to_string(p.Z())+")");
+                    EXPECT_EQ(classified(shape,p),expected);
+                };
+                std::vector<gp_Pnt> matingEars;
+                // The default pair occupies opposite short-tube walls, one
+                // ear per wall.  Four adds one ear to each remaining wall.
+                for(double side:{-1.,1.}) {
+                    const double z=shortZ+side*19.0;
+                    const gp_Pnt tip(earTipX,shortY,z);
+                    expectState(shortNative.base,tip,TopAbs_IN,"opposite wall before cutting");
+                    expectState(shortNative.finished,tip,TopAbs_IN,"opposite wall ear");
+                    matingEars.emplace_back(earAtHostWallX,shortY,z);
+                    for(double shifted:{-9.,9.})
+                        expectState(shortNative.finished,gp_Pnt(earTipX,shortY+shifted,z),
+                            TopAbs_OUT,"no second ear on the same wall");
+                }
+                for(double side:{-1.,1.}) {
+                    const double y=shortY+side*19.0;
+                    const gp_Pnt tip(earTipX,y,shortZ);
+                    expectState(shortNative.base,tip,TopAbs_IN,"other wall before cutting");
+                    expectState(shortNative.finished,tip,
+                        four?TopAbs_IN:TopAbs_OUT,
+                        "remaining wall ear only in four mode");
+                    if(four)
+                        matingEars.emplace_back(earAtHostWallX,y,shortZ);
+                }
+                // The two receiving slots sit on opposite parallel edges of
+                // the long tube face.  Four adds its other opposite edge pair.
+                for(double side:{-1.,1.}) {
+                    const gp_Pnt slotPoint(station,across+side*19.0,faceZ);
+                    expectState(longNative.base,slotPoint,TopAbs_IN,"opposite edge before slotting");
+                    expectState(longNative.finished,slotPoint,TopAbs_OUT,"opposite edge slot");
+                    for(double shifted:{-9.,9.})
+                        expectState(longNative.finished,
+                            gp_Pnt(station+shifted,across+side*19.0,faceZ),TopAbs_IN,
+                            "no second slot along the same edge");
+                }
+                for(double side:{-1.,1.}) {
+                    const gp_Pnt slotPoint(station+side*19.0,across,faceZ);
+                    expectState(longNative.base,slotPoint,TopAbs_IN,"other edge before slotting");
+                    expectState(longNative.finished,slotPoint,
+                        four?TopAbs_OUT:TopAbs_IN,
+                        "remaining edge slot only in four mode");
+                }
+                expectState(longNative.finished,gp_Pnt(station,across,faceZ),TopAbs_IN,
+                    "receiving face center between slots");
+                const auto shortPose=designPose(designs.at(shortRole));
+                const auto longInverse=designPose(designs.at(longRole)).Inverted();
+                for(auto ear:matingEars) {
+                    expectState(shortNative.finished,ear,TopAbs_IN,"retained ear at host wall");
+                    ear.Transform(shortPose);
+                    ear.Transform(longInverse);
+                    expectState(longNative.base,ear,TopAbs_IN,"ear crosses uncut host wall");
+                    expectState(longNative.finished,ear,TopAbs_OUT,"ear lies in its real socket");
+                }
+                const auto longFinished=worldShape(longNative.finished,designs.at(longRole));
+                const auto shortFinished=worldShape(shortNative.finished,designs.at(shortRole));
+                BRepAlgoAPI_Common overlap(longFinished,shortFinished);
+                ASSERT_TRUE(overlap.IsDone());
+                EXPECT_NEAR(solidVolume(overlap.Shape()),0.0,0.1)
+                    << "The finished tabs must enter the sockets without colliding with the host";
+            } else EXPECT_NEAR(sideGap,0.0,0.5);
+            EXPECT_GT(shorter.high[2]-longer.high[2],90.0);
+        }
+    }
 }
 std::shared_ptr<CManufacturingPartComponent> part(Scene& scene,const std::string& id) {
     const auto entity=scene.Database().GetEntity(iCAX::Data::uuid::from_string(id).value());
@@ -994,6 +1978,74 @@ TEST(PartDrawingIndependentSDO, OwnRecipeAllowsMultipleSolidsAndReopensIndepende
     EXPECT_THROW(invoke(scene,"AddNestingPunchPart",request("冲孔仍须单段","round",{},VariantArray{f})),std::exception);
 }
 
+TEST(ProductTemplatePreviewSDO, EveryCurrentProductDefaultPassesNativePreview) {
+    auto source = std::filesystem::path(__FILE__).parent_path();
+    while (!source.empty() && !std::filesystem::is_directory(source / "apps/tube-designer/templates/product")) {
+        const auto parent = source.parent_path();
+        if (parent == source) break;
+        source = parent;
+    }
+    const auto root = source / "apps/tube-designer/templates/product";
+    ASSERT_TRUE(std::filesystem::is_directory(root));
+    std::map<std::string, ObjectMap> descriptors;
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        const auto path = entry.path() / "template.json";
+        if (!entry.is_directory() || !std::filesystem::is_regular_file(path)) continue;
+        std::ifstream file(path);
+        const std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto descriptor = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(json).To<ObjectMap>();
+        descriptors.emplace(descriptor.at("id").To<std::string>(), descriptor);
+    }
+    ASSERT_FALSE(descriptors.empty());
+    Scene scene;
+    for (const auto& [id, descriptor] : descriptors) {
+        SCOPED_TRACE(id);
+        try {
+            const auto started = std::chrono::steady_clock::now();
+            const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{{"templateId", id}});
+            EXPECT_EQ(response.at("templateId").To<std::string>(), id);
+            const auto items = response.at("items").To<VariantArray>();
+            EXPECT_FALSE(items.empty());
+            const auto parameters = response.at("parameters").To<ObjectMap>();
+            for (const auto& field : descriptor.at("parameters").To<VariantArray>())
+                EXPECT_TRUE(parameters.contains(field.To<ObjectMap>().at("key").To<std::string>()));
+            std::set<std::string> resources;
+            for (const auto& value : items) {
+                const auto item = value.To<ObjectMap>();
+                EXPECT_EQ(16u, item.at("transform").To<VariantArray>().size());
+                resources.insert(item.at("geometry").To<ObjectMap>().at("url").To<std::string>());
+            }
+            std::cout << "[product-audit] " << id << " items=" << items.size()
+                << " meshes=" << resources.size() << " seconds="
+                << std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() << '\n';
+        } catch (const std::exception& error) {
+            ADD_FAILURE() << id << ": " << error.what();
+        }
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, InactiveDraftValuesDoNotBlockNativePreview) {
+    const std::vector<std::tuple<std::string, std::string, double, ObjectMap>> cases{
+        {"modular-guardrail-glass-straight", "infillWidth", 300.0, {}},
+        {"modular-guardrail-glass-straight", "infillWallThickness", 50.0, {}},
+        {"single-face-security-window", "horizontalWallThickness", 2.0,
+            {{"infillPattern", std::string("vertical")}}},
+        {"single-face-security-window", "verticalWidth", 21.85,
+            {{"infillPattern", std::string("horizontal")}}},
+    };
+    for (const auto& [id, key, value, extra] : cases) {
+        SCOPED_TRACE(id + ":" + key);
+        Scene scene;
+        ObjectMap parameters{{key, value}};
+        parameters.insert(extra.begin(), extra.end());
+        ObjectMap request{{"templateId", id}, {"parameters", parameters}};
+        const auto response = invoke(scene, "GenerateProductTemplatePreview", request);
+        EXPECT_EQ(response.at("templateId").To<std::string>(), id);
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        EXPECT_EQ(response.at("parameters").To<ObjectMap>().at(key).To<double>(), value);
+    }
+}
+
 TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductRecords) {
     Scene scene;
     const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
@@ -1520,4 +2572,91 @@ TEST(TubeDesignerLibrarySDO, TemplateListLoadsFullDescriptorAtStartup) {
     EXPECT_TRUE(width.contains("preferred"));
     EXPECT_TRUE(width.contains("max"));
 }
+TEST(AssemblyTemplateSDOTest, TContactFitMarkProducesShallowNativeContourOnlyWhenEnabled)
+{
+    Scene scene;
+    const auto planFor=[&](bool enabled) {
+        return invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+            {"templateId",std::string("t-contact-fit")},
+            {"parameters",ObjectMap{{"markContact",enabled}}},
+            {"processDrafts",ObjectMap{}},
+        });
+    };
+    const auto plain=planFor(false), marked=planFor(true);
+    ASSERT_EQ(plain.at("designParts").To<VariantArray>().size(),2u);
+    EXPECT_EQ(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(plain.at("designParts")),
+              iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(marked.at("designParts")));
+    const auto hostRequest=[](const ObjectMap& plan) {
+        for(const auto& item:plan.at("manufacturingParts").To<VariantArray>()) {
+            const auto part=item.To<ObjectMap>();
+            if(part.at("sourceRole").To<std::string>()=="host")return part.at("request").To<ObjectMap>();
+        }
+        throw std::runtime_error("T contact host blank missing");
+    };
+    const auto unmarkedRequest=hostRequest(plain), markedRequest=hostRequest(marked);
+    EXPECT_TRUE(unmarkedRequest.at("features").To<VariantArray>().empty());
+    const auto markedFeatures=markedRequest.at("features").To<VariantArray>();
+    ASSERT_EQ(markedFeatures.size(),1u);
+    const auto feature=markedFeatures.front().To<ObjectMap>();
+    EXPECT_EQ(feature.at("toolRef").To<ObjectMap>().at("id").To<std::string>(),"contact-outline-mark");
+    EXPECT_EQ(feature.at("face").To<std::string>(),"top");
+    EXPECT_TRUE(feature.at("blindHole").To<bool>());
+    EXPECT_NEAR(feature.at("cutDepth").To<double>(),0.2,1e-9);
+    const auto previewFor=[&](const ObjectMap& request,const std::string& key,bool plainBlank) {
+        const auto preview=previewAssemblyManufacturingPart(scene,request,key);
+        if(preview.contains("resultError"))
+            throw std::runtime_error(preview.at("resultError").To<std::string>());
+        if(!preview.at("previewComputed").To<bool>() || !preview.at("resultValid").To<bool>())
+            throw std::runtime_error("T contact preview did not produce valid manufacturing material");
+        // A no-tool assembly blank reuses its base BRep instead of storing a
+        // second manufactured resource at the plain preview key.
+        EXPECT_EQ(preview.at("geometry")==preview.at("baseGeometry"),plainBlank);
+        const auto model=scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL(
+            "tube-designer/punch-preview/assembly/"+key+(plainBlank?"/base":"")));
+        if(!model)throw std::runtime_error("T contact manufacturing BRep missing");
+        const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(*model);
+        if(!rebuilt.bOK || rebuilt.Shape.IsNull() || !BRepCheck_Analyzer(rebuilt.Shape).IsValid())
+            throw std::runtime_error("T contact manufacturing BRep invalid");
+        GProp_GProps properties;
+        BRepGProp::VolumeProperties(rebuilt.Shape,properties);
+        return std::make_pair(properties.Mass(),rebuilt.Shape);
+    };
+    const auto unmarked=previewFor(unmarkedRequest,"t-contact-unmarked",true);
+    const auto cut=previewFor(markedRequest,"t-contact-marked",false);
+    EXPECT_GT(unmarked.first-cut.first,5.0);
+    EXPECT_LT(unmarked.first-cut.first,100.0);
+    const auto materialAt=[&](const TopoDS_Shape& shape,double x,double y,double z) {
+        return BRepClass3d_SolidClassifier(shape,gp_Pnt(x,y,z),1e-5).State();
+    };
+    bool shallowContourFound=false;
+    for(double x : {200.25,239.75}) {
+        if(shallowContourFound)break;
+        for(double y=-19.75;y<=19.75;y+=0.5) {
+            if(materialAt(unmarked.second,x,y,19.9)==TopAbs_IN
+               && materialAt(cut.second,x,y,19.9)==TopAbs_OUT
+               && materialAt(cut.second,x,y,19.5)==TopAbs_IN) {
+                shallowContourFound=true;
+                break;
+            }
+        }
+    }
+    EXPECT_TRUE(shallowContourFound) << "mark must remove material only near the host contact face";
+    EXPECT_EQ(materialAt(cut.second,220,0,19.9),TopAbs_IN);
+}
+
+}
+
+namespace punch_persistence_acceptance {
+#include "FinishedProductInputSDOTests.inc"
+#include "ProductDisassemblyCountSDOTests.inc"
+#include "ProductAssemblyConnectionsTests.inc"
+#include "AssemblyBindingPersistenceTests.inc"
+#include "ProductAssemblyBindingSDOTests.inc"
+#include "ProductAssemblyCrossThroughSDOTests.inc"
+#include "ProductAssemblyFlatContactSDOTests.inc"
+#include "ProductAssemblyObliqueInsertSDOTests.inc"
+#include "ProductAssemblyWholeAuditSDOTests.inc"
+#include "ProductAssemblyOrthogonalCornerSDOTests.inc"
+#include "AssemblyProcessPlanSDOTests.inc"
+#include "ProductGeneratedAssemblyProcessSDOTests.inc"
 }

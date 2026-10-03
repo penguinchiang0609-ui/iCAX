@@ -1,0 +1,210 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "paired-side-slots",
+  "version": "2.2.0",
+  "displayName": "成对插舌侧壁母槽",
+  "description": "依据短管实际壁厚和端口壁面位置，在长管指定平直侧面开相对两边或四边对应的圆头母槽；母槽只穿透进入侧壁。",
+  "kind": "programmatic",
+  "target": "part",
+  "requiresSection": true,
+  "featureContext": [
+    "face",
+    "offset"
+  ],
+  "category": "侧壁",
+  "inputs": [
+    {
+      "key": "targetSection",
+      "displayName": "长管截面",
+      "valueType": "profile",
+      "required": true
+    }
+  ],
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "rect"
+    }
+  },
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M5 8H43V40H5Z M18 13H30V18H18Z M18 30H30V35H18Z"
+    ]
+  },
+  "parameters": [
+    {
+      "key": "pairCount",
+      "displayName": "母槽数量",
+      "valueType": "integer",
+      "defaultValue": 2,
+      "min": 2,
+      "max": 4,
+      "options": [
+        {
+          "value": 2,
+          "label": "2 个（对应短管对边）"
+        },
+        {
+          "value": 4,
+          "label": "4 个（对应短管四边）"
+        }
+      ]
+    },
+    {
+      "key": "tabWidth",
+      "displayName": "插舌宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 0.1,
+      "max": 1000,
+      "step": 0.1
+    },
+    {
+      "key": "tabLength",
+      "displayName": "插舌伸出长度（mm）",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 0.1,
+      "max": 1000,
+      "step": 0.1
+    },
+    {
+      "key": "sideClearance",
+      "displayName": "母槽单侧间隙（mm）",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 10,
+      "step": 0.1
+    },
+    {
+      "key": "pairRotation",
+      "displayName": "双槽对边方向（°）",
+      "valueType": "integer",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 90,
+      "options": [
+        {
+          "value": 0,
+          "label": "横跨承接面"
+        },
+        {
+          "value": 90,
+          "label": "沿主管轴向"
+        }
+      ],
+      "level": "advanced"
+    },
+    {
+      "key": "allowEndOpening",
+      "displayName": "允许端部开口母槽",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "level": "advanced"
+    }
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 220 140",
+    "paths": [
+      "M20 27 H200 V113 H20 Z",
+      "M91 41 H129 Q135 41 135 47 Q135 53 129 53 H91 Q85 53 85 47 Q85 41 91 41 Z",
+      "M91 87 H129 Q135 87 135 93 Q135 99 129 99 H91 Q85 99 85 93 Q85 87 91 87 Z"
+    ],
+    "variants": [
+      {
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "pairCount",
+          "value": 4
+        },
+        "paths": [
+          "M20 27 H200 V113 H20 Z",
+          "M91 41 H129 Q135 41 135 47 Q135 53 129 53 H91 Q85 53 85 47 Q85 41 91 41 Z",
+          "M91 87 H129 Q135 87 135 93 Q135 99 129 99 H91 Q85 99 85 93 Q85 87 91 87 Z",
+          "M59 58 Q59 52 65 52 Q71 52 71 58 V82 Q71 88 65 88 Q59 88 59 82 Z",
+          "M149 58 Q149 52 155 52 Q161 52 161 58 V82 Q161 88 155 88 Q149 88 149 82 Z"
+        ],
+        "labels": [
+          {
+            "text": "长管承接面：四槽对应短管端口四边",
+            "x": 110,
+            "y": 123
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "text": "长管承接面：两槽对应短管相对两边",
+        "x": 110,
+        "y": 123
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "pairCount",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          110,
+          47
+        ],
+        "description": "两个时对边各一槽；四个时十字分布，对应端口四边"
+      },
+      {
+        "parameter": "tabWidth",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          91,
+          47
+        ],
+        "description": "插舌名义宽度，槽长包含圆头与侧隙"
+      },
+      {
+        "parameter": "tabLength",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          129,
+          93
+        ],
+        "description": "母槽穿透侧壁的插入深度"
+      },
+      {
+        "parameter": "sideClearance",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          135,
+          53
+        ],
+        "description": "每侧给插舌保留的装配间隙"
+      },
+      {
+        "parameter": "pairRotation",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          110,
+          70
+        ],
+        "description": "支管双插舌对边横跨承接面或沿主管轴向；实际方向以截面位置校验"
+      },
+      {
+        "parameter": "allowEndOpening",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          20,
+          70
+        ],
+        "description": "开启后母槽允许连通长管端部；关闭时母槽必须保持在端口以内"
+      }
+    ]
+  }
+}

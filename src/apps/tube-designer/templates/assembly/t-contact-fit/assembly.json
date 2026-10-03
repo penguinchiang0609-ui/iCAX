@@ -1,0 +1,454 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "t-contact-fit",
+  "version": "1.0.1",
+  "displayName": "直角端面对侧贴合",
+  "category": "two-end-middle",
+  "categoryName": "T 形",
+  "layoutShape": "t",
+  "summary": "直角 T 形：支管端面贴合主管侧面；可在主管上浅刻支管接触轮廓。斜角贴合需选用相应端切工艺。",
+  "topology": "T 形端接中段",
+  "interfaceType": "端面对侧贴合",
+  "lockType": "待固定",
+  "motionType": "法向贴合",
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H60 V57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M26 6 H38 V45 H26 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M26 45 H38",
+        "tone": "joint"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "role": "host",
+      "label": "主管",
+      "responsibility": "侧面承接",
+      "count": 1
+    },
+    {
+      "role": "branch",
+      "label": "支管",
+      "responsibility": "端面贴合",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "T"
+      }
+    ],
+    "anchors": {
+      "host": "side",
+      "branch": "end"
+    },
+    "axisAngle": {
+      "roles": [
+        "host",
+        "branch"
+      ],
+      "directions": [
+        "startToEnd",
+        "awayFromAnchor"
+      ],
+      "measure": "direct",
+      "expected": {
+        "parameter": "intersectionAngle"
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "plain-contact",
+        "kind": "end-side-flat-contact",
+        "topology": "T",
+        "roles": {
+          "host": "host",
+          "branch": "branch"
+        },
+        "hostFaceSource": "anchor.face",
+        "processIds": [
+          "branch-butt-end"
+        ],
+        "gap": {
+          "millimeters": 0
+        },
+        "when": {
+          "op": "eq",
+          "parameter": "markContact",
+          "value": false
+        }
+      },
+      {
+        "id": "marked-contact",
+        "kind": "end-side-flat-contact",
+        "topology": "T",
+        "roles": {
+          "host": "host",
+          "branch": "branch"
+        },
+        "hostFaceSource": "anchor.face",
+        "processIds": [
+          "branch-butt-end",
+          "contact-outline"
+        ],
+        "gap": {
+          "millimeters": 0
+        },
+        "when": {
+          "op": "eq",
+          "parameter": "markContact",
+          "value": true
+        }
+      }
+    ],
+    "processes": {
+      "branch-butt-end": {
+        "target": "end",
+        "parameterSources": {
+          "trim": {
+            "role": "branch",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "min": 0.01
+          }
+        }
+      },
+      "contact-outline": {
+        "target": "side",
+        "sectionRole": "branch"
+      }
+    }
+  },
+  "parameters": [
+    {
+      "key": "markContact",
+      "displayName": "贴合线打标",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "level": "basic"
+    },
+    {
+      "key": "markMode",
+      "displayName": "打标方式",
+      "valueType": "choice",
+      "defaultValue": "contour",
+      "options": [
+        {
+          "value": "contour",
+          "label": "轮廓打标"
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "markContact",
+        "value": true
+      },
+      "level": "advanced"
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "branch-butt-end",
+      "participants": [
+        "branch"
+      ],
+      "label": "支管端面平切至主管外表面",
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "contact-outline",
+      "participants": [
+        "host"
+      ],
+      "label": "主管侧面贴合轮廓打标",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "markContact",
+        "value": true
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "contact-outline-mark",
+        "displayName": "贴合轮廓打标"
+      },
+      "parameterBindings": {
+        "markMode": "$markMode",
+        "lineWidth": 0.6,
+        "blindHole": true,
+        "cutDepth": 0.2
+      },
+      "previewPlacement": {
+        "target": "side",
+        "face": "top",
+        "reference": "center",
+        "station": 0,
+        "sectionRole": "branch",
+        "blindHole": true,
+        "cutDepth": 0.2
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管下料",
+        "participants": [
+          "host"
+        ]
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管下料",
+        "participants": [
+          "branch"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "prepare",
+      "label": "主管和支管按成品长度下料",
+      "kind": "下料",
+      "direction": "各自轴线",
+      "distance": 0
+    },
+    {
+      "id": "mark",
+      "label": "在主管侧面浅刻支管贴合轮廓",
+      "kind": "轮廓打标",
+      "direction": "主管接触面",
+      "distance": 0,
+      "when": {
+        "op": "eq",
+        "parameter": "markContact",
+        "value": true
+      }
+    },
+    {
+      "id": "fit",
+      "label": "支管端面贴合主管侧面",
+      "kind": "贴合",
+      "direction": "支管轴线",
+      "distance": 0
+    }
+  ],
+  "previewScene": {
+    "preferredView": "front-top-right",
+    "manufacturingParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管下料",
+        "sourceRole": "host",
+        "processes": [
+          "contact-outline"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$host_length / 2",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管下料",
+        "sourceRole": "branch",
+        "processes": [
+          "branch-butt-end"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            160
+          ],
+          "direction": [
+            0,
+            0,
+            -1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "axialTranslation": "-$branch_length"
+        }
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        150
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -150
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H60 V57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M26 6 H38 V45 H26 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M26 45 H38",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "x": 12,
+        "y": 53,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 32,
+        "y": 25,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "intersectionAngle",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          32,
+          45
+        ],
+        "description": "主管与支管轴线夹角"
+      },
+      {
+        "parameter": "markContact",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          32,
+          45
+        ],
+        "description": "在主管贴合位置浅刻支管端面轮廓"
+      },
+      {
+        "parameter": "markMode",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          32,
+          45
+        ],
+        "description": "只沿支管端面外轮廓打标"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "主管",
+      "支管"
+    ],
+    "secondaryProcess": [
+      "按需贴合轮廓打标",
+      "端面对侧贴合"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "host",
+      "branch"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "intersectionAngle",
+        "displayName": "成品轴线夹角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 1,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      }
+    ],
+    "requirements": {
+      "intersectionAngle": {
+        "min": 90,
+        "max": 90
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "t",
+    "roles": {
+      "host": "main",
+      "branch": "branch"
+    },
+    "parameterBindings": {
+      "intersectionAngle": "intersectionAngle"
+    },
+    "requirements": {
+      "intersectionAngle": {
+        "min": 90,
+        "max": 90
+      }
+    }
+  }
+}

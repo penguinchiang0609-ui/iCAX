@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import importlib.util
 import math
@@ -10,6 +10,12 @@ import sys
 from typing import Any
 
 from icax_template_sdk import NeutralModel
+
+_process_spec = importlib.util.spec_from_file_location("icax_window_frame_process_adapter",
+    Path(__file__).with_name("security_window_process_adapter.py"))
+_process_adapter = importlib.util.module_from_spec(_process_spec)
+_process_spec.loader.exec_module(_process_adapter)
+_machining = _process_adapter._load('security_window_machining_adapter')
 
 
 def _path(points):
@@ -86,6 +92,12 @@ class Part:
     category_name: str = ""
     start_cut: str = "square"
     end_cut: str = "square"
+    start_joint: str = ""
+    end_joint: str = ""
+    start_joint_mode: str = "butt"
+    end_joint_mode: str = "butt"
+    start_insertion: float | str = 0.
+    end_insertion: float | str = 0.
 
     @property
     def length(self) -> float:
@@ -96,7 +108,7 @@ class Part:
         return abs(self.end[2] - self.start[2]) > abs(self.end[0] - self.start[0])
 
 
-@dataclass(frozen=True)
+@dataclass
 class ContinuousFrame:
     key: str
     name: str
@@ -110,31 +122,26 @@ class ContinuousFrame:
     parameters: dict[str, Any]
     tool_role: str = ""
     user_mould_root: str = ""
+    corner_reserve: float | None = None
+    resolved_allowance: float | None = None
+
+    @property
+    def retained_datum(self) -> float:
+        return self.profile.wall if self.corner_reserve is None else self.profile.width/2-self.corner_reserve
 
     @property
     def bend_allowance(self) -> float:
-        bindings = self.parameters.get("tubeDesignerToolBindings", {})
-        binding = bindings.get(self.tool_role) if isinstance(bindings, dict) and self.tool_role else None
-        values = binding.get("parameters", {}) if isinstance(binding, dict) else {}
-        if not isinstance(values, dict) or not values.get("bendCompensation", False):
-            return 0.0
-        angle = values.get("angle", 90.0)
-        if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not math.isfinite(angle):
-            raise ValueError("槽口模具折弯角必须是有限数值")
-        factor = values.get("kFactor", 0.62)
-        if isinstance(factor, bool) or not isinstance(factor, (int, float)) or not math.isfinite(factor):
-            raise ValueError("槽口模具 K 因子必须是有限数值")
-        if not 0 <= factor <= 1:
-            raise ValueError("槽口模具 K 因子须介于 0 和 1 之间")
-        return math.radians(float(angle)) * float(factor) * self.profile.wall
+        # The sizing pass resolves shared visibility conditions first. An
+        # inactive compensation draft must not allocate material or reject it.
+        return 0. if self.resolved_allowance is None else self.resolved_allowance
 
     @property
     def horizontal_run(self) -> float:
-        return self.right - self.left - self.profile.wall * 2
+        return self.right - self.left - self.retained_datum * 2
 
     @property
     def vertical_run(self) -> float:
-        return self.top - self.bottom - self.profile.wall * 2
+        return self.top - self.bottom - self.retained_datum * 2
 
     @property
     def length(self) -> float:
@@ -206,21 +213,32 @@ def emit_surface_frame(model: NeutralModel, shared: SharedTubeGeometry, paramete
                  "tubeDesigner.profile": _profile_properties(profile)}
         if isinstance(item, ContinuousFrame):
             display, export, bends = _emit_continuous_frame_geometry(model, item, shared, purpose, inserted_parts)
+            props.update(deepcopy(getattr(model, "_assembly_process_records", {}).get(item.key, {})))
+            props["tubeDesigner.sourceSpans"] = frame_source_spans(item, placement)
             props.update({"manufacturing.categoryKey": prefix + ".continuous", "manufacturing.categoryName": name,
                           "tubeDesigner.cornerProcess": {"joinType": process.join_type, "grooveStyle": process.groove_style,
                                                          "bendAllowance": item.bend_allowance, "bendLocations": bends}})
             sides.update({side: item.key for side in ("left", "right", "bottom", "top")})
         else:
+            arguments = _profile_arguments(item.start, item.end, item.profile)
+            def world(point):
+                return [placement['origin'][i] + sum(point[j] * placement[name][i]
+                        for j, name in enumerate(('xAxis', 'yAxis', 'zAxis'))) for i in range(3)]
+            local_placement = arguments['placement']
+            arguments['placement'] = {"origin":world(item.start), **{
+                name:[sum(local_placement[name][j] * placement[axis][i]
+                          for j, axis in enumerate(('xAxis','yAxis','zAxis'))) for i in range(3)]
+                for name in ('xAxis','yAxis')}}
+            props["tubeDesigner.designSegment"] = {"start":world(item.start), "end":world(item.end),
+                "profileCoordinateMap": ([[0.,1.],[1.,0.]] if abs(item.end[0]-item.start[0]) >= abs(item.end[2]-item.start[2])
+                                         else [[1.,0.],[0.,1.]]), **arguments}
             display = _emit_tube_geometry(model, item, shared)[1]
             export = display
             if purpose != "display":
-                cutters = [_emit_crossing_cutter(model, item, inserted, index, _number(parameters, "assemblyClearance"))
-                           for index, inserted in enumerate(crossing_map.get(item.key, []), start=1)]
-                if item.start_cut == "miter-45":
-                    cutters.extend(_emit_miter_cutters(model, item))
-                if cutters:
-                    export = model.geometry(item.key + ".solid.final", "boolean", inputs=[display, *cutters],
-                                            arguments={"operation": "subtract", "target": display, "tools": cutters})
+                export = _machining.planar_part(model, display, item, crossing_map.get(item.key, []),
+                    _number(parameters, 'assemblyClearance'), straight,
+                    lambda p: _profile_arguments(p.start,p.end,p.profile))
+                props.update(deepcopy(getattr(model, '_assembly_process_records', {}).get(item.key, {})))
             props.update({"manufacturing.categoryKey": item.category_key, "manufacturing.categoryName": item.category_name,
                           "tubeDesigner.endProcess": {"startCut": item.start_cut, "endCut": item.end_cut,
                                                       "lengthReference": "outside_long_points"}})
@@ -236,6 +254,9 @@ def emit_surface_frame(model: NeutralModel, shared: SharedTubeGeometry, paramete
             export = display
         elif not isinstance(item, ContinuousFrame):
             export = model.geometry(item.key + ".surface.export", "transform", inputs=[export], arguments={"placement": placement})
+            _machining.transform_source(props,placement)
+            getattr(model,'_assembly_process_records',{})[item.key]=deepcopy({
+                key:value for key,value in props.items() if key.startswith('tubeDesigner.assemblyProcess')})
         records.append({"key": item.key, "name": item.name, "properties": props,
                         "representations": {"display": display, "export": export}})
     return records, sides
@@ -337,12 +358,6 @@ def _add_processed_rectangle(
 
     vertical_bottom, vertical_top = bottom, top
     horizontal_left, horizontal_right = left, right
-    if process.join_type == "butt_90" and process.butt_wrap == "side_wraps_horizontal":
-        horizontal_left += profile.width
-        horizontal_right -= profile.width
-    elif process.join_type == "butt_90":
-        vertical_bottom += profile.width
-        vertical_top -= profile.width
     cut = "miter-45" if process.join_type == "miter_45" else "square"
     half = profile.width / 2
     _add_part(items, counters, f"{prefix}.left", f"{name}左边",
@@ -357,6 +372,29 @@ def _add_processed_rectangle(
     _add_part(items, counters, f"{prefix}.top", f"{name}上边",
               (horizontal_left, 0, top - half), (horizontal_right, 0, top - half),
               profile, group, cut, cut, f"{prefix}.horizontal", f"{name}横边")
+    if process.join_type=='butt_90':
+        left_part,right_part,bottom_part,top_part=items[-4:]
+        args=lambda p:_profile_arguments(p.start,p.end,p.profile)
+        connections=((bottom_part,left_part,right_part),(top_part,left_part,right_part)) if process.butt_wrap=='side_wraps_horizontal' else (
+            (left_part,bottom_part,top_part),(right_part,bottom_part,top_part))
+        for part,start_mate,end_mate in connections:
+            allocated=replace(part,
+                start=_machining.allocate_joint(part,start_mate,'start','butt',0.,0.,args),
+                end=_machining.allocate_joint(part,end_mate,'end','butt',0.,0.,args),
+                start_joint=start_mate.key,end_joint=end_mate.key)
+            items[items.index(part)]=allocated
+    elif process.join_type=='miter_45' and not parameters.get('_assemblyDesignOnly',False):
+        frame_parts=items[-4:]
+        for part in list(frame_parts):
+            ends=_machining.planar_miter_ends(part,frame_parts)
+            direction=_machining._load('assembly_tube_machining').unit(_machining.sub(part.end,part.start))
+            nominal=replace(part,
+                start=tuple(part.start[i]+half*direction[i] for i in range(3)),
+                end=tuple(part.end[i]-half*direction[i] for i in range(3)))
+            allocated=replace(part,
+                start=_machining.allocate_miter(nominal,'start',ends[0][2],lambda p:_profile_arguments(p.start,p.end,p.profile)),
+                end=_machining.allocate_miter(nominal,'end',ends[1][2],lambda p:_profile_arguments(p.start,p.end,p.profile)))
+            items[items.index(part)]=allocated
 
 
 def _profile_arguments(
@@ -387,108 +425,6 @@ def _emit_tube_geometry(
     return solid, solid
 
 
-def _emit_polygon_cutter(
-    model: NeutralModel, key: str, points: list[list[float]], half_depth: float,
-) -> str:
-    profile = model.geometry(
-        f"{key}.profile", "profile2d",
-        arguments={
-            "placement": {
-                "origin": [0.0, -half_depth, 0.0],
-                "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
-            },
-            "contours": [points if isinstance(points,dict) else _path(points)],
-        },
-    )
-    return model.geometry(
-        f"{key}.solid", "extrude", inputs=[profile],
-        arguments={"vector": [0.0, half_depth * 2, 0.0]},
-    )
-
-
-def _circle_from_points(first: list[float], middle: list[float], last: list[float]) -> tuple[list[float], float]:
-    """Return the exact circle through a path arc's three protocol points."""
-    ax, ay = first
-    bx, by = middle
-    cx, cy = last
-    denominator = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if abs(denominator) <= 1.0e-10:
-        raise ValueError("模具目标管型含退化圆弧")
-    a2, b2, c2 = ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy
-    center = [
-        (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / denominator,
-        (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / denominator,
-    ]
-    return center, math.dist(center, first)
-
-
-def _section_edges(contour: dict[str, Any]) -> list[dict[str, Any]]:
-    """Translate the profile protocol into the exact mould-section protocol.
-
-    This is deliberately an analytic translation: lines and arcs remain lines
-    and arcs.  It never samples a tube profile to make a mould appear usable.
-    """
-    kind = str(contour.get("kind", ""))
-    if kind == "circle":
-        radius = _number(contour, "radius")
-        if radius <= 0:
-            raise ValueError("模具目标管型圆截面半径必须大于 0")
-        return [{"kind": "circleArc", "start": [radius, 0.0], "end": [radius, 0.0],
-                 "center": [0.0, 0.0], "xAxis": [1.0, 0.0], "yAxis": [0.0, 1.0],
-                 "radius": radius, "first": 0.0, "last": math.tau}]
-    if kind == "polygon":
-        points = contour.get("points")
-        if not isinstance(points, list) or len(points) < 3:
-            raise ValueError("模具目标管型多边形轮廓无效")
-        return [{"kind": "line", "start": deepcopy(first), "end": deepcopy(last)}
-                for first, last in zip(points, points[1:] + points[:1])]
-    if kind != "path" or contour.get("closed") is not True:
-        raise ValueError("所选槽口模具需要闭合的直线或圆弧管型截面")
-    edges: list[dict[str, Any]] = []
-    for segment in contour.get("segments", []):
-        if segment.get("kind") == "line":
-            edges.append({"kind": "line", "start": deepcopy(segment["start"]), "end": deepcopy(segment["end"])})
-            continue
-        if segment.get("kind") != "arc":
-            raise ValueError("所选槽口模具不支持该管型的曲线类型")
-        first, middle, last = (deepcopy(segment[name]) for name in ("start", "middle", "end"))
-        center, radius = _circle_from_points(first, middle, last)
-        edges.append({"kind": "circleArc", "start": first, "end": last, "center": center,
-                      "xAxis": [1.0, 0.0], "yAxis": [0.0, 1.0], "radius": radius,
-                      "first": math.atan2(first[1] - center[1], first[0] - center[0]),
-                      "last": math.atan2(last[1] - center[1], last[0] - center[0])})
-    if not edges:
-        raise ValueError("模具目标管型轮廓无有效边")
-    return edges
-
-
-def _mould_target_section(profile: Profile, length: float) -> tuple[dict[str, Any], dict[str, list[float]]]:
-    contours = profile.contours(swap_axes=True)
-    loops = [{"inner": index > 0, "closed": True, "edges": _section_edges(contour)}
-             for index, contour in enumerate(contours)]
-    all_points = [point for loop in loops for edge in loop["edges"]
-                  for point in (edge["start"], edge["end"])]
-    if not all_points:
-        raise ValueError("模具目标管型截面为空")
-    bounds = {"min": [0.0, *(min(point[index] for point in all_points) for index in (0, 1))],
-              "max": [float(length), *(max(point[index] for point in all_points) for index in (0, 1))]}
-    return {"schema": "icax.mold-section", "schemaVersion": 1, "status": "available",
-            "tolerance": 0.001, "coordinateSpace": "section-centered-yz", "contours": loops}, bounds
-
-
-def _punch_runtime():
-    path = Path(__file__).with_name("punch_tool_runtime.py")
-    module_key = "icax_product_mould_runtime_" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-    if module_key not in sys.modules:
-        spec = importlib.util.spec_from_file_location(module_key, path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError("无法加载模具运行时")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_key] = module
-        spec.loader.exec_module(module)
-    return sys.modules[module_key]
-
-
 def _frame_mould_binding(frame: ContinuousFrame) -> tuple[dict[str, Any], dict[str, Any]]:
     bindings = frame.parameters.get("tubeDesignerToolBindings", {})
     binding = bindings.get(frame.tool_role) if isinstance(bindings, dict) and frame.tool_role else None
@@ -505,55 +441,6 @@ def _frame_mould_binding(frame: ContinuousFrame) -> tuple[dict[str, Any], dict[s
     return {"scope": "system", "id": tool_id}, {}
 
 
-def _rewrite_tool_value(value: Any, mapping: dict[str, str]) -> Any:
-    if isinstance(value, str):
-        return mapping.get(value, value)
-    if isinstance(value, list):
-        return [_rewrite_tool_value(item, mapping) for item in value]
-    if isinstance(value, dict):
-        return {key: _rewrite_tool_value(item, mapping) for key, item in value.items()}
-    return deepcopy(value)
-
-
-def _emit_library_groove_cutter(model: NeutralModel, frame: ContinuousFrame, center: float, index: int) -> tuple[str, tuple[float, float]]:
-    reference, values = _frame_mould_binding(frame)
-    section, bounds = _mould_target_section(frame.profile, frame.length)
-    snapshot = _punch_runtime()._evaluate(reference, values, {
-        "target": "part", "bounds": bounds, "targetSection": section,
-        "lengthUnit": "mm", "feature": f"product:{frame.tool_role or 'cornerGroove'}",
-    }, user_root=frame.user_mould_root or None)
-    geometry = snapshot["geometry"]
-    source_nodes = geometry.get("model", {}).get("geometry", [])
-    output = str(geometry.get("outputKey", ""))
-    if not source_nodes or not output:
-        raise ValueError("所选槽口模具没有可用实体刀具")
-    prefix = f"{frame.key}.export.groove.{index:04d}.mould"
-    mapping = {str(node["key"]): f"{prefix}.{node['key']}" for node in source_nodes}
-    if output not in mapping:
-        raise ValueError("所选槽口模具输出节点无效")
-    for node in source_nodes:
-        model.geometry(mapping[str(node["key"])], str(node["operator"]),
-                       inputs=[mapping.get(str(key), str(key)) for key in node.get("inputs", [])],
-                       arguments=_rewrite_tool_value(node.get("arguments", {}), mapping))
-    placed = model.geometry(f"{prefix}.placed", "transform", inputs=[mapping[output]], arguments={"placement": {
-        "origin": [center, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0],
-        "yAxis": [0.0, 1.0, 0.0], "zAxis": [0.0, 0.0, 1.0],
-    }})
-    x_values: list[float] = []
-    for node in source_nodes:
-        if node.get("operator") != "profile2d":
-            continue
-        placement = node.get("arguments", {}).get("placement", {})
-        origin = placement.get("origin", [0.0, 0.0, 0.0])
-        for contour in node.get("arguments", {}).get("contours", []):
-            for segment in contour.get("segments", []) if isinstance(contour, dict) else []:
-                for point in (segment.get("start"), segment.get("middle"), segment.get("end")):
-                    if isinstance(point, list) and len(point) == 2:
-                        x_values.append(float(origin[0]) + float(point[0]))
-    extent = (min(x_values), max(x_values)) if x_values else (-frame.profile.width, frame.profile.width)
-    return placed, extent
-
-
 def _unfold_frame_point(
     frame: ContinuousFrame, side: str, point: tuple[float, float, float],
     seam_shift: float = 0.0,
@@ -566,7 +453,7 @@ def _unfold_frame_point(
     it is added between spans, never scaled into a piercing's shape.
     """
     x, y, z = point
-    half, wall = frame.profile.width / 2, frame.profile.wall
+    half, wall = frame.profile.width / 2, frame.retained_datum
     horizontal, vertical, bend = frame.horizontal_run, frame.vertical_run, frame.bend_allowance
     if side == "bottom":
         return (x - (frame.left + frame.right) / 2 + seam_shift, y,
@@ -583,10 +470,53 @@ def _unfold_frame_point(
     raise ValueError(f"未知连续框边：{side}")
 
 
-def _continuous_frame_cutters(
-    model: NeutralModel, frame: ContinuousFrame, parts: list[Part], clearance: float,
-) -> list[str]:
-    cutters: list[str] = []
+def frame_source_spans(frame: ContinuousFrame, placement: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Map four logical frame sides to the actual five unfolded straight spans."""
+    placement = placement or {"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
+    half = frame.profile.width / 2
+    reserve = half - frame.retained_datum
+    mid = (frame.left + frame.right) / 2
+    corners = {"bl":(frame.left+half,0,frame.bottom+half),
+               "br":(frame.right-half,0,frame.bottom+half),
+               "tr":(frame.right-half,0,frame.top-half),
+               "tl":(frame.left+half,0,frame.top-half),
+               "seam":(mid,0,frame.bottom+half)}
+    segments = [("bottom","seam","br",0,reserve,0),
+                ("right","br","tr",reserve,reserve,0),
+                ("top","tr","tl",reserve,reserve,0),
+                ("left","tl","bl",reserve,reserve,0),
+                ("bottom","bl","seam",reserve,0,frame.length)]
+    axes = ('xAxis','yAxis','zAxis')
+    def world(point):
+        return [placement['origin'][i]+sum(point[j]*placement[name][i]
+                for j,name in enumerate(axes)) for i in range(3)]
+    def local(point):
+        return tuple(sum((point[i]-placement['origin'][i])*placement[name][i]
+                         for i in range(3)) for name in axes)
+    prefix = frame.key.rsplit('.continuous.',1)[0]
+    result, cursor = [], 0.0
+    for index,(side,start,end,start_reserve,end_reserve,seam_shift) in enumerate(segments):
+        a,b = corners[start],corners[end]
+        def mapped(point):
+            return _unfold_frame_point(frame,side,local(point),seam_shift)
+        origin = mapped((0,0,0))
+        result.append({"itemKey":prefix+'.'+side+'.0001',"start":world(a),"end":world(b),
+            "stockStart":cursor,"startReserve":start_reserve,"endReserve":end_reserve,
+            "placement":{"origin":list(origin), **{name:[mapped(tuple(1 if k==j else 0 for k in range(3)))[i]-origin[i]
+                for i in range(3)] for j,name in enumerate(axes)}}})
+        cursor += math.dist(a,b)+start_reserve+end_reserve
+        if index < 4:
+            cursor += frame.bend_allowance
+    if abs(cursor-frame.length)>1e-6:
+        raise ValueError('连续框成品管段映射与实际下料长度不一致')
+    return result
+
+
+def _apply_continuous_apertures(
+    model, frame, raw, parts, clearance,
+):
+    stock = _machining.unfolded_stock(model,frame)
+    current = raw
     for side in ("bottom", "right", "top", "left"):
         side_vertical = side in {"left", "right"}
         strip_min = {"left": frame.left, "right": frame.right - frame.profile.width,
@@ -619,25 +549,14 @@ def _continuous_frame_cutters(
                     # of the stock. Each full cutter is clipped by the stock.
                     seam_shifts = [0.0, frame.length]
             for seam_index, seam_shift in enumerate(seam_shifts):
-                prefix = f"{frame.key}.export.through.{side}.{part.key}.{seam_index}"
-                arguments = _profile_arguments(
-                    part.start, part.end, part.profile, clearance=clearance, outer_only=True,
-                )
-                placement = arguments["placement"]
-                origin = _unfold_frame_point(frame, side, part.start, seam_shift)
-                for axis_name in ("xAxis", "yAxis"):
-                    point = tuple(part.start[i] + placement[axis_name][i] for i in range(3))
-                    mapped = _unfold_frame_point(frame, side, point, seam_shift)
-                    placement[axis_name] = [mapped[i] - origin[i] for i in range(3)]
-                placement["origin"] = list(origin)
-                end = _unfold_frame_point(frame, side, part.end, seam_shift)
-                profile_key = model.geometry(f"{prefix}.profile", "profile2d", arguments=arguments)
-                cutters.append(model.geometry(
-                    f"{prefix}.solid", "extrude", inputs=[profile_key],
-                    arguments={"vector": [end[i] - origin[i] for i in range(3)],
-                               "extendStart": clearance + 1.0, "extendEnd": clearance + 1.0},
-                ))
-    return cutters
+                instance_id=f"{frame.key}.aperture.{side}.{part.key}.{seam_index}"
+                branch=_machining.mapped_branch(model,part,
+                    lambda p:_profile_arguments(p.start,p.end,p.profile),
+                    lambda point:_unfold_frame_point(frame,side,tuple(point),seam_shift),
+                    key=part.key+f".unfolded.{side}.{seam_index}")
+                current=_machining.aperture(model,current,stock,branch,instance_id,clearance,
+                                            clip_interval=[0.,frame.length])
+    return current
 
 
 def _emit_continuous_frame_geometry(
@@ -666,23 +585,41 @@ def _emit_continuous_frame_geometry(
 
     if purpose == "display":
         return display, display, centers
+    provisional_bends = [{"sequence":index, "station":center, "angle":90., "rotation":0.}
+                         for index, center in enumerate(centers,start=1)]
+    _, sizing = _process_adapter.frame_plan(model,frame,provisional_bends)
+    frame.resolved_allowance = _process_adapter.bend_allowance(sizing)
+    reserves = [_process_adapter.corner_reserve(fold) for fold in sizing['forming']]
+    if max(reserves)-min(reserves)>1e-6:
+        raise ValueError('平面闭合框的四个槽根必须提供一致的材料基准')
+    frame.corner_reserve = reserves[0]
+    centers, cursor = [], 0.
+    for segment in (frame.horizontal_run/2,frame.vertical_run,frame.horizontal_run,frame.vertical_run):
+        centers.append(cursor+segment+frame.bend_allowance/2)
+        cursor += segment+frame.bend_allowance
     base = Part(
         f"{frame.key}.export.base", "", (0.0, 0.0, 0.0), (frame.length, 0.0, 0.0),
         frame.profile, frame.group,
     )
     _, export_shape = _emit_tube_geometry(model, base, shared_geometry)
 
-    cutters = _continuous_frame_cutters(
-        model, frame, inserted_parts or [], _number(frame.parameters, "assemblyClearance"),
-    )
-    for index, center in enumerate(centers, start=1):
-        cutter, _ = _emit_library_groove_cutter(model, frame, center, index)
-        cutters.append(cutter)
-    if cutters:
-        export_shape = model.geometry(
-            f"{frame.key}.export.final", "boolean", inputs=[export_shape, *cutters],
-            arguments={"operation": "subtract", "target": export_shape, "tools": cutters},
-        )
+    export_shape = _apply_continuous_apertures(
+        model,frame,export_shape,inserted_parts or [],_number(frame.parameters,"assemblyClearance"))
+    secondary_cutters = []
+    bends = [{"sequence":index, "station":center, "angle":90., "rotation":0.}
+             for index, center in enumerate(centers, start=1)]
+    source, plan = _process_adapter.frame_plan(model, frame, bends)
+    cutters = [*_process_adapter.emit_cutters(model, frame, plan), *secondary_cutters]
+    records = getattr(model, "_assembly_process_records", {})
+    properties = deepcopy(getattr(model,"_assembly_process_records",{}).get(frame.key,{}))
+    _process_adapter.attach(properties, source, plan, secondary_cutters)
+    properties['length'] = round(frame.length,3)
+    properties['tubeDesigner.assemblyProcessTargetSpanCheck'] = _process_adapter.target_span_check(
+        frame_source_spans(frame),plan,frame.bend_allowance)
+    records[frame.key] = properties
+    model._assembly_process_records = records
+    export_shape = _process_adapter._load('assembly_geometry_process_runtime').apply_frozen_cutters(
+        model,export_shape,cutters,frame.key+'.resolved-folds',frame.key,plan)
     return display or export_shape, export_shape, centers
 
 
@@ -722,64 +659,6 @@ def _crossings(parts: list[Part]) -> dict[str, list[Part]]:
     return result
 
 
-def _emit_crossing_cutter(
-    model: NeutralModel, target: Part, inserted: Part, index: int, clearance: float,
-) -> str:
-    key = f"{target.key}.through.{index:04d}"
-    profile_key = model.geometry(
-        f"{key}.profile", "profile2d",
-        arguments=_profile_arguments(
-            inserted.start, inserted.end, inserted.profile,
-            clearance=clearance, outer_only=True,
-        ),
-    )
-    vector = [inserted.end[i] - inserted.start[i] for i in range(3)]
-    return model.geometry(
-        f"{key}.solid", "extrude", inputs=[profile_key],
-        arguments={"vector": vector, "extendStart": clearance + 1.0, "extendEnd": clearance + 1.0},
-    )
-
-
-def _miter_triangles(part: Part) -> list[list[list[float]]]:
-    width = part.profile.width
-    half = width / 2
-    min_x = min(part.start[0], part.end[0]) - (0 if not part.vertical else half)
-    max_x = max(part.start[0], part.end[0]) + (0 if not part.vertical else half)
-    min_z = min(part.start[2], part.end[2]) - (half if not part.vertical else 0)
-    max_z = max(part.start[2], part.end[2]) + (half if not part.vertical else 0)
-    if ".left." in part.key:
-        return [
-            [[min_x, min_z], [max_x, min_z], [max_x, min_z + width]],
-            [[min_x, max_z], [max_x, max_z], [max_x, max_z - width]],
-        ]
-    if ".right." in part.key:
-        return [
-            [[max_x, min_z], [min_x, min_z], [min_x, min_z + width]],
-            [[max_x, max_z], [min_x, max_z], [min_x, max_z - width]],
-        ]
-    if ".bottom." in part.key:
-        return [
-            [[min_x, min_z], [min_x, max_z], [min_x + width, max_z]],
-            [[max_x, min_z], [max_x, max_z], [max_x - width, max_z]],
-        ]
-    if ".top." in part.key:
-        return [
-            [[min_x, max_z], [min_x, min_z], [min_x + width, min_z]],
-            [[max_x, max_z], [max_x, min_z], [max_x - width, min_z]],
-        ]
-    raise ValueError(f"无法为非框件生成 45° 拼角：{part.key}")
-
-
-def _emit_miter_cutters(model: NeutralModel, part: Part) -> list[str]:
-    half_depth = part.profile.depth / 2 + max(part.profile.wall * 2, 2.0)
-    return [
-        _emit_polygon_cutter(
-            model, f"{part.key}.miter.{index:04d}", triangle, half_depth,
-        )
-        for index, triangle in enumerate(_miter_triangles(part), start=1)
-    ]
-
-
 def _profile_properties(profile: Profile) -> dict[str, Any]:
     return profile.properties()
 
@@ -799,21 +678,12 @@ def _frame_relationship_item(
 def _validate_through_fit(
     receiver: Profile, inserted: Profile, clearance: float, label: str,
 ) -> None:
-    available = min(receiver.width, receiver.depth) - receiver.wall * 2
-    required = max(inserted.width, inserted.depth) + clearance * 2
-    if available <= required:
-        raise ValueError(
-            f"{label}无法安全穿管：接收管内腔较小边 {available:g} mm，"
-            f"必须大于穿杆及开孔间隙 {required:g} mm"
-        )
+    _machining.check_profiles(receiver,inserted,0.,clearance,label,through=True)
 
 
-def _validate_insertion(receiver: Profile, inserted: Profile, depth: float, clearance: float, label: str) -> None:
-    if depth == 0:
-        return
-    if depth <= receiver.wall + clearance or depth >= receiver.width - receiver.wall - clearance:
-        raise ValueError(f"{label}入榫深度必须穿过内侧管壁并保留外侧管壁")
-    _validate_through_fit(receiver, inserted, clearance, label)
+def _validate_insertion(receiver: Profile, inserted: Profile, depth: float, clearance: float, label: str,
+                        *, receiver_span: float | None = None) -> None:
+    _machining.check_profiles(receiver,inserted,depth,clearance,label,receiver_span)
 
 
 def _main_horizontal_joints(
@@ -822,6 +692,13 @@ def _main_horizontal_joints(
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for end_name, point in (("start", part.start), ("end", part.end)):
+        assigned=getattr(part,end_name+'_joint','')
+        if assigned:
+            assigned_mode=getattr(part,end_name+'_joint_mode','butt')
+            result[end_name]='butt_weld' if assigned_mode=='butt' else assigned_mode
+            result[end_name+'Receiver']=assigned
+            result[end_name+'InsertionDepth']=getattr(part,end_name+'_insertion',0.)
+            continue
         mode, receiver, depth = "free", "", 0.0
         if has_side_frame and (abs(point[0] - outer_start) < 1.0e-7
                                or abs(point[0] - outer_end) < 1.0e-7):

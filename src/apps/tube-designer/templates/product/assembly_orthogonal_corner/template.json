@@ -1,0 +1,514 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "assembly-orthogonal-corner",
+  "version": "1.0.0",
+  "displayName": {
+    "zh-CN": "三向直角装配原管验证件"
+  },
+  "description": "验证用三根独立原管：A、B、C 在同一端点两两垂直。产品只声明原管、截面和节点，加工由独立三向直角节点装配模板提供。",
+  "extensions": {
+    "catalog": {
+      "listed": false,
+      "categoryPath": [
+        "验证用框架"
+      ],
+      "groupOrder": 990,
+      "templateOrder": 30
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "resourceRoles": {
+      "profiles": {
+        "a": {
+          "parameter": "aProfileType"
+        },
+        "b": {
+          "parameter": "bProfileType"
+        },
+        "c": {
+          "parameter": "cProfileType"
+        }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "size": "all",
+        "a": {
+          "memberStableKeyPrefixes": [
+            "corner.a."
+          ]
+        },
+        "b": {
+          "memberStableKeyPrefixes": [
+            "corner.b."
+          ]
+        },
+        "c": {
+          "memberStableKeyPrefixes": [
+            "corner.c."
+          ]
+        }
+      },
+      "profileRoles": {
+        "a": {
+          "parameters": [
+            "aProfileType",
+            "aWidth",
+            "aDepth",
+            "aWallThickness",
+            "aCornerRadius",
+            "aInnerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "corner.a."
+          ]
+        },
+        "b": {
+          "parameters": [
+            "bProfileType",
+            "bWidth",
+            "bDepth",
+            "bWallThickness",
+            "bCornerRadius",
+            "bInnerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "corner.b."
+          ]
+        },
+        "c": {
+          "parameters": [
+            "cProfileType",
+            "cWidth",
+            "cDepth",
+            "cWallThickness",
+            "cCornerRadius",
+            "cInnerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "corner.c."
+          ]
+        }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "成品尺寸"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "size"
+          ]
+        },
+        {
+          "key": "material",
+          "displayName": {
+            "zh-CN": "管材"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "key": "size",
+      "displayName": {
+        "zh-CN": "三向直角"
+      }
+    },
+    {
+      "key": "a",
+      "displayName": {
+        "zh-CN": "A 边管材"
+      }
+    },
+    {
+      "key": "b",
+      "displayName": {
+        "zh-CN": "B 边管材"
+      }
+    },
+    {
+      "key": "c",
+      "displayName": {
+        "zh-CN": "C 边管材"
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "CORNER-001",
+      "group": "size"
+    },
+    {
+      "key": "aLength",
+      "displayName": {
+        "zh-CN": "A 边轴线长"
+      },
+      "valueType": "number",
+      "defaultValue": 260,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "aProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "a",
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "a",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": ["rect"]
+        }
+      },
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "aWidth",
+      "displayName": {
+        "zh-CN": "面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "a",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "aDepth",
+      "displayName": {
+        "zh-CN": "深度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "a",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "aWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "a",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "aCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "a",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "aInnerRadius",
+      "displayName": {
+        "zh-CN": "内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "a",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "bLength",
+      "displayName": {
+        "zh-CN": "B 边轴线长"
+      },
+      "valueType": "number",
+      "defaultValue": 260,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "bProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "b",
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "b",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": ["rect"]
+        }
+      },
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "bWidth",
+      "displayName": {
+        "zh-CN": "面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "b",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "bDepth",
+      "displayName": {
+        "zh-CN": "深度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "b",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "bWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "b",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "bCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "b",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "bInnerRadius",
+      "displayName": {
+        "zh-CN": "内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "b",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "cLength",
+      "displayName": {
+        "zh-CN": "C 边轴线长"
+      },
+      "valueType": "number",
+      "defaultValue": 220,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "cProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "c",
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "c",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": ["rect"]
+        }
+      },
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "cWidth",
+      "displayName": {
+        "zh-CN": "面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "c",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "cDepth",
+      "displayName": {
+        "zh-CN": "深度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "c",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "cWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "c",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "cCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "c",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "cInnerRadius",
+      "displayName": {
+        "zh-CN": "内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "c",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    }
+  ]
+}

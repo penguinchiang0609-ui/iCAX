@@ -136,6 +136,19 @@ def _operation_parameters(descriptor, supplied=None):
     return _parameters({"parameters": definitions}, supplied or {})
 
 
+def _validate_bound_operation_values(item, normalized):
+    bound = item.get("operationParameterValues")
+    if bound is None:
+        return
+    if not isinstance(bound, dict) or len(bound) > 32 or set(bound) - set(normalized):
+        raise ValueError("单件工艺包含未声明的操作参数")
+    if any(bound[key] != normalized[key] for key in bound):
+        raise ValueError("单件工艺操作参数与刀具定位不一致")
+    item["operationParameterValues"] = {
+        key: copy.deepcopy(normalized[key]) for key in bound
+    }
+
+
 def _validate_inputs(descriptor):
     definitions = descriptor.get("inputs", [])
     if not isinstance(definitions, list) or len(definitions) > 16:
@@ -260,8 +273,6 @@ def _restore_frozen(value, ref, supplied, context):
     if value.get("geometryDigest") != hashlib.sha256(_json_bytes(geometry)).hexdigest():
         raise ValueError("固化刀具几何校验失败，请恢复图纸或安装原版刀具")
     old = value.get("context", {})
-    if "targetSectionAnalysis" not in old and "targetSectionAnalysis" in context:
-        context = {key: child for key, child in context.items() if key != "targetSectionAnalysis"}
     if context["target"] == "end":
         # Native replay uses the already placed frozenCut BRep and immutable
         # base resource. Tiny bounds changes after BRep codec round-trip must
@@ -356,10 +367,17 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=No
         return _restore_frozen(frozen, ref, supplied, context)
     if descriptor["target"] != context["target"]:
         raise ValueError("刀具不适用于当前加工位置")
-    if context["target"] == "end":
+    if context["target"] == "part":
+        extras = descriptor.get("featureContext", [])
+        if not isinstance(extras, list) or any(key not in ("face", "offset") for key in extras):
+            raise ValueError("三维刀具附加定位字段无效")
+        if isinstance(context.get("feature"), dict):
+            context = {**context, "feature": {key: child for key, child in context["feature"].items()
+                       if key not in ("face", "offset") or key in extras}}
+    if context["target"] in ("end", "part"):
         # Validate declarative pose controls before executing a tool, not after
         # its geometry has already consumed a potentially invalid angle.
-        placement = context["placement"]
+        placement = context.get("placement", {})
         operations = _operation_parameters(descriptor, {
             definition["key"]: placement[definition["key"]]
             for definition in descriptor.get("operationParameters", [])
@@ -432,7 +450,7 @@ def _validate_geometry(value, target):
         raise ValueError("刀具输出模式与加工位置不兼容")
 
 
-BRANCH_PLACEMENT_KEYS = ("angle", "azimuth", "roll", "offsetY", "offsetZ", "direction", "length")
+BRANCH_PLACEMENT_KEYS = ("angle", "azimuth", "roll", "offsetY", "offsetZ", "direction", "length", "clearance")
 
 
 def _default_parameters(descriptor):
@@ -505,8 +523,11 @@ def prepare(parameters):
     user_tools = parameters.get("userTools", [])
     user_root = parameters.get("userToolRoot")
     _check_original(parameters, user_tools, user_root)
+    active_items = [*parameters.get("features", []),
+                    *(item for item in parameters.get("ends", {}).values()
+                      if item.get("type") != "keep")]
     if parameters.get("rebased") and any(not _installed(item.get("toolRef"), user_tools, user_root)
-            for item in [*parameters.get("features", []), *parameters.get("ends", {}).values()]):
+            for item in active_items):
         raise ValueError("存在只读退化刀具，不能更换主管截面或长度；请先删除这些节点或恢复原版刀具")
     ids = [item["id"] for item in parameters.get("features", []) if "id" in item]
     if len(ids) != len(set(ids)):
@@ -545,17 +566,22 @@ def prepare(parameters):
             context["targetSectionAnalysis"] = _target_snapshot(parameters["targetSectionAnalysis"])
         if target == "part":
             context.update(bounds=parameters["bounds"], feature={key: copy.deepcopy(item[key])
-                for key in ("station", "reference", "section") if key in item})
+                for key in ("station", "reference", "section", "face", "offset") if key in item})
             context["placement"] = {key: copy.deepcopy(item[key]) for key in (
                 "rotation", *BRANCH_PLACEMENT_KEYS) if key in item}
         elif target != "side":
             raise ValueError("特征刀具目标无效")
+        elif "section" in item:
+            if not isinstance(item["section"], dict):
+                raise ValueError("侧壁刀具截面须为对象")
+            context["section"] = copy.deepcopy(item["section"])
         snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools, user_root)
         descriptor = snapshot["descriptor"]
         operation_values = _operation_parameters(descriptor, {
             definition["key"]: item.get(definition["key"], definition["defaultValue"])
             for definition in descriptor.get("operationParameters", [])
         })
+        _validate_bound_operation_values(item, operation_values)
         item.update(operation_values)
         item.update(type=snapshot["ref"]["id"], toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)
@@ -600,6 +626,7 @@ def prepare(parameters):
             definition["key"]: item.get(definition["key"], definition["defaultValue"])
             for definition in descriptor.get("operationParameters", [])
         })
+        _validate_bound_operation_values(item, operation_values)
         item.update(operation_values)
         item.update(type="template", toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)

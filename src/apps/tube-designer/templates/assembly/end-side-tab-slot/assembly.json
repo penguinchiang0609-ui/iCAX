@@ -1,0 +1,575 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "end-side-tab-slot",
+  "version": "1.0.2",
+  "displayName": "T 形公母插接",
+  "category": "two-end-middle",
+  "layoutShape": "t",
+  "categoryName": "T 形",
+  "summary": "主管保持连续，在中段侧壁开两条对边槽或四边槽；支管端口留下对应的圆弧插舌。",
+  "topology": "端部—中段",
+  "interfaceType": "侧壁母槽 / 端口圆弧插舌",
+  "lockType": "另行指定焊接或固定",
+  "motionType": "支管沿轴线插入主管侧壁",
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 44 H60 V56 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M26 6 H38 V44 H26 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M26 44 H38",
+        "tone": "joint"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "role": "host",
+      "label": "主管",
+      "responsibility": "中段侧壁开母槽",
+      "count": 1
+    },
+    {
+      "role": "branch",
+      "label": "支管",
+      "responsibility": "端口保留圆弧插舌",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "T"
+      }
+    ],
+    "anchors": {
+      "host": "side",
+      "branch": "end"
+    },
+    "axisAngle": {
+      "roles": [
+        "host",
+        "branch"
+      ],
+      "directions": [
+        "startToEnd",
+        "awayFromAnchor"
+      ],
+      "measure": "direct",
+      "expected": {
+        "degrees": 90
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "tabs-two",
+        "kind": "end-side-tab-slot",
+        "topology": "T",
+        "when": {
+          "op": "eq",
+          "parameter": "pairCount",
+          "value": "two"
+        },
+        "roles": {
+          "host": "host",
+          "branch": "branch"
+        },
+        "hostFaceSource": "anchor.face",
+        "processIds": [
+          "host-slots-two",
+          "branch-tabs-two"
+        ],
+        "clearance": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      },
+      {
+        "id": "tabs-four",
+        "kind": "end-side-tab-slot",
+        "topology": "T",
+        "when": {
+          "op": "eq",
+          "parameter": "pairCount",
+          "value": "four"
+        },
+        "roles": {
+          "host": "host",
+          "branch": "branch"
+        },
+        "hostFaceSource": "anchor.face",
+        "processIds": [
+          "host-slots-four",
+          "branch-tabs-four"
+        ],
+        "clearance": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      }
+    ],
+    "processes": {
+      "host-slots-two": {
+        "target": "part",
+        "sectionRole": "branch"
+      },
+      "branch-tabs-two": {
+        "target": "end",
+        "sectionRole": "host",
+        "parameterSources": {
+          "trim": {
+            "role": "branch",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "offsetParameter": "tabLength",
+            "offsetFactor": -1,
+            "min": 0
+          }
+        }
+      },
+      "host-slots-four": {
+        "target": "part",
+        "sectionRole": "branch"
+      },
+      "branch-tabs-four": {
+        "target": "end",
+        "sectionRole": "host",
+        "parameterSources": {
+          "trim": {
+            "role": "branch",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "offsetParameter": "tabLength",
+            "offsetFactor": -1,
+            "min": 0
+          }
+        }
+      }
+    }
+  },
+  "parameters": [
+    {
+      "key": "pairCount",
+      "displayName": "插舌与母槽数量",
+      "valueType": "choice",
+      "defaultValue": "two",
+      "options": [
+        {
+          "value": "two",
+          "label": "2 个（对边各 1 个）"
+        },
+        {
+          "value": "four",
+          "label": "4 个（四边各 1 个）"
+        }
+      ],
+      "level": "basic"
+    },
+    {
+      "key": "tabWidth",
+      "displayName": "圆弧插舌宽度",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 1,
+      "max": 30,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
+    {
+      "key": "tabLength",
+      "displayName": "插舌插入长度",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 1,
+      "max": 30,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
+    {
+      "key": "sideClearance",
+      "displayName": "母槽单边间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 3,
+      "step": 0.05,
+      "unit": "mm",
+      "level": "basic"
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "host-slots-two",
+      "participants": [
+        "host"
+      ],
+      "label": "主管对边母槽",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "pairCount",
+        "value": "two"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "pairRotation": 90,
+        "allowEndOpening": false
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "top",
+        "reference": "center",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "branch"
+      }
+    },
+    {
+      "id": "branch-tabs-two",
+      "participants": [
+        "branch"
+      ],
+      "label": "支管对边圆弧插舌",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "pairCount",
+        "value": "two"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-end-tabs"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "trim": 0,
+        "rotation": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long",
+        "sectionRole": "host"
+      }
+    },
+    {
+      "id": "host-slots-four",
+      "participants": [
+        "host"
+      ],
+      "label": "主管四边母槽",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "pairCount",
+        "value": "four"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 4,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "pairRotation": 90,
+        "allowEndOpening": false
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "top",
+        "reference": "center",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "branch"
+      }
+    },
+    {
+      "id": "branch-tabs-four",
+      "participants": [
+        "branch"
+      ],
+      "label": "支管四边圆弧插舌",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "pairCount",
+        "value": "four"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-end-tabs"
+      },
+      "parameterBindings": {
+        "pairCount": 4,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "trim": 0,
+        "rotation": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long",
+        "sectionRole": "host"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管侧槽下料",
+        "participants": [
+          "host"
+        ]
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管插舌下料",
+        "participants": [
+          "branch"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "slots",
+      "label": "在主管中段选定侧壁加工对应母槽",
+      "kind": "侧壁开槽",
+      "direction": "主管侧壁",
+      "distance": 0
+    },
+    {
+      "id": "tabs",
+      "label": "在支管端口保留对应圆弧插舌",
+      "kind": "端口成形",
+      "direction": "支管端部",
+      "distance": "$tabLength"
+    },
+    {
+      "id": "fit",
+      "label": "支管圆弧插舌沿轴线插入主管中段母槽",
+      "kind": "T 形插接",
+      "direction": "支管轴线",
+      "distance": "$tabLength"
+    }
+  ],
+  "previewScene": {
+    "preferredView": "front-top-right",
+    "manufacturingParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管母槽下料",
+        "sourceRole": "host",
+        "processes": [
+          "host-slots-two",
+          "host-slots-four"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$host_length / 2",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管插舌下料",
+        "sourceRole": "branch",
+        "stockLengthAddition": "$tabLength",
+        "processes": [
+          "branch-tabs-two",
+          "branch-tabs-four"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            "$branch_length + $host_depth / 2 + 100"
+          ],
+          "direction": [
+            0,
+            0,
+            -1
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        120
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -120
+      ]
+    }
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "主管中段侧壁母槽",
+      "支管端口圆弧插舌"
+    ],
+    "secondaryProcess": [
+      "T 形侧向插接",
+      "固定方式待指定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "dimensionChecks": [],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 220 140",
+    "paths": [
+      {
+        "d": "M20 94 H200 V120 H20 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M95 16 H125 V94 H95 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M101 94 H106 V106 H101 Z",
+        "className": "tool-diagram-joint"
+      },
+      {
+        "d": "M114 94 H119 V106 H114 Z",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "text": "主管中段侧壁 + 支管端口",
+        "x": 110,
+        "y": 134
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "pairCount",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          110,
+          100
+        ]
+      },
+      {
+        "parameter": "tabWidth",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          102,
+          97
+        ]
+      },
+      {
+        "parameter": "tabLength",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          118,
+          106
+        ]
+      },
+      {
+        "parameter": "sideClearance",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          101,
+          106
+        ]
+      }
+    ]
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "host",
+      "branch"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "intersectionAngle",
+        "displayName": "成品轴线夹角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 1,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      }
+    ],
+    "requirements": {
+      "intersectionAngle": {
+        "min": 90,
+        "max": 90
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "t",
+    "roles": {
+      "host": "main",
+      "branch": "branch"
+    },
+    "parameterBindings": {},
+    "requirements": {
+      "intersectionAngle": {
+        "min": 90,
+        "max": 90
+      }
+    }
+  }
+}

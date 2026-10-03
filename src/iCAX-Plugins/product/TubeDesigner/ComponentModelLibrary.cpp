@@ -884,13 +884,15 @@ namespace iCAX::TubeDesigner
             {}, Store_, Frozen_);
     }
 
-    void ResolveTemplateComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+    void ResolveTemplateComponentResourcesImpl(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
         const ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
         const std::filesystem::path& UserRoot_,
-        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
+        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_,
+        const std::string& TemplateID_, ObjectMap* Resolved_, bool DecorateDocument_)
     {
         const auto _Resources = Object(DescriptorExtensions_, "modelResources");
-        auto _Geometry = Document_.at("geometry").To<VariantArray>();
+        const auto _GeometryField = Document_.contains("resources") ? "resources" : "geometry";
+        auto _Geometry = Document_.at(_GeometryField).To<VariantArray>();
         std::set<std::string> _References;
         for (const auto& _Value : _Geometry)
         {
@@ -898,9 +900,32 @@ namespace iCAX::TubeDesigner
             if (Text(_Node, "operator") != "resource") continue;
             const auto _Arguments = Object(_Node, "arguments");
             const auto _Reference = Text(_Arguments, "reference");
+            // An intrinsic BRep is already a declared input. It has no library
+            // reference to resolve and must not be mistaken for an accessory.
+            if (_Reference.empty() && !Text(_Arguments, "brep").empty()) continue;
             if (_Reference.empty()) throw std::invalid_argument("模板配件缺少稳定模型引用");
             _References.insert(_Reference);
         }
+        if (const auto _Items = Document_.find("items");
+            _Items != Document_.end() && _Items->second.Is<VariantArray>())
+            for (const auto& _ItemValue : _Items->second.To<VariantArray>())
+            {
+                const auto _Item = _ItemValue.To<ObjectMap>();
+                if (const auto _Component = _Item.find("componentReference");
+                    _Component != _Item.end() && _Component->second.Is<ObjectMap>())
+                {
+                    const auto _Input = _Component->second.To<ObjectMap>();
+                    auto _Reference = Text(_Input, "reference");
+                    if (_Reference.empty())
+                    {
+                        const auto _Ref = _Input.contains("ref") ? Object(_Input, "ref") : _Input;
+                        const auto _Scope = Text(_Ref, "scope"), _ID = Text(_Ref, "id");
+                        if (!_Scope.empty() && !_ID.empty()) _Reference = _Scope + ":" + _ID;
+                    }
+                    if (_Reference.empty()) throw std::invalid_argument("制造配件缺少稳定模型引用");
+                    _References.insert(_Reference);
+                }
+            }
         // Freeze declared package resources, including manufacturing-only ones.
         if (!Frozen_)
             for (const auto& [_Key, _Value] : _Resources) _References.insert("template:" + _Key);
@@ -921,9 +946,8 @@ namespace iCAX::TubeDesigner
             else if (_Reference.starts_with("template:"))
             {
                 const auto _Key = _Reference.substr(9);
-                const auto _Template = Object(Document_, "template");
                 _Snapshot = LoadTemplateComponentModel(TemplateDirectory_, DescriptorExtensions_,
-                    Text(_Template, "id"), Text(_Template, "id"), _Key);
+                    TemplateID_, TemplateID_, _Key);
             }
             else if (_Reference.starts_with("system:"))
                 _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "system", _Reference.substr(7), UserRoot_);
@@ -945,11 +969,18 @@ namespace iCAX::TubeDesigner
             auto _Node = _Value.To<ObjectMap>();
             if (Text(_Node, "operator") != "resource") continue;
             auto _Arguments = Object(_Node, "arguments");
+            if (Text(_Arguments, "reference").empty()) continue;
             const auto& _Snapshot = _Snapshots.at(Text(_Arguments, "reference")).To<ObjectMap>();
             _Arguments["brep"] = _Snapshot.at("brep");
             _Arguments["geometryDigest"] = _Snapshot.at("geometryDigest");
             _Node["arguments"] = std::move(_Arguments);
             _Value = std::move(_Node);
+        }
+        if (Resolved_) *Resolved_ = _Snapshots;
+        if (!DecorateDocument_)
+        {
+            Document_[_GeometryField] = std::move(_Geometry);
+            return;
         }
         std::map<std::string, ObjectMap> _Nodes;
         for (const auto& _Value : _Geometry)
@@ -957,7 +988,7 @@ namespace iCAX::TubeDesigner
             auto _Node = _Value.To<ObjectMap>();
             _Nodes.emplace(Text(_Node, "key"), std::move(_Node));
         }
-        Document_["geometry"] = std::move(_Geometry);
+        Document_[_GeometryField] = std::move(_Geometry);
         auto _Items = Document_.at("items").To<VariantArray>();
         for (auto& _Value : _Items)
         {
@@ -998,7 +1029,8 @@ namespace iCAX::TubeDesigner
                 if (_Inputs != _Node.end())
                     for (const auto& _Input : _Inputs->second.To<VariantArray>()) _Visit(_Input.To<std::string>());
             };
-            for (const auto& [_Purpose, _Root] : Object(_Item, "representations")) _Visit(_Root.To<std::string>());
+            for (const auto& [_Purpose, _Root] : Object(_Item, "representations"))
+                _Visit(_Root.Is<ObjectMap>() ? Text(_Root.To<ObjectMap>(), "resource") : _Root.To<std::string>());
             auto _Reference = Text(_Properties, "manufacturing.modelReference");
             if (_ItemReferences.size() > 1)
                 throw std::invalid_argument("一个配件清单项只能引用一种模型，请将装配拆成独立配件项");
@@ -1034,5 +1066,102 @@ namespace iCAX::TubeDesigner
         auto _Extensions = Object(Document_, "extensions");
         _Extensions[kResolvedComponentModels] = std::move(_Snapshots);
         Document_["extensions"] = std::move(_Extensions);
+    }
+
+    void ResolveTemplateComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
+        const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
+    {
+        ResolveTemplateComponentResourcesImpl(Document_, TemplateDirectory_, DescriptorExtensions_,
+            SystemRoot_, UserRoot_, Store_, Frozen_, Text(Object(Document_, "template"), "id"), nullptr, true);
+    }
+
+    ObjectMap ResolveScriptComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::string& TemplateID_,
+        const std::filesystem::path& SystemRoot_, const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
+    {
+        ObjectMap _Resolved;
+        ResolveTemplateComponentResourcesImpl(Document_, TemplateDirectory_, DescriptorExtensions_,
+            SystemRoot_, UserRoot_, Store_, Frozen_, TemplateID_, &_Resolved, false);
+        return _Resolved;
+    }
+
+    ObjectMap ResolveDisplayComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::string& TemplateID_,
+        const std::filesystem::path& SystemRoot_, const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
+    {
+        return ResolveScriptComponentResources(Document_, TemplateDirectory_, DescriptorExtensions_,
+            TemplateID_, SystemRoot_, UserRoot_, Store_, Frozen_);
+    }
+
+    void ApplyResolvedComponentMetadata(iCAX::TemplateRuntime::SNeutralModel& Model_, const ObjectMap& Snapshots_)
+    {
+        using namespace iCAX::TemplateRuntime;
+        std::map<std::string, const SGeometryNode*> _Nodes;
+        for (const auto& _Node : Model_.Geometry) _Nodes.emplace(_Node.Key, &_Node);
+        for (auto& _Item : Model_.Items)
+        {
+            // Pure script protocols use descriptive keys. These aliases exist
+            // only in the host's runtime model for existing material consumers.
+            for (const auto* _Key : { "partKind", "material", "materialGrade", "categoryKey", "categoryName", "modelReference" })
+                if (const auto _Value = _Item.Properties.find(_Key); _Value != _Item.Properties.end())
+                    _Item.Properties[std::string("manufacturing.") + _Key] = _Value->second;
+            std::set<std::string> _References, _Visited;
+            std::function<void(const std::string&)> _Visit = [&](const std::string& Key_) {
+                if (!_Visited.insert(Key_).second) return;
+                const auto _Found = _Nodes.find(Key_);
+                if (_Found == _Nodes.end()) return;
+                const auto& _Node = *_Found->second;
+                if (_Node.Operator == EGeometryOperator::Resource)
+                {
+                    const auto _Reference = Text(_Node.Arguments, "reference");
+                    if (!_Reference.empty()) _References.insert(_Reference);
+                }
+                if (_Node.Operator == EGeometryOperator::Boolean)
+                {
+                    if (_Node.Arguments.contains("target")) _Visit(Text(_Node.Arguments, "target"));
+                    else if (!_Node.Inputs.empty()) _Visit(_Node.Inputs.front());
+                    if (const auto _Tools = _Node.Arguments.find("tools"); _Tools != _Node.Arguments.end())
+                        for (const auto& _Tool : _Tools->second.To<VariantArray>()) _Visit(_Tool.To<std::string>());
+                    else
+                        for (std::size_t _Index = 1; _Index < _Node.Inputs.size(); ++_Index) _Visit(_Node.Inputs[_Index]);
+                    return;
+                }
+                for (const auto& _Input : _Node.Inputs) _Visit(_Input);
+            };
+            for (const auto& [_Purpose, _Root] : _Item.Representations) _Visit(_Root);
+            if (_References.size() > 1)
+                throw std::invalid_argument("a display item references more than one component model");
+            auto _Reference = Text(_Item.Properties, "manufacturing.modelReference");
+            if (!_References.empty())
+            {
+                if (!_Reference.empty() && _Reference != *_References.begin())
+                    throw std::invalid_argument("component model metadata does not match its geometry");
+                _Reference = *_References.begin();
+            }
+            if (_Reference.empty()) continue;
+            const auto _SnapshotIt = Snapshots_.find(_Reference);
+            if (_SnapshotIt == Snapshots_.end() || !_SnapshotIt->second.Is<ObjectMap>())
+                throw std::invalid_argument("display component has no frozen model snapshot");
+            const auto _Snapshot = _SnapshotIt->second.To<ObjectMap>();
+            auto& _Properties = _Item.Properties;
+            _Properties["manufacturing.modelReference"] = _Reference;
+            _Properties["manufacturing.partKind"] = std::string("accessory");
+            _Properties["manufacturing.materialCategory"] = std::string("accessory");
+            for (const auto& [_Property, _SnapshotKey] : std::map<std::string, std::string>{
+                {"manufacturing.sourcing", "sourcing"}, {"manufacturing.material", "material"},
+                {"manufacturing.modelName", "name"}, {"manufacturing.modelBounds", "bounds"},
+                {"manufacturing.modelDigest", "geometryDigest"}})
+                _Properties[_Property] = _Snapshot.at(_SnapshotKey);
+            _Properties["manufacturing.process"] = Text(_Snapshot, "sourcing") == "purchased"
+                ? std::string("purchased") : std::string("separate-fabrication");
+            _Properties["length"] = 0.0;
+            _Properties.erase("tubeDesigner.profile");
+            _Properties.erase("manufacturing.plate");
+        }
+        Model_.Extensions[kResolvedComponentModels] = Snapshots_;
     }
 }

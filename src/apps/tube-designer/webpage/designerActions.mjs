@@ -27,6 +27,7 @@ import {
 } from "./partInspection.mjs";
 import { scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
 import { captureScrollAnchor, restoreScrollAnchor } from "./scrollAnchor.mjs";
+import { productDisplayParameters } from "./productParameterDependencies.mjs";
 import {
   handleProfileLibraryAction,
   handleProfileLibraryRibbonCommand,
@@ -721,10 +722,17 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     "resources.profiles": "profiles",
     "resources.tools": "tools",
     "resources.assemblies": "assemblies",
+    "designer.open-assembly-process": "assemblies",
   };
   if (resourceAreas[commandId]) {
     const resourceArea = resourceAreas[commandId];
     view.tubeDesignerResourceLibraryArea = resourceArea;
+    if (commandId === "designer.open-assembly-process") {
+      const assembly = view.tubeDesignerAssemblyLibrary ??= {};
+      if (assembly.workMode !== "product" && !assembly.templateUserSelected) assembly.selectedId = "";
+      assembly.workMode = "product";
+      assembly.workModeUserSelected = true;
+    }
     const progress = {
       title: "正在切换资源库",
       detail: resourceArea === "profiles"
@@ -1553,6 +1561,7 @@ export function getDesignerRenderSignature(designer = {}) {
       entityId: String(member?.entityId ?? ""),
       resourceId: String(member?.previewGeometryResourceId ?? ""),
       version: String(member?.previewGeometryResourceVersion ?? "0"),
+      transform: member?.transform ?? null,
     }))
     .sort((left, right) => left.entityId.localeCompare(right.entityId)));
 }
@@ -1961,35 +1970,15 @@ function rightRuntimeParameterFingerprint(view, values) {
   return JSON.stringify(stableRuntimeParameterValue(merged));
 }
 
-function securityWindowManufacturingParameterKeys(view) {
-  const designer = view.scene?.tubeDesigner ?? {};
-  const template = getTemplateById(designer.templates ?? [], designer.product?.templateId);
-  if (String(template?.id ?? "") !== "single-face-security-window") return null;
-  const sections = Array.isArray(template?.extensions?.parameterLayout?.sections)
-    ? template.extensions.parameterLayout.sections : [];
-  const groups = new Set(sections
-    .filter((section) => ["materials", "process"].includes(String(section?.key ?? "")))
-    .flatMap((section) => Array.isArray(section?.groups) ? section.groups : [])
-    .map(String));
-  return new Set((template?.parameters ?? [])
-    .filter((field) => groups.has(String(field?.groupKey ?? field?.group ?? "")))
-    .map((field) => String(field?.key ?? field?.name ?? ""))
-    .filter(Boolean));
-}
-
 function rightRuntimeModelFingerprint(view, values) {
-  const manufacturingKeys = securityWindowManufacturingParameterKeys(view);
-  if (!manufacturingKeys) return rightRuntimeParameterFingerprint(view, values);
   const designer = view.scene?.tubeDesigner ?? {};
   const product = designer.product;
+  const template = getTemplateById(designer.templates ?? [], product?.templateId);
   const merged = {
     ...getDefaultParameters(designer.templates ?? [], product?.templateId),
     ...(values ?? {}),
   };
-  for (const key of manufacturingKeys) delete merged[key];
-  delete merged.tubeDesignerProfileOverrides;
-  delete merged.tubeDesignerToolBindings;
-  return JSON.stringify(stableRuntimeParameterValue(merged));
+  return JSON.stringify(stableRuntimeParameterValue(productDisplayParameters(template, merged)));
 }
 
 function synchronizeRightRuntimeModel(view, product = view.scene?.tubeDesigner?.product, regenerated = false) {

@@ -4,6 +4,8 @@
 #include "OpenCascadeTaskExecution.h"
 #include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <BRepBuilderAPI_NurbsConvert.hxx>
+#include <GeomAdaptor_Curve.hxx>
 #include <TopoDS_Compound.hxx>
 
 #include "GeometryData/GeometryData.h"
@@ -946,6 +948,30 @@ namespace
         }
     }
 
+    bool NeedsSweptSurfaceParameterConversion(const TopoDS_Shape& Shape_)
+    {
+        for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE);
+            _Explorer.More(); _Explorer.Next())
+        {
+            BRepAdaptor_Surface _Surface(TopoDS::Face(_Explorer.Current()), true);
+            if (_Surface.GetType() == GeomAbs_SurfaceOfRevolution)
+                return true;
+            if (_Surface.GetType() != GeomAbs_SurfaceOfExtrusion) continue;
+            const auto _Extrusion = Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(
+                _Surface.GeomSurfaceOriginal());
+            if (_Extrusion.IsNull() || _Extrusion->BasisCurve().IsNull())
+                throw std::runtime_error("OCCT linear-extrusion surface has no basis curve");
+            const auto _BasisType = GeomAdaptor_Curve(_Extrusion->BasisCurve()).GetType();
+            // Linear, B-spline and Bezier basis curves retain their parameters.
+            // Conics acquire a rational parameter when converted, so exporting
+            // only the new surface would invalidate its old pcurves and UV domain.
+            if (_BasisType != GeomAbs_Line && _BasisType != GeomAbs_BSplineCurve
+                && _BasisType != GeomAbs_BezierCurve)
+                return true;
+        }
+        return false;
+    }
+
     iCAX::GeometryData::BRepModel ConvertToBRepModel(
         IN const TopoDS_Shape& Shape_,
         IN const std::string& strDisplayName_,
@@ -959,11 +985,22 @@ namespace
             throw std::runtime_error("OCCT returned an empty CAD shape");
         }
 
+        auto _ExportShape = Shape_;
+        if (NeedsSweptSurfaceParameterConversion(Shape_))
+        {
+            // Exact rational surface conversion must update the complete BRep:
+            // adjoining edges, pcurves and face domains share its parameter frame.
+            BRepBuilderAPI_NurbsConvert _Conversion(Shape_, true);
+            if (!_Conversion.IsDone() || _Conversion.Shape().IsNull())
+                throw std::runtime_error("OCCT failed to convert swept-surface BRep parameters");
+            _ExportShape = _Conversion.Shape();
+        }
+
         const double _MeshDeflection = std::max(0.01, dTolerance_ * 10.0);
-        BRepMesh_IncrementalMesh _Mesh(Shape_, _MeshDeflection);
+        BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);
         (void)_Mesh;
 
-        const auto _Maps = BuildShapeMaps(Shape_);
+        const auto _Maps = BuildShapeMaps(_ExportShape);
 
         BRepModel _Model;
         _Model.Metadata.Name = strDisplayName_;
@@ -1054,18 +1091,27 @@ namespace
                     _WireOccurrence.Oriented(TopAbs_FORWARD));
                 BRepWire _WireRecord;
                 _WireRecord.Id = _NextWireID++;
-                _WireRecord.Closed = true;
+                _WireRecord.Closed = _Wire.Closed();
                 _WireRecord.Metadata = { "face " + std::to_string(_Index) + " wire", strSourceID_, {} };
 
-                for (BRepTools_WireExplorer _EdgeExplorer(_Wire, _Face);
-                    _EdgeExplorer.More(); _EdgeExplorer.Next())
+                // A connectivity walk omits INTERNAL/EXTERNAL occurrences and
+                // can stop at a branch. These edges still belong to the face's
+                // exact topology (including internal wires left by booleans).
+                // Preserve every child occurrence, independently of wire order.
+                for (TopoDS_Iterator _EdgeIterator(_Wire, false, true);
+                    _EdgeIterator.More(); _EdgeIterator.Next())
                 {
-                    const auto _Edge = TopoDS::Edge(_EdgeExplorer.Current());
+                    const auto _Edge = TopoDS::Edge(_EdgeIterator.Value());
                     BRepAdaptor_Curve _Curve(_Edge);
                     BRepAdaptor_Curve2d _Curve2(_Edge, _Face);
                     TopoDS_Vertex _FirstVertex;
                     TopoDS_Vertex _LastVertex;
-                    TopExp::Vertices(_Edge, _FirstVertex, _LastVertex, true);
+                    // INTERNAL/EXTERNAL orientation does not define a traversal
+                    // direction. Keep its canonical endpoints without composing
+                    // that orientation onto the forward/reversed vertex roles.
+                    TopExp::Vertices(_Edge, _FirstVertex, _LastVertex,
+                        _Edge.Orientation() == TopAbs_FORWARD
+                            || _Edge.Orientation() == TopAbs_REVERSED);
 
                     Curve2Record _Curve2Record;
                     _Curve2Record.Id = _NextCurve2ID++;
@@ -1235,7 +1281,7 @@ namespace
             _Model.Compounds.push_back(std::move(_CompoundRecord));
         }
 
-        AddRootReferences(Shape_, _Maps, _Model);
+        AddRootReferences(_ExportShape, _Maps, _Model);
         return _Model;
     }
 

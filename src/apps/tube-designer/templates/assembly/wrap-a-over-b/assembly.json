@@ -1,0 +1,934 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "wrap-a-over-b",
+  "version": "4.3.3",
+  "displayName": "长短包接",
+  "category": "two-end-near-side",
+  "layoutShape": "l",
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 44 H45 V56 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M33 7 H45 V44 H33 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M33 44 H45",
+        "tone": "joint"
+      }
+    ]
+  },
+  "categoryName": "L 形 · 端部包接",
+  "summary": "两根管段在端角形成 L；可选两壁或四壁圆弧插舌公母。",
+  "topology": "L 形端角包接",
+  "interfaceType": "长短包接 / 可选方矩管侧插圆弧公母",
+  "lockType": "需另行指定焊接或固定",
+  "motionType": "支件从主件端部侧面法向插入",
+  "participants": [
+    {
+      "role": "memberA",
+      "label": "主件 · 长件",
+      "responsibility": "在转角处承接支件的长件",
+      "count": 1
+    },
+    {
+      "role": "memberB",
+      "label": "支件 · 短件",
+      "responsibility": "端部抵接或侧插主件的短件",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "L"
+      }
+    ],
+    "anchors": {
+      "memberA": "end",
+      "memberB": "end"
+    },
+    "axisAngle": {
+      "roles": [
+        "memberA",
+        "memberB"
+      ],
+      "directions": [
+        "awayFromAnchor",
+        "awayFromAnchor"
+      ],
+      "measure": "supplement",
+      "expected": {
+        "degrees": 90
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "wrap-butt",
+        "kind": "end-near-side-butt",
+        "topology": "L",
+        "when": {
+          "op": "eq",
+          "parameter": "maleFemale",
+          "value": false
+        },
+        "roles": {
+          "host": "memberA",
+          "branch": "memberB"
+        },
+        "hostFaceSource": "anchor.approachFace",
+        "processIds": [
+          "short-butt-end"
+        ],
+        "gap": {
+          "millimeters": 0
+        }
+      },
+      {
+        "id": "wrap-tabs-two",
+        "kind": "end-near-side-tab-slot",
+        "topology": "L",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "maleFemale",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "parameter": "pairCount",
+              "value": "two"
+            }
+          ]
+        },
+        "roles": {
+          "host": "memberA",
+          "branch": "memberB"
+        },
+        "hostFaceSource": "anchor.approachFace",
+        "processIds": [
+          "long-side-slots-two",
+          "short-end-tabs-two"
+        ],
+        "clearance": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      },
+      {
+        "id": "wrap-tabs-four",
+        "kind": "end-near-side-tab-slot",
+        "topology": "L",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "maleFemale",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "parameter": "pairCount",
+              "value": "four"
+            }
+          ]
+        },
+        "roles": {
+          "host": "memberA",
+          "branch": "memberB"
+        },
+        "hostFaceSource": "anchor.approachFace",
+        "processIds": [
+          "long-side-slots-four",
+          "short-end-tabs-four"
+        ],
+        "clearance": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      }
+    ],
+    "processes": {
+      "short-butt-end": {
+        "target": "end",
+        "parameterSources": {
+          "trim": {
+            "role": "memberB",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "min": 0.01
+          }
+        }
+      },
+      "long-side-slots-two": {
+        "target": "part",
+        "sectionRole": "memberB",
+        "relativePlacement": {
+          "kind": "end-inset-side",
+          "faceSource": "anchor.approachFace",
+          "inset": {
+            "sectionRole": "memberB",
+            "axis": "width",
+            "factor": 0.5
+          }
+        }
+      },
+      "short-end-tabs-two": {
+        "target": "end",
+        "sectionRole": "memberA",
+        "parameterSources": {
+          "trim": {
+            "role": "memberB",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "offsetParameter": "tabLength",
+            "offsetFactor": -1,
+            "min": 0.01
+          }
+        }
+      },
+      "long-side-slots-four": {
+        "target": "part",
+        "sectionRole": "memberB",
+        "relativePlacement": {
+          "kind": "end-inset-side",
+          "faceSource": "anchor.approachFace",
+          "inset": {
+            "sectionRole": "memberB",
+            "axis": "width",
+            "factor": 0.5
+          }
+        }
+      },
+      "short-end-tabs-four": {
+        "target": "end",
+        "sectionRole": "memberA",
+        "parameterSources": {
+          "trim": {
+            "role": "memberB",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "offsetParameter": "tabLength",
+            "offsetFactor": -1,
+            "min": 0.01
+          }
+        }
+      }
+    }
+  },
+  "parameters": [
+    {
+      "key": "maleFemale",
+      "displayName": "启用侧插公母",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "level": "basic"
+    },
+    {
+      "key": "pairCount",
+      "displayName": "圆弧插舌与侧槽数量",
+      "valueType": "choice",
+      "defaultValue": "two",
+      "options": [
+        {
+          "value": "two",
+          "label": "2 个（对边各 1 个）"
+        },
+        {
+          "value": "four",
+          "label": "4 个（四边各 1 个）"
+        }
+      ],
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "key": "tabWidth",
+      "displayName": "圆弧插舌宽度",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 1,
+      "max": 30,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "key": "tabLength",
+      "displayName": "插舌插入长度",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 1,
+      "max": 60,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "key": "sideClearance",
+      "displayName": "插舌单边配合间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 3,
+      "step": 0.05,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "short-butt-end",
+      "participants": [
+        "memberB"
+      ],
+      "label": "支件端部平切",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": false
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "long-side-slots-two",
+      "participants": [
+        "memberA"
+      ],
+      "label": "主件侧壁对边双槽",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "pairCount",
+            "value": "two"
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "allowEndOpening": true
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "top",
+        "reference": "start",
+        "station": "$memberA_length - $memberB_width / 2",
+        "offset": 0,
+        "sectionRole": "memberB"
+      }
+    },
+    {
+      "id": "short-end-tabs-two",
+      "participants": [
+        "memberB"
+      ],
+      "label": "支件端部对边双圆弧插舌",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "pairCount",
+            "value": "two"
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-end-tabs"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "trim": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long",
+        "sectionRole": "memberA"
+      }
+    },
+    {
+      "id": "long-side-slots-four",
+      "participants": [
+        "memberA"
+      ],
+      "label": "主件侧壁四边承接槽",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "pairCount",
+            "value": "four"
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 4,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "allowEndOpening": true
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "top",
+        "reference": "start",
+        "station": "$memberA_length - $memberB_width / 2",
+        "offset": 0,
+        "sectionRole": "memberB"
+      }
+    },
+    {
+      "id": "short-end-tabs-four",
+      "participants": [
+        "memberB"
+      ],
+      "label": "支件端口四边圆弧插舌",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "pairCount",
+            "value": "four"
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-end-tabs"
+      },
+      "parameterBindings": {
+        "pairCount": 4,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "trim": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long",
+        "sectionRole": "memberA"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "longBlank",
+        "label": "主件下料",
+        "participants": [
+          "memberA"
+        ]
+      },
+      {
+        "id": "shortBlank",
+        "label": "支件下料",
+        "participants": [
+          "memberB"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "butt",
+      "label": "支件端面抵住主件的端部侧面",
+      "kind": "端部对接",
+      "direction": "支件轴线",
+      "distance": 0,
+      "when": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": false
+      }
+    },
+    {
+      "id": "cut-slots",
+      "label": "在主件面向支件的侧壁加工平行承接槽",
+      "kind": "侧壁开槽",
+      "direction": "主件侧面",
+      "distance": 0,
+      "when": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "id": "cut-tabs",
+      "label": "在支件端部加工对应圆弧插舌",
+      "kind": "端部成形",
+      "direction": "支件端部",
+      "distance": "$tabLength",
+      "when": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "id": "fit",
+      "label": "支件沿侧面法向抵住主件",
+      "labelVariants": [
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          "value": "支件的圆弧插舌沿侧面法向插入主件的平行槽"
+        }
+      ],
+      "kind": "侧向装配",
+      "direction": "支件轴线",
+      "distance": 0,
+      "distanceVariants": [
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          },
+          "value": "$tabLength"
+        }
+      ]
+    }
+  ],
+  "previewScene": {
+    "preferredView": "back-top-right",
+    "manufacturingParts": [
+      {
+        "id": "longBlank",
+        "label": "主件侧槽下料",
+        "sourceRole": "memberA",
+        "processes": [
+          "long-side-slots-two",
+          "long-side-slots-four"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$memberA_length / 2",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "shortBlank",
+        "label": "支件端部下料",
+        "sourceRole": "memberB",
+        "processes": [
+          "short-butt-end",
+          "short-end-tabs-two",
+          "short-end-tabs-four"
+        ],
+        "explodedPose": {
+          "origin": [
+            "$memberA_length / 2 - $memberB_width / 2",
+            0,
+            "$memberB_length + $memberA_depth / 2 + 100"
+          ],
+          "direction": [
+            0,
+            0,
+            -1
+          ],
+          "up": [
+            -1,
+            0,
+            0
+          ]
+        },
+        "explodedPoseVariants": [
+          {
+            "when": {
+              "op": "eq",
+              "parameter": "maleFemale",
+              "value": true
+            },
+            "value": {
+              "origin": [
+                "$memberA_length / 2 - $memberB_width / 2",
+                0,
+                "$memberB_length + $memberA_depth / 2 + 100 - $tabLength"
+              ],
+              "direction": [
+                0,
+                0,
+                -1
+              ],
+              "up": [
+                -1,
+                0,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        -110,
+        0
+      ],
+      "manufacturingOffset": [
+        0,
+        110,
+        0
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 44 H45 V56 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M33 7 H45 V44 H33 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M33 44 H45",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "variants": [
+      {
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "maleFemale",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "parameter": "pairCount",
+              "value": "two"
+            }
+          ]
+        },
+        "paths": [
+          {
+            "d": "M4 44 H45 V56 H4 Z",
+            "className": "tool-diagram-part-a"
+          },
+          {
+            "d": "M33 7 H45 V44 H33 Z",
+            "className": "tool-diagram-part-b"
+          },
+          {
+            "d": "M33 44 H45",
+            "className": "tool-diagram-joint"
+          },
+          {
+            "d": "M35 44 V49 M43 44 V49",
+            "className": "tool-diagram-cut-line"
+          }
+        ]
+      },
+      {
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "maleFemale",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "parameter": "pairCount",
+              "value": "four"
+            }
+          ]
+        },
+        "paths": [
+          {
+            "d": "M4 44 H45 V56 H4 Z",
+            "className": "tool-diagram-part-a"
+          },
+          {
+            "d": "M33 7 H45 V44 H33 Z",
+            "className": "tool-diagram-part-b"
+          },
+          {
+            "d": "M33 44 H45",
+            "className": "tool-diagram-joint"
+          },
+          {
+            "d": "M35 44 V49 M43 44 V49",
+            "className": "tool-diagram-cut-line"
+          },
+          {
+            "d": "M33 30 H38 M40 30 H45",
+            "className": "tool-diagram-cut-line"
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "x": 17,
+        "y": 51,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 39,
+        "y": 25,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "maleFemale",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          39,
+          44
+        ],
+        "description": "开启后主件侧壁开槽，支件端部加工圆弧插舌"
+      },
+      {
+        "parameter": "pairCount",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          36,
+          46
+        ],
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "maleFemale",
+          "value": true
+        },
+        "description": "两个时支件端口相对两边各一；四个时端口四边各一，主件侧面对应开槽"
+      },
+      {
+        "parameter": "tabWidth",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          36,
+          46
+        ],
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "maleFemale",
+          "value": true
+        },
+        "description": "每个圆弧插舌与对应槽的名义宽度"
+      },
+      {
+        "parameter": "tabLength",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          36,
+          48
+        ],
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "maleFemale",
+          "value": true
+        },
+        "description": "沿支件轴线插入主件的有效长度"
+      },
+      {
+        "parameter": "sideClearance",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          40,
+          46
+        ],
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "maleFemale",
+          "value": true
+        },
+        "description": "母槽单边加宽；需要按材料与设备试切确认"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "主件端部侧槽（公母启用时）",
+      "支件端部平切或圆弧插舌"
+    ],
+    "secondaryProcess": [
+      "侧向定位",
+      "焊接或固定待指定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "dimensionChecks": [],
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "memberA",
+      "memberB"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "angle",
+        "displayName": "成品转角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 0,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      },
+      {
+        "key": "planeRotation",
+        "displayName": "外形平面转角",
+        "valueType": "number",
+        "defaultValue": 0,
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "unit": "°",
+        "level": "advanced"
+      }
+    ],
+    "requirements": {
+      "angle": {
+        "min": 90,
+        "max": 90
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "l",
+    "roles": {
+      "memberA": "armA",
+      "memberB": "armB"
+    },
+    "parameterBindings": {},
+    "requirements": {
+      "angle": {
+        "min": 90,
+        "max": 90
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  }
+}

@@ -185,7 +185,8 @@ def generate_reviewed(parameters: dict[str, Any], context: dict[str, Any], *,
         fixed_width = load_profile(parameters, "doorFrame").width
         leaf = load_profile(parameters, "doorLeafFrame")
         leaf_width, leaf_depth = leaf.width, leaf.depth
-        vertical_width = load_profile(parameters, "doorVertical").width
+        if parameters.get("infillPattern", "grid") != "horizontal":
+            vertical_width = load_profile(parameters, "doorVertical").width
     effective = prepare(parameters, layout=layout, fixed_width=fixed_width,
                         leaf_width=leaf_width, leaf_depth=leaf_depth,
                         vertical_width=vertical_width)

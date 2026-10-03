@@ -1,0 +1,319 @@
+{
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M23 45 V51 M27 45 V51 M31 43 V51 M35 37 H41 M35 41 H41",
+        "tone": "cut"
+      }
+    ]
+  },
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "flexible-slit-bend-integrated",
+  "version": "1.0.2",
+  "displayName": "柔性缝开槽折弯",
+  "category": "integrated",
+  "layoutShape": "l",
+  "categoryName": "一体成形 · 连续母材",
+  "summary": "在单根连续母材的目标弯曲区布置柔性缝，让局部留筋发生分布式变形。实际角度取决于材料、筋宽与载荷，须通过试样标定。",
+  "topology": "两逻辑直段—柔性缝区—连续母材",
+  "interfaceType": "柔性缝 / 连续母材",
+  "lockType": "连续母材一体成形",
+  "motionType": "柔性区分布式变形",
+  "participants": [
+    {
+      "role": "segmentA",
+      "label": "逻辑管段 A",
+      "responsibility": "折弯前段",
+      "count": 1
+    },
+    {
+      "role": "segmentB",
+      "label": "逻辑管段 B",
+      "responsibility": "折弯后段",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "unsupported",
+    "reason": "实际产品的两构件归并及柔性区成形标定尚未实现；仅提供下料件与未标定目标形状示意"
+  },
+  "parameters": [
+    {
+      "key": "bendRadius",
+      "displayName": "目标中心线半径",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 5,
+      "max": 100000,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "node-slot",
+      "participants": [
+        "segmentA",
+        "segmentB"
+      ],
+      "label": "柔性折弯缝",
+      "resource": {
+        "kind": "part-process",
+        "id": "flexible-slit-bend"
+      },
+      "parameterBindings": {
+        "angle": "$angle",
+        "bendRadius": "$bendRadius"
+      },
+      "parameterMode": "inherit-resource",
+      "previewPlacement": {
+        "target": "part",
+        "reference": "center",
+        "station": 0,
+        "face": "top"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "integrated",
+    "blankPartPolicy": "merge-participants",
+    "blankParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "participants": [
+          "segmentA",
+          "segmentB"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "merge",
+      "label": "将两段逻辑管段作为同一根母材下料",
+      "kind": "连续下料",
+      "direction": "连续轴线",
+      "distance": 0
+    },
+    {
+      "id": "cut",
+      "label": "沿目标曲率区加工柔性折弯缝",
+      "kind": "柔性缝",
+      "direction": "节点槽位",
+      "distance": 0
+    },
+    {
+      "id": "form",
+      "label": "按试样标定条件形成目标角度",
+      "kind": "槽后成形",
+      "direction": "折弯轴",
+      "distance": "$angle"
+    }
+  ],
+  "previewScene": {
+    "manufacturingParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "sourceRole": "segmentA",
+        "length": "$segmentA_length + $segmentB_length + $bendRadius * $angle / 57.295779513",
+        "processes": [
+          "node-slot"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-($segmentA_length + $segmentB_length) / 2 - 40",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "formedPreviews": [],
+    "formedPreviewScript": "assembly.py",
+    "annotations": [
+      {
+        "id": "blank-length",
+        "view": "blank",
+        "kind": "length-blank",
+        "blankId": "continuousBlank",
+        "label": "总下料长度"
+      },
+      {
+        "id": "node-angle",
+        "view": "finished",
+        "kind": "value-note",
+        "label": "节点折弯角",
+        "value": "$angle",
+        "unit": "°"
+      },
+      {
+        "id": "target-centerline-radius",
+        "view": "blank",
+        "kind": "value-note",
+        "label": "目标中心线半径 R",
+        "value": "$bendRadius",
+        "unit": "mm"
+      },
+      {
+        "id": "target-flexible-length",
+        "view": "blank",
+        "kind": "value-note",
+        "label": "目标曲区长度 Rβ",
+        "value": "$bendRadius * $angle / 57.29577951308232",
+        "unit": "mm"
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        140
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -160
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M23 45 V51 M27 45 V51 M31 43 V51 M35 37 H41 M35 41 H41",
+        "className": "tool-diagram-cut-line"
+      }
+    ],
+    "labels": [
+      {
+        "x": 16,
+        "y": 52,
+        "text": "一根",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "angle",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          34,
+          46
+        ],
+        "description": "柔性区的目标总角度，实际值需试样标定"
+      },
+      {
+        "parameter": "bendRadius",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          36,
+          44
+        ],
+        "description": "柔性区目标中心线半径"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 1,
+    "partGeometry": [
+      "单根连续下料件上的柔性折弯缝"
+    ],
+    "secondaryProcess": [
+      "柔性缝加工",
+      "分布式折弯成形待标定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "segmentA",
+      "segmentB"
+    ],
+    "supportedInputModes": [
+      "local-parts",
+      "stock-operation"
+    ],
+    "geometryParameters": [
+      {
+        "key": "angle",
+        "displayName": "成品转角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 0,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      },
+      {
+        "key": "planeRotation",
+        "displayName": "外形平面转角",
+        "valueType": "number",
+        "defaultValue": 0,
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "unit": "°",
+        "level": "advanced"
+      }
+    ],
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "l",
+    "roles": {
+      "segmentA": "armA",
+      "segmentB": "armB"
+    },
+    "parameterBindings": {
+      "angle": "angle"
+    },
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  }
+}

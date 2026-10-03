@@ -19,6 +19,12 @@ const allRibbonDefinition = {
           ],
         },
         {
+          title: "装配",
+          commands: [
+            command("designer.open-assembly-process", "装配工艺", "merge", { size: "large", iconTone: "green" }),
+          ],
+        },
+        {
           title: "Excel",
           commands: [
             command("designer.excel.export-template", "导出模板", "excel", { size: "large", iconTone: "green" }),

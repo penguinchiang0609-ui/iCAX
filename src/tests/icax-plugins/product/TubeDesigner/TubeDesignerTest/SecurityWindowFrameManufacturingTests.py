@@ -38,7 +38,7 @@ class FrameManufacturingTests(unittest.TestCase):
                 for purpose in ('display','manufacturing'):
                     with self.subTest(face=face,mode=mode,purpose=purpose):
                         doc=generate(face,mode,purpose,accessDoorEnabled=True)
-                        self.assertEqual(count,len(frames(doc)))
+                        self.assertEqual(expected[0] if purpose=='display' else count,len(frames(doc)))
                         keys={i['key'] for i in doc['items']}
                         for r in doc.get('relationships',[]):
                             self.assertTrue(set(r['items'])<=keys,r)
@@ -73,7 +73,24 @@ class FrameManufacturingTests(unittest.TestCase):
         doc=generate('five','plane_v_notch',accessDoorEnabled=False,
                      topBottomCrossbarFrontCenterOffset=243,
                      topBottomCrossbarBackCenterOffset=243)
-        self.assertTrue(any('.aperture.crop.' in n['key'] for n in doc['geometry']))
+        records=[r for r in doc['extensions']['tubeDesigner.assemblyGeometryProcesses']['instances']
+                 if r['templateId']=='tube-profile-aperture' and '.plane.' in r['stockId']]
+        self.assertTrue(records)
+        cropped=0
+        for record in records:
+            interval=record['processInput']['geometry']['clipInterval']
+            if not record['result']['operations']:
+                self.assertEqual([],record['result']['geometry'])
+                self.assertEqual([{'kind':'no-contact-in-stock-interval','interval':interval}],record['result']['checks'])
+                continue
+            self.assertTrue(any(n['operator']=='boolean' and n['arguments']['operation']=='intersect'
+                                for n in record['result']['geometry']))
+            cropped+=1
+            for check in record['result']['checks']:
+                if check['kind']=='profile-aperture':
+                    self.assertGreaterEqual(check['bounds']['min'][0],interval[0])
+                    self.assertLessEqual(check['bounds']['max'][0],interval[1])
+        self.assertGreater(cropped,0)
         for f in frames(doc):
             path=f['properties'].get('tubeDesigner.frameManufacturing',{})
             for span in path.get('spans',[]):

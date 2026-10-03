@@ -3,11 +3,14 @@
     <TargetName>SecurityWindowFramesBridge</TargetName>
     <OutDir>$(SolutionDir)..\tmp\security-window-frames-native\</OutDir>
     <IntDir>$(SolutionDir)..\tmp\security-window-frames-native\obj\</IntDir>
+    <OutDir Condition="'$(ICAXInspectionBridgeOutputRoot)' != ''">$(ICAXInspectionBridgeOutputRoot)\</OutDir>
+    <IntDir Condition="'$(ICAXInspectionBridgeOutputRoot)' != ''">$(ICAXInspectionBridgeOutputRoot)\obj\</IntDir>
+    <ICAXInspectionBridgeSource Condition="'$(ICAXInspectionBridgeSource)' == ''">$(MSBuildProjectDirectory)\SecurityWindowFramesBridge.cpp</ICAXInspectionBridgeSource>
   </PropertyGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
     <ClCompile Remove="@(ClCompile)" />
     <ClCompile Include="$(MSBuildProjectDirectory)\..\..\..\..\pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader></ClCompile>
-    <ClCompile Include="$(MSBuildProjectDirectory)\SecurityWindowFramesBridge.cpp">
+    <ClCompile Include="$(ICAXInspectionBridgeSource)">
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemGroup>

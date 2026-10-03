@@ -6,6 +6,8 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace iCAX::TemplateRuntime
 {
@@ -25,7 +27,10 @@ namespace iCAX::TemplateRuntime
         CPythonTemplateHost(const CPythonTemplateHost&) = delete;
         CPythonTemplateHost& operator=(const CPythonTemplateHost&) = delete;
 
-        iCAX::Data::ObjectMap Invoke(const iCAX::Data::ObjectMap& Request_);
+        // Product callers require the actual SDK lookup roles from the current
+        // response envelope. Public model documents and parameters stay pure.
+        iCAX::Data::ObjectMap Invoke(const iCAX::Data::ObjectMap& Request_,
+            std::vector<std::string>* ProfileRolesConsumed_ = nullptr);
         bool IsRunning() const noexcept;
         void Stop() noexcept;
 

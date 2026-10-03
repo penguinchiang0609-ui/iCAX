@@ -5,9 +5,16 @@ tool rotations, apertures and the manufacturing member identity.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import SimpleNamespace
 import math
+import importlib.util
+from pathlib import Path
+
+_adapter_spec = importlib.util.spec_from_file_location("icax_window_path_process_adapter",
+    Path(__file__).with_name("security_window_process_adapter.py"))
+_process_adapter = importlib.util.module_from_spec(_adapter_spec)
+_adapter_spec.loader.exec_module(_process_adapter)
 
 
 def sub(a, b):
@@ -76,10 +83,11 @@ def plan(parts, points, parameters, layout):
     selected = mode(parameters)
     if selected == "segment_weld":
         return []
-    height, half = float(parameters["height"]), parts[0].profile.width / 2
+    height = float(parameters["height"])
     posts = [p for p in parts if p.key.startswith("outer_frame.vertical.")]
     top = sorted((p for p in parts if p.key.startswith("outer_frame.top.")), key=lambda p:p.face_index)
     bottom = sorted((p for p in parts if p.key.startswith("outer_frame.bottom.")), key=lambda p:p.face_index)
+    half = bottom[0].profile.width / 2
     def at(i, z):
         return (points[i][0], points[i][1], z)
     def ring(rails, z):
@@ -157,18 +165,53 @@ def _prepare(path, fg, parameters):
         b.z_axis = rotate(a.z_axis, axis, math.pi/2)
         bends.append({"sequence":i+1, "angle":90.0, "rotation":round(roll,6),
                       "origin":list(a.end), "axis":list(axis), "turnY":turn_y, "turnZ":turn_z})
-    cursor = 0.0
-    for i, span in enumerate(spans):
-        span.stock_start = cursor
-        cursor += math.dist(span.start, span.end) + span.start_reserve + span.end_reserve
-        if i < len(bends):
-            bends[i]["station"] = round(cursor + allowance/2, 6)
-            cursor += allowance
+    cursor = _allocate(spans, bends, allowance)
     if path.closed:
         # Straight seam must close the cross-section too, not merely endpoints.
         if dot(spans[0].y_axis, spans[-1].y_axis)<1-1e-6 or dot(spans[0].z_axis, spans[-1].z_axis)<1-1e-6:
             raise ValueError("空间外框首尾截面朝向不一致，无法闭合")
     return profile, proxy, cursor, allowance, bends
+
+
+def _allocate(spans, bends, allowance):
+    # The legacy caller passes one uniform amount. Downstream planning passes
+    # one amount per corner, so all bends share a single material coordinate map.
+    amounts = list(allowance) if isinstance(allowance, (list, tuple)) else [allowance]*len(bends)
+    if len(amounts)!=len(bends) or any(isinstance(value,bool) or not isinstance(value,(int,float))
+                                    or not math.isfinite(value) or value<0 for value in amounts):
+        raise ValueError('每个折弯必须提供有限非负的材料补偿')
+    cursor = 0.0
+    for i, span in enumerate(spans):
+        span.stock_start = cursor
+        cursor += math.dist(span.start, span.end) + span.start_reserve + span.end_reserve
+        if i < len(bends):
+            bends[i]["station"] = round(cursor + amounts[i]/2, 6)
+            cursor += amounts[i]
+    return cursor
+
+
+def _target_span_check(path, plan, allowance):
+    compensated = any(allowance) if isinstance(allowance, (list, tuple)) else bool(allowance)
+    if compensated:
+        return {"status":"not-performed", "method":"rigid-centreline-endpoints",
+                "reason":"K补偿独立计入材料余量，点铰名义目标不代表该余量的精确成形"}
+    adapter = _process_adapter
+    folds = sorted(plan["forming"], key=lambda f:f["station"])
+    transform = list(adapter.IDENTITY)
+    origin = path.spans[0].start
+    basis = (path.spans[0].direction,path.spans[0].y_axis,path.spans[0].z_axis)
+    maximum = 0.
+    for index, span in enumerate(path.spans):
+        start = span.stock_start+span.start_reserve
+        for station, target in ((start,span.start),(start+math.dist(span.start,span.end),span.end)):
+            local = adapter._point(transform,[station,0,0])
+            actual = tuple(origin[i]+sum(basis[j][i]*local[j] for j in range(3)) for i in range(3))
+            maximum = max(maximum,math.dist(actual,target))
+        if index < len(folds):
+            transform = adapter._multiply(transform,folds[index]["targetTransform"])
+    if maximum>1e-4:
+        raise ValueError(f"连续母材名义折后中心线偏离成品输入 {maximum:g} mm")
+    return {"status":"pass", "method":"rigid-centreline-endpoints", "maximumDeviation":maximum}
 
 
 def _stock_placement(span):
@@ -231,6 +274,19 @@ def emit(path, core, fg, model, shared, parameters, crossing_map, purpose, user_
         raise ValueError(f"空间外框在第{clearance_check['sequence']}次折角的折合过程中发生框架自干涉；请改用平面折弯")
     stock = SimpleNamespace(**proxy.__dict__, length=length)
     stock.user_mould_root = user_root
+    process_source, process_plan = (None, None) if purpose == "display" else _process_adapter.frame_plan(model, stock, bends)
+    target_check = None
+    if process_plan is not None:
+        # The sizing pass uses the actual provisional allocation. Derive the
+        # two adjoining rigid-span reserves from the function's real hinge.
+        allowance = _process_adapter.bend_allowance(process_plan)
+        for index, fold in enumerate(sorted(process_plan["forming"],key=lambda f:f["station"])):
+            reserve = _process_adapter.corner_reserve(fold)
+            path.spans[index].end_reserve = path.spans[index+1].start_reserve = reserve
+            bends[index]["materialReserve"] = reserve
+        length = stock.length = _allocate(path.spans,bends,allowance)
+        process_source, process_plan = _process_adapter.frame_plan(model, stock, bends)
+        target_check = _target_span_check(path,process_plan,allowance)
     display = ""
     if purpose != "manufacturing":
         solids = []
@@ -244,52 +300,25 @@ def emit(path, core, fg, model, shared, parameters, crossing_map, purpose, user_
     if purpose != "display":
         base = fg.Part(path.key+".stock", path.name, (0,0,0), (length,0,0), profile, "main")
         export = fg._emit_tube_geometry(model, base, shared)[1]
-        cutters = []
-        for i, bend in enumerate(bends):
-            roll = math.radians(bend["rotation"])
-            rotated_profile = profile
-            if abs(bend["turnY"])>.5:
-                rotated_profile = replace(profile, width=profile.depth, depth=profile.width,
-                                          _fixed_contours=profile.contours(swap_axes=True))
-            stock.profile = rotated_profile
-            cutter, extent = fg._emit_library_groove_cutter(model, stock, bend["station"], i+1)
-            # Tool's local +Z follows the turn; retain its real mould geometry.
-            cutter = model.geometry(f"{path.key}.groove.{i}.roll", "transform", inputs=[cutter], arguments={"placement":{
-                "origin":[0,0,0], "xAxis":[1,0,0], "yAxis":[0,math.cos(roll),math.sin(roll)],
-                "zAxis":[0,-math.sin(roll),math.cos(roll)]}})
-            previous = bends[i-1]["station"] if i else 0
-            following = bends[i+1]["station"] if i+1<len(bends) else length
-            if bend["station"]+extent[0]<=previous or bend["station"]+extent[1]>=following:
-                raise ValueError("外框槽口避空范围过大，与相邻折角或端部重叠")
-            cutters.append(cutter)
-        stock.profile = profile
-        for i, span in enumerate(path.spans):
-            for j, inserted in enumerate(crossing_map.get(span.reference.key, [])):
-                low = min(dot(sub(p,span.start),span.direction) for p in (inserted.start,inserted.end))
-                high = max(dot(sub(p,span.start),span.direction) for p in (inserted.start,inserted.end))
-                extent = core._profile_half_extent(inserted,span.direction) + float(parameters["assemblyClearance"])
-                low,high = low-extent,high+extent
-                run = math.dist(span.start,span.end)
-                if high<=-span.start_reserve+1e-7 or low>=run+span.end_reserve-1e-7:
-                    continue
-                source = core._emit_crossing_cutter(model, span.reference, inserted, i*10000+j+1,
-                                                   float(parameters["assemblyClearance"]))
-                mapped = model.geometry(f"{path.key}.aperture.{i}.{j}", "transform", inputs=[source],
-                                        arguments={"placement":_stock_placement(span)})
-                if low < -span.start_reserve or high > run+span.end_reserve:
-                    # A seam aperture may occur at both stock ends. Crop each
-                    # half to its own rigid span so it cannot cut another span.
-                    left = span.stock_start
-                    right = left+span.start_reserve+run+span.end_reserve
-                    h=profile.width/2+1
-                    clip = fg._emit_polygon_cutter(model, f"{path.key}.aperture.clip.{i}.{j}",
-                        [[left,-h],[right,-h],[right,h],[left,h]], profile.depth/2+1)
-                    mapped = model.geometry(f"{path.key}.aperture.crop.{i}.{j}", "boolean", inputs=[mapped,clip],
-                                            arguments={"operation":"intersect","target":mapped,"tools":[clip]})
-                cutters.append(mapped)
-        if cutters:
-            export = model.geometry(path.key+".export", "boolean", inputs=[export,*cutters],
-                                    arguments={"operation":"subtract", "target":export, "tools":cutters})
+        cutters = _process_adapter.emit_cutters(model, stock, process_plan)
+        secondary_cutters = []
+        machining=fg._machining
+        actual_stock=machining.unfolded_stock(model,stock)
+        for i,span in enumerate(path.spans):
+            placement=_stock_placement(span)
+            def mapped(point):
+                return [placement['origin'][axis]+sum(point[j]*placement[name][axis]
+                    for j,name in enumerate(('xAxis','yAxis','zAxis'))) for axis in range(3)]
+            for j,inserted in enumerate(crossing_map.get(span.reference.key,[])):
+                branch=machining.mapped_branch(model,inserted,core._profile_arguments,mapped,
+                    key=inserted.key+f".unfolded.{i}")
+                interval=[span.stock_start,span.stock_start+span.start_reserve+
+                          math.dist(span.start,span.end)+span.end_reserve]
+                export=machining.aperture(model,export,actual_stock,branch,
+                    path.key+f".aperture.{i}.{j}",float(parameters['assemblyClearance']),clip_interval=interval)
+        cutters.extend(secondary_cutters)
+        export = _process_adapter._load('assembly_geometry_process_runtime').apply_frozen_cutters(
+            model,export,cutters,path.key+'.resolved-folds',path.key,process_plan)
     references = list(dict.fromkeys(s.reference.key for s in path.spans))
     properties = {"quantity":1, "group":"main", "length":round(length,3),
                   "manufacturing.categoryKey":"outer_frame.continuous", "manufacturing.categoryName":path.name,
@@ -298,13 +327,16 @@ def emit(path, core, fg, model, shared, parameters, crossing_map, purpose, user_
                                                 "bendAllowance":allowance, "bendLocations":[b["station"] for b in bends]},
                   "tubeDesigner.frameManufacturing":{"mode":mode(parameters), "closed":path.closed,
                     "closure":"straight_mid_edge" if path.closed else "open", "referenceMembers":references,
-                    "spans":[{"start":list(s.start),"end":list(s.end),"stockStart":s.stock_start,
+                    "spans":[{"itemKey":s.reference.key,"start":list(s.start),"end":list(s.end),"stockStart":s.stock_start,
                               "startReserve":s.start_reserve,"endReserve":s.end_reserve,
                               "placement":_stock_placement(s)} for s in path.spans],
                     "bends":[{k:v for k,v in b.items() if k not in ("turnY","turnZ")} for b in bends],
                     "foldOrder":list(reversed([b["sequence"] for b in bends])),
-                    "clearanceCheck":clearance_check,"assemblyAfterFolding":True},
+                    "clearanceCheck":clearance_check,"targetSpanCheck":target_check,"assemblyAfterFolding":True},
                   "tubeDesigner.connectionProcess":{"cornerJoin":"v_groove_90", "passesInto":[],
                     "receives":list(dict.fromkeys(p.key for key in references for p in crossing_map.get(key,[])))}}
+    if process_plan is not None:
+        properties.update(getattr(model,"_assembly_process_records",{}).get(path.key,{}))
+        _process_adapter.attach(properties, process_source, process_plan, secondary_cutters)
     return {"key":path.key, "name":path.name, "properties":properties,
             "representations":{"display":display or export,"export":export}}, references

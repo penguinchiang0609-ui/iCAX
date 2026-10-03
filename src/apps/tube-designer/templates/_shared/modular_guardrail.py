@@ -148,6 +148,7 @@ class Layout:
     path_vertices: list[Point] = field(default_factory=list)
     profiles: dict[str, Any] = field(default_factory=dict)
     elevation_segments: list[dict[str, Any]] = field(default_factory=list)
+    butt_contacts: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _number(p: dict[str, Any], key: str, minimum: float = 0.0) -> float:
@@ -187,11 +188,10 @@ def _lateral(direction: Point) -> Point:
 
 
 def _profile(p: dict[str, Any], prefix: str):
-    # The member generator extrudes the exact supplied contours.  Do not gate
-    # the resource library by a short list of profile names here; individual
-    # node processes (for example a side-mount plate requiring a known contact
-    # face) perform their own geometry-dependent checks where they are needed.
-    return _catalog.load_profile(p, prefix)
+    profile = _catalog.load_profile(p, prefix)
+    if profile.kind not in {"rect", "round"}:
+        raise ValueError(f"护栏 {prefix} 仅支持矩形管或圆管")
+    return profile
 
 
 def distribute_bars(clear: float, width: float, maximum_gap: float, mode: str, fixed_count: int = 0) -> tuple[list[float], list[float]]:
@@ -261,8 +261,11 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
     corner_mode = _choice(p, "cornerPostMode", {"shared", "double"})
     large_mode = _choice(p, "largePostMode", {"none", "middle", "ends"})
     dimensions = _choice(p, "dimensionMode", {"outside_to_outside", "center_to_center"})
-    distribution = _choice(p, "barDistribution", {"equal", "fixed_center", "manual_count", "half_edge"})
     infill_type = _choice(p, "infillType", {"bars", "horizontal", "plate", "lower_plate", "cross", "diamond", "glass"})
+    tubular_infill = infill_type not in {"glass", "plate"}
+    distributed_infill = infill_type in {"bars", "horizontal", "lower_plate"}
+    distribution = (_choice(p, "barDistribution", {"equal", "fixed_center", "manual_count", "half_edge"})
+                    if distributed_infill else "equal")
     use = str(p.get("guardrailUse", "platform"))
     if use not in {"platform", "wall"}:
         raise ValueError("护栏用途不受支持")
@@ -277,9 +280,11 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
     drop = _number(p, "upperRailDrop", 1)
     extension = _number(p, "endExtension")
     max_post = _number(p, "maximumPostSpacing", 100)
-    maximum_gap = _number(p, "maximumVerticalClearGap", 1)
+    maximum_gap = _number(p, "maximumVerticalClearGap", 1) if distributed_infill else 1.0
     double_gap = _number(p, "doublePostClearGap")
-    handrail, post, infill, rail = (_profile(p, key) for key in ("handrail", "post", "infill", "rail"))
+    handrail, post, rail = (_profile(p, key) for key in ("handrail", "post", "rail"))
+    # Inactive tube drafts must neither load an invalid profile nor constrain a panel.
+    infill = _profile(p, "infill") if tubular_infill else rail
     large_parameters = dict(p)
     large_size = _number(p, "largePostSize", max(post.width, post.depth) if large_mode != "none" else 1)
     large_size = max(large_size, post.width, post.depth)
@@ -308,7 +313,7 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         raise ValueError("立柱最大间距必须大于立柱截面尺寸")
     if rail.width > min(post.width, post.depth) + EPS:
         raise ValueError("横档侧向宽度不能超过立柱两向截面尺寸，否则转角横档会相碰")
-    if infill.depth > min(rail.width, handrail.width) + EPS:
+    if tubular_infill and infill.depth > min(rail.width, handrail.width) + EPS:
         raise ValueError("竖杆侧向深度不能超过横档或扶手侧向宽度")
 
     directions: list[Point] = [(1.0, 0.0, 0.0)]
@@ -366,6 +371,7 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
     double_pairs: dict[int, list[Post]] = {}
     volumes: list[KeepVolume] = []
     components: list[Component] = []
+    butt_contacts: list[tuple[str, str]] = []
 
     def reserve_part() -> None:
         # Enforce the budget on lightweight layout records, before NeutralModel
@@ -503,6 +509,16 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
             cap = add_tube(f"segment.{index + 1}.cap.{cap_index}", f"第{index + 1}边扶手 {cap_index}",
                           (left[0], left[1], cap_z), (right[0], right[1], cap_z), handrail,
                           side, Z, "guardrail.handrail", f"segment.{index + 1}", clips)
+            if handrail.kind == "rect":
+                cap_start = _dot(cap.start, direction)
+                cap_end = _dot(cap.end, direction)
+                for column in current:
+                    if column.profile.kind != "rect" or column.key in clips:
+                        continue
+                    center = _dot(column.point, direction)
+                    reach = column.half_extent(direction)
+                    if center + reach >= cap_start - EPS and center - reach <= cap_end + EPS:
+                        butt_contacts.append((cap.key, column.key))
             current_caps.append(cap)
         caps_by_segment.append(current_caps)
 
@@ -709,6 +725,15 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
                     bar = add_tube(key + f".bar.{bar_index:03d}", f"第{index}边第{bay_index}跨竖杆 {bar_index}",
                              (point[0], point[1], z0), (point[0], point[1], z1), infill, direction, side,
                              "guardrail.vertical_bar", key, clips)
+                    if infill.kind == "rect" and rail.kind == "rect":
+                        butt_contacts.append((bar.key, lower_support.key))
+                        if use != "wall" and upper_rail is not None:
+                            butt_contacts.append((bar.key, upper_rail.key))
+                    if infill.kind == "rect" and use != "wall" and upper_rail is None and handrail.kind == "rect":
+                        center = _dot(point, direction)
+                        for cap in caps_by_segment[index - 1]:
+                            if _dot(cap.start, direction) - EPS <= center <= _dot(cap.end, direction) + EPS:
+                                butt_contacts.append((bar.key, cap.key))
                     if use == "wall":
                         bar.envelope_clearance = _number(p, "picketHoleClearance")
                         if bar.envelope_clearance >= min(infill.width, infill.depth) / 2:
@@ -779,7 +804,8 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
                         and abs(first.center[1] - second.center[1]) < (first.height + second.height) / 2 - EPS):
                     raise ValueError("相邻立柱底板互相重叠，请增大立柱间距、减小底板尺寸或另行设计共用底板")
     return Layout(tubes, plates, bays, posts, volumes, components, vertices,
-                  {"handrail": handrail, "rail": rail, "post": post, "infill": infill})
+                  {"handrail": handrail, "rail": rail, "post": post, "infill": infill},
+                  butt_contacts=butt_contacts)
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -796,35 +822,33 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                          package_digest=str(context.get("template", {}).get("packageDigest", "")), parameters=parameters)
     shared = _geometry.SharedTubeGeometry(model)
     originals: dict[str, str] = {}
-    envelopes: dict[str, str] = {}
-    # The template owns the display/manufacturing policy.  Joint clips are
-    # needed by the display shape as well, otherwise intersecting rails look
-    # wrong in the preview; profile-hole cutters are manufacturing-only.
+    envelopes: dict[str, dict[str, Any]] = {}
+    process_runtime = _shared("assembly_geometry_process_runtime.py")
+    def process(target, key, function_id, stock_id, stock, geometry, values=None):
+        return process_runtime.invoke(model,target,function_id,
+            {"schema":"icax.assembly-process-input","schemaVersion":1,
+             "parts":{"stock":stock},"geometry":geometry},values or {},key,stock_id)
+    # As with security windows, the assembly view places shared stock members.
+    # Exact copes, mitres and holes belong to the manufacturing graph only.
     manufacturing_requested = purpose != "display"
-    needed_tools = {key for part in built.tubes for key in part.clips + (part.hole_tools if manufacturing_requested else [])}
-    needed_tools.update(key for plate in built.plates for key in plate.support_clips)
+    needed_tools = ({key for part in built.tubes for key in part.clips + part.hole_tools}
+                    if manufacturing_requested else set())
+    if manufacturing_requested:
+        needed_tools.update(key for plate in built.plates for key in plate.support_clips)
+    declared_joints: set[tuple[str, str]] = set()
     for part in built.tubes:
         arguments = {"placement": {"origin": list(part.start), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
                      "contours": part.profile.contours()}
         vector = [part.end[i] - part.start[i] for i in range(3)]
         originals[part.key] = shared.emit_tube(part.key, profile_arguments=arguments, extrude_arguments={"vector": vector})
         if part.key in needed_tools:
-            envelopes[part.key] = shared.emit_tube(part.key + ".envelope",
-                profile_arguments={**arguments, "contours": part.profile.contours(clearance=part.envelope_clearance)[:1]},
-                extrude_arguments={"vector": vector})
-    keep_volumes: dict[str, str] = {}
-    for volume in built.volumes:
-        x, y = volume.x_axis, volume.y_axis
-        normal = (x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0])
-        profile_key = model.geometry(volume.key + ".profile", "profile2d", arguments={
-            "placement": {"origin": [volume.center[i] - normal[i] * volume.thickness / 2 for i in range(3)],
-                          "xAxis": list(x), "yAxis": list(y)},
-            "contours": [_path([
-                [-volume.width / 2, -volume.height / 2], [volume.width / 2, -volume.height / 2],
-                [volume.width / 2, volume.height / 2], [-volume.width / 2, volume.height / 2]])],
-        })
-        keep_volumes[volume.key] = model.geometry(volume.key + ".solid", "extrude", inputs=[profile_key],
-                                                arguments={"vector": [v * volume.thickness for v in normal]})
+            envelopes[part.key] = {"geometryKind":"stock-section","sourceMemberId":part.key,"placement":arguments["placement"],
+                "contours":part.profile.contours()[:1],"vector":vector,"clearance":part.envelope_clearance,
+                "profileEnvelope":{"kind":"system" if part.profile._fixed_contours is None else "frozen",
+                                   "profileId":part.profile.profile_id,"profileData":part.profile._profile_data}}
+    keep_volumes = {volume.key:{"center":list(volume.center),"xAxis":list(volume.x_axis),"yAxis":list(volume.y_axis),
+                   "width":volume.width,"height":volume.height,"thickness":volume.thickness}
+                   for volume in built.volumes if manufacturing_requested}
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
     component_geometry = _components.ComponentModelGeometry(model)
@@ -832,7 +856,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                         x_axis=part.x_axis, y_axis=part.y_axis) for part in built.components}
 
     def cutting_shape(key):
-        return envelopes[key] if key in envelopes else component_shapes[key]
+        return envelopes[key] if key in envelopes else {"intrinsicGeometryKey":component_shapes[key]}
 
     def add_item(key: str, name: str, display_representation: str,
                  manufacturing_representation: str, properties: dict[str, Any]):
@@ -851,38 +875,17 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         display_representation = originals[part.key]
         manufacturing_representation = display_representation
         start_cut, end_cut = ("miter", "miter") if part.diagonal else ("square", "square")
-        if part.keep_volume:
-            keep = keep_volumes[part.keep_volume]
-            keeps = [keep, *(keep_volumes[key] for key in part.extra_keep_volumes)]
-            bounded = model.geometry(
-                part.key + ".bounded", "boolean", inputs=[originals[part.key], *keeps],
-                arguments={"operation": "intersect", "target": originals[part.key], "tools": keeps},
-            )
-            display_representation = bounded
-            if manufacturing_requested:
-                manufacturing_representation = bounded
-            else:
-                display_representation = bounded
-        all_tools = part.clips + part.component_clips + (part.hole_tools if manufacturing_requested else [])
+        stock = {"length":part.length,"section":part.profile.properties(),
+                 "start":list(part.start),"end":list(part.end)}
+        if part.keep_volume and manufacturing_requested:
+            keeps = [keep_volumes[part.keep_volume],*(keep_volumes[key] for key in part.extra_keep_volumes)]
+            manufacturing_representation = process(manufacturing_representation,part.key+".process.bound",
+                "structural-stock-fit",part.key,stock,{"keepRegions":keeps})
+        all_tools = part.clips + part.component_clips + part.hole_tools if manufacturing_requested else []
         if all_tools:
-            tools = [cutting_shape(key) for key in dict.fromkeys(all_tools)]
-            if manufacturing_requested:
-                manufacturing_representation = model.geometry(
-                    part.key + ".finished", "boolean",
-                    inputs=[manufacturing_representation, *tools],
-                    arguments={"operation": "subtract", "target": manufacturing_representation, "tools": tools},
-                )
-            else:
-                display_representation = model.geometry(
-                    part.key + ".finished", "boolean",
-                    inputs=[display_representation, *tools],
-                    arguments={"operation": "subtract", "target": display_representation, "tools": tools},
-                )
-            if manufacturing_requested and (part.clips or part.component_clips):
-                display_tools = [cutting_shape(key) for key in dict.fromkeys(part.clips + part.component_clips)]
-                display_representation = model.geometry(
-                    part.key + ".display.finished", "boolean", inputs=[display_representation, *display_tools],
-                    arguments={"operation": "subtract", "target": display_representation, "tools": display_tools})
+            receivers = [cutting_shape(key) for key in dict.fromkeys(all_tools)]
+            manufacturing_representation = process(manufacturing_representation,part.key+".process.fit",
+                "structural-stock-fit",part.key,stock,{"receivers":receivers})
         if not manufacturing_requested:
             manufacturing_representation = display_representation
         if part.clips:
@@ -904,6 +907,11 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                 "guardrail.handrail": "扶手管", "guardrail.post": "立柱", "guardrail.cross_rail": "横档",
                 "guardrail.vertical_bar": "竖杆", "guardrail.horizontal_bar": "横向填充", "guardrail.decorative_bar": "直管花格"}[part.category],
             "tubeDesigner.profile": part.profile.properties(),
+            "assemblyFrame.member": {
+                "start": list(part.start), "end": list(part.end), "axisLength": part.length,
+                "sectionFrame": {"originAtStart": list(part.start),
+                    "xAxis": list(part.x_axis), "yAxis": list(part.y_axis),
+                    "zAxis": list(_geometry._cross(part.x_axis, part.y_axis))}},
             "tubeDesigner.endProcess": {"startCut": part.start_cut_override or start_cut, "endCut": part.end_cut_override or end_cut,
                                         "connection": "weld", "lengthBasis": "blank_axial_extent" if part.clips or part.keep_volume else "finished",
                                         "cutSource": "finished_geometry", "profileHoleCount": len(part.hole_tools)},
@@ -924,25 +932,30 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         add_item(part.key, part.name, display_representation, manufacturing_representation, tube_properties)
         for index, receiver in enumerate(dict.fromkeys(part.clips), 1):
             model.relationship(f"joint.{part.key}.{index}", "weld", [part.key, receiver], properties={"geometry": "outer-envelope-cope"})
+            declared_joints.add(tuple(sorted((part.key, receiver))))
     for part in built.plates:
         if part.outline:
             x, y = part.x_axis, part.y_axis
             normal = (x[1]*y[2]-x[2]*y[1], x[2]*y[0]-x[0]*y[2], x[0]*y[1]-x[1]*y[0])
             origin = _add(part.center, normal, -part.thickness / 2)
-            contour = model.geometry(part.key + ".outline", "profile2d", arguments={
+            display_representation = shared.emit_tube(part.key, profile_arguments={
                 "placement": {"origin": list(origin), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
-                "contours": [_path([list(point) for point in part.outline])]})
-            display_representation = model.geometry(part.key + ".solid", "extrude", inputs=[contour],
-                arguments={"vector": [value * part.thickness for value in normal]})
+                "contours": [_path([list(point) for point in part.outline])]},
+                extrude_arguments={"vector": [value * part.thickness for value in normal]})
         else:
             display_representation = _plates.emit_rectangular_plate(model, part.key, width=part.width, height=part.height,
-                thickness=part.thickness, center=part.center, x_axis=part.x_axis, y_axis=part.y_axis, holes=part.holes)
-        if part.support_clips:
-            cutters = [cutting_shape(key) for key in part.support_clips]
-            display_representation = model.geometry(part.key + ".saddle", "boolean",
-                inputs=[display_representation, *cutters],
-                arguments={"operation": "subtract", "target": display_representation, "tools": cutters})
+                thickness=part.thickness, center=part.center, x_axis=part.x_axis, y_axis=part.y_axis,
+                holes=(), shared_geometry=shared)
         manufacturing_representation = display_representation
+        plate_stock={"width":part.width,"height":part.height,"thickness":part.thickness,
+                     "center":list(part.center),"xAxis":list(part.x_axis),"yAxis":list(part.y_axis)}
+        if part.holes and manufacturing_requested and not part.outline:
+            manufacturing_representation = process(manufacturing_representation,part.key+".process.holes",
+                "structural-plate-apertures",part.key,plate_stock,plate_stock,{"holes":list(part.holes)})
+        if part.support_clips and manufacturing_requested:
+            manufacturing_representation = process(manufacturing_representation,part.key+".process.saddle",
+                "structural-stock-fit",part.key,plate_stock,
+                {"receivers":[cutting_shape(key) for key in part.support_clips]})
         properties = _plates.plate_properties(part.width, part.height, part.thickness,
             material_grade=str(parameters.get("glassMaterial", "夹层玻璃") if part.part_kind == "glass" else parameters.get("plateMaterial", "")),
             category_key=part.category, category_name="玻璃栏板" if part.part_kind == "glass" else "侧装锚固板" if part.category == "plate.side_mount" else "底板" if part.category == "plate.base" else "封板")
@@ -966,6 +979,33 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         properties = _components.component_properties(part.reference, category_key=part.category, category_name=part.name)
         properties["group"] = part.group
         add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
+    # Rectangular members form planar butt contacts without a cope tool. Keep
+    # them as selectable product connections, but do not imply another cut.
+    # Round copes were declared above and must not be duplicated.
+    for bay in built.bays:
+        for rail in (part for part in built.tubes
+                     if part.group == bay.key and part.category in
+                     {"guardrail.cross_rail", "guardrail.horizontal_bar"}
+                     and part.profile.kind == "rect"):
+            for side, post in (("left", bay.left), ("right", bay.right)):
+                if post.profile.kind != "rect":
+                    continue
+                pair = tuple(sorted((rail.key, post.key)))
+                if pair in declared_joints:
+                    continue
+                model.relationship(f"joint.{rail.key}.{side}", "weld",
+                                   [rail.key, post.key],
+                                   properties={"geometry": "square-butt-contact",
+                                               "manufacturingCut": "none"})
+                declared_joints.add(pair)
+    for first, second in built.butt_contacts:
+        pair = tuple(sorted((first, second)))
+        if pair in declared_joints:
+            continue
+        model.relationship(f"joint.{first}.{second}", "weld", [first, second],
+                           properties={"geometry": "square-butt-contact",
+                                       "manufacturingCut": "none"})
+        declared_joints.add(pair)
     model.output("display.default", "display", item_keys)
     model.output("export.manufacturing", "export", item_keys)
     model.table("parts", "护栏零件清单", columns=[
@@ -975,6 +1015,8 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         {"key": "quantity", "displayName": "数量", "valueType": "integer"},
         {"key": "length", "displayName": "长度", "valueType": "number", "unit": "mm"}], rows=rows)
     model.diagnostic("info", "guardrail.design-review", "模板提供尺寸及加工几何，不代替项目规范、结构承载与锚固设计校核。")
+    if purpose != "manufacturing":
+        model.diagnostic("info", "guardrail.stock-preview", "装配显示采用原管近似，接头处可能重叠；相贯、拼角及孔槽以拆单加工模型为准。")
     if parameters.get("pathMode", "level") != "level":
         model.diagnostic("warning", "guardrail.elevation-installation", "高程模式扶手分跨接入立柱，不是连续弯管。底板采用水平支座，不贴合斜面；请核对安装标高、连接强度及首尾收口。")
         if parameters.get("pathMode") == "stepped":

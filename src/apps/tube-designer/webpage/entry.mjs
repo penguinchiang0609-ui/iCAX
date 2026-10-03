@@ -71,6 +71,8 @@ import {
   renderAssemblyLibraryRightPane,
   renderAssemblyLibraryViewportOverlay,
 } from "./assemblyLibrary.mjs";
+import { ensureProductAssemblyConnections } from "./productAssemblyConnections.mjs";
+import { ensureProductAssemblyBindings } from "./productAssemblyBindings.mjs";
 import {
   attachComponentLibrary,
   renderComponentLibraryDialogs,
@@ -455,6 +457,14 @@ function withDesignerContext(context) {
       bindToolParameterDiagrams(context.mount);
       bindAssemblyParameterDiagrams(context.mount);
       attachAssemblyLibraryViewports(context, view, context.mount);
+      if (view.activeAreaId === "assemblies") {
+        void ensureProductAssemblyConnections(context, view, {
+          renderProject: () => view.tubeDesignerAssemblyLibraryRenderProject?.(),
+        });
+        if (view.tubeDesignerAssemblyLibrary?.workMode === "product") void ensureProductAssemblyBindings(context, view, {
+          renderProject: () => view.tubeDesignerAssemblyLibraryRenderProject?.(),
+        });
+      }
     },
     afterProjectRender(context, view, mount, ops) {
       rememberLibraryDom(view,mount,renderDesignerWorkbenchSuffix(context,view,view.scene??{}));
@@ -496,6 +506,8 @@ function withDesignerContext(context) {
         view.tubeDesignerAssemblyLibraryRenderProject = () => ops.renderProject(context, view);
         const catalogueStatus = view.tubeDesignerAssemblyLibrary?.catalogueStatus ?? "idle";
         if (catalogueStatus === "idle") ensureAssemblyLibraryCatalogue(context, view, ops);
+        void ensureProductAssemblyConnections(context, view, ops);
+        if (view.tubeDesignerAssemblyLibrary?.workMode === "product") void ensureProductAssemblyBindings(context, view, ops);
       }
       if (view.activeAreaId === "templates") {
         view.tubeDesignerProductTemplateLibraryRenderProject = () => ops.renderProject(context, view);

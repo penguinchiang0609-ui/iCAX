@@ -62,6 +62,8 @@ def route(p):
 
 def generate(parameters,context):
     p=parameters
+    geometry_rules=shared("shared_tube_geometry.py")
+    manufacturing=geometry_rules.request_geometry_purpose(context)!="display"
     def num(key,lo=0,hi=100000):
         x=p[key]
         if type(x) not in (int,float) or not math.isfinite(x) or not lo<=x<=hi:
@@ -148,27 +150,74 @@ def generate(parameters,context):
         raise ValueError("首级支架无法落在梯梁上：请减小踏板/支撑高度或增加级高")
     model=NeutralModel(template_id="straight-steel-staircase",template_version="2.1.0",
         package_digest=str(context.get("template",{}).get("packageDigest","")),parameters=deepcopy(p))
-    shared_tubes=shared("shared_tube_geometry.py").SharedTubeGeometry(model)
+    shared_tubes=geometry_rules.SharedTubeGeometry(model)
     display=[];export=[];rows=[];placement={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
     signatures={};tube_centers={};pending_posts=[]
+    process_runtime=shared("assembly_geometry_process_runtime.py")
+    observations={};stock_data={};stock_ids={}
+    def observation(key):
+        return deepcopy(observations[key]) if key in observations else {"intrinsicGeometryKey":key}
     def boolean(key,target,tools,operation,keep_point=None):
-        if target in tube_centers:tube_centers[key]=tube_centers[target]
-        return model.geometry(key,"boolean",inputs=[target,*tools],arguments={"operation":operation,"target":target,"tools":tools,
-                              **({'keepConnectedTo':keep_point} if keep_point is not None else {})}) if tools else target
-    def prism(key,points,origin,x,y,vector):
-        outline=model.geometry(key+".outline","profile2d",arguments={"placement":{"origin":origin,"xAxis":x,"yAxis":y},
-                         "contours":[_path(points)]})
-        return model.geometry(key+".solid","extrude",inputs=[outline],arguments={"vector":vector})
-    def box(key,x0,x1,y0,y1,z0,z1):
-        return prism(key,[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[0,0,z0],[1,0,0],[0,1,0],[0,0,z1-z0])
+        if not manufacturing or not tools:return target
+        # These are necessary local region/receiver observations, never cutter solids.
+        recipes=[observation(tool) for tool in tools]
+        if target in observations:
+            if operation=="union":
+                observations[key]={"union":[observation(target),*recipes]}
+            elif operation=="intersect":
+                observations[key]={"section":observation(target),"keepRegions":recipes}
+            else:raise ValueError("接收件观察者不支持未定义的加工减料")
+            return key
+        local={"keepRegions":recipes} if operation=="intersect" else {"receivers":recipes}
+        if operation not in ("intersect","subtract"):
+            raise ValueError("原材局部加工不支持构型合并")
+        if keep_point is not None:local["keepConnectedTo"]=keep_point
+        stock=stock_data.get(target,{"intrinsicGeometryKey":target})
+        owner=stock_ids.get(target,target)
+        processed=process_runtime.invoke(model,target,"structural-stock-fit",
+            {"schema":"icax.assembly-process-input","schemaVersion":1,"parts":{"stock":stock},"geometry":local},
+            {},key,owner)
+        if target in tube_centers:tube_centers[processed]=tube_centers[target]
+        stock_data[processed]=stock;stock_ids[processed]=owner
+        return processed
+    def prism(key,points,origin,x,y,vector,manufacturing_only=False):
+        if manufacturing_only:
+            observations[key+".solid"]={"placement":{"origin":list(origin),"xAxis":list(x),"yAxis":list(y)},
+                                        "polygon":deepcopy(points),"vector":list(vector)}
+            return key+".solid"
+        # Keep the polygon's world position on the instance. Equal local
+        # prisms then declare one exact prototype, even at different steps.
+        anchor=points[0]
+        local_points=[[point[i]-anchor[i] for i in range(2)] for point in points]
+        local_origin=[origin[i]+anchor[0]*x[i]+anchor[1]*y[i] for i in range(3)]
+        solid=shared_tubes.emit_tube(key,profile_arguments={
+            "placement":{"origin":local_origin,"xAxis":list(x),"yAxis":list(y)},
+            "contours":[_path(local_points)]},extrude_arguments={"vector":list(vector)})
+        stock_data[solid]={"placement":{"origin":list(origin),"xAxis":list(x),"yAxis":list(y)},
+                           "contours":[_path(points)],"vector":list(vector)}
+        stock_ids[solid]=key
+        return solid
+    def joint_region(key,point,inward,mate,extent):
+        observations[key]={"jointPlane":{"point":list(point),"inward":list(inward),
+                          "mateDirection":list(mate) if mate is not None else None,"extent":extent}}
+        return key
+    def box(key,x0,x1,y0,y1,z0,z1,manufacturing_only=False):
+        return prism(key,[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[0,0,z0],[1,0,0],[0,1,0],[0,0,z1-z0],manufacturing_only)
     def tube(key,start,end,pf,x,y,outer=False):
-        tube_centers[key+'.solid']=[(start[i]+end[i])/2 for i in range(3)]
-        return shared_tubes.emit_tube(key,profile_arguments={
-            "placement":{"origin":list(start),"xAxis":list(x),"yAxis":list(y)},
-            "contours":pf.contours()[:1] if outer else pf.contours()},
-            extrude_arguments={"vector":[end[i]-start[i] for i in range(3)]})
+        section={"placement":{"origin":list(start),"xAxis":list(x),"yAxis":list(y)},
+                 "contours":pf.contours()[:1] if outer else pf.contours(),"vector":[end[i]-start[i] for i in range(3)]}
+        if outer:
+            observations[key+".solid"]={**section,"geometryKind":"stock-section","sourceMemberId":key}
+            return key+".solid"
+        solid=shared_tubes.emit_tube(key,profile_arguments={
+            "placement":section["placement"],"contours":section["contours"]},
+            extrude_arguments={"vector":section["vector"]})
+        tube_centers[solid]=[(start[i]+end[i])/2 for i in range(3)]
+        stock_data[solid]={"length":math.dist(start,end),"section":section};stock_ids[solid]=key
+        return solid
     def item(key,name,solid,kind,dimensions,pf=None,operations=None,purchased=False,display_solid=None):
         display_solid=solid if display_solid is None else display_solid
+        if not manufacturing:solid=display_solid
         if continuous and name in ('栏杆立柱','平台栏杆立柱'):
             center=tube_centers[solid]
             witness=[center[0]+pf.width/2-pf.wall/2,center[1],center[2]]
@@ -177,6 +226,8 @@ def generate(parameters,context):
             placed=model.geometry(key+'.pending','transform',inputs=[solid],arguments={'placement':deepcopy(placement)})
             display_placed=(placed if display_solid==solid else model.geometry(
                 key+'.display.pending','transform',inputs=[display_solid],arguments={'placement':deepcopy(placement)}))
+            stock_data[placed]={"intrinsicGeometryKey":placed,"section":pf.properties(),"length":max(dimensions)}
+            stock_ids[placed]=key
             pending_posts.append((key,name,placed,kind,dimensions,pf,operations,center,witness,display_placed))
             return
         if display_solid==solid:
@@ -205,11 +256,15 @@ def generate(parameters,context):
         signatures.setdefault(signature,[]).append(k)
         rows.append({"key":key,"values":{"name":name,"kind":kind,"length":round(max(dimensions),3),"quantity":1,"sourcing":props["manufacturing.sourcing"]}})
     def metal_plate(key,name,width,height,thick,center,x=(1,0,0),y=(0,1,0),holes=()):
-        solid=plate.emit_rectangular_plate(model,key,width=width,height=height,thickness=thick,center=center,x_axis=x,y_axis=y,holes=holes)
-        # The blank plate is sufficient in the assembled product view; bolt
-        # holes stay in the manufacturing representation.
-        item(key,name,solid,"plate",[width,height,thick],operations=list(holes),
-             display_solid=key+".solid" if holes else solid)
+        raw=plate.emit_rectangular_plate(model,key,width=width,height=height,thickness=thick,center=center,x_axis=x,y_axis=y,
+                                        holes=(),shared_geometry=shared_tubes)
+        solid=raw
+        stock={"width":width,"height":height,"thickness":thick,"center":list(center),"xAxis":list(x),"yAxis":list(y)}
+        if holes and manufacturing:
+            solid=process_runtime.invoke(model,raw,"structural-plate-apertures",
+                {"schema":"icax.assembly-process-input","schemaVersion":1,"parts":{"stock":stock},"geometry":stock},
+                {"holes":list(holes)},key+".holes",key)
+        item(key,name,solid,"plate",[width,height,thick],operations=list(holes),display_solid=raw)
         return solid
     def rect_tube(key,name,start,end,pf,x,y,cut=None,ops=None,receivers=()):
         raw=tube(key,start,end,pf,x,y);solid=raw
@@ -239,14 +294,16 @@ def generate(parameters,context):
         for j,y in enumerate(offsets):
             key=prefix+f".beam.{j+1}"
             if not zigzag:
-                raw=tube(key,[-pad,y,-slope*pad+center_offset],[run+pad,y,slope*(run+pad)+center_offset],beam,[0,1,0],normal)
                 display_x0=(plate_t-center_offset)/slope if f==flights[0] else plate_t
                 display_x1=run-plate_t
                 display_beam=tube(key+".display",
                     [display_x0,y,slope*display_x0+center_offset],
                     [display_x1,y,slope*display_x1+center_offset],beam,[0,1,0],normal)
-                keep=prism(key+".keep",outer_poly,[0,y-beam_width,0],[1,0,0],[0,0,1],[0,2*beam_width,0])
-                solid=boolean(key+".finished",raw,[keep],"intersect")
+                if manufacturing:
+                    raw=tube(key,[-pad,y,-slope*pad+center_offset],[run+pad,y,slope*(run+pad)+center_offset],beam,[0,1,0],normal)
+                    keep=prism(key+".keep",outer_poly,[0,y-beam_width,0],[1,0,0],[0,0,1],[0,2*beam_width,0],manufacturing_only=True)
+                    solid=boolean(key+".finished",raw,[keep],"intersect")
+                else:solid=display_beam
                 envelope=tube(key+".envelope",[-pad,y,-slope*pad+center_offset],[run+pad,y,slope*(run+pad)+center_offset],beam,[0,1,0],normal,outer=True)
                 beam_envelopes.append(envelope)
             start_cut={"kind":"floor_cut","z":plate_t} if f==flights[0] else {"kind":"vertical_start_cut","x":plate_t}
@@ -313,7 +370,7 @@ def generate(parameters,context):
                     poly=[[cx-frame.width,frame_bottom],[cx+frame.width,frame_bottom],
                           [cx+frame.width,slope*(cx+frame.width)+center_offset],
                           [cx-frame.width,slope*(cx-frame.width)+center_offset]]
-                    keep=prism(key+f".bracket.{j}.{k}.keep",poly,[0,y-frame.depth,0],[1,0,0],[0,0,1],[0,2*frame.depth,0])
+                    keep=prism(key+f".bracket.{j}.{k}.keep",poly,[0,y-frame.depth,0],[1,0,0],[0,0,1],[0,2*frame.depth,0],manufacturing_only=True)
                     solid=boolean(key+f".bracket.{j}.{k}.cut",raw,[keep],"intersect")
                     witness=[cx if plate_bracket else cx+frame.width/2-frame.wall/2,y,frame_bottom-1]
                     solid=boolean(key+f".bracket.{j}.{k}.cope",solid,[beam_envelopes[j]],"subtract",keep_point=witness)
@@ -324,7 +381,7 @@ def generate(parameters,context):
                     model.relationship(key+f'.support.{j}.{k}.cross','weld',[key+f'.support.{j}.{k}',key+('.cross.1' if support=='cross_tube' else '.cross.3')])
             if tread_kind!="none":
                 solid=plate.emit_rectangular_plate(model,key+".deck",width=G-tread_gap,height=W,thickness=deck,
-                          center=[x,0,(i+1)*R-deck/2],x_axis=(1,0,0),y_axis=(0,1,0))
+                          center=[x,0,(i+1)*R-deck/2],x_axis=(1,0,0),y_axis=(0,1,0),shared_geometry=shared_tubes)
                 item(key+".deck","踏板",solid,"glass" if tread_kind=="glass" else "plate",[G-tread_gap,W,deck],purchased=tread_kind!="steel")
         if rails:
             post_indices=list(range(0,f["risers"],post_every))
@@ -335,10 +392,11 @@ def generate(parameters,context):
                 rail_start=[a-post.width,y,rail_z(a-post.width)];rail_end=[b+post.width,y,rail_z(b+post.width)]
                 if continuous and f!=flights[0]:rail_start=[a,y,rail_z(a)]
                 if continuous and f!=flights[-1]:rail_end=[b,y,rail_z(b)]
-                hs=tube(prefix+f".guard.{sign}.rail",rail_start,rail_end,hand,[0,1,0],normal)
                 if continuous:
                     network.add(prefix+f".guard.{sign}.top",rail_start,rail_end,hand,placement,f!=flights[0],f!=flights[-1])
-                else:item(prefix+f".guard.{sign}.top","扶手",hs,"tube",[math.dist(rail_start,rail_end)],hand)
+                else:
+                    hs=tube(prefix+f".guard.{sign}.rail",rail_start,rail_end,hand,[0,1,0],normal)
+                    item(prefix+f".guard.{sign}.top","扶手",hs,"tube",[math.dist(rail_start,rail_end)],hand)
                 hand_envelope=tube(prefix+f".guard.{sign}.envelope",[rail_start[0]-200,y,rail_z(rail_start[0]-200)],
                                    [rail_end[0]+200,y,rail_z(rail_end[0]+200)],hand,[0,1,0],normal,outer=True)
                 post_envelopes={}
@@ -349,7 +407,7 @@ def generate(parameters,context):
                     post_envelopes[i]=tube(prefix+f".guard.{sign}.post.{i}.envelope",[x,y,bottom],[x,y,top+slope*post.width],post,[1,0,0],[0,1,0],outer=True)
                     poly=[[x-post.width,bottom],[x+post.width,bottom],
                           [x+post.width,rail_z(x+post.width)],[x-post.width,rail_z(x-post.width)]]
-                    keep=prism(prefix+f".guard.{sign}.post.{i}.keep",poly,[0,y-post.depth,0],[1,0,0],[0,0,1],[0,2*post.depth,0])
+                    keep=prism(prefix+f".guard.{sign}.post.{i}.keep",poly,[0,y-post.depth,0],[1,0,0],[0,0,1],[0,2*post.depth,0],manufacturing_only=True)
                     solid=boolean(prefix+f".guard.{sign}.post.{i}.cut",raw,[keep],"intersect")
                     if not continuous:solid=boolean(prefix+f".guard.{sign}.post.{i}.cope",solid,[hand_envelope],"subtract")
                     item(prefix+f".guard.{sign}.post.{i}","栏杆立柱",solid,"tube",[top+slope*post.width-bottom],post,[{"kind":"slope_top","slope":slope}],display_solid=raw)
@@ -359,12 +417,12 @@ def generate(parameters,context):
                         if fill=="horizontal":
                             for k in range(horizontal_count):
                                 h=guard_height*(k+1)/(horizontal_count+1)
-                                cut=box(prefix+f".guard.{sign}.infill.{i}.{k}.keep",left,right,y-100,y+100,0,rise+guard_height+100)
+                                cut=box(prefix+f".guard.{sign}.infill.{i}.{k}.keep",left,right,y-100,y+100,0,rise+guard_height+100,manufacturing_only=True)
                                 rect_tube(prefix+f".guard.{sign}.infill.{i}.{k}","横向填充",
                                           [left-infill.depth,y,slope*(left-infill.depth)+R/2+h],[right+infill.depth,y,slope*(right+infill.depth)+R/2+h],infill,[0,1,0],normal,cut=cut,receivers=[post_envelopes[i],post_envelopes[last]])
                         else:
                             lower=lambda x:slope*x+R/2+100
-                            lowcut=box(prefix+f".guard.{sign}.lower.{i}.keep",left,right,y-100,y+100,0,rise+guard_height+100)
+                            lowcut=box(prefix+f".guard.{sign}.lower.{i}.keep",left,right,y-100,y+100,0,rise+guard_height+100,manufacturing_only=True)
                             rect_tube(prefix+f".guard.{sign}.lower.{i}","栏杆下横杆",
                                       [left-infill.depth,y,lower(left-infill.depth)],[right+infill.depth,y,lower(right+infill.depth)],
                                       infill,[0,1,0],normal,cut=lowcut,receivers=[post_envelopes[i],post_envelopes[last]])
@@ -378,7 +436,7 @@ def generate(parameters,context):
                                       [x+infill.width,lower(x+infill.width)],
                                       [x+infill.width,rail_z(x+infill.width)],
                                       [x-infill.width,rail_z(x-infill.width)]]
-                                keep=prism(prefix+f".guard.{sign}.infill.{i}.{k}.keep",poly,[0,y-infill.depth,0],[1,0,0],[0,0,1],[0,2*infill.depth,0])
+                                keep=prism(prefix+f".guard.{sign}.infill.{i}.{k}.keep",poly,[0,y-infill.depth,0],[1,0,0],[0,0,1],[0,2*infill.depth,0],manufacturing_only=True)
                                 rect_tube(prefix+f".guard.{sign}.infill.{i}.{k}","竖向填充",
                                           [x,y,bottom-slope*infill.width],[x,y,top+slope*infill.width],infill,[1,0,0],[0,1,0],cut=keep,receivers=[lower_envelope,hand_envelope])
     for l in landings:
@@ -428,9 +486,10 @@ def generate(parameters,context):
                 start=[a[0]-d[0]*start_extension,a[1]-d[1]*start_extension,guard_height]
                 end=[b[0]+d[0]*end_extension,b[1]+d[1]*end_extension,guard_height]
                 if continuous:start=[*a,guard_height];end=[*b,guard_height]
-                raw=tube(key+f".guard.{si}.rail",start,end,hand,lateral,[0,0,1])
                 if continuous:network.add(key+f".guard.{si}.rail",start,end,hand,placement,platform=True)
-                else:item(key+f".guard.{si}.rail","平台扶手",raw,"tube",[math.dist(start,end)],hand)
+                else:
+                    raw=tube(key+f".guard.{si}.rail",start,end,hand,lateral,[0,0,1])
+                    item(key+f".guard.{si}.rail","平台扶手",raw,"tube",[math.dist(start,end)],hand)
                 hand_envelope=tube(key+f".guard.{si}.rail.envelope",[start[i]-d[i]*200 for i in range(3)],
                                    [end[i]+d[i]*200 for i in range(3)],hand,lateral,[0,0,1],outer=True)
                 previous_corners.update((a,b))
@@ -445,7 +504,7 @@ def generate(parameters,context):
                               post,[1,0,0],[0,1,0],receivers=[] if continuous else [hand_envelope])
                     if deck:
                         deck_tools.append(box(key+f".guard.{si}.seat.{pi}",px-post.width/2-1,px+post.width/2+1,
-                                              py-post.depth/2-1,py+post.depth/2+1,-deck-.1,.1))
+                                              py-post.depth/2-1,py+post.depth/2+1,-deck-.1,.1,manufacturing_only=True))
                 for pi in range(count):
                     v0=length_s*pi/count
                     v1=length_s*(pi+1)/count
@@ -475,7 +534,7 @@ def generate(parameters,context):
                                       [px,py,guard_height],infill,d,lateral,receivers=[lower_envelope,hand_envelope])
         if tread_kind!="none":
             solid=plate.emit_rectangular_plate(model,key+".deck",width=length,height=width,thickness=deck,
-                  center=[length/2,offset,-deck/2],x_axis=(1,0,0),y_axis=(0,1,0))
+                  center=[length/2,offset,-deck/2],x_axis=(1,0,0),y_axis=(0,1,0),shared_geometry=shared_tubes)
             display_solid=solid
             solid=boolean(key+".deck.clearance",solid,deck_tools,"subtract")
             item(key+".deck","平台铺板",solid,"glass" if tread_kind=="glass" else "plate",[length,width,deck],purchased=tread_kind!="steel",display_solid=display_solid)
@@ -507,7 +566,7 @@ def generate(parameters,context):
                                 [cx,cy,-l["origin"][2]+plate_t/2],holes=holes)
     if continuous:
         placement={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
-        rail_envelopes=network.finish(tube,prism,boolean,item,model.relationship)
+        rail_envelopes=network.finish(tube,joint_region,boolean,item,model.relationship,manufacturing=manufacturing)
         continuous=False
         for key,name,solid,kind,dimensions,pf,ops,center,witness,display_solid in pending_posts:
             tools=[]

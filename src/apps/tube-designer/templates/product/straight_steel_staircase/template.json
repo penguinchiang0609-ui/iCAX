@@ -8,6 +8,14 @@
   },
   "description": "直跑、同向平台、L型、U型；管梁、槽钢、锯齿板梁，钢板/管材支架，真实轮廓相贯节点与连续扶手斜切转接。制造几何不替代结构与建筑节点设计。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "treadMaterial",
+        "materialGrade",
+        "boltHoleDiameter"
+      ]
+    },
     "catalog": {
       "categoryPath": [
         "楼梯"
@@ -373,7 +381,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "stringer" },
+      "presentation": { "editor": "profile-library", "resourceRole": "stringer", "profileConstraints": {"sectionKinds": ["rect", "channel", "round", "oval"]}},
       "choices": [
         {
           "value": "rect",
@@ -511,7 +519,7 @@
         "op": "all",
         "conditions": [
           { "op": "eq", "parameter": "stringerConstruction", "value": "profile" },
-          { "op": "eq", "parameter": "stringerProfileType", "value": "channel" }
+          { "op": "eq", "parameter": "stringerProfileType", "value": "rect" }
         ]
       }
     },
@@ -543,7 +551,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "tread" },
+      "presentation": { "editor": "profile-library", "resourceRole": "tread", "profileConstraints": {"sectionKinds": ["rect"]}},
       "choices": [
         {
           "value": "rect",
@@ -626,7 +634,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "handrail" },
+      "presentation": { "editor": "profile-library", "resourceRole": "handrail", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
       "choices": [
         {
           "value": "rect",
@@ -772,7 +780,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "post" },
+      "presentation": { "editor": "profile-library", "resourceRole": "post", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
       "choices": [
         {
           "value": "rect",
@@ -1240,7 +1248,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "landing" },
+      "presentation": { "editor": "profile-library", "resourceRole": "landing", "profileConstraints": {"sectionKinds": ["rect"]}},
       "group": "profiles",
       "choices": [
         {
@@ -1552,7 +1560,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "infill" },
+      "presentation": { "editor": "profile-library", "resourceRole": "infill", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
       "group": "profiles",
       "choices": [
         {
@@ -1887,423 +1895,7 @@
         "parameter": "railingSide",
         "value": "none"
       }
-    },
-    {
-      "key": "stringerChannelModel",
-      "presentation": { "visible": false },
-      "displayName": { "zh-CN": "槽钢截面构造（兼容字段）" },
-      "valueType": "enum",
-      "defaultValue": "channel",
-      "choices": [ { "value": "channel", "displayName": { "zh-CN": "槽钢" } } ],
-      "group": "profiles"
-    },
-    {
-      "key": "stringerModel0BendRadius",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "内弯半径"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 3,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel6FlangeThickness",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "翼缘端部厚度"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 8,
-      "constraints": {
-        "minimum": 0.1,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel6RootRadius",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "根部圆角"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 4,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel6ToeRadius",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "翼缘端圆角"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 1,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel5FlangeThickness",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "翼缘端部厚度"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 8,
-      "constraints": {
-        "minimum": 0.1,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel5RootRadius",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "根部圆角"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 4,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel5ToeRadius",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "翼缘端圆角"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 1,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel5FlangeSlope",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "内翼缘斜度"
-      },
-      "valueType": "number",
-      "quantity": "angle",
-      "unit": "deg",
-      "defaultValue": 8,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel7FlangeThickness",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "上翼缘板厚"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 8,
-      "constraints": {
-        "minimum": 0.1,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel7LowerThickness",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "下翼缘板厚"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 10,
-      "constraints": {
-        "minimum": 0.1,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-    },
-    {
-      "key": "stringerModel7WeldLeg",
-      "presentation": { "visible": false },
-      "displayName": {
-        "zh-CN": "名义根部焊脚"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 2,
-      "constraints": {
-        "minimum": 0,
-        "maximum": 100,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerChannelModel",
-            "value": "channel"
-          }
-        ]
-      }
-        }
+    }
       ],
   "name": "楼梯/钢楼梯"
 }

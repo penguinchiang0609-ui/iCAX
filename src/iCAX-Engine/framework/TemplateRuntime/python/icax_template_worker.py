@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from copy import deepcopy
 import importlib.util
 import io
 import json
@@ -96,7 +97,10 @@ def _scene_specification_annotations(
             annotation["visibleWhen"] = declaration["visibleWhen"]
         annotations.append(annotation)
     if annotations:
-        result.setdefault("extensions", {}).setdefault("tubeDesigner.specificationAnnotations", []).extend(annotations)
+        if result.get("schema") == "icax.display-model":
+            result.setdefault("annotations", []).extend(annotations)
+        else:
+            result.setdefault("extensions", {}).setdefault("tubeDesigner.specificationAnnotations", []).extend(annotations)
 
 
 def _load_template(template_path: str, package_digest: str) -> ModuleType:
@@ -128,7 +132,7 @@ def _load_template(template_path: str, package_digest: str) -> ModuleType:
     return module
 
 
-def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
+def _evaluate(request: dict[str, Any], profile_roles_consumed: list[str] | None = None) -> dict[str, Any]:
     template = request.get("template")
     parameters = request.get("parameters")
     context = request.get("context")
@@ -139,6 +143,9 @@ def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(context, dict):
         raise ValueError("context must be an object")
 
+    from icax_template_sdk.profile_constraints import _profile_validation_scope, validate_product_profile_parameters
+    validate_product_profile_parameters(template, parameters)
+
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
     template_context = dict(context)
@@ -148,24 +155,68 @@ def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
             str(request.get("templatePath", "")),
             str(template.get("packageDigest", "")),
         )
-        generator = getattr(module, "generate", None)
-        if not callable(generator):
-            raise RuntimeError("template module must define generate(parameters, context)")
-        result = generator(dict(parameters), template_context)
+        if (callable(getattr(module, "display", None)) and callable(getattr(module, "manufacturing", None))
+                and context.get("geometryPurpose") not in ("display", "manufacturing")):
+            raise ValueError("product template requires display or manufacturing geometryPurpose")
+        with _profile_validation_scope(template) as consumed_roles:
+            if context.get("geometryPurpose") == "display":
+                generator = getattr(module, "display", None)
+                if not callable(generator):
+                    raise RuntimeError("product template must define display(parameter_values)")
+                result = generator(dict(parameters))
+            elif context.get("geometryPurpose") == "manufacturing":
+                generator = getattr(module, "manufacturing", None)
+                if not callable(generator):
+                    raise RuntimeError("product template must define manufacturing(parameter_values)")
+                from icax_template_sdk.manufacturing import _execution_scope
+                with _execution_scope(template_context):
+                    result = generator(deepcopy(parameters))
+            else:
+                generator = getattr(module, "generate", None)
+                if not callable(generator):
+                    raise RuntimeError("template module must define generate(parameters, context)")
+                result = generator(dict(parameters), template_context)
+            if profile_roles_consumed is not None:
+                profile_roles_consumed.extend(sorted(consumed_roles))
     if not isinstance(result, dict):
         raise TypeError("template generate() must return an object")
-    _scene_specification_annotations(result, template, parameters)
+    if context.get("geometryPurpose") != "manufacturing":
+        _scene_specification_annotations(result, template, parameters)
 
     # Force full JSON validation before the protocol writer touches stdout.
     json.dumps(result, ensure_ascii=False, allow_nan=False)
     messages = [text for text in (captured_stdout.getvalue(), captured_stderr.getvalue()) if text]
     if messages:
-        diagnostics = result.setdefault("diagnostics", [])
-        diagnostics.append({
-            "severity": "info",
-            "code": "template.output",
-            "message": "\n".join(messages).strip(),
-        })
+        if result.get("schema") in ("icax.display-model", "icax.manufacturing-model"):
+            print("\n".join(messages).strip(), file=sys.stderr)
+        else:
+            diagnostics = result.setdefault("diagnostics", [])
+            diagnostics.append({
+                "severity": "info",
+                "code": "template.output",
+                "message": "\n".join(messages).strip(),
+            })
+    return result
+
+
+def _execute_manufacturing(request: dict[str, Any]) -> dict[str, Any]:
+    definition, context = request.get("manufacturingDefinition"), request.get("context")
+    if not isinstance(definition, dict) or not isinstance(context, dict):
+        raise ValueError("execute-manufacturing requires manufacturingDefinition and context")
+    shared_root = context.get("sharedRoot")
+    if not isinstance(shared_root, str) or not Path(shared_root).is_absolute() or not Path(shared_root).is_dir():
+        raise ValueError("manufacturing executor requires the installed shared resource directory")
+    path = Path(shared_root) / "assembly_manufacturing_executor.py"
+    import hashlib
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+        executor = _load_template(str(path), digest)
+        result = executor.execute_manufacturing(deepcopy(definition), deepcopy(context),
+                                               design_model=deepcopy(request.get('designModel')))
+    json.dumps(result, ensure_ascii=False, allow_nan=False)
+    if captured.getvalue():
+        print(captured.getvalue().strip(), file=sys.stderr)
     return result
 
 
@@ -224,9 +275,14 @@ def _handle(request: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         return {"requestId": request_id, "ok": True, "result": {}}, True
     if operation == "fit":
         return {"requestId": request_id, "ok": True, "result": _fit(request)}, False
+    if operation == "execute-manufacturing":
+        return {"requestId": request_id, "ok": True, "result": _execute_manufacturing(request)}, False
     if operation != "evaluate":
         raise ValueError(f"unsupported template runtime operation: {operation}")
-    return {"requestId": request_id, "ok": True, "result": _evaluate(request)}, False
+    profile_roles_consumed: list[str] = []
+    result = _evaluate(request, profile_roles_consumed)
+    return {"requestId": request_id, "ok": True, "result": result,
+            "profileRolesConsumed": profile_roles_consumed}, False
 
 
 def main() -> int:

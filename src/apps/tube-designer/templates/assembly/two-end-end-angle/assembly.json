@@ -1,61 +1,528 @@
 {
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H33 L45 57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M33 6 H45 V57 L33 45 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M33 45 L45 57",
+        "tone": "joint"
+      }
+    ]
+  },
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "two-end-end-angle",
-  "version": "1.0.0",
-  "displayName": "直连 / 成角对接",
+  "version": "1.2.3",
+  "displayName": "斜接 · 双端对切",
   "category": "two-end-end",
+  "layoutShape": "l",
   "categoryName": "两件 · 端—端",
-  "summary": "两个端部共线或按角度相交；下料时同步生成两侧端面切割。",
+  "summary": "两个管段在同一节点斜接，两侧端面按轴线转角对切；0° 可作为直连退化情况。",
   "topology": "端部—端部",
-  "interfaceType": "共线对接 / 成角对接",
+  "interfaceType": "端部斜接 / 0° 直连",
   "lockType": "焊接或现场固定",
-  "motionType": "端面贴合",
+  "motionType": "端面配合",
   "participants": [
-    { "role": "memberA", "label": "构件 A", "responsibility": "第一端部", "count": 1 },
-    { "role": "memberB", "label": "构件 B", "responsibility": "第二端部", "count": 1 }
+    {
+      "role": "memberA",
+      "label": "构件 A",
+      "responsibility": "第一端部",
+      "count": 1
+    },
+    {
+      "role": "memberB",
+      "label": "构件 B",
+      "responsibility": "第二端部",
+      "count": 1
+    }
   ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "L",
+        "when": {
+          "op": "ne",
+          "parameter": "jointAngle",
+          "value": 0
+        }
+      },
+      {
+        "topology": "straight",
+        "when": {
+          "op": "eq",
+          "parameter": "jointAngle",
+          "value": 0
+        }
+      }
+    ],
+    "anchors": {
+      "memberA": "end",
+      "memberB": "end"
+    },
+    "connectionOnlyWhen": {
+      "op": "all",
+      "conditions": [
+        {
+          "op": "eq",
+          "parameter": "jointAngle",
+          "value": 0
+        },
+        {
+          "op": "eq",
+          "parameter": "fitGap",
+          "value": 0
+        }
+      ]
+    },
+    "axisAngle": {
+      "roles": [
+        "memberA",
+        "memberB"
+      ],
+      "directions": [
+        "awayFromAnchor",
+        "awayFromAnchor"
+      ],
+      "measure": "supplement",
+      "expected": {
+        "parameter": "jointAngle"
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "miter-corner",
+        "kind": "end-end-miter",
+        "topology": "L",
+        "when": {
+          "op": "ne",
+          "parameter": "jointAngle",
+          "value": 0
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB"
+        },
+        "processIds": [
+          "miter-a",
+          "miter-b"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        },
+        "planeRotation": {
+          "parameter": "planeRotation"
+        }
+      },
+      {
+        "id": "miter-straight",
+        "kind": "end-end-miter",
+        "topology": "straight",
+        "when": {
+          "op": "eq",
+          "parameter": "jointAngle",
+          "value": 0
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB"
+        },
+        "processIds": [
+          "miter-a",
+          "miter-b"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        },
+        "planeRotation": {
+          "parameter": "planeRotation"
+        }
+      }
+    ],
+    "processes": {
+      "miter-a": {
+        "target": "end",
+        "parameterSources": {
+          "angle": {
+            "role": "memberA",
+            "field": "nodeFrame.miterAngle",
+            "angleParameter": "jointAngle"
+          },
+          "rotation": {
+            "role": "memberA",
+            "field": "nodeFrame.miterRotation",
+            "angleParameter": "jointAngle"
+          },
+          "trim": {
+            "role": "memberA",
+            "field": "anchor.stockAllowance",
+            "offsetParameter": "fitGap",
+            "offsetFactor": 0.5,
+            "offsetProjection": "miter-face-normal",
+            "offsetAngleParameter": "jointAngle"
+          },
+          "datum": {
+            "role": "memberA",
+            "field": "constant",
+            "value": "center"
+          }
+        }
+      },
+      "miter-b": {
+        "target": "end",
+        "parameterSources": {
+          "angle": {
+            "role": "memberB",
+            "field": "nodeFrame.miterAngle",
+            "angleParameter": "jointAngle"
+          },
+          "rotation": {
+            "role": "memberB",
+            "field": "nodeFrame.miterRotation",
+            "angleParameter": "jointAngle"
+          },
+          "trim": {
+            "role": "memberB",
+            "field": "anchor.stockAllowance",
+            "offsetParameter": "fitGap",
+            "offsetFactor": 0.5,
+            "offsetProjection": "miter-face-normal",
+            "offsetAngleParameter": "jointAngle"
+          },
+          "datum": {
+            "role": "memberB",
+            "field": "constant",
+            "value": "center"
+          }
+        }
+      }
+    }
+  },
   "parameters": [
-    { "key": "jointAngle", "displayName": "轴线转角", "valueType": "number", "defaultValue": 90, "min": 0, "max": 160, "step": 1, "unit": "°", "level": "basic" },
-    { "key": "fitGap", "displayName": "端面间隙", "valueType": "number", "defaultValue": 0, "min": 0, "max": 20, "step": 0.1, "unit": "mm", "level": "basic" },
-    { "key": "planeRotation", "displayName": "相交平面转角", "valueType": "number", "defaultValue": 0, "min": -180, "max": 180, "step": 1, "unit": "°", "level": "advanced" }
+    {
+      "key": "fitGap",
+      "displayName": "端面法向间隙",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 20,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    }
   ],
   "partProcesses": [
-    { "id": "miter-a", "participants": ["memberA"], "label": "A 端面切割", "resource": { "kind": "part-process", "id": "end-miter", "displayName": "端面切割" }, "parameterBindings": { "angle": "$jointAngle / 2", "trim": 0, "rotation": "$planeRotation + 90", "datum": "long" }, "previewPlacement": { "target": "end", "end": "end", "datum": "long" } },
-    { "id": "miter-b", "participants": ["memberB"], "label": "B 端面切割", "resource": { "kind": "part-process", "id": "end-miter", "displayName": "端面切割" }, "parameterBindings": { "angle": "-$jointAngle / 2", "trim": 0, "rotation": "$planeRotation + 90", "datum": "long" }, "previewPlacement": { "target": "end", "end": "start", "datum": "long" } }
+    {
+      "id": "miter-a",
+      "participants": [
+        "memberA"
+      ],
+      "label": "A 端面切割",
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter",
+        "displayName": "端面切割"
+      },
+      "parameterBindings": {
+        "angle": "-$jointAngle / 2",
+        "trim": {
+          "kind": "miter-normal-gap-axial-trim",
+          "gapParameter": "fitGap",
+          "angleParameter": "jointAngle",
+          "share": 0.5
+        },
+        "rotation": "$planeRotation + 90",
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "miter-b",
+      "participants": [
+        "memberB"
+      ],
+      "label": "B 端面切割",
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter",
+        "displayName": "端面切割"
+      },
+      "parameterBindings": {
+        "angle": "$jointAngle / 2",
+        "trim": {
+          "kind": "miter-normal-gap-axial-trim",
+          "gapParameter": "fitGap",
+          "angleParameter": "jointAngle",
+          "share": 0.5
+        },
+        "rotation": "$planeRotation + 90",
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long"
+      }
+    }
   ],
   "manufacturingPlan": {
     "realization": "separate",
     "blankPartPolicy": "keep-separate",
     "blankParts": [
-      { "id": "blankA", "label": "构件 A 下料", "participants": ["memberA"] },
-      { "id": "blankB", "label": "构件 B 下料", "participants": ["memberB"] }
+      {
+        "id": "blankA",
+        "label": "构件 A 下料",
+        "participants": [
+          "memberA"
+        ]
+      },
+      {
+        "id": "blankB",
+        "label": "构件 B 下料",
+        "participants": [
+          "memberB"
+        ]
+      }
     ]
   },
   "assemblyPath": [
-    { "id": "cut", "label": "按轴线转角切割两侧端面", "kind": "端面切割", "direction": "接合面", "distance": "$jointAngle" },
-    { "id": "fit", "label": "将两个端部对正贴合", "kind": "端部对接", "direction": "装配轴", "distance": "$fitGap" }
+    {
+      "id": "cut",
+      "label": "按轴线转角切割两侧端面",
+      "kind": "端面切割",
+      "direction": "接合面",
+      "distance": "$jointAngle"
+    },
+    {
+      "id": "fit",
+      "label": "对正两端面",
+      "kind": "端部对接",
+      "direction": "端面法向",
+      "distance": "$fitGap"
+    }
   ],
   "previewScene": {
-    "designParts": [
-      { "role": "memberA", "profileRef": { "scope": "system", "id": "rect" }, "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 }, "length": 260, "pose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } },
-      { "role": "memberB", "profileRef": { "scope": "system", "id": "rect" }, "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 }, "length": 260, "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$jointAngle", "bendPlaneRotation": "$planeRotation", "axialTranslation": "$fitGap" } }
-    ],
+    "formedPreviewScript": "assembly.py",
     "manufacturingParts": [
-      { "id": "blankA", "label": "构件 A 端切下料", "sourceRole": "memberA", "processes": ["miter-a"], "explodedPose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": -100 } },
-      { "id": "blankB", "label": "构件 B 端切下料", "sourceRole": "memberB", "processes": ["miter-b"], "explodedPose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$jointAngle", "bendPlaneRotation": "$planeRotation", "axialTranslation": "$fitGap + 100" } }
+      {
+        "id": "blankA",
+        "label": "构件 A 端切下料",
+        "sourceRole": "memberA",
+        "processes": [
+          "miter-a"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$memberA_length",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "axialTranslation": -100
+        }
+      },
+      {
+        "id": "blankB",
+        "label": "构件 B 端切下料",
+        "sourceRole": "memberB",
+        "processes": [
+          "miter-b"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "bendAngle": "-$jointAngle",
+          "bendPlaneRotation": "$planeRotation",
+          "axialTranslation": 100
+        }
+      }
     ],
-    "compareLayout": { "designOffset": [0, 0, 120], "manufacturingOffset": [0, 0, -120] }
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        120
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -120
+      ]
+    }
   },
   "parameterDiagram": {
     "schemaVersion": 2,
-    "viewBox": "0 0 240 170",
-    "paths": ["M20 135 H120", "M120 135 L205 45"],
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H33 L45 57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M33 6 H45 V57 L33 45 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M33 45 L45 57",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "x": 16,
+        "y": 51,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 39,
+        "y": 23,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
     "annotations": [
-      { "parameter": "jointAngle", "kind": "leader", "side": "top", "point": [120, 135], "description": "0° 为共线，非零为成角对接" },
-      { "parameter": "fitGap", "kind": "leader", "side": "bottom", "point": [120, 135], "description": "两端加工后保留的装配间隙" },
-      { "parameter": "planeRotation", "kind": "leader", "side": "right", "point": [165, 90], "description": "接合平面绕第一构件轴线的空间转角" }
+      {
+        "parameter": "jointAngle",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          39,
+          51
+        ],
+        "description": "0° 为共线，非零为成角对接"
+      },
+      {
+        "parameter": "fitGap",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          39,
+          51
+        ],
+        "description": "两端切面沿法向的实际间隙"
+      },
+      {
+        "parameter": "planeRotation",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          38,
+          34
+        ],
+        "description": "接合平面绕第一构件轴线的空间转角"
+      }
     ]
   },
-  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["构件 A 端切", "构件 B 端切"], "secondaryProcess": ["端部对正", "焊接或固定"], "bom": [], "assemblyInstruction": true }
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "构件 A 端切",
+      "构件 B 端切"
+    ],
+    "secondaryProcess": [
+      "端部对正",
+      "焊接或固定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "memberA",
+      "memberB"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "jointAngle",
+        "displayName": "成品转角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 0,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      },
+      {
+        "key": "planeRotation",
+        "displayName": "外形平面转角",
+        "valueType": "number",
+        "defaultValue": 0,
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "unit": "°",
+        "level": "advanced"
+      }
+    ],
+    "requirements": {
+      "jointAngle": {
+        "min": 0,
+        "max": 160
+      },
+      "planeRotation": {
+        "min": -180,
+        "max": 180
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "l",
+    "roles": {
+      "memberA": "armA",
+      "memberB": "armB"
+    },
+    "parameterBindings": {
+      "jointAngle": "angle",
+      "planeRotation": "planeRotation"
+    },
+    "requirements": {
+      "angle": {
+        "min": 0,
+        "max": 160
+      },
+      "planeRotation": {
+        "min": -180,
+        "max": 180
+      }
+    }
+  }
 }

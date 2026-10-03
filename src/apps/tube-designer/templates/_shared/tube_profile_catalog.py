@@ -337,13 +337,15 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
         return None
     if not isinstance(definition, dict):
         raise ValueError(f"导入管型 {prefix} 必须是对象")
+    from icax_template_sdk.profile_constraints import validate_selected_product_profile
+    validate_selected_product_profile(prefix, definition)
     resource_kind = definition.get("kind")
     if (definition.get("schema") != "icax.imported-tube-profile"
             or definition.get("schemaVersion") != 1
             or resource_kind not in ("fixed-section", "profile-package")):
         raise ValueError(f"导入管型 {prefix} 的协议不受支持")
     if definition.get("profileForm") not in ("parametric", "fixed"):
-        raise ValueError("管型缺少明确的 profileForm，请先迁移数据")
+        raise ValueError("管型必须明确声明当前 profileForm")
     contours = definition.get("contours")
     if not isinstance(contours, list) or not contours:
         raise ValueError(f"导入管型 {prefix} 缺少二维轮廓")

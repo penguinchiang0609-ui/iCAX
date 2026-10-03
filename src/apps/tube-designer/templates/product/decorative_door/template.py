@@ -6,7 +6,8 @@ import json
 import math
 from pathlib import Path
 import sys
-from icax_template_sdk import NeutralModel
+from icax_template_sdk import NeutralModel, to_resource_model, display_context, to_display_model
+from icax_template_sdk import manufacturing_context, manufacturing_declaration, to_manufacturing_model
 
 
 def shared(filename):
@@ -27,16 +28,6 @@ def path(points):
     return {"kind":"path", "closed":True, "segments":[
         {"kind":"line", "start":list(points[i]), "end":list(points[(i+1)%len(points)])}
         for i in range(len(points))
-    ]}
-
-
-def circle_path(radius):
-    k=radius/math.sqrt(2.0)
-    return {"kind":"path", "closed":True, "segments":[
-        {"kind":"arc","start":[radius,0],"middle":[k,k],"end":[0,radius]},
-        {"kind":"arc","start":[0,radius],"middle":[-k,k],"end":[-radius,0]},
-        {"kind":"arc","start":[-radius,0],"middle":[-k,-k],"end":[0,-radius]},
-        {"kind":"arc","start":[0,-radius],"middle":[k,-k],"end":[radius,0]},
     ]}
 
 
@@ -61,7 +52,7 @@ def overlap(a,b):
     return min(a[1],b[1])-max(a[0],b[0])>1e-7 and min(a[3],b[3])-max(a[2],b[2])>1e-7
 
 
-def generate(parameters,context):
+def _generate_document(parameters,context):
     p=parameters
     def num(key,low,high,integer=False):
         v=p[key]
@@ -120,20 +111,26 @@ def generate(parameters,context):
         if max(lock_w,hinge_w)>=min(widths):raise ValueError("五金区宽度超出门扇")
     model=NeutralModel(template_id="decorative-door",template_version="1.0.0",
                        package_digest=str(context.get("template",{}).get("packageDigest","")),parameters=deepcopy(p))
-    plate=shared("plate_geometry.py");finish=shared("shared_tube_geometry.py").finish_geometry_request
+    plate=shared("plate_geometry.py");geometry=shared("shared_tube_geometry.py")
+    finish=geometry.finish_geometry_request
+    purpose=geometry.request_geometry_purpose(context)
+    manufacturing=purpose!="display"
+    displaying=purpose!="manufacturing"
+    prototypes=geometry.SharedTubeGeometry(model)
+    machining=shared("assembly_geometry_process_runtime.py")
     display,export,parts,features,zones_record=[],[],[],[],[]
     skipped=0
-    def boolean(key,target,tools,operation):
-        if not tools:return target
-        return model.geometry(key,"boolean",inputs=[target,*tools],arguments={"operation":operation,"target":target,"tools":tools})
     def prism(key,contours,y,d,origin=(0,0)):
-        outline=model.geometry(key+".profile","profile2d",arguments={
-            "placement":{"origin":[origin[0],y,origin[1]],"xAxis":[1,0,0],"yAxis":[0,0,1]},
-            "contours":contours})
-        return model.geometry(key+".solid","extrude",inputs=[outline],arguments={"vector":[0,d,0]})
-    def polygon_solid(key,points,y,d):
-        return prism(key,[path(points)],y,d)
-    def item(key,name,solid,width,height,thickness,kind="plate",purchased=False):
+        anchor=contours[0]["segments"][0]["start"]
+        local=deepcopy(contours)
+        for contour in local:
+            for segment in contour["segments"]:
+                for name in ("start","middle","end"):
+                    if name in segment:segment[name]=[segment[name][i]-anchor[i] for i in range(2)]
+        return prototypes.emit_tube(key,profile_arguments={
+            "placement":{"origin":[origin[0]+anchor[0],y,origin[1]+anchor[1]],"xAxis":[1,0,0],"yAxis":[0,0,1]},
+            "contours":local},extrude_arguments={"vector":[0,d,0]})
+    def item(key,name,solid,width,height,thickness,kind="plate",purchased=False,display_solid=None):
         props=plate.plate_properties(width,height,thickness,p["material"],"door."+kind,name)
         props.update({"partNumber":p["productCode"]+"-"+key,"door.surfaceFinish":p["finish"],
                       "door.ncReady":False,"manufacturing.sourcing":"purchased" if purchased else "made"})
@@ -141,7 +138,7 @@ def generate(parameters,context):
             props["manufacturing.partKind"]="glass"
             props["manufacturing.materialCategory"]="glass"
         if purchased:props["manufacturing.material"]=p["glassType"]
-        rep={"display":solid}
+        rep={"display":display_solid or solid}
         if not purchased:rep["export"]=solid
         k=model.item(key,name,representations=rep,properties=props);display.append(k)
         if not purchased:export.append(k)
@@ -188,14 +185,14 @@ def generate(parameters,context):
                     for col in range(ncols):
                         x,z=l+(col+.5)*cw,b+(row+.5)*ch
                         points=[[x+v[0]*(cw-web)/2,z+v[1]*(ch-web)/2] for v in pattern["polygon"]]
-                result.append({"kind":"polygon","points":points,"region":region})
+                        result.append({"kind":"polygon","points":points,"region":region})
             elif generator=="round_scene":
                 radius=min(w,h)/2-groove
                 if radius<=2*groove:raise ValueError("圆景尺寸不足")
                 cx,cz=(l+r)/2,(b+t)/2
                 result.append({"kind":"ring","center":[cx,cz],"radius":radius,"region":region})
-                for path in pattern["paths"]:
-                    for a,z in zip(path,path[1:]):
+                for line_path in pattern["paths"]:
+                    for a,z in zip(line_path,line_path[1:]):
                         result.append({"kind":"line","a":[cx+a[0]*radius,cz+a[1]*radius],
                                        "b":[cx+z[0]*radius,cz+z[1]*radius],"region":region})
             else:raise ValueError("未知图案生成机制")
@@ -215,8 +212,10 @@ def generate(parameters,context):
             hx=(left,left+hinge_w) if hinge_left else (right-hinge_w,right)
             for z in (H*.12,H*.5,H*.88):zones.append((hx[0],hx[1],z-hinge_h/2,z+hinge_h/2))
         zones_record.append({"leafId":leafkey,"bounds":box,"hardware":zones})
-        raw=plate.emit_rectangular_plate(model,leafkey,width=width,height=H,thickness=T,center=((left+right)/2,0,H/2))
-        cutters=[]
+        raw=(plate.emit_rectangular_plate(model,leafkey,width=width,height=H,thickness=T,center=((left+right)/2,0,H/2),shared_geometry=prototypes)
+             if manufacturing else None)
+        result=raw
+        display_features=[]
         source=global_motifs if global_motifs is not None else motifs(box)
         source=deepcopy(source)
         if composition=="mirror" and leaf%2:
@@ -257,46 +256,75 @@ def generate(parameters,context):
                 sk=key+"."+side
                 sign=1 if side=="front" else -1
                 surface=-T/2 if side=="front" else T/2
-                y=surface-sign*.02
-                actualdepth=T+.04 if through else depth+.02
-                if motif["kind"]=="polygon":
-                    tool=polygon_solid(sk,points,y,sign*actualdepth)
-                elif motif["kind"]=="ring":
-                    r=motif["radius"]
-                    tool=prism(sk,[circle_path(r+groove/2),circle_path(r-groove/2)],y,sign*actualdepth,motif["center"])
-                else:
-                    a,b=motif["a"],motif["b"];length=math.dist(a,b)
-                    if length<.01:continue
-                    d=((b[0]-a[0])/length,(b[1]-a[1])/length);n=(-d[1],d[0])
-                    if vgroove:
-                        half=(depth+.02)*math.tan(math.radians(angle/2))
-                        path=model.geometry(sk+".section","profile2d",arguments={
-                            "placement":{"origin":[a[0],surface,a[1]],"xAxis":[n[0],0,n[1]],"yAxis":[0,sign,0]},
-                            "contours":[path([[-half,-.02],[half,-.02],[0,depth]])]})
-                        tool=model.geometry(sk+".solid","extrude",inputs=[path],arguments={"vector":[b[0]-a[0],0,b[1]-a[1]]})
-                    else:
-                        points=[[q[0]+n[0]*offset,q[1]+n[1]*offset] for q,offset in [(a,-groove/2),(b,-groove/2),(b,groove/2),(a,groove/2)]]
-                        tool=polygon_solid(sk,points,y,sign*actualdepth)
-                keep=polygon_solid(sk+".boundary",rect(keep_box),-T/2-.1,T+.2)
-                tool=boolean(sk+".clipped",tool,[keep],"intersect")
-                if not through and zones:
-                    reserved=[polygon_solid(sk+f".protect.{zi}",rect(z),-T/2-.1,T+.2) for zi,z in enumerate(zones) if overlap(mb,z)]
-                    tool=boolean(sk+".safe",tool,reserved,"subtract")
-                cutters.append(tool)
-                features.append({"leafId":leafkey,"side":side,"process":process,"depth":depth,"geometryKey":tool,
+                display_features.append({"primitive":deepcopy(motif),"boundary":keep_box,
+                                         "protected":zones if not through else [],"side":side})
+                if not manufacturing:
+                    features.append({"leafId":leafkey,"side":side,"process":process,"depth":depth,
+                                     "primitive":motif,"actualBoundary":keep_box,"ncReady":False})
+                    if trim:
+                        outer=rect((mb[0]-trimw,mb[1]+trimw,mb[2]-trimw,mb[3]+trimw))
+                        solid=prism(sk+".trim",[path(outer),path(rect(mb))],surface,-sign*trimh)
+                        item(sk+".trim","池板扣线",solid,mb[1]-mb[0]+2*trimw,mb[3]-mb[2]+2*trimw,trimh,"trim")
+                    continue
+                primitive=deepcopy(motif)
+                primitive.pop("region",None)
+                if primitive["kind"]=="polygon":primitive["points"]=deepcopy(points)
+                result=machining.invoke(model,result,"surface-feature-cut",{
+                    "schema":"icax.assembly-process-input","schemaVersion":1,
+                    "parts":{"stock":{"thickness":T}},
+                    "geometry":{"frame":{"origin":[0,surface,0],"xAxis":[1,0,0],
+                                            "yAxis":[0,0,1],"depthAxis":[0,sign,0]},
+                                "primitive":primitive,"boundary":list(keep_box),
+                                "protectedRegions":[list(zone) for zone in zones] if not through else []}},
+                    {"depth":depth,"through":through,"grooveWidth":groove,
+                     "tool":"v" if vgroove else "flat","vAngle":angle},
+                    instance_id=sk,stock_id=leafkey)
+                features.append({"leafId":leafkey,"side":side,"process":process,"depth":depth,
+                                 "geometryKey":result,"processInstanceId":sk,
                                  "primitive":motif,"actualBoundary":keep_box,"ncReady":False})
                 if trim:
                     outer=rect((mb[0]-trimw,mb[1]+trimw,mb[2]-trimw,mb[3]+trimw))
                     # A separate raised ring touches the uncut face, never a fused decoration.
                     solid=prism(sk+".trim",[path(outer),path(rect(mb))],surface,-sign*trimh)
                     item(sk+".trim","池板扣线",solid,mb[1]-mb[0]+2*trimw,mb[3]-mb[2]+2*trimw,trimh,"trim")
-        result=boolean(leafkey+".finished",raw,cutters,"subtract")
-        item(leafkey,"装饰门扇",result,width,H,T,"leaf")
+        display_solid=None
+        if displaying:
+            local_features=deepcopy(display_features)
+            for feature in local_features:
+                motif=feature["primitive"]
+                if motif["kind"]=="polygon":
+                    for point in motif["points"]:point[0]-=left
+                elif motif["kind"]=="ring":motif["center"][0]-=left
+                else:
+                    for name in ("a","b"):motif[name][0]-=left
+                motif.pop("region",None)
+                box_=feature["boundary"]
+                feature["boundary"]=[box_[0]-left,box_[1]-left,box_[2],box_[3]]
+                feature["protected"]=[[v[0]-left,v[1]-left,v[2],v[3]] for v in feature["protected"]]
+            # Repeated leaf design is declared in leaf-local dimensions, avoiding
+            # floating cancellation from subtracting a later leaf's world origin.
+            # Continuous compositions still include the actual clipped features.
+            signature={"kind":"door-display","width":width,"height":H,"thickness":T,
+                       "design":{"pattern":pattern,"depth":depth,"sides":sides,"groove":groove,"v":vgroove,"angle":angle,
+                                 "border":border,"layout":layout,"band":band,"position":position,
+                                 "columns":ncols,"rows":nrows,"web":web,"trimWidth":trimw,
+                                 "line":([p["lineAngle"],p["arrayMode"],p["lineCount"] if p["arrayMode"]=="count" else p["linePitch"]]
+                                          if generator=="parallel_paths" else None),
+                                 "hardware":[lock_z,lock_w,lock_h,hinge_w,hinge_h] if protect else None},
+                       "mirrored":composition=="mirror" and bool(leaf%2),
+                       "hingeLeft":hinge_left if protect else None,
+                       "continuousFeatures":local_features if composition=="continuous" else None}
+            display_solid=prototypes.emit_translated_processed(leafkey+".display",signature=signature,origin=(left,0,0),
+                build=lambda prefix:shared("door_display_geometry.py").emit(
+                    model,prefix,width,H,T,local_features,groove,depth,vgroove,angle))
+        item(leafkey,"装饰门扇",result or display_solid,width,H,T,"leaf",display_solid=display_solid)
+        model._document["items"][-1]["properties"]["manufacturing.plate"].update({
+            "center": [(left+right)/2, 0, H/2], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1]})
         if process=="glass":
             thick=num("glassThickness",2,20);space=num("glassGap",.5,20)
             gx,gz=(box[0]+box[1])/2,(box[2]+box[3])/2
             solid=plate.emit_rectangular_plate(model,leafkey+".glass",width=box[1]-box[0],height=box[3]-box[2],thickness=thick,
-                                                center=(gx,T/2+space+thick/2,gz))
+                                                center=(gx,T/2+space+thick/2,gz),shared_geometry=prototypes)
             item(leafkey+".glass","门花背衬玻璃",solid,box[1]-box[0],box[3]-box[2],thick,"glass",True)
     model.output("display.default","display",display)
     model.output("export.manufacturing","export",export)
@@ -309,6 +337,8 @@ def generate(parameters,context):
         rows=[{"key":row["partId"],"values":{k:row[k] for k in ("kind","width","height","thickness","quantity")}} for row in parts])
     if skipped:model.diagnostic("info","door.reserved-regions",f"已避让 {skipped} 个五金冲突或过小的镂空／扣线单元，避免孤立材料。")
     model.diagnostic("warning","door.geometry-only","当前输出为门面加工几何与板件清单，不含雕刻刀路、NC、艺术浮雕、门框及五金安装设计；V槽端部为裁切平面，需由雕刻CAM校核实际刀具扫掠。")
+    if displaying:
+        model.diagnostic("info","door.display-boundary","显示按独立表面表达保留镂空、凹槽及V形侧壁；圆景显示弦差不超过0.2mm，加工模型保留精确圆弧。")
     document=finish(model,context)
     document.setdefault("extensions",{})["doorDecoration"]={
         "pattern":pattern,"composition":composition,"leafWidths":widths,"gap":gap,"parts":parts,
@@ -316,3 +346,21 @@ def generate(parameters,context):
         "minimumRemainingThickness":0 if through else T-depth*len(sides),
         "machiningGeometryOnly":True,"ncReady":False}
     return document
+
+
+def _generate_resource_document(parameters,context):
+    return to_resource_model(_generate_document(parameters,context))
+
+
+def display(parameter_values):
+    """Generate display data from the values owned by the product instance."""
+    return to_display_model(_generate_resource_document(parameter_values, display_context(__file__)))
+
+
+
+
+def manufacturing(parameter_values):
+    """Return manufacturing declarations from the values owned by the host."""
+    with manufacturing_declaration():
+        return to_manufacturing_model(
+            _generate_resource_document(parameter_values, manufacturing_context(__file__)))

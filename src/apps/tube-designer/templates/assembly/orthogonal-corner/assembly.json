@@ -1,0 +1,1299 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "orthogonal-corner",
+  "version": "1.0.3",
+  "displayName": "三向直角节点",
+  "category": "three-end-orthogonal",
+  "layoutShape": "orthogonal-corner",
+  "categoryName": "三向角点",
+  "summary": "三根互相垂直的直管共用角点；A/B 斜接或包接，C 贴焊、插入或圆弧公母。",
+  "topology": "三向互垂直端点",
+  "interfaceType": "组合端切与节点侧壁开口",
+  "lockType": "装配后焊接固定",
+  "motionType": "C 沿第三轴插入共同角面",
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M5 47 L36 29 L46 35 L15 53 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M36 29 L57 42 L47 48 L26 35 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M31 8 L41 8 L41 32 L36 35 L31 32 Z",
+        "tone": "c"
+      },
+      {
+        "d": "M26 35 L46 35 M31 32 L41 32",
+        "tone": "joint"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "role": "memberA",
+      "label": "A 边",
+      "responsibility": "三向节点 A 直管",
+      "count": 1
+    },
+    {
+      "role": "memberB",
+      "label": "B 边",
+      "responsibility": "三向节点 B 直管",
+      "count": 1
+    },
+    {
+      "role": "memberC",
+      "label": "C 边",
+      "responsibility": "三向节点 C 直管",
+      "count": 1
+    }
+  ],
+  "parameters": [
+    {
+      "key": "abJoint",
+      "displayName": "A / B 转角连接",
+      "valueType": "choice",
+      "defaultValue": "miter",
+      "options": [
+        {
+          "value": "miter",
+          "label": "双端斜接"
+        },
+        {
+          "value": "wrap",
+          "label": "A 长件包接 B"
+        },
+        {
+          "value": "continuous",
+          "label": "A / B 已为连续母材"
+        }
+      ],
+      "level": "basic"
+    },
+    {
+      "key": "cJoint",
+      "displayName": "C 第三件连接",
+      "valueType": "choice",
+      "defaultValue": "weld",
+      "options": [
+        {
+          "value": "weld",
+          "label": "端面贴焊"
+        },
+        {
+          "value": "insert",
+          "label": "轮廓插入"
+        },
+        {
+          "value": "tabs",
+          "label": "圆弧公母"
+        }
+      ],
+      "level": "basic"
+    },
+    {
+      "key": "insertDepth",
+      "displayName": "C 插入深度",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 0.1,
+      "max": 100,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "insert"
+      }
+    },
+    {
+      "key": "fitGap",
+      "displayName": "轮廓孔单边间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 3,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "insert"
+      }
+    },
+    {
+      "key": "tabWidth",
+      "displayName": "圆弧插舌宽度",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 1,
+      "max": 30,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "tabs"
+      }
+    },
+    {
+      "key": "tabLength",
+      "displayName": "圆弧插舌插入长度",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 1,
+      "max": 60,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "tabs"
+      }
+    },
+    {
+      "key": "sideClearance",
+      "displayName": "公母单边间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 3,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "tabs"
+      }
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "ab-miter-a",
+      "participants": [
+        "memberA"
+      ],
+      "label": "A 节点斜切",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "abJoint",
+        "value": "miter"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": -45,
+        "trim": 0,
+        "rotation": 90,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "ab-miter-b",
+      "participants": [
+        "memberB"
+      ],
+      "label": "B 节点斜切",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "abJoint",
+        "value": "miter"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 45,
+        "trim": 0,
+        "rotation": 90,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "ab-wrap-b",
+      "participants": [
+        "memberB"
+      ],
+      "label": "B 退切至 A 侧壁",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "abJoint",
+        "value": "wrap"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "c-weld-end",
+      "participants": [
+        "memberC"
+      ],
+      "label": "C 端部 平切贴合",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "weld"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "c-insert-end",
+      "participants": [
+        "memberC"
+      ],
+      "label": "C 端部 插入端切",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "insert"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long"
+      }
+    },
+    {
+      "id": "c-tabs-end",
+      "participants": [
+        "memberC"
+      ],
+      "label": "C 端部 圆弧插舌",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "tabs"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-end-tabs"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "trim": 0,
+        "rotation": 0
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "start",
+        "datum": "long",
+        "sectionRole": "memberA"
+      }
+    },
+    {
+      "id": "c-insert-a",
+      "participants": [
+        "memberA"
+      ],
+      "label": "A 承接 C 轮廓孔",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "insert"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "branch-profile"
+      },
+      "parameterBindings": {
+        "angle": 90,
+        "azimuth": 90,
+        "roll": 0,
+        "direction": "positive",
+        "length": 120,
+        "clearance": "$fitGap",
+        "offsetY": 0,
+        "offsetZ": 0
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "right",
+        "reference": "start",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "memberC"
+      }
+    },
+    {
+      "id": "c-tabs-a",
+      "participants": [
+        "memberA"
+      ],
+      "label": "A 承接 C 圆弧母槽",
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "cJoint",
+        "value": "tabs"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "pairRotation": 0,
+        "allowEndOpening": false
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "right",
+        "reference": "start",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "memberC"
+      }
+    },
+    {
+      "id": "c-insert-b",
+      "participants": [
+        "memberB"
+      ],
+      "label": "B 承接 C 轮廓孔",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "cJoint",
+            "value": "insert"
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "abJoint",
+                "value": "miter"
+              },
+              {
+                "op": "eq",
+                "parameter": "abJoint",
+                "value": "continuous"
+              }
+            ]
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "branch-profile"
+      },
+      "parameterBindings": {
+        "angle": 90,
+        "azimuth": 90,
+        "roll": 0,
+        "direction": "positive",
+        "length": 120,
+        "clearance": "$fitGap",
+        "offsetY": 0,
+        "offsetZ": 0
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "right",
+        "reference": "start",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "memberC"
+      }
+    },
+    {
+      "id": "c-tabs-b",
+      "participants": [
+        "memberB"
+      ],
+      "label": "B 承接 C 圆弧母槽",
+      "appliesWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "cJoint",
+            "value": "tabs"
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "abJoint",
+                "value": "miter"
+              },
+              {
+                "op": "eq",
+                "parameter": "abJoint",
+                "value": "continuous"
+              }
+            ]
+          }
+        ]
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "paired-side-slots"
+      },
+      "parameterBindings": {
+        "pairCount": 2,
+        "tabWidth": "$tabWidth",
+        "tabLength": "$tabLength",
+        "sideClearance": "$sideClearance",
+        "pairRotation": 90,
+        "allowEndOpening": false
+      },
+      "previewPlacement": {
+        "target": "part",
+        "face": "right",
+        "reference": "start",
+        "station": 0,
+        "offset": 0,
+        "sectionRole": "memberC"
+      }
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "orthogonal-corner"
+      }
+    ],
+    "anchors": {
+      "memberA": "end",
+      "memberB": "end",
+      "memberC": "end"
+    },
+    "operationScript": "assembly.py",
+    "operationScriptDependencies": [
+      "_shared/section_geometry.py",
+      "_shared/assembly_applicability_geometry.py",
+      "_shared/profile_recognition_geometry.py"
+    ],
+    "processes": {
+      "ab-miter-a": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        }
+      },
+      "ab-miter-b": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        }
+      },
+      "ab-wrap-b": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        }
+      },
+      "c-weld-end": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        }
+      },
+      "c-insert-end": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        }
+      },
+      "c-tabs-end": {
+        "target": "end",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        },
+        "sectionRole": "memberA"
+      },
+      "c-insert-a": {
+        "target": "part",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        },
+        "sectionRole": "memberC"
+      },
+      "c-tabs-a": {
+        "target": "part",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        },
+        "sectionRole": "memberC"
+      },
+      "c-insert-b": {
+        "target": "part",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        },
+        "sectionRole": "memberC"
+      },
+      "c-tabs-b": {
+        "target": "part",
+        "relativePlacement": {
+          "kind": "template-node-frame"
+        },
+        "sectionRole": "memberC"
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "miter-weld",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "miter"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "weld"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-miter-a",
+          "ab-miter-b",
+          "c-weld-end"
+        ],
+        "abJoint": "miter",
+        "cJoint": "weld",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "millimeters": 0
+        },
+        "insertion": {
+          "millimeters": 0
+        }
+      },
+      {
+        "id": "miter-insert",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "miter"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "insert"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-miter-a",
+          "ab-miter-b",
+          "c-insert-end",
+          "c-insert-a",
+          "c-insert-b"
+        ],
+        "abJoint": "miter",
+        "cJoint": "insert",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        },
+        "insertion": {
+          "parameter": "insertDepth"
+        }
+      },
+      {
+        "id": "miter-tabs",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "miter"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "tabs"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-miter-a",
+          "ab-miter-b",
+          "c-tabs-end",
+          "c-tabs-a",
+          "c-tabs-b"
+        ],
+        "abJoint": "miter",
+        "cJoint": "tabs",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      },
+      {
+        "id": "wrap-weld",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "wrap"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "weld"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-wrap-b",
+          "c-weld-end"
+        ],
+        "abJoint": "wrap",
+        "cJoint": "weld",
+        "receiverRoles": [
+          "memberA"
+        ],
+        "gap": {
+          "millimeters": 0
+        },
+        "insertion": {
+          "millimeters": 0
+        }
+      },
+      {
+        "id": "wrap-insert",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "wrap"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "insert"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-wrap-b",
+          "c-insert-end",
+          "c-insert-a"
+        ],
+        "abJoint": "wrap",
+        "cJoint": "insert",
+        "receiverRoles": [
+          "memberA"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        },
+        "insertion": {
+          "parameter": "insertDepth"
+        }
+      },
+      {
+        "id": "wrap-tabs",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "wrap"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "tabs"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "ab-wrap-b",
+          "c-tabs-end",
+          "c-tabs-a"
+        ],
+        "abJoint": "wrap",
+        "cJoint": "tabs",
+        "receiverRoles": [
+          "memberA"
+        ],
+        "gap": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      },
+      {
+        "id": "continuous-weld",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "continuous"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "weld"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "c-weld-end"
+        ],
+        "abJoint": "continuous",
+        "cJoint": "weld",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "millimeters": 0
+        },
+        "insertion": {
+          "millimeters": 0
+        }
+      },
+      {
+        "id": "continuous-insert",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "continuous"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "insert"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "c-insert-end",
+          "c-insert-a",
+          "c-insert-b"
+        ],
+        "abJoint": "continuous",
+        "cJoint": "insert",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        },
+        "insertion": {
+          "parameter": "insertDepth"
+        }
+      },
+      {
+        "id": "continuous-tabs",
+        "kind": "orthogonal-corner-contact",
+        "topology": "orthogonal-corner",
+        "when": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "abJoint",
+              "value": "continuous"
+            },
+            {
+              "op": "eq",
+              "parameter": "cJoint",
+              "value": "tabs"
+            }
+          ]
+        },
+        "roles": {
+          "a": "memberA",
+          "b": "memberB",
+          "c": "memberC"
+        },
+        "processIds": [
+          "c-tabs-end",
+          "c-tabs-a",
+          "c-tabs-b"
+        ],
+        "abJoint": "continuous",
+        "cJoint": "tabs",
+        "receiverRoles": [
+          "memberA",
+          "memberB"
+        ],
+        "gap": {
+          "parameter": "sideClearance"
+        },
+        "insertion": {
+          "parameter": "tabLength"
+        }
+      }
+    ]
+  },
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "blankA",
+        "label": "A 下料",
+        "participants": [
+          "memberA"
+        ]
+      },
+      {
+        "id": "blankB",
+        "label": "B 下料",
+        "participants": [
+          "memberB"
+        ]
+      },
+      {
+        "id": "blankC",
+        "label": "C 下料",
+        "participants": [
+          "memberC"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "ab",
+      "label": "先形成 A / B 直角",
+      "kind": "端部连接",
+      "direction": "A / B 接合面",
+      "distance": 0
+    },
+    {
+      "id": "c",
+      "label": "C 接入共同角面并焊接固定",
+      "kind": "第三轴装配",
+      "direction": "C 轴线",
+      "distance": 0
+    }
+  ],
+  "previewScene": {
+    "formedPreviewScript": "assembly.py",
+    "preferredView": "front-top-right",
+    "manufacturingParts": [
+      {
+        "id": "blankA",
+        "label": "A 节点下料",
+        "sourceRole": "memberA",
+        "processes": [
+          "ab-miter-a",
+          "c-insert-a",
+          "c-tabs-a"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "blankB",
+        "label": "B 节点下料",
+        "sourceRole": "memberB",
+        "processes": [
+          "ab-miter-b",
+          "ab-wrap-b",
+          "c-insert-b",
+          "c-tabs-b"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "blankC",
+        "label": "C 节点下料",
+        "sourceRole": "memberC",
+        "processes": [
+          "c-weld-end",
+          "c-insert-end",
+          "c-tabs-end"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        0
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M5 47 L36 29 L46 35 L15 53 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M36 29 L57 42 L47 48 L26 35 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M31 8 L41 8 L41 32 L36 35 L31 32 Z",
+        "className": "tool-diagram-part-c"
+      },
+      {
+        "d": "M26 35 L46 35 M31 32 L41 32",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "x": 14,
+        "y": 48,
+        "text": "A"
+      },
+      {
+        "x": 52,
+        "y": 45,
+        "text": "B"
+      },
+      {
+        "x": 36,
+        "y": 18,
+        "text": "C"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "abJoint",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "A / B 转角连接"
+      },
+      {
+        "parameter": "cJoint",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "C 第三件连接"
+      },
+      {
+        "parameter": "insertDepth",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "C 插入深度",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "cJoint",
+          "value": "insert"
+        }
+      },
+      {
+        "parameter": "fitGap",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "轮廓孔单边间隙",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "cJoint",
+          "value": "insert"
+        }
+      },
+      {
+        "parameter": "tabWidth",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "圆弧插舌宽度",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "cJoint",
+          "value": "tabs"
+        }
+      },
+      {
+        "parameter": "tabLength",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "圆弧插舌插入长度",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "cJoint",
+          "value": "tabs"
+        }
+      },
+      {
+        "parameter": "sideClearance",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          36,
+          32
+        ],
+        "description": "公母单边间隙",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "cJoint",
+          "value": "tabs"
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 3,
+    "partGeometry": [
+      "A 节点下料",
+      "B 节点下料",
+      "C 端部下料"
+    ],
+    "secondaryProcess": [
+      "按共同角点装配",
+      "焊接固定"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "dimensionChecks": [],
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "memberA",
+      "memberB",
+      "memberC"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [],
+    "requirements": {}
+  },
+  "exampleInput": {
+    "shapeId": "orthogonal-corner",
+    "roles": {
+      "memberA": "armA",
+      "memberB": "armB",
+      "memberC": "armC"
+    },
+    "parameterBindings": {},
+    "requirements": {}
+  }
+}

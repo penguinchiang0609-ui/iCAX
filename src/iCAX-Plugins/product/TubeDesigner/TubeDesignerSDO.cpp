@@ -43,6 +43,7 @@
 #include "TemplateRuntime/PythonTemplateHost.h"
 #include "TemplateRuntime/StandardJsonCodec.h"
 #include "TemplateRuntime/TemplateCodec.h"
+#include <BRepAdaptor_Surface.hxx>
 
 #ifdef M_PI
 #undef M_PI
@@ -62,31 +63,42 @@
 #include <numeric>
 #include <numbers>
 #include <set>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <TopoDS_Shape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <Bnd_Box.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepGProp.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepTools.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopoDS.hxx>
+#include <GProp_GProps.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
 namespace
 {
+    TopoDS_Shape ApplyAssemblyNeutralOperations(const TopoDS_Shape& Base_,
+        const iCAX::Data::ObjectMap& Request_, const gp_Trsf& DocumentToStock_ = gp_Trsf());
     // The installed package tree is immutable application content.  Personal
     // packages live next to the product's existing Product.Data under the
     // platform user-data root, so reinstalling the application cannot remove
@@ -134,12 +146,33 @@ namespace
         ObjectMap ManufacturingModel;
         ObjectMap ProductParameters;
         bool UpdatesProductParameters = false;
+        ObjectMap AssemblyBindings;
+        ObjectMap ManufacturingDefinition;
+        ObjectMap ManufacturingParameters;
     };
 
-    // Manufacturing output is an operation result, not project data. Keep the
-    // latest disassembly in process memory. A nesting task may persist light
-    // references to these parts; their geometry is regenerated from the
-    // product recipe when a saved project is reopened.
+    struct SProductAssemblyProcessGeometry final
+    {
+        std::map<std::string, TopoDS_Shape> Shapes;
+        std::map<std::string, ObjectMap> Profiles;
+        std::map<std::string, std::shared_ptr<iCAX::GeometryData::BRepModel>> Resources;
+    };
+
+    SProductAssemblyProcessGeometry PrepareProductAssemblyProcessGeometry(
+        const iCAX::TemplateRuntime::SNeutralModel&, ObjectMap&,
+        const iCAX::Application::IApplicationContext&, iCAX::Product::IProductContext*,
+        iCAX::Project::ISceneContext&);
+
+    TopoDS_Shape RecoverProductAssemblyProcessShape(
+        const iCAX::TemplateRuntime::SNeutralModel&, const std::string&,
+        iCAX::Project::ISceneContext&);
+
+    void ValidateProductStockSourceMappings(
+        const iCAX::TemplateRuntime::SNeutralModel&, const iCAX::TemplateRuntime::SNeutralModel&);
+
+    // Transient previews stay in process memory. Committed function-based
+    // manufacturing keeps its exact BRep resources and frozen process recipe
+    // so reopening cannot change an already accepted machining result.
     struct STransientSceneState final
     {
         std::map<std::string, SPreparedProductDisassembly> Products;
@@ -368,7 +401,58 @@ namespace
         iCAX::TemplateRuntime::SNeutralModel Model;
         ObjectMap Document;
         ObjectMap Parameters;
+        ObjectMap ResolvedComponentModels;
+        ObjectMap ScriptDocument;
     };
+
+    ObjectMap GeneratedParameterValues(const CGenerationRunComponent& Run_)
+    {
+        if (!Run_.GetGeneratedParameters().empty()
+            || GetString(Run_.GetNeutralModel(), "schema") == "icax.display-model")
+            return Run_.GetGeneratedParameters();
+        // Saved neutral-model runs predate the host-owned input snapshot.
+        return iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            Variant(Run_.GetNeutralModel())).Parameters;
+    }
+
+    ObjectMap ManufacturingParameterValues(
+        const CGenerationRunComponent& Run_, const ObjectMap& ExecutionDocument_)
+    {
+        if (!Run_.GetManufacturingParameters().empty()
+            || GetString(Run_.GetManufacturingDefinition(), "schema") == "icax.manufacturing-model")
+            return Run_.GetManufacturingParameters();
+        // Earlier runs stored these inputs only in their execution snapshot.
+        if (!ExecutionDocument_.empty())
+            return iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+                Variant(ExecutionDocument_)).Parameters;
+        return GeneratedParameterValues(Run_);
+    }
+
+    ObjectMap GenerationComponentSnapshots(const CGenerationRunComponent& Run_)
+    {
+        if (!Run_.GetResolvedComponentModels().empty()) return Run_.GetResolvedComponentModels();
+        if (GetString(Run_.GetNeutralModel(), "schema") == "icax.display-model") return {};
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            Variant(Run_.GetNeutralModel()));
+        const auto _Snapshots = _Model.Extensions.find(kResolvedComponentModels);
+        return _Snapshots != _Model.Extensions.end() && _Snapshots->second.Is<ObjectMap>()
+            ? _Snapshots->second.To<ObjectMap>() : ObjectMap();
+    }
+
+    iCAX::TemplateRuntime::SNeutralModel ParseGenerationDisplay(const CGenerationRunComponent& Run_)
+    {
+        auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(Run_.GetNeutralModel()));
+        if (GetString(Run_.GetNeutralModel(), "schema") == "icax.display-model")
+        {
+            _Model.TemplateID = Run_.GetTemplateID();
+            _Model.TemplateVersion = Run_.GetTemplateVersion();
+            _Model.PackageDigest = Run_.GetPackageDigest();
+            _Model.Parameters = GeneratedParameterValues(Run_);
+            _Model.Extensions["tubeDesigner.geometryPurpose"] = std::string("display");
+            ApplyResolvedComponentMetadata(_Model, GenerationComponentSnapshots(Run_));
+        }
+        return _Model;
+    }
 
     std::string PathToUTF8(const std::filesystem::path& Path_)
     {
@@ -1086,7 +1170,7 @@ namespace
 
     ObjectMap InvokePythonTemplate(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        const ObjectMap& Request_)
+        const ObjectMap& Request_, std::vector<std::string>* ProfileRolesConsumed_ = nullptr)
     {
         static std::mutex _Mutex;
         static std::unique_ptr<iCAX::TemplateRuntime::CPythonTemplateHost> _Host;
@@ -1109,8 +1193,13 @@ namespace
             _RuntimeLibrary = _ResolvedRuntimeLibrary;
             _Worker = _ResolvedWorker;
         }
-        return _Host->Invoke(Request_);
+        return _Host->Invoke(Request_, ProfileRolesConsumed_);
     }
+
+    void ValidateManufacturingParameterUpdate(
+        const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,
+        const ObjectMap& Current_, const ObjectMap& Updated_);
+    bool CanonicalParameterMapsEqual(const ObjectMap& Left_, const ObjectMap& Right_);
 
     SNeutralTemplateEvaluation EvaluateNeutralTemplate(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -1118,7 +1207,10 @@ namespace
         const std::string& GeometryPurpose_,
         const std::string& ExpectedPackageDigest_ = {},
         iCAX::Application::IProductUserDataStore* ComponentStore_ = nullptr,
-        const ObjectMap* FrozenComponents_ = nullptr)
+        const ObjectMap* FrozenComponents_ = nullptr,
+        const ObjectMap* SavedDesign_ = nullptr,
+        const ObjectMap* SavedDesignParameters_ = nullptr,
+        bool ExecuteManufacturing_ = true)
     {
         const auto _ProfileStart = std::chrono::steady_clock::now();
         char* _ProfileEnv = nullptr;
@@ -1158,6 +1250,8 @@ namespace
             if (!_Overrides->second.Is<ObjectMap>())
                 throw std::invalid_argument("tubeDesignerProfileOverrides must be an object");
             const auto _OverrideValues = _Overrides->second.To<ObjectMap>();
+            iCAX::TemplateRuntime::CTemplateCodec::ValidateProductProfileOverrides(
+                _Package.Descriptor, {});
             if (_OverrideValues.size() > 64)
                 throw std::invalid_argument("tubeDesignerProfileOverrides has too many entries");
             const auto _RolesIt = _Package.Descriptor.Extensions.find("resourceRoles");
@@ -1256,12 +1350,32 @@ namespace
             }
             _Parameters["tubeDesignerToolBindings"] = _BindingValues;
         }
+        ObjectMap _DesignDocument;
+        if (GeometryPurpose_ == "manufacturing")
+        {
+            if (SavedDesign_)
+            {
+                if (!SavedDesignParameters_) throw std::invalid_argument("saved design requires its host-owned input snapshot");
+                ValidateManufacturingParameterUpdate(_Package.Descriptor, *SavedDesignParameters_, _Parameters);
+                _DesignDocument = *SavedDesign_;
+                (void)iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(Variant(_DesignDocument));
+            }
+            else
+            {
+                // The host evaluates display once when no committed design is
+                // available. Manufacturing Python never calls display itself.
+                const auto _DesignEvaluation = EvaluateNeutralTemplate(ApplicationContext_, Payload_, "display",
+                    ExpectedPackageDigest_, ComponentStore_, FrozenComponents_);
+                if (!CanonicalParameterMapsEqual(_DesignEvaluation.Parameters, _Parameters))
+                    throw std::runtime_error("shared design and manufacturing inputs were normalized differently");
+                _DesignDocument = _DesignEvaluation.ScriptDocument;
+            }
+        }
         auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
             _Package.Descriptor, _Parameters, PathToUTF8(_Package.ScriptPath));
         // Resource bindings are host-validated product inputs, not descriptor
-        // fields.  Keep them in the script payload so a template can consume
-        // the selected library resource and still return the exact normalized
-        // input object required by the neutral-model contract.
+        // fields. Keep them in the script input so a template can consume the
+        // selected library resource. Inputs are owned by the host, not echoed.
         _Request["parameters"] = _Parameters;
         auto _Context = _Request.at("context").To<ObjectMap>();
         _Context["geometryPurpose"] = GeometryPurpose_;
@@ -1269,52 +1383,130 @@ namespace
         if (!_UserMouldRoot.empty() && std::filesystem::is_directory(_UserMouldRoot))
             _Context["userMouldRoot"] = PathToUTF8(_UserMouldRoot);
         _Request["context"] = std::move(_Context);
-        auto _Document = InvokePythonTemplate(ApplicationContext_, _Request);
+        std::vector<std::string> _ProfileRolesConsumed;
+        auto _Document = InvokePythonTemplate(ApplicationContext_, _Request, &_ProfileRolesConsumed);
+        const auto _Overrides = _Parameters.find("tubeDesignerProfileOverrides");
+        iCAX::TemplateRuntime::CTemplateCodec::ValidateConsumedProductProfileOverrides(
+            _Package.Descriptor, _Overrides == _Parameters.end() ? ObjectMap{} : _Overrides->second.To<ObjectMap>(),
+            _ProfileRolesConsumed);
         _ProfileMark("python");
-        const auto _GeometryNodes = _Document.at("geometry").To<VariantArray>();
+        const bool _Display = GeometryPurpose_ == "display";
+        const bool _Manufacturing = GeometryPurpose_ == "manufacturing";
+        if (_Display && GetString(_Document, "schema") != "icax.display-model")
+            throw std::runtime_error("Python display must return a pure display model");
+        if (_Display && GetUInt64(_Document, "schemaVersion", 0) != iCAX::TemplateRuntime::kDisplayModelSchemaVersion)
+            throw std::runtime_error("Python display must return design version two without connections");
+        if (_Manufacturing && GetString(_Document, "schema") != "icax.manufacturing-model")
+            throw std::runtime_error("Python manufacturing must return a pure manufacturing model");
+        if (_Manufacturing && GetUInt64(_Document, "schemaVersion", 0)
+            != iCAX::TemplateRuntime::kManufacturingModelSchemaVersion)
+            throw std::runtime_error("Python manufacturing must return connection and process declarations version four");
+        // Validate before resolving resources or executing independent assembly
+        // functions. Preserve the script's declaration exactly as it arrived.
+        ObjectMap _Composed;
+        if (_Manufacturing)
+            _Composed = iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(Variant(_Document), Variant(_DesignDocument));
+        else
+            (void)iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
+        auto _ScriptDocument = _Document;
+        auto& _IntrinsicDocument = _Manufacturing ? _DesignDocument : _Document;
+        const auto _GeometryNodes = _IntrinsicDocument.at(_IntrinsicDocument.contains("resources")
+            ? "resources" : "geometry").To<VariantArray>();
+        const auto _ScriptItems = _IntrinsicDocument.at("items").To<VariantArray>();
         const bool _HasResource = _Package.Descriptor.Extensions.contains("modelResources")
             || std::any_of(_GeometryNodes.begin(), _GeometryNodes.end(), [](const auto& Node_) {
                 return Node_.Is<ObjectMap>() && GetString(Node_.To<ObjectMap>(), "operator") == "resource";
+            })
+            || std::any_of(_ScriptItems.begin(), _ScriptItems.end(), [](const auto& Item_) {
+                return Item_.Is<ObjectMap>() && Item_.To<ObjectMap>().contains("componentReference");
             });
+        ObjectMap _ResolvedComponents;
         if (_HasResource)
-            ResolveTemplateComponentResources(_Document, _Package.DescriptorPath.parent_path(),
-                _Package.Descriptor.Extensions, ResolveComponentModelRoot(ApplicationContext_),
-                ResolveUserComponentModelRoot(ApplicationContext_),
-                ComponentStore_, FrozenComponents_);
+            _ResolvedComponents = ResolveScriptComponentResources(
+                _IntrinsicDocument, _Package.DescriptorPath.parent_path(), _Package.Descriptor.Extensions,
+                _Package.Descriptor.ID, ResolveComponentModelRoot(ApplicationContext_),
+                ResolveUserComponentModelRoot(ApplicationContext_), ComponentStore_, FrozenComponents_);
+        if (_Manufacturing && ExecuteManufacturing_)
+        {
+            auto _ExecuteContext = _Request.at("context").To<ObjectMap>();
+            _ExecuteContext["template"] = ObjectMap{
+                {"id", _Package.Descriptor.ID}, {"version", _Package.Descriptor.Version},
+                {"packageDigest", _Package.Descriptor.PackageDigest}};
+            const auto _SharedRoot = ResolveTemplateRoot(ApplicationContext_) / "_shared";
+            if (!std::filesystem::is_directory(_SharedRoot))
+                throw std::runtime_error("TubeDesigner manufacturing execution runtime was not found");
+            _ExecuteContext["sharedRoot"] = PathToUTF8(_SharedRoot);
+            _ExecuteContext["componentSnapshots"] = _ResolvedComponents;
+            _Document = InvokePythonTemplate(ApplicationContext_, {
+                {"protocol", std::string(iCAX::TemplateRuntime::kTemplateProtocol)},
+                {"protocolVersion", static_cast<unsigned long long>(iCAX::TemplateRuntime::kTemplateProtocolVersion)},
+                {"operation", std::string("execute-manufacturing")},
+                {"manufacturingDefinition", _ScriptDocument}, {"designModel", _DesignDocument}, {"context", std::move(_ExecuteContext)}
+            });
+            if (GetString(_Document, "schema") != iCAX::TemplateRuntime::kNeutralModelSchema
+                || GetUInt64(_Document, "schemaVersion", 0)
+                    != iCAX::TemplateRuntime::kNeutralModelResourcesSchemaVersion)
+                throw std::runtime_error("manufacturing execution must return a private neutral model version two");
+            if (_HasResource)
+                (void)ResolveScriptComponentResources(
+                    _Document, _Package.DescriptorPath.parent_path(), _Package.Descriptor.Extensions,
+                    _Package.Descriptor.ID, ResolveComponentModelRoot(ApplicationContext_),
+                    ResolveUserComponentModelRoot(ApplicationContext_), ComponentStore_, &_ResolvedComponents);
+        }
+        else if (_Manufacturing)
+        {
+            _Document = iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(Variant(_DesignDocument));
+            _Document["relationships"] = _ScriptDocument.at("connections");
+        }
+        else
+            _ScriptDocument = _Document; // Display keeps its resolved intrinsic resources.
         auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
         _ProfileMark("parse-neutral");
-        if (_Model.TemplateID != _Package.Descriptor.ID
-            || _Model.TemplateVersion != _Package.Descriptor.Version
-            || _Model.PackageDigest != _Package.Descriptor.PackageDigest)
+        // Script results have no identity or parameter echo. Runtime metadata
+        // comes from the validated host package and normalized input snapshot.
+        _Model.TemplateID = _Package.Descriptor.ID;
+        _Model.TemplateVersion = _Package.Descriptor.Version;
+        _Model.PackageDigest = _Package.Descriptor.PackageDigest;
+        _Model.Parameters = _Parameters;
+        _Model.Extensions["tubeDesigner.geometryPurpose"] = GeometryPurpose_;
+        ApplyResolvedComponentMetadata(_Model, _ResolvedComponents);
+        if (_Manufacturing && ExecuteManufacturing_)
         {
-            throw std::runtime_error("Python template returned a model with a mismatched identity");
-        }
-        // The Python boundary serializes every parameter as JSON.  A direct
-        // Variant comparison treats otherwise identical integer storage types
-        // as different, which rejects a valid product resource binding after
-        // a round trip.  Compare the canonical protocol representation as
-        // well, so this still rejects any real key/value/shape change.
-        if (_Model.Parameters != _Parameters
-            && iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Model.Parameters))
-                != iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Parameters)))
-        {
-            const auto _RequestedBindings = _Parameters.contains("tubeDesignerToolBindings");
-            const auto _ReturnedBindings = _Model.Parameters.contains("tubeDesignerToolBindings");
-            throw std::runtime_error("Python template changed the normalized parameter values"
-                " (requested product tool bindings=" + std::string(_RequestedBindings ? "yes" : "no")
-                + ", returned=" + std::string(_ReturnedBindings ? "yes" : "no") + ")");
+            const Variant _DesignValue(_DesignDocument);
+            iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
+                Variant(_ScriptDocument), Variant(_Document), &_DesignValue);
+            // Existing process consumers mutate this host-owned execution
+            // document. Never write their metadata or frozen BReps into raw.
+            _Document["template"] = ObjectMap{
+                {"id", _Package.Descriptor.ID}, {"version", _Package.Descriptor.Version},
+                {"packageDigest", _Package.Descriptor.PackageDigest}};
+            _Document["parameters"] = _Parameters;
+            _Document["extensions"] = _Model.Extensions;
+            std::map<std::string, ObjectMap> _ItemProperties;
+            for (const auto& _Item : _Model.Items)
+                _ItemProperties.emplace(_Item.Key, _Item.Properties);
+            auto _Items = _Document.at("items").To<VariantArray>();
+            for (auto& _Value : _Items)
+            {
+                auto _Item = _Value.To<ObjectMap>();
+                _Item["properties"] = _ItemProperties.at(GetRequiredText(_Item, "key"));
+                _Value = std::move(_Item);
+            }
+            _Document["items"] = std::move(_Items);
         }
         if (GetString(_Model.Extensions, "tubeDesigner.geometryPurpose") != GeometryPurpose_
             || _Model.Outputs.size() != 1 || _Model.Outputs.front().Purpose != "result")
             throw std::runtime_error("Python template must return one neutral result for the requested geometry");
         for (const auto& _Item : _Model.Items)
         {
-            if (_Item.Representations.size() != 1 || !_Item.Representations.contains("result"))
+            if (!_Item.Representations.empty()
+                && (_Item.Representations.size() != 1 || !_Item.Representations.contains("result")))
                 throw std::runtime_error("Python template returned alternative geometry representations");
         }
         return {
             std::move(_Package.Descriptor), std::move(_Model),
-            std::move(_Document), std::move(_Parameters)
+            std::move(_Document), std::move(_Parameters), std::move(_ResolvedComponents),
+            std::move(_ScriptDocument)
         };
     }
 
@@ -1999,8 +2191,7 @@ namespace
 
     std::string ManufacturingPartKind(const ObjectMap& Properties_)
     {
-        return GetString(Properties_, "manufacturing.partKind",
-            GetString(Properties_, "manufacturing.materialCategory", "tube"));
+        return GetRequiredText(Properties_, "manufacturing.partKind", 32);
     }
 
     std::string ManufacturingKindName(const std::string& Kind_)
@@ -2034,10 +2225,61 @@ namespace
         };
     }
 
+    std::optional<bool> ManufacturingSourceStartAtMinX(const ObjectMap& Properties_)
+    {
+        const auto _Directed = Properties_.find("tubeDesigner.manufacturingStartToEnd");
+        if (_Directed == Properties_.end()) return std::nullopt;
+        if (!_Directed->second.Is<VariantArray>())
+            throw std::invalid_argument("manufacturing start-to-end direction must be a vector");
+        const auto& _Values = _Directed->second.To<VariantArray>();
+        if (_Values.size() != 3)
+            throw std::invalid_argument("manufacturing start-to-end direction needs three coordinates");
+        std::array<double, 3> _Direction{};
+        for (std::size_t _Index = 0; _Index < _Direction.size(); ++_Index)
+        {
+            _Direction[_Index] = ToDouble(_Values[_Index], "manufacturingStartToEnd");
+            if (!std::isfinite(_Direction[_Index]))
+                throw std::invalid_argument("manufacturing start-to-end direction is not finite");
+        }
+        const gp_Dir _SourceAxis(_Direction[0], _Direction[1], _Direction[2]);
+        if (const auto _Known = Properties_.find("tubeDesigner.manufacturingAxis");
+            _Known != Properties_.end())
+        {
+            if (!_Known->second.Is<VariantArray>() || _Known->second.To<VariantArray>().size() != 3)
+                throw std::invalid_argument("manufacturing axis cannot validate directed source axis");
+            const auto& _KnownValues = _Known->second.To<VariantArray>();
+            const gp_Dir _KnownAxis(ToDouble(_KnownValues[0], "manufacturingAxis"),
+                ToDouble(_KnownValues[1], "manufacturingAxis"),
+                ToDouble(_KnownValues[2], "manufacturingAxis"));
+            if (std::abs(_SourceAxis.Dot(_KnownAxis)) < 1.0 - 1.0e-8)
+                throw std::invalid_argument("manufacturing start-to-end direction is not parallel with its axis");
+        }
+        for (const auto _Component : _Direction)
+            if (std::abs(_Component) > 1.0e-8)
+                return _Component > 0.0; // Normalization chooses the first nonzero axis component positive.
+        throw std::invalid_argument("manufacturing start-to-end direction is zero");
+    }
+
     TopoDS_Shape NormalizeManufacturingShape(const TopoDS_Shape& Shape_, const ObjectMap& Properties_)
     {
         if (ManufacturingPartKind(Properties_) != "accessory")
+        {
+            if (const auto _Axis = Properties_.find("tubeDesigner.manufacturingAxis");
+                _Axis != Properties_.end() && _Axis->second.Is<VariantArray>())
+            {
+                const auto& _Components = _Axis->second.To<VariantArray>();
+                if (_Components.size() != 3 || !_Components[0].Is<double>()
+                    || !_Components[1].Is<double>() || !_Components[2].Is<double>())
+                    throw std::invalid_argument("manufacturing axis must have three numbers");
+                const auto _X = _Components[0].To<double>();
+                const auto _Y = _Components[1].To<double>();
+                const auto _Z = _Components[2].To<double>();
+                if (!std::isfinite(_X) || !std::isfinite(_Y) || !std::isfinite(_Z))
+                    throw std::invalid_argument("manufacturing axis is not finite");
+                return NormalizeLinearPartForManufacturing(Shape_, gp_Dir(_X, _Y, _Z));
+            }
             return NormalizeLinearPartForManufacturing(Shape_);
+        }
         const auto _Bounds = ShapeBounds(Shape_);
         const auto _Min = _Bounds.at("min").To<VariantArray>();
         const auto _Max = _Bounds.at("max").To<VariantArray>();
@@ -2319,6 +2561,20 @@ namespace
         }
     }
 
+    bool AssemblyPartAwaitingValidation(const ObjectMap& Properties_)
+    {
+        // No product-wide fit certification is persisted yet.  A template
+        // cannot make an assembly stock production-ready by setting ready=true.
+        if (Properties_.contains("assemblyFrame.member")) return true;
+        const auto _Marker = Properties_.find("tubeDesigner.assemblyPlanning");
+        if (_Marker == Properties_.end()) return false;
+        if (!_Marker->second.Is<ObjectMap>()) return true;
+        const auto& _Plan = std::get<ObjectMap>(_Marker->second.m_Value);
+        const auto _Ready = _Plan.find("ready");
+        return _Ready == _Plan.end() || !_Ready->second.Is<bool>()
+            || !_Ready->second.To<bool>();
+    }
+
     ObjectMap MakeTransientPartSnapshot(
         const SPreparedManufacturingPart& Part_, const CProductInstanceComponent& Product_)
     {
@@ -2333,7 +2589,8 @@ namespace
             {"profile", Part_.TubeProfile}, {"partKind", ManufacturingPartKind(Part_.ItemProperties)},
             {"plate", ManufacturingPlate(Part_.ItemProperties)}, {"length", Part_.Length},
             {"stableKey", Part_.StableKey}, {"fileName", Part_.FileName},
-            {"status", std::string("Ready")}, {"transient", true},
+            {"status", std::string(AssemblyPartAwaitingValidation(Part_.ItemProperties)
+                ? "AwaitingAssemblyValidation" : "Ready")}, {"transient", true},
             {"properties", Part_.ItemProperties},
             {"manufacturingGeometryResourceId", Part_.ManufacturingResource.URL},
             {"manufacturingGeometryResourceVersion", Part_.ManufacturingResource.nVersion},
@@ -2380,7 +2637,8 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_, bool Manufacturing_ = false);
     SPreparedProductDisassembly PrepareProductDisassembly(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Project::ISceneContext& Scene_, const iCAX::Data::uuid& ProductID_);
+        iCAX::Project::ISceneContext& Scene_, const iCAX::Data::uuid& ProductID_,
+        iCAX::Product::IProductContext* ProductContext_ = nullptr);
     void RestoreLinkedNestingParts(iCAX::Project::ISceneContext& Scene_,
         const iCAX::Application::IApplicationContext& ApplicationContext_);
     void MigrateLegacyNestingTask(iCAX::Project::ISceneContext& Scene_,
@@ -2402,6 +2660,7 @@ namespace
         const CProductInstanceComponent& Product_,
         const CGenerationRunComponent* Run_);
     bool CanonicalParameterMapsEqual(const ObjectMap& Left_, const ObjectMap& Right_);
+    std::string AssemblyBindingsRevision(const ObjectMap& Bindings_);
     ObjectMap NormalizeStoredProductParameters(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         const CProductInstanceComponent& Product_, const ObjectMap& Requested_);
@@ -2668,10 +2927,12 @@ namespace
             _Instance["status"] = _Product->GetStatus();
             _Instance["parameters"] = _Product->GetParameters();
             _Instance["sketches"] = _Product->GetSketches();
+            _Instance["assemblyBindingsRevision"] = AssemblyBindingsRevision(_Product->GetAssemblyBindings());
             _Instance["activeGenerationRunId"] = UuidToString(_GenerationRunID);
             _Instance["memberCount"] = _MemberCount;
             _Instance["partCount"] = _PartCount;
             _Instance["expectedPartCount"] = _ExpectedPartCount;
+            _Instance["manufacturingPartCountKnown"] = _ExpectedPartCount > 0;
             _Instance["hasDisassembly"] = _ExpectedPartCount > 0 && _PartCount == _ExpectedPartCount;
             _Instance["modelOutdated"] = _RuntimeState.ModelOutdated;
             _Instance["partsOutdated"] = _RuntimeState.PartsOutdated;
@@ -2706,6 +2967,7 @@ namespace
             _Product["status"] = _ActiveProduct->GetStatus();
             _Product["parameters"] = _ActiveProduct->GetParameters();
             _Product["sketches"] = _ActiveProduct->GetSketches();
+            _Product["assemblyBindingsRevision"] = AssemblyBindingsRevision(_ActiveProduct->GetAssemblyBindings());
             _Product["activeGenerationRunId"] = UuidToString(
                 _ActiveProduct->GetActiveGenerationRunID());
             const auto _ActiveRun = GetComponent<CGenerationRunComponent>(
@@ -2726,8 +2988,7 @@ namespace
                     _Repository.GetEntity(_GenerationRunID));
                 if (_Run && !_Run->GetNeutralModel().empty())
                 {
-                    const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-                        Variant(_Run->GetNeutralModel()));
+                    const auto _Model = ParseGenerationDisplay(*_Run);
                     const auto _It = _Model.Extensions.find("tubeDesigner.specificationAnnotations");
                     if (_It != _Model.Extensions.end() && _It->second.Is<VariantArray>())
                         _SpecificationAnnotations = _It->second.To<VariantArray>();
@@ -6389,6 +6650,45 @@ namespace
         return Value_;
     }
 
+    void RestorePunchOperationParameters(ObjectMap& Snapshot_, const ObjectMap& TemplateData_)
+    {
+        const auto _Found = TemplateData_.find("operationParameterValues");
+        if (_Found == TemplateData_.end()) return;
+        if (!_Found->second.Is<ObjectMap>())
+            throw std::invalid_argument("单件工艺操作参数须为对象");
+        const auto _Values = _Found->second.To<ObjectMap>();
+        if (_Values.size() > 32)
+            throw std::invalid_argument("单件工艺操作参数最多 32 项");
+        for (const auto& [_Key, _Value] : _Values)
+        {
+            if (_Key.empty() || _Key.size() > 80
+                || !std::islower(static_cast<unsigned char>(_Key.front()))
+                || !std::ranges::all_of(_Key.begin() + 1, _Key.end(), [](unsigned char Character_) {
+                    return std::isalnum(Character_) != 0;
+                }))
+                throw std::invalid_argument("单件工艺操作参数键无效");
+            if (!_Value.Is<double>() && !_Value.Is<std::uint64_t>()
+                && !_Value.Is<std::int64_t>() && !_Value.Is<bool>() && !_Value.Is<std::string>())
+                throw std::invalid_argument("单件工艺操作参数值无效");
+            if (_Value.Is<double>() && !std::isfinite(_Value.To<double>()))
+                throw std::invalid_argument("单件工艺操作参数须为有限数值");
+            const auto _Existing = Snapshot_.find(_Key);
+            if (_Existing != Snapshot_.end())
+            {
+                const auto _IsNumber = [](const Variant& Value_) {
+                    return Value_.Is<double>() || Value_.Is<float>()
+                        || Value_.Is<unsigned long long>() || Value_.Is<long long>()
+                        || Value_.Is<unsigned int>() || Value_.Is<int>();
+                };
+                const bool _SameNumber = _IsNumber(_Existing->second) && _IsNumber(_Value)
+                    && ToDouble(_Existing->second, _Key) == ToDouble(_Value, _Key);
+                if (_Existing->second != _Value && !_SameNumber)
+                    throw std::invalid_argument("单件工艺操作参数与加工定位字段不一致: " + _Key);
+            }
+            else Snapshot_[_Key] = _Value;
+        }
+    }
+
     ObjectMap PunchFeatureSnapshot(const SPunchFeature& Feature_)
     {
         VariantArray _Contour;
@@ -6421,6 +6721,7 @@ namespace
         // has no positive draft, instead of validating the inactive zero value.
         if (Feature_.BlindHole || Feature_.CutDepth > 0) _Result["cutDepth"] = Feature_.CutDepth;
         for (const auto& [_Key, _Value] : Feature_.TemplateData) if (_Key != "toolSnapshot") _Result[_Key] = _Value;
+        RestorePunchOperationParameters(_Result, Feature_.TemplateData);
         if (!Feature_.LayoutDatum.empty()) _Result["layoutDatum"] = Feature_.LayoutDatum;
         if(Feature_.HasArrayGroups) {
             VariantArray _Transforms;
@@ -6458,7 +6759,8 @@ namespace
             const auto _Object = _Value.To<ObjectMap>();
             SPunchFeature _Feature;
             _Feature.HasArrayGroups=_Object.contains("arrayGroups");
-            for (const auto& _Key : {"toolRef", "toolParameters", "toolSnapshot", "frozenTool", "frozenCut", "section"}) {
+            for (const auto& _Key : {"toolRef", "toolParameters", "toolSnapshot", "frozenTool", "frozenCut", "section",
+                "operationParameterValues"}) {
                 if (const auto _It = _Object.find(_Key); _It != _Object.end()) {
                     if (!_It->second.Is<ObjectMap>()) throw std::invalid_argument("刀具模板参数须为对象");
                     _Feature.TemplateData[_Key] = _It->second;
@@ -6596,7 +6898,8 @@ namespace
             if (_Found == _Object.end()) return;
             if (!_Found->second.Is<ObjectMap>()) throw std::invalid_argument("端部参数无效");
             const auto _Value = _Found->second.To<ObjectMap>();
-            for (const auto& _Name : {"toolRef", "toolParameters", "toolSnapshot", "frozenTool", "frozenCut", "section"}) {
+            for (const auto& _Name : {"toolRef", "toolParameters", "toolSnapshot", "frozenTool", "frozenCut", "section",
+                "operationParameterValues"}) {
                 if (const auto _Entry = _Value.find(_Name); _Entry != _Value.end()) {
                     if (!_Entry->second.Is<ObjectMap>()) throw std::invalid_argument("端部刀具参数须为对象");
                     _End.TemplateData[_Name] = _Entry->second;
@@ -6620,6 +6923,7 @@ namespace
             ObjectMap _Result{{"type",_End.Type},{"datum",_End.Datum},{"trim",_End.Trim},{"angle",_End.Angle},
                 {"rotation",_End.Rotation},{"diameter",_End.Diameter},{"offset",_End.Offset},{"clearance",_End.Clearance}};
             for (const auto& [_Key, _Value] : _End.TemplateData) if (_Key != "toolSnapshot") _Result[_Key] = _Value;
+            RestorePunchOperationParameters(_Result, _End.TemplateData);
             return _Result;
         };
         return {{"start",_Save(Ends_.Start)},{"end",_Save(Ends_.End)}};
@@ -6660,12 +6964,15 @@ namespace
             "apps/tube-designer/templates/_shared/assembly_template_runtime.py",
             "src/apps/tube-designer/templates/_shared/assembly_template_runtime.py"
         }, "TubeDesigner assembly template runtime");
+        ObjectMap _Context{{"lengthUnit", std::string("mm")}};
+        const auto _UserMouldRoot = ResolveUserMoldRoot(ApplicationContext_);
+        if (!_UserMouldRoot.empty()) _Context["userMouldRoot"] = PathToUTF8(_UserMouldRoot);
         return InvokePythonTemplate(ApplicationContext_, {
             {"protocol",std::string("icax.template-runtime")},{"protocolVersion",1ull},
             {"operation",std::string("evaluate")},{"templatePath",PathToUTF8(_Path)},
             {"template",ObjectMap{{"id",std::string("icax.assembly-template-runtime")},{"version",std::string("1.0.0")},
                 {"packageDigest",ContentDigest("assembly-template-runtime",ReadTextFile(_Path))}}},
-            {"parameters",Parameters_},{"context",ObjectMap{{"lengthUnit",std::string("mm")}}}
+            {"parameters",Parameters_},{"context",std::move(_Context)}
         });
     }
 
@@ -6740,6 +7047,36 @@ namespace
             -(ToDouble(_Min[1],"y")+ToDouble(_Max[1],"y"))/2,
             -(ToDouble(_Min[2],"z")+ToDouble(_Max[2],"z"))/2));
         return BRepBuilderAPI_Transform(_Shape,_Center,true).Shape();
+    }
+
+    // Imported parts retain their original BRep until an independently
+    // replayed drawing is shown to represent exactly the same material.
+    double ShapeMaterialVolume(const TopoDS_Shape& Shape_)
+    {
+        if (Shape_.IsNull()) return 0.0;
+        GProp_GProps _Properties;
+        BRepGProp::VolumeProperties(Shape_, _Properties);
+        return std::abs(_Properties.Mass());
+    }
+
+    double DrawingReplayError(const TopoDS_Shape& Source_, const TopoDS_Shape& Replayed_)
+    {
+        if (Source_.IsNull() || Replayed_.IsNull()
+            || !BRepCheck_Analyzer(Source_).IsValid()
+            || !BRepCheck_Analyzer(Replayed_).IsValid())
+            throw std::runtime_error("原始实体或回放实体无效，不能建立三维编辑定义");
+        const auto _DifferenceVolume = [](const TopoDS_Shape& Left_, const TopoDS_Shape& Right_) {
+            BRepAlgoAPI_Cut _Cut(Left_, Right_);
+            _Cut.SetFuzzyValue(1.0e-6);
+            _Cut.Build();
+            if (!_Cut.IsDone() || _Cut.Shape().IsNull()
+                || !BRepCheck_Analyzer(_Cut.Shape()).IsValid())
+                throw std::runtime_error("回放实体几何差计算失败，不能建立三维编辑定义");
+            return ShapeMaterialVolume(_Cut.Shape());
+        };
+        const auto _Missing = _DifferenceVolume(Source_, Replayed_);
+        const auto _Extra = _DifferenceVolume(Replayed_, Source_);
+        return (_Missing + _Extra) / std::max(ShapeMaterialVolume(Source_), 1.0);
     }
 
     // Some section-aware notch analyzers need BRep-derived wall roles.  This is
@@ -6819,6 +7156,65 @@ namespace
         return result;
     }
 
+    enum class EPunchEvaluationPurpose
+    {
+        EditableDrawing,
+        AssemblyManufacturingPreview
+    };
+
+    bool PunchRequiresSectionAnalysis(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const VariantArray& Features_, const ObjectMap& Ends_, const VariantArray& UserTools_)
+    {
+        // Read the same installed declarations consumed by the Python runtime.
+        // Unknown/degraded packages retain the full analysis; this is only a
+        // work-avoidance hint, never an alternative applicability interpreter.
+        const auto _Requires = [&](const ObjectMap& Item_) {
+            try {
+                const auto _Reference = GetRequiredObject(Item_, "toolRef");
+                const auto _ID = GetRequiredText(_Reference, "id", 80);
+                const auto _Version = GetString(_Reference, "version");
+                for (const auto& _Value : UserTools_) {
+                    if (!_Value.Is<ObjectMap>()) continue;
+                    const auto _Tool = _Value.To<ObjectMap>();
+                    if (GetString(_Tool, "id") != _ID
+                        || (!_Version.empty() && GetString(_Tool, "version") != _Version)) continue;
+                    const auto _Descriptor = _Tool.contains("descriptor")
+                        ? GetRequiredObject(_Tool, "descriptor") : _Tool;
+                    return _Descriptor.contains("sectionAnalysis");
+                }
+                if (_ID.empty() || !std::ranges::all_of(_ID, [](unsigned char Character_) {
+                    return (Character_ >= 'a' && Character_ <= 'z')
+                        || (Character_ >= '0' && Character_ <= '9')
+                        || Character_ == '-' || Character_ == '_';
+                })) return true;
+                const auto _Scope = GetString(_Reference, "libraryScope", GetString(_Reference, "scope"));
+                const auto _Root = _Scope == "user"
+                    ? ResolveUserMoldRoot(ApplicationContext_)
+                    : ResolveTemplateRoot(ApplicationContext_) / "mold";
+                if (_Root.empty()) return true;
+                const auto _Descriptor = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(
+                    ReadTextFile(_Root / _ID / "tool.json")).To<ObjectMap>();
+                if (GetString(_Descriptor, "schema") != "icax.punch-tool"
+                    || GetString(_Descriptor, "id") != _ID
+                    || (!_Version.empty() && GetString(_Descriptor, "version") != _Version)) return true;
+                return _Descriptor.contains("sectionAnalysis");
+            } catch (const std::exception&) { return true; }
+        };
+        for (const auto& _Value : Features_) {
+            const auto _Item = _Value.To<ObjectMap>();
+            const auto _Enabled = _Item.find("enabled");
+            if (_Enabled != _Item.end() && _Enabled->second.Is<bool>() && !_Enabled->second.To<bool>()) continue;
+            if (_Requires(_Item)) return true;
+        }
+        for (const auto& [_Key, _Value] : Ends_) {
+            const auto _Item = _Value.To<ObjectMap>();
+            if (GetString(_Item, "type", "keep") != "keep" || _Item.contains("toolRef"))
+                if (_Requires(_Item)) return true;
+        }
+        return false;
+    }
+
     TopoDS_Shape EvaluatePunch(const TopoDS_Shape& Base_, const ObjectMap& TargetSection_,
         std::vector<SPunchFeature>& Features_,
         SPunchEnds& Ends_, const iCAX::Interaction::CInvocation& Request_,
@@ -6826,8 +7222,14 @@ namespace
         const ObjectMap& Original_ = {}, bool Rebased_ = false,
         std::vector<SPunchCut>* PreviewCuts_ = nullptr, SPunchGeometryStatistics* Statistics_ = nullptr,
         SPunchPreviewDiagnostics* PreviewDiagnostics_ = nullptr, bool ToolsOnly_ = false, double NominalWallThickness_ = 0,
-        const VariantArray& UserTools_ = {})
+        const VariantArray& UserTools_ = {},
+        EPunchEvaluationPurpose Purpose_ = EPunchEvaluationPurpose::EditableDrawing,
+        ObjectMap* PerformanceMs_ = nullptr)
     {
+        const auto _PrepareStart = std::chrono::steady_clock::now();
+        const auto _Milliseconds = [](const auto& Start_) {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start_).count();
+        };
         const auto _Contours=TargetSection_.find("contours");
         if(_Contours==TargetSection_.end()||!_Contours->second.Is<VariantArray>()
             ||_Contours->second.To<VariantArray>().empty())
@@ -6840,7 +7242,13 @@ namespace
             {"original",Original_},{"rebased",Rebased_},{"userTools",UserTools_}
         };
         _PunchParameters["targetSection"]=TargetSection_;
-        _PunchParameters["targetSectionAnalysis"]=PunchSectionAnalysis(Base_);
+        const auto _SectionStart = std::chrono::steady_clock::now();
+        const bool _SectionAnalysis = Purpose_ != EPunchEvaluationPurpose::AssemblyManufacturingPreview
+            || PunchRequiresSectionAnalysis(ApplicationContext_, _Features,
+                GetRequiredObject(_PunchParameters, "ends"), UserTools_);
+        if (_SectionAnalysis) _PunchParameters["targetSectionAnalysis"] = PunchSectionAnalysis(Base_);
+        const double _SectionMilliseconds = _Milliseconds(_SectionStart);
+        if (PerformanceMs_) (*PerformanceMs_)["sectionAnalysis"] = _SectionMilliseconds;
         const auto _UserMoldRoot = ResolveUserMoldRoot(ApplicationContext_);
         if (!_UserMoldRoot.empty() && std::filesystem::is_directory(_UserMoldRoot))
             _PunchParameters["userToolRoot"] = PathToUTF8(_UserMoldRoot);
@@ -6859,6 +7267,8 @@ namespace
             && _Feature.SkippedInstances.size() != _Feature.ArrayCount * _Feature.RowCount)
             _LoadFrozen("side:"+_Feature.ID,_Feature.TemplateData);
         _LoadFrozen("end:start",Ends_.Start.TemplateData);_LoadFrozen("end:end",Ends_.End.TemplateData);
+        if (PerformanceMs_) (*PerformanceMs_)["punchPrepare"] = _Milliseconds(_PrepareStart) - _SectionMilliseconds;
+        const auto _GeometryStart = std::chrono::steady_clock::now();
         std::vector<SPunchCut> _Cuts;
         // Geometry work uses the project's task library; database/resource commits stay on the host thread.
         TopoDS_Shape _Result;
@@ -6945,8 +7355,10 @@ namespace
             if(PreviewCuts_) *PreviewCuts_=_Cuts;
             throw;
         }
+        if (PerformanceMs_) (*PerformanceMs_)["punchGeometry"] = _Milliseconds(_GeometryStart);
         if (PreviewCuts_) *PreviewCuts_ = _Cuts;
-        if(ToolsOnly_)return _Result; // Placement previews never create frozen manufacturing cutters.
+        if (ToolsOnly_ || Purpose_ == EPunchEvaluationPurpose::AssemblyManufacturingPreview)
+            return _Result; // Transient assembly results have no persisted cutter recipe.
         for (const auto& _Cut : _Cuts) {
             if(_Frozen.contains(_Cut.Target+":"+_Cut.Key)) continue; // Keep exact embedded reference when degraded.
             ObjectMap* _Data=nullptr;
@@ -6961,6 +7373,13 @@ namespace
         return _Result;
     }
 
+
+#include "ProductAssemblyBindingGeometry.inc"
+#include "ProductAssemblyPairGeometry.inc"
+#include "ProductAssemblyWholeGeometry.inc"
+#include "ProductAssemblyWholeResourceAudit.inc"
+#include "ProductAssemblyFinalNodeGeometry.inc"
+#include "ProductAssemblyFinalNodeResourceAudit.inc"
 
     std::string ResolveProductCode(const SNeutralTemplateEvaluation& Evaluation_)
     {
@@ -7006,10 +7425,8 @@ namespace
         const auto _DisplayOutput = FindOutputSet(_Evaluation.Model, "result");
         if (!_DisplayOutput || _DisplayOutput->ItemKeys.empty())
             throw std::runtime_error("Python template returned no display output items");
-        const auto _PartCount = OptionalPropertyUInt64(
-            _Evaluation.Model.Extensions, "tubeDesigner.manufacturingPartCount");
-        if (_PartCount == 0)
-            throw std::runtime_error("Python template returned no manufacturing item count");
+        // Manufacturing topology is determined by actual disassembly.
+        const std::uint64_t _PartCount = 0;
         // A template may retain construction or manufacturing-only geometry in
         // the neutral model.  Preview only needs the result items and their
         // transitive dependencies; evaluating the complete graph adds work to
@@ -7152,6 +7569,8 @@ namespace
                 { CGenerationRunComponent::PropertyName_PartCount, PropertyValue(static_cast<unsigned long long>(_PartCount)) },
                 { CGenerationRunComponent::PropertyName_IssueCount, PropertyValue(static_cast<unsigned long long>(_Evaluation.Model.Diagnostics.size())) },
                 { CGenerationRunComponent::PropertyName_PackageDigest, PropertyValue(_Evaluation.Descriptor.PackageDigest) },
+                { CGenerationRunComponent::PropertyName_GeneratedParameters, PropertyValue(_Evaluation.Parameters) },
+                { CGenerationRunComponent::PropertyName_ResolvedComponentModels, PropertyValue(_Evaluation.ResolvedComponentModels) },
                 { CGenerationRunComponent::PropertyName_NeutralModel, PropertyValue(_Evaluation.Document) }
             });
 
@@ -7542,37 +7961,35 @@ namespace
         const iCAX::TemplateRuntime::SNeutralModel& Model_)
     {
         const auto _Purpose = GetString(Model_.Extensions, "tubeDesigner.geometryPurpose");
-        // Only explicitly manufactured results or legacy export representations
-        // are production inputs. A display result can never be a recovery source.
-        const auto _Output = _Purpose == "manufacturing"
-            ? FindOutputSet(Model_, "result")
-            : (_Purpose.empty() ? FindOutputSet(Model_, "export") : nullptr);
+        // Current production inputs carry an explicit manufacturing purpose.
+        const auto _Output = _Purpose == "manufacturing" ? FindOutputSet(Model_, "result") : nullptr;
         if (!_Output || _Output->ItemKeys.empty())
             throw std::runtime_error("generation run has no manufacturing neutral expression");
         return *_Output;
     }
 
-    std::set<std::string> ManufacturingParameterGroups(
+    std::set<std::string> ManufacturingOnlyParameterKeys(
         const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_)
     {
-        std::set<std::string> _Groups;
-        const auto _Layout = Descriptor_.Extensions.find("parameterLayout");
-        if (_Layout == Descriptor_.Extensions.end() || !_Layout->second.Is<ObjectMap>()) return _Groups;
-        const auto _LayoutObject = _Layout->second.To<ObjectMap>();
-        const auto _Sections = _LayoutObject.find("sections");
-        if (_Sections == _LayoutObject.end() || !_Sections->second.Is<VariantArray>()) return _Groups;
-        for (const auto& _Value : _Sections->second.To<VariantArray>())
+        std::set<std::string> _Keys;
+        const auto _Dependencies = Descriptor_.Extensions.find("parameterDependencies");
+        if (_Dependencies == Descriptor_.Extensions.end()) return _Keys;
+        if (!_Dependencies->second.Is<ObjectMap>())
+            throw std::invalid_argument("产品参数依赖声明必须是对象");
+        const auto _Object = _Dependencies->second.To<ObjectMap>();
+        const auto _ManufacturingOnly = _Object.find("manufacturingOnly");
+        if (_ManufacturingOnly == _Object.end()) return _Keys;
+        if (!_ManufacturingOnly->second.Is<VariantArray>())
+            throw std::invalid_argument("产品制造参数依赖声明必须是数组");
+        std::set<std::string> _Known{ "tubeDesignerProfileOverrides", "tubeDesignerToolBindings" };
+        for (const auto& _Definition : Descriptor_.Parameters) _Known.insert(_Definition.Key);
+        for (const auto& _Value : _ManufacturingOnly->second.To<VariantArray>())
         {
-            if (!_Value.Is<ObjectMap>()) continue;
-            const auto _Section = _Value.To<ObjectMap>();
-            const auto _Key = GetString(_Section, "key");
-            if (_Key != "materials" && _Key != "process") continue;
-            const auto _SectionGroups = _Section.find("groups");
-            if (_SectionGroups == _Section.end() || !_SectionGroups->second.Is<VariantArray>()) continue;
-            for (const auto& _Group : _SectionGroups->second.To<VariantArray>())
-                if (_Group.Is<std::string>()) _Groups.insert(_Group.To<std::string>());
+            if (!_Value.Is<std::string>() || !_Known.contains(_Value.To<std::string>()))
+                throw std::invalid_argument("产品制造参数依赖引用了未声明的字段");
+            _Keys.insert(_Value.To<std::string>());
         }
-        return _Groups;
+        return _Keys;
     }
 
     bool CanonicalParameterMapsEqual(const ObjectMap& Left_, const ObjectMap& Right_)
@@ -7586,17 +8003,8 @@ namespace
         const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,
         const ObjectMap& Parameters_)
     {
-        if (Descriptor_.ID != "single-face-security-window") return Parameters_;
         auto _Result = Parameters_;
-        const auto _ManufacturingGroups = ManufacturingParameterGroups(Descriptor_);
-        for (const auto& _Definition : Descriptor_.Parameters)
-            if (_ManufacturingGroups.contains(_Definition.GroupKey))
-                _Result.erase(_Definition.Key);
-        // These snapshots are selected from the material/process editor. They
-        // affect the next manufacturing evaluation, not the displayed member
-        // geometry which remains frozen in the active generation run.
-        _Result.erase("tubeDesignerProfileOverrides");
-        _Result.erase("tubeDesignerToolBindings");
+        for (const auto& _Key : ManufacturingOnlyParameterKeys(Descriptor_)) _Result.erase(_Key);
         return _Result;
     }
 
@@ -7615,10 +8023,8 @@ namespace
         const CGenerationRunComponent* Run_)
     {
         if (!Run_ || Run_->GetNeutralModel().empty()) return {};
-        const auto _PreviewModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-            Variant(Run_->GetNeutralModel()));
         const auto _Current = Product_.GetParameters();
-        const auto _Generated = _PreviewModel.Parameters;
+        const auto _Generated = GeneratedParameterValues(*Run_);
         SProductRuntimeParameterState _Result;
         const auto _TemplateChanged =
             Package_.Descriptor.Version != Product_.GetTemplateVersion()
@@ -7630,15 +8036,11 @@ namespace
                 GeometryParameterSubset(Package_.Descriptor, _Current),
                 GeometryParameterSubset(Package_.Descriptor, _Generated));
 
-        ObjectMap _PartsParameters = _Generated;
-        if (!Run_->GetManufacturingModel().empty())
-        {
-            const auto _ManufacturingModel =
-                iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-                    Variant(Run_->GetManufacturingModel()));
-            _PartsParameters = _ManufacturingModel.Parameters;
-        }
-        _Result.PartsOutdated = !CanonicalParameterMapsEqual(_Current, _PartsParameters);
+        const auto _ManufacturingDocument = !Run_->GetManufacturingModel().empty()
+            ? Run_->GetManufacturingModel() : Run_->GetAssemblyManufacturingModel();
+        const auto _PartsParameters = ManufacturingParameterValues(*Run_, _ManufacturingDocument);
+        _Result.PartsOutdated = !CanonicalParameterMapsEqual(_Current, _PartsParameters)
+            || Product_.GetAssemblyBindings() != Run_->GetAppliedAssemblyBindings();
         return _Result;
     }
 
@@ -7676,17 +8078,10 @@ namespace
         return _Parameters;
     }
 
-    void ValidateManufacturingParameterUpdate(
-        const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,
+    void ValidateManufacturingParameterChanges(
+        const std::set<std::string>& Allowed_,
         const ObjectMap& Current_, const ObjectMap& Updated_)
     {
-        if (Descriptor_.ID != "single-face-security-window")
-            throw std::invalid_argument("当前产品模板不支持独立更新材料与工艺参数");
-        const auto _Groups = ManufacturingParameterGroups(Descriptor_);
-        if (_Groups.empty()) throw std::runtime_error("产品模板没有声明材料与工艺参数分区");
-        std::set<std::string> _Allowed{ "tubeDesignerProfileOverrides", "tubeDesignerToolBindings" };
-        for (const auto& _Definition : Descriptor_.Parameters)
-            if (_Groups.contains(_Definition.GroupKey)) _Allowed.insert(_Definition.Key);
         std::set<std::string> _Keys;
         for (const auto& [_Key, _Value] : Current_) _Keys.insert(_Key);
         for (const auto& [_Key, _Value] : Updated_) _Keys.insert(_Key);
@@ -7696,10 +8091,65 @@ namespace
             const auto _Updated = Updated_.find(_Key);
             const auto _Same = _Current == Current_.end()
                 ? _Updated == Updated_.end()
-                : _Updated != Updated_.end() && _Current->second == _Updated->second;
-            if (!_Same && !_Allowed.contains(_Key))
+                : _Updated != Updated_.end() && CanonicalParameterMapsEqual(
+                    ObjectMap{{_Key, _Current->second}}, ObjectMap{{_Key, _Updated->second}});
+            if (!_Same && !Allowed_.contains(_Key))
                 throw std::invalid_argument("拆单请求包含会改变产品模型的参数: " + _Key);
         }
+    }
+
+    void ValidateManufacturingParameterUpdate(
+        const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,
+        const ObjectMap& Current_, const ObjectMap& Updated_)
+    {
+        ValidateManufacturingParameterChanges(
+            ManufacturingOnlyParameterKeys(Descriptor_), Current_, Updated_);
+    }
+
+    constexpr auto kValidatedManufacturingOnlyParameterKeys =
+        "tubeDesigner.validatedManufacturingOnlyParameterKeys";
+
+    void ValidateFrozenManufacturingParameters(
+        const iCAX::TemplateRuntime::SNeutralModel& Preview_,
+        const iCAX::TemplateRuntime::SNeutralModel& Manufacturing_)
+    {
+        if (CanonicalParameterMapsEqual(Preview_.Parameters, Manufacturing_.Parameters)) return;
+        const auto _Declaration = Manufacturing_.Extensions.find(
+            kValidatedManufacturingOnlyParameterKeys);
+        if (_Declaration == Manufacturing_.Extensions.end()
+            || !_Declaration->second.Is<VariantArray>())
+            throw std::runtime_error("manufacturing parameters do not match the committed preview");
+        std::set<std::string> _Allowed;
+        for (const auto& _Value : _Declaration->second.To<VariantArray>())
+        {
+            if (!_Value.Is<std::string>() || _Value.To<std::string>().empty()
+                || !_Allowed.insert(_Value.To<std::string>()).second)
+                throw std::runtime_error("stored manufacturing parameter declaration is invalid");
+        }
+        // The host records this declaration only after descriptor validation.
+        // Recovery uses the frozen snapshot and never needs to load a package
+        // that may have changed or been removed since the parts were committed.
+        ValidateManufacturingParameterChanges(
+            _Allowed, Preview_.Parameters, Manufacturing_.Parameters);
+    }
+
+    std::uint64_t DeclaredManufacturingPartCount(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_,
+        bool RequireDeclaration_ = false)
+    {
+        const auto& _Output = ManufacturingOutput(Model_);
+        const auto _Declaration = Model_.Extensions.find("tubeDesigner.manufacturingPartCount");
+        if (_Declaration == Model_.Extensions.end())
+        {
+            if (RequireDeclaration_)
+                throw std::runtime_error("manufacturing model has no declared part count");
+            return static_cast<std::uint64_t>(_Output.ItemKeys.size());
+        }
+        const auto _Count = OptionalPropertyUInt64(
+            Model_.Extensions, "tubeDesigner.manufacturingPartCount");
+        if (_Count == 0 || _Count != _Output.ItemKeys.size())
+            throw std::runtime_error("manufacturing item count does not match its declaration");
+        return _Count;
     }
 
     void ValidateGenerationModelIdentity(
@@ -7720,14 +8170,36 @@ namespace
         const CProductInstanceComponent& Product_,
         const CGenerationRunComponent& Run_,
         const ObjectMap* UpdatedParameters_ = nullptr,
-        iCAX::Application::IProductUserDataStore* ComponentStore_ = nullptr)
+        iCAX::Application::IProductUserDataStore* ComponentStore_ = nullptr,
+        const ObjectMap* AssemblyBindings_ = nullptr,
+        bool RestoreAppliedBindings_ = false,
+        iCAX::Product::IProductContext* ProductContext_ = nullptr)
     {
+        char* _ProfileEnv = nullptr;
+        std::size_t _ProfileEnvLength = 0;
+        (void)_dupenv_s(&_ProfileEnv, &_ProfileEnvLength, "ICAX_PROFILE_DISASSEMBLY");
+        const bool _Profile = _ProfileEnv != nullptr;
+        std::free(_ProfileEnv);
+        auto _ProfileLast = std::chrono::steady_clock::now();
+        const auto _Mark = [&](const char* Phase_) {
+            if (!_Profile) return;
+            const auto _Now = std::chrono::steady_clock::now();
+            std::fprintf(stderr, "Disassembly/prepare/%s %.3f s\n", Phase_,
+                std::chrono::duration<double>(_Now - _ProfileLast).count());
+            std::fflush(stderr);
+            _ProfileLast = _Now;
+        };
         const auto _PreviewDocument = Run_.GetNeutralModel();
         if (_PreviewDocument.empty())
             throw std::invalid_argument("generation run has no stored neutral model");
-        const auto _PreviewModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-            Variant(_PreviewDocument));
+        const auto _PreviewModel = ParseGenerationDisplay(Run_);
         ValidateGenerationModelIdentity(_PreviewModel, Run_);
+        const auto _Bindings = AssemblyBindings_ ? *AssemblyBindings_
+            : RestoreAppliedBindings_ ? Run_.GetAppliedAssemblyBindings() : Product_.GetAssemblyBindings();
+        if (!RestoreAppliedBindings_) ValidateAssemblyBindingsSource(_Bindings, Product_, Run_);
+        if (!_Bindings.empty() && UpdatedParameters_
+            && !CanonicalParameterMapsEqual(*UpdatedParameters_, Product_.GetParameters()))
+            throw std::invalid_argument("修改制造参数前请重新检查或移除装配加工");
         if (Run_.GetProductID() != ProductID_
             || _PreviewModel.TemplateID != Product_.GetTemplateID()
             || _PreviewModel.TemplateVersion != Product_.GetTemplateVersion())
@@ -7735,23 +8207,63 @@ namespace
             throw std::runtime_error("stored neutral model identity does not match its generation run");
         }
         auto _Document = Run_.GetManufacturingModel();
+        if (_Document.empty() && !Run_.GetAssemblyManufacturingModel().empty())
+            _Document = Run_.GetAssemblyManufacturingModel();
+        auto _ManufacturingDefinition = Run_.GetManufacturingDefinition();
+        auto _ManufacturingParameters = ManufacturingParameterValues(Run_, _Document);
+        const bool _FirstManufacturing = GetString(_PreviewDocument, "schema") == "icax.display-model"
+            && _Document.empty() && Run_.GetPartCount() == 0;
+        auto _CommittedParameters = _PreviewModel.Parameters;
+        auto _CommittedPartCount = GetString(_PreviewModel.Extensions,
+            "tubeDesigner.geometryPurpose") == "display"
+            ? OptionalPropertyUInt64(_PreviewModel.Extensions, "tubeDesigner.manufacturingPartCount")
+            : DeclaredManufacturingPartCount(_PreviewModel);
+        if (!_Document.empty())
+        {
+            const auto _CommittedManufacturing =
+                iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
+            ValidateGenerationModelIdentity(_CommittedManufacturing, Run_);
+            _CommittedParameters = _ManufacturingParameters;
+            if (!CanonicalParameterMapsEqual(_CommittedManufacturing.Parameters, _CommittedParameters))
+                throw std::runtime_error("manufacturing execution inputs do not match their host snapshot");
+            _CommittedPartCount = DeclaredManufacturingPartCount(_CommittedManufacturing);
+        }
+        // Check the previous committed state before accepting any update. Even
+        // an explicit same-value request must not bypass a damaged run count.
+        if (!_FirstManufacturing
+            && (_CommittedPartCount == 0 || _CommittedPartCount != Run_.GetPartCount()))
+            throw std::runtime_error("manufacturing item count does not match its generation run");
+        auto _ExpectedPartCount = Run_.GetPartCount();
         ObjectMap _UpdatedProductParameters;
         if (UpdatedParameters_)
         {
             auto _Payload = *UpdatedParameters_;
             _Payload["templateId"] = Product_.GetTemplateID();
             _Payload["templateVersion"] = Product_.GetTemplateVersion();
-            const auto _SnapshotsIt = _PreviewModel.Extensions.find(kResolvedComponentModels);
-            const auto _FrozenComponents = _SnapshotsIt != _PreviewModel.Extensions.end()
-                && _SnapshotsIt->second.Is<ObjectMap>()
-                ? _SnapshotsIt->second.To<ObjectMap>() : ObjectMap();
+            const auto _FrozenComponents = GenerationComponentSnapshots(Run_);
             const auto _Evaluation = EvaluateNeutralTemplate(
                 ApplicationContext_, _Payload, "manufacturing", Run_.GetPackageDigest(),
-                ComponentStore_, &_FrozenComponents);
+                ComponentStore_, &_FrozenComponents, &_PreviewDocument, &_PreviewModel.Parameters);
             ValidateManufacturingParameterUpdate(
                 _Evaluation.Descriptor, _PreviewModel.Parameters, _Evaluation.Parameters);
             _Document = _Evaluation.Document;
+            _ManufacturingDefinition = _Evaluation.ScriptDocument;
+            _ManufacturingParameters = _Evaluation.Parameters;
             _UpdatedProductParameters = _Evaluation.Parameters;
+            const bool _Changed = !CanonicalParameterMapsEqual(
+                _CommittedParameters, _Evaluation.Parameters);
+            if (_Changed)
+                _ExpectedPartCount = DeclaredManufacturingPartCount(_Evaluation.Model, true);
+            auto _Extensions = GetRequiredObject(_Document, "extensions");
+            _Extensions.erase(kValidatedManufacturingOnlyParameterKeys);
+            if (!CanonicalParameterMapsEqual(_PreviewModel.Parameters, _Evaluation.Parameters))
+            {
+                VariantArray _Allowed;
+                for (const auto& _Key : ManufacturingOnlyParameterKeys(_Evaluation.Descriptor))
+                    _Allowed.emplace_back(_Key);
+                _Extensions[kValidatedManufacturingOnlyParameterKeys] = std::move(_Allowed);
+            }
+            _Document["extensions"] = std::move(_Extensions);
         }
         else if (_Document.empty())
         {
@@ -7762,32 +8274,68 @@ namespace
                 auto _Payload = _PreviewModel.Parameters;
                 _Payload["templateId"] = _PreviewModel.TemplateID;
                 _Payload["templateVersion"] = _PreviewModel.TemplateVersion;
-                const auto _SnapshotsIt = _PreviewModel.Extensions.find(kResolvedComponentModels);
-                const auto _FrozenComponents = _SnapshotsIt != _PreviewModel.Extensions.end()
-                    && _SnapshotsIt->second.Is<ObjectMap>() ? _SnapshotsIt->second.To<ObjectMap>() : ObjectMap();
-                _Document = EvaluateNeutralTemplate(
+                const auto _FrozenComponents = GenerationComponentSnapshots(Run_);
+                const auto _Evaluation = EvaluateNeutralTemplate(
                     ApplicationContext_, _Payload, "manufacturing", _PreviewModel.PackageDigest,
-                    nullptr, &_FrozenComponents).Document;
+                    nullptr, &_FrozenComponents, &_PreviewDocument, &_PreviewModel.Parameters);
+                _Document = _Evaluation.Document;
+                _ManufacturingDefinition = _Evaluation.ScriptDocument;
+                _ManufacturingParameters = _Evaluation.Parameters;
             }
             else
             {
                 // Previously saved combined documents already contain the exact
                 // production graph, so they do not require the original template.
                 _Document = _PreviewDocument;
+                _ManufacturingParameters = _PreviewModel.Parameters;
             }
         }
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
         ValidateGenerationModelIdentity(_Model, Run_);
-        if (!UpdatedParameters_ && _Model.Parameters != _PreviewModel.Parameters)
-            throw std::runtime_error("manufacturing parameters do not match the committed preview");
+        if (!CanonicalParameterMapsEqual(_Model.Parameters, _ManufacturingParameters))
+            throw std::runtime_error("manufacturing execution inputs do not match their host snapshot");
+        if (_FirstManufacturing)
+            _ExpectedPartCount = DeclaredManufacturingPartCount(_Model, true);
+        ValidateFrozenManufacturingParameters(_PreviewModel, _Model);
+        ValidateProductStockSourceMappings(_Model, _PreviewModel);
+        _Mark("manufacturing-document");
         const auto& _Output = ManufacturingOutput(_Model);
-        if (_Output.ItemKeys.size() != static_cast<std::size_t>(Run_.GetPartCount()))
+        if (DeclaredManufacturingPartCount(_Model) != _ExpectedPartCount
+            || _Output.ItemKeys.size() != static_cast<std::size_t>(_ExpectedPartCount))
             throw std::runtime_error("manufacturing item count does not match its generation run");
-        const auto _Geometry = _Output.Purpose == "result"
-            ? iCAX::OpenCascade::EvaluateNeutralModel(_Model)
-            : EvaluateOutputGeometry(_Model, _Output);
+        if (_Profile)
+        {
+            std::size_t _BooleanNodes = 0, _BooleanInputs = 0, _MaximumInputs = 0;
+            for (const auto& _Node : _Model.Geometry)
+                if (_Node.Operator == iCAX::TemplateRuntime::EGeometryOperator::Boolean)
+                {
+                    ++_BooleanNodes;
+                    _BooleanInputs += _Node.Inputs.size();
+                    _MaximumInputs = std::max(_MaximumInputs, _Node.Inputs.size());
+                }
+            std::fprintf(stderr,
+                "Disassembly/model items=%zu nodes=%zu booleans=%zu booleanInputs=%zu maxInputs=%zu purpose=%s\n",
+                _Output.ItemKeys.size(), _Model.Geometry.size(), _BooleanNodes,
+                _BooleanInputs, _MaximumInputs, _Output.Purpose.c_str());
+        }
+        const auto _ProcessGeometry = PrepareProductAssemblyProcessGeometry(
+            _Model, _Document, ApplicationContext_, ProductContext_, Scene_);
+        std::vector<std::string> _OrdinaryRoots;
+        for (const auto& _Key : _Output.ItemKeys)
+            if (!_ProcessGeometry.Shapes.contains(_Key)) {
+                const auto& _Item = FindModelItem(_Model, _Key);
+                const auto _Representation = _Item.Representations.find(_Output.Purpose);
+                if (_Representation == _Item.Representations.end())
+                    throw std::runtime_error("制造构件缺少实体表示: " + _Key);
+                _OrdinaryRoots.push_back(_Representation->second);
+            }
+        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _OrdinaryRoots);
+        _Mark("evaluate-geometry");
 
         SPreparedProductDisassembly _Prepared{ ProductID_, GenerationRunID_, {}, std::move(_Document) };
+        _Prepared.AssemblyBindings = _Bindings;
+        _Prepared.ManufacturingDefinition = std::move(_ManufacturingDefinition);
+        _Prepared.ManufacturingParameters = std::move(_ManufacturingParameters);
         if (UpdatedParameters_)
         {
             _Prepared.ProductParameters = std::move(_UpdatedProductParameters);
@@ -7796,8 +8344,42 @@ namespace
         _Prepared.Parts.reserve(_Output.ItemKeys.size());
         std::vector<iCAX::OpenCascade::SBRepConversionInput> _Conversions;
         _Conversions.reserve(_Output.ItemKeys.size());
+        std::vector<std::size_t> _ConversionPartIndices;
+        std::map<std::size_t, std::shared_ptr<iCAX::GeometryData::BRepModel>> _SharedProcessResources;
+        struct SNormalizedPrototype final
+        {
+            TopoDS_Shape Source;
+            TopoDS_Shape Normalized;
+            bool Accessory = false;
+        };
+        std::vector<SNormalizedPrototype> _NormalizedPrototypes;
+        std::size_t _NormalizedReuseCount = 0;
+        std::size_t _KnownAxisCount = 0;
         std::uint64_t _Index = 0;
         std::map<std::string, std::uint64_t> _CategoryOrdinals;
+        const auto _Sketches = Product_.GetSketches();
+        const auto _SideSketches = _Sketches.find("side");
+        auto _Side = _SideSketches != _Sketches.end() && _SideSketches->second.Is<ObjectMap>()
+            ? _SideSketches->second.To<ObjectMap>() : ObjectMap();
+        if (RestoreAppliedBindings_)
+        {
+            _Side.clear();
+            for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(Scene_.Database()))
+            {
+                if (_Part->GetProductID() != ProductID_ || _Part->GetGenerationRunID() != GenerationRunID_) continue;
+                const auto _Properties = _Part->GetItemProperties();
+                const auto _SavedSketch = _Properties.find("tubeDesigner.sideSketch");
+                if (_SavedSketch != _Properties.end() && _SavedSketch->second.Is<ObjectMap>())
+                    _Side[UuidToString(_Part->GetSourceMemberID())] = _SavedSketch->second;
+            }
+        }
+        std::map<std::string, Variant> _SideSketchByMemberKey;
+        for (const auto& [_ID, _Value] : _Side)
+            if (_Value.Is<ObjectMap>())
+            {
+                const auto _Key = GetString(_Value.To<ObjectMap>(), "targetMemberKey");
+                if (!_Key.empty()) _SideSketchByMemberKey.try_emplace(_Key, _Value);
+            }
         for (const auto& _ItemKey : _Output.ItemKeys)
         {
             const auto& _Item = FindModelItem(_Model, _ItemKey);
@@ -7806,7 +8388,19 @@ namespace
                 throw std::runtime_error("neutral model item has no manufacturing representation: " + _Item.Key);
             ++_Index;
             auto _ItemProperties = _Item.Properties;
+            if (!_Bindings.empty())
+            {
+                const auto _ExistingPlan = _ItemProperties.find("tubeDesigner.assemblyPlanning");
+                auto _AssemblyPlan = _ExistingPlan != _ItemProperties.end()
+                    && _ExistingPlan->second.Is<ObjectMap>()
+                    ? _ExistingPlan->second.To<ObjectMap>() : ObjectMap{};
+                _AssemblyPlan["ready"] = false;
+                _ItemProperties["tubeDesigner.assemblyPlanning"] = std::move(_AssemblyPlan);
+            }
             const auto _PartKind = ManufacturingPartKind(_ItemProperties);
+            if (const auto _StartAtMinX = ManufacturingSourceStartAtMinX(_ItemProperties))
+                _ItemProperties["manufacturing.sourceStartAtMinX"] = *_StartAtMinX;
+            _ItemProperties.erase("tubeDesigner.manufacturingStartToEnd");
             ObjectMap _TubeProfile;
             if (const auto _Profile = _ItemProperties.find("tubeDesigner.profile");
                 _Profile != _ItemProperties.end() && _Profile->second.Is<ObjectMap>())
@@ -7814,6 +8408,13 @@ namespace
                 _TubeProfile = ProfileSnapshotFromProfile(
                     _Profile->second.To<ObjectMap>(), "product-generation");
                 _ItemProperties.erase("tubeDesigner.profile");
+            }
+            if (const auto _Actual = _ProcessGeometry.Profiles.find(_Item.Key);
+                _Actual != _ProcessGeometry.Profiles.end()) {
+                auto _Profile = _Actual->second;
+                for (const auto* _Key : {"id", "kind", "displayName"})
+                    if (!_Profile.contains(_Key) && _TubeProfile.contains(_Key)) _Profile[_Key] = _TubeProfile.at(_Key);
+                _TubeProfile = ProfileSnapshotFromProfile(_Profile, "product-assembly-process");
             }
             if (_PartKind == "plate" || _PartKind == "glass")
             {
@@ -7856,28 +8457,44 @@ namespace
                 _ItemProperties["manufacturing.sourcing"] = std::string(
                     _PartKind == "accessory" || _PartKind == "glass" ? "purchased" : "made");
             const auto _MemberID = MakeStableEntityID(ProductID_, "member", _Item.Key);
-            const auto _Sketches = Product_.GetSketches();
-            if (const auto _SideSketches = _Sketches.find("side");
-                _SideSketches != _Sketches.end() && _SideSketches->second.Is<ObjectMap>())
-            {
-                const auto _Side = _SideSketches->second.To<ObjectMap>();
-                auto _Sketch = _Side.find(UuidToString(_MemberID));
-                if (_Sketch == _Side.end())
-                {
-                    _Sketch = std::find_if(_Side.begin(), _Side.end(), [&](const auto& Entry_) {
-                        return Entry_.second.Is<ObjectMap>()
-                            && GetString(Entry_.second.To<ObjectMap>(), "targetMemberKey") == _Item.Key;
-                    });
-                }
-                if (_Sketch != _Side.end() && _Sketch->second.Is<ObjectMap>())
-                {
-                    _ItemProperties["tubeDesigner.sideSketch"] = _Sketch->second;
-                }
-            }
+            const auto _DirectSketch = _Side.find(UuidToString(_MemberID));
+            const auto _KeySketch = _SideSketchByMemberKey.find(_Item.Key);
+            const auto* _Sketch = _DirectSketch != _Side.end()
+                ? (_DirectSketch->second.Is<ObjectMap>() ? &_DirectSketch->second : nullptr)
+                : _KeySketch != _SideSketchByMemberKey.end() ? &_KeySketch->second : nullptr;
+            if (_Sketch) _ItemProperties["tubeDesigner.sideSketch"] = *_Sketch;
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
                 + "/item/" + _Item.Key;
-            auto _ManufacturingShape = NormalizeManufacturingShape(
-                _Geometry.At(_Representation->second), _ItemProperties);
+            const auto& _SourceShape = _ProcessGeometry.Shapes.contains(_Item.Key)
+                ? _ProcessGeometry.Shapes.at(_Item.Key) : _Geometry.At(_Representation->second);
+            if (_ItemProperties.contains("tubeDesigner.manufacturingAxis")) ++_KnownAxisCount;
+            const bool _HasSideSketch = _ItemProperties.contains("tubeDesigner.sideSketch");
+            const auto _SameRotation = [](const TopoDS_Shape& Left_, const TopoDS_Shape& Right_) {
+                if (!Left_.IsPartner(Right_) || Left_.Orientation() != Right_.Orientation())
+                    return false;
+                const auto& _Left = Left_.Location().Transformation();
+                const auto& _Right = Right_.Location().Transformation();
+                for (int _Row = 1; _Row <= 3; ++_Row)
+                    for (int _Column = 1; _Column <= 3; ++_Column)
+                        if (std::abs(_Left.Value(_Row, _Column) - _Right.Value(_Row, _Column)) > 1.e-12)
+                            return false;
+                return true;
+            };
+            const auto _Prototype = !_HasSideSketch
+                ? std::find_if(_NormalizedPrototypes.begin(), _NormalizedPrototypes.end(),
+                    [&](const SNormalizedPrototype& Candidate_) {
+                        return Candidate_.Accessory == (_PartKind == "accessory")
+                            && _SameRotation(Candidate_.Source, _SourceShape);
+                    }) : _NormalizedPrototypes.end();
+            auto _ManufacturingShape = _ProcessGeometry.Shapes.contains(_Item.Key) ? _SourceShape
+                : _Prototype != _NormalizedPrototypes.end()
+                ? _Prototype->Normalized
+                : NormalizeManufacturingShape(_SourceShape, _ItemProperties);
+            _ItemProperties.erase("tubeDesigner.manufacturingAxis");
+            if (_Prototype != _NormalizedPrototypes.end()) ++_NormalizedReuseCount;
+            else if (!_HasSideSketch)
+                _NormalizedPrototypes.push_back({ _SourceShape, _ManufacturingShape,
+                    _PartKind == "accessory" });
             if (const auto _Sketch = _ItemProperties.find("tubeDesigner.sideSketch");
                 _Sketch != _ItemProperties.end() && _Sketch->second.Is<ObjectMap>())
             {
@@ -7894,9 +8511,42 @@ namespace
                 _ItemProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] =
                     static_cast<unsigned long long>(_Applied.OpenTrajectoryCount);
             }
+            _ManufacturingShape = ApplyFrozenAssemblyBindings(Scene_, _Bindings, _Item.Key, _ManufacturingShape);
+            if (!_Bindings.empty()) _ItemProperties["tubeDesigner.assemblyBindingsRevision"] = AssemblyBindingsRevision(_Bindings);
+            const bool _HasAssemblyCut = std::any_of(_Bindings.begin(), _Bindings.end(), [&](const auto& _Binding) {
+                const auto _Parts = _Binding.second.template To<ObjectMap>().at("parts").template To<VariantArray>();
+                return std::any_of(_Parts.begin(), _Parts.end(), [&](const auto& _Part) {
+                    return GetString(_Part.template To<ObjectMap>(), "itemKey") == _Item.Key;
+                });
+            });
+            if (_HasAssemblyCut)
+            {
+                const auto _FinalBounds = ShapeBounds(_ManufacturingShape);
+                _ItemProperties["length"] = ToDouble(_FinalBounds.at("max").To<VariantArray>()[0], "max.x")
+                    - ToDouble(_FinalBounds.at("min").To<VariantArray>()[0], "min.x");
+            }
+            if (_ProcessGeometry.Shapes.contains(_Item.Key)) {
+                const auto _MaterialBounds = ShapeBounds(_ManufacturingShape);
+                const auto _RawStockLength = GetDouble(_Item.Properties, "tubeDesigner.assemblyProcessStockLength",
+                    GetDouble(_Item.Properties, "length", 0));
+                _ItemProperties["manufacturing.rawStockLength"] = _RawStockLength;
+                _ItemProperties["manufacturing.materialDatum"] = ObjectMap{
+                    {"schema", std::string("icax.manufacturing-material-datum")}, {"schemaVersion", 1ull},
+                    {"axis", std::string("+X")}, {"rawStockLength", _RawStockLength},
+                    {"finishedBounds", _MaterialBounds}};
+                _ItemProperties["length"] = GetDouble(_MaterialBounds, "width", 0);
+            }
             if (_PartKind == "accessory") _ItemProperties["manufacturing.modelBounds"] = ShapeBounds(_ManufacturingShape);
-            _Conversions.push_back({ _ManufacturingShape, _PartNumber + " manufacturing",
-                Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing") });
+            // The frozen process BRep is already in the manufacturing frame.
+            // Rebuilding and converting it again can adjust vertex tolerances
+            // when restoring a runtime alias after project open.
+            if (!_HasSideSketch && !_HasAssemblyCut && _ProcessGeometry.Resources.contains(_Item.Key))
+                _SharedProcessResources.emplace(_Prepared.Parts.size(), _ProcessGeometry.Resources.at(_Item.Key));
+            else {
+                _ConversionPartIndices.push_back(_Prepared.Parts.size());
+                _Conversions.push_back({ _ManufacturingShape, _PartNumber + " manufacturing",
+                    Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing") });
+            }
             _Prepared.Parts.push_back({
                 _Index,
                 _Item.Key,
@@ -7907,31 +8557,49 @@ namespace
                  _ItemProperties,
                  _TubeProfile,
                  _MemberID,
-                MakeStableEntityID(ProductID_, "manufacturing-part", _Item.Key),
+                 MakeStableEntityID(ProductID_, "manufacturing-part", _Item.Key),
                 {},
                 {},
                 MakeStepFileName(_PartNumber)
             });
         }
-        if (!UpdatedParameters_ && _Prepared.Parts.size() != static_cast<std::size_t>(Run_.GetPartCount()))
+        if (_Prepared.Parts.size() != static_cast<std::size_t>(_ExpectedPartCount))
             throw std::runtime_error("stored neutral model export count does not match its generation run");
+        _Mark("prepare-parts");
+        if (_Profile)
+            std::fprintf(stderr, "Disassembly/normalized-prototypes unique=%zu reused=%zu knownAxis=%zu of %zu\n",
+                _NormalizedPrototypes.size(), _NormalizedReuseCount, _KnownAxisCount, _Output.ItemKeys.size());
         auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(_Conversions, 0.025);
+        _Mark("convert-brep");
+        for (std::size_t _ConversionIndex = 0; _ConversionIndex < _Conversions.size(); ++_ConversionIndex)
+        {
+            auto& _Part = _Prepared.Parts[_ConversionPartIndices[_ConversionIndex]];
+            const auto& _Input = _Conversions[_ConversionIndex];
+            _Part.ManufacturingResource = StorePreparedBRep(
+                Scene_, _Input.SourceID, _Input.DisplayName, std::move(_Converted[_ConversionIndex]));
+        }
         for (std::size_t _PartIndex = 0; _PartIndex < _Prepared.Parts.size(); ++_PartIndex)
         {
             auto& _Part = _Prepared.Parts[_PartIndex];
-            const auto& _Input = _Conversions[_PartIndex];
-            _Part.ManufacturingResource = StorePreparedBRep(
-                Scene_, _Input.SourceID, _Input.DisplayName, std::move(_Converted[_PartIndex]));
+            if (const auto _Shared = _SharedProcessResources.find(_PartIndex); _Shared != _SharedProcessResources.end()) {
+                const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
+                    + "/item/" + _Part.StableKey;
+                _Part.ManufacturingResource = StoreSharedPreparedBRep(Scene_,
+                    Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing"),
+                    _Part.PartNumber + " manufacturing", _Shared->second);
+            }
             _Part.ThumbnailResource = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_.Resources(), _Part.ManufacturingResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
         }
+        _Mark("store-and-mesh");
         return _Prepared;
     }
 
     SPreparedProductDisassembly PrepareProductDisassembly(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Project::ISceneContext& Scene_,
-        const iCAX::Data::uuid& ProductID_)
+        const iCAX::Data::uuid& ProductID_,
+        iCAX::Product::IProductContext* ProductContext_)
     {
         auto& _Repository = Scene_.Database();
         const auto _ProductEntity = _Repository.GetEntity(ProductID_);
@@ -7947,7 +8615,8 @@ namespace
         if (_Run->GetNeutralModel().empty())
             throw std::invalid_argument("legacy C++ template products are no longer supported");
         return PrepareNeutralModelDisassembly(
-            ApplicationContext_, Scene_, ProductID_, _GenerationRunID, *_Product, *_Run);
+            ApplicationContext_, Scene_, ProductID_, _GenerationRunID, *_Product, *_Run,
+            nullptr, nullptr, nullptr, false, ProductContext_);
     }
 
     void RestoreLinkedNestingParts(
@@ -7989,7 +8658,8 @@ namespace
                     return _Item.second->GetProductID() == _ProductID
                         && _Item.second->GetGenerationRunID() == _GenerationRunID;
                 });
-            if (_Run && _PersistedPartCount == static_cast<std::ptrdiff_t>(_Run->GetPartCount()))
+            if (_Run && _Run->GetPartCount() > 0
+                && _PersistedPartCount == static_cast<std::ptrdiff_t>(_Run->GetPartCount()))
                 continue;
             const auto _Available = std::find_if(
                 _PreparedProducts.begin(), _PreparedProducts.end(),
@@ -8044,8 +8714,21 @@ namespace
                     addReference(GetString(job, "resourceId"),
                         GetUInt64(job, "resourceVersion", 0));
                 }
-        for (const auto& [entity, part] : Collect<CManufacturingPartComponent>(db))
-            if (IsIndependentNestingPart(*part)) {
+        for (const auto& [entity, part] : Collect<CManufacturingPartComponent>(db)) {
+            bool persist = IsIndependentNestingPart(*part);
+            if (!persist) {
+                const auto run = GetComponent<CGenerationRunComponent>(db.GetEntity(part->GetGenerationRunID()));
+                if (run && run->GetProductID() == part->GetProductID()) {
+                    // All parts share this potentially large process graph.
+                    // Eligibility checks must not copy it once per part.
+                    const auto& document = !run->GetManufacturingModel().empty()
+                        ? run->GetManufacturingModel() : run->GetAssemblyManufacturingModel();
+                    if (const auto extensions = document.find("extensions");
+                        extensions != document.end() && extensions->second.Is<ObjectMap>())
+                        persist = std::get<ObjectMap>(extensions->second.m_Value).contains("tubeDesigner.assemblyGeometryProcesses");
+                }
+            }
+            if (persist) {
                 addReference(part->GetManufacturingGeometryResourceID(),
                     part->GetManufacturingGeometryResourceVersion());
                 // A side-sketch edit is always rebuilt from this immutable
@@ -8075,11 +8758,41 @@ namespace
                 if (const auto _Punch = GetComponent<CPunchWizardComponent>(entity))
                     if (!_Punch->GetDefinition().empty()) addConfigResources(_Punch->GetDefinition());
             }
+        }
         for (const auto& [entity, member] : Collect<CAssemblyMemberComponent>(db))
             addReference(GetString(
                 member->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"),
                 GetUInt64(member->GetItemProperties(),
                     "tubeDesigner.sideSketchBaseResourceVersion", 0));
+        for (const auto& [entity, product] : Collect<CProductInstanceComponent>(db))
+            CollectAssemblyBindingCutReferences(product->GetAssemblyBindings(), addReference);
+        for (const auto& [entity, run] : Collect<CGenerationRunComponent>(db))
+        {
+            CollectAssemblyBindingCutReferences(run->GetAppliedAssemblyBindings(), addReference);
+            const auto& _Document = !run->GetManufacturingModel().empty()
+                ? run->GetManufacturingModel() : run->GetAssemblyManufacturingModel();
+            if (_Document.empty()) continue;
+            const auto _Extensions = GetRequiredObject(_Document, "extensions");
+            const auto _Native = _Extensions.find("tubeDesigner.assemblyProcessNative");
+            if (_Native == _Extensions.end()) continue;
+            for (const auto& [_ID, _Value] : GetRequiredObject(_Native->second.To<ObjectMap>(), "stocks")) {
+                const auto _Stock = _Value.To<ObjectMap>();
+                for (const auto* _Name : {"baseGeometry", "processedGeometry"}) {
+                    const auto _Reference = GetRequiredObject(_Stock, _Name);
+                    addReference(GetString(_Reference, "url"), GetUInt64(_Reference, "version", 0));
+                }
+                const auto _AddCut = [&](const ObjectMap& _Data) {
+                    if (const auto _It = _Data.find("frozenCut"); _It != _Data.end()) {
+                        const auto _Reference = _It->second.To<ObjectMap>();
+                        addReference(GetString(_Reference, "url"), GetUInt64(_Reference, "version", 0));
+                    }
+                };
+                const auto _Request = GetRequiredObject(_Stock, "request");
+                for (const auto& _Feature : ReadPunchFeatures(_Request, "features")) _AddCut(_Feature.TemplateData);
+                const auto _Ends = ReadPunchEnds(_Request);
+                _AddCut(_Ends.Start.TemplateData); _AddCut(_Ends.End.TemplateData);
+            }
+        }
 
         // Only the exact BRep versions referenced by manufacturing state are
         // project roots. A product and a nesting part may share one immutable
@@ -8249,6 +8962,10 @@ namespace
         for (const auto& [productEntity, product] : Collect<CProductInstanceComponent>(db)) {
             const auto run = GetComponent<CGenerationRunComponent>(db.GetEntity(product->GetActiveGenerationRunID()));
             if (!run || run->GetNeutralModel().empty()) continue;
+            if (run->GetManufacturingModel().empty() && !run->GetAssemblyManufacturingModel().empty()) {
+                if (!run->SetManufacturingModel(run->GetAssemblyManufacturingModel()))
+                    throw std::runtime_error("Cannot restore frozen assembly manufacturing recipe");
+            }
             const auto savedModel = frozen.find(UuidToString(product->GetActiveGenerationRunID()));
             if (run->GetManufacturingModel().empty() && savedModel != frozen.end()) {
                 if (!run->SetManufacturingModel(savedModel->second.To<ObjectMap>())) throw std::runtime_error("Cannot restore manufacturing recipe");
@@ -8259,7 +8976,7 @@ namespace
                 if (member->GetProductID() == productEntity->GetID()
                     && !resources.Get<iCAX::GeometryData::BRepModel>(member->GetPreviewGeometryResourceID(), member->GetPreviewGeometryResourceVersion())) needsDisplay = true;
             if (needsDisplay) {
-                const auto model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(run->GetNeutralModel()));
+                const auto model = ParseGenerationDisplay(*run);
                 ValidateGenerationModelIdentity(model, *run);
                 const auto geometry = iCAX::OpenCascade::EvaluateNeutralModel(model);
                 for (const auto& [entity, member] : members) {
@@ -8296,7 +9013,9 @@ namespace
                 if (part->GetProductID() == productEntity->GetID() && part->GetGenerationRunID() == product->GetActiveGenerationRunID()
                     && !resources.Get<iCAX::GeometryData::BRepModel>(part->GetManufacturingGeometryResourceID(), part->GetManufacturingGeometryResourceVersion())) needsParts = true;
             if (needsParts) {
-                const auto prepared = PrepareProductDisassembly(application, scene, productEntity->GetID());
+                const auto prepared = PrepareNeutralModelDisassembly(application, scene,
+                    productEntity->GetID(), product->GetActiveGenerationRunID(), *product, *run,
+                    nullptr, nullptr, nullptr, true);
                 if (run->GetManufacturingModel().empty() && !run->SetManufacturingModel(prepared.ManufacturingModel))
                     throw std::runtime_error("Cannot cache manufacturing recipe");
                 for (const auto& [entity, part] : parts) {
@@ -8626,7 +9345,9 @@ namespace
                 {CManufacturingPartComponent::PropertyName_Role, PropertyValue(_Source.Role)},
                 {CManufacturingPartComponent::PropertyName_Length, PropertyValue(_Source.Length)},
                 {CManufacturingPartComponent::PropertyName_FileName, PropertyValue(_Source.FileName)},
-                {CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready"))}
+                {CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string(
+                    AssemblyPartAwaitingValidation(_Source.ItemProperties)
+                        ? "AwaitingAssemblyValidation" : "Ready"))}
             };
             auto _ItemProperties = _Source.ItemProperties;
             _ItemProperties.erase("nesting.source");
@@ -9166,15 +9887,17 @@ namespace
     }
 
     TopoDS_Shape RecoverManufacturingShapeFromGeneration(
-        iCAX::Database::IRepository& Repository_,
+        iCAX::Project::ISceneContext& Scene_,
         const CManufacturingPartComponent& Part_)
     {
+        auto& Repository_ = Scene_.Database();
         const auto _Run = GetComponent<CGenerationRunComponent>(
             Repository_.GetEntity(Part_.GetGenerationRunID()));
         if (!_Run || _Run->GetProductID() != Part_.GetProductID())
             throw std::runtime_error("generation run has no neutral model for BRep recovery");
-        const auto _Document = _Run->GetManufacturingModel().empty()
-            ? _Run->GetNeutralModel() : _Run->GetManufacturingModel();
+        const auto _Document = !_Run->GetManufacturingModel().empty() ? _Run->GetManufacturingModel()
+            : !_Run->GetAssemblyManufacturingModel().empty() ? _Run->GetAssemblyManufacturingModel()
+            : _Run->GetNeutralModel();
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
             Variant(_Document));
         ValidateGenerationModelIdentity(_Model, *_Run);
@@ -9190,9 +9913,20 @@ namespace
         const auto _Representation = _Item.Representations.find(_Output.Purpose);
         if (_Representation == _Item.Representations.end())
             throw std::runtime_error("manufacturing item has no result representation");
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(
-            _Model, { _Representation->second });
-        return NormalizeManufacturingShape(_Geometry.At(_Representation->second), _Item.Properties);
+        auto _Shape = RecoverProductAssemblyProcessShape(_Model, Part_.GetStableKey(), Scene_);
+        if (_Shape.IsNull()) {
+            const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model, { _Representation->second });
+            _Shape = NormalizeManufacturingShape(_Geometry.At(_Representation->second), _Item.Properties);
+        }
+        const auto _Properties = Part_.GetItemProperties();
+        if (const auto _Sketch = _Properties.find("tubeDesigner.sideSketch");
+            _Sketch != _Properties.end() && _Sketch->second.Is<ObjectMap>())
+        {
+            const auto _Applied = ApplyTubeSideSketch(_Shape, _Sketch->second.To<ObjectMap>());
+            if (!_Applied.bOK || _Applied.Shape.IsNull()) throw std::runtime_error("无法恢复零件侧面草图");
+            _Shape = _Applied.Shape;
+        }
+        return ApplyFrozenAssemblyBindings(Scene_, _Run->GetAppliedAssemblyBindings(), Part_.GetStableKey(), _Shape);
     }
 
     iCAX::Interaction::CInvocationResult HandleReleaseTransientParts(
@@ -9217,13 +9951,28 @@ namespace
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_, false)));
     }
 
-    iCAX::Interaction::CInvocationResult HandleDisassemble(
+    iCAX::Interaction::CInvocationResult DisassembleProducts(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*,
-        iCAX::Project::ISceneContext* Scene_)
+        iCAX::Project::ISceneContext* Scene_,
+        const std::map<iCAX::Data::uuid, ObjectMap>* AssemblyUpdates_ = nullptr)
     {
+        char* _ProfileEnv = nullptr;
+        std::size_t _ProfileEnvLength = 0;
+        (void)_dupenv_s(&_ProfileEnv, &_ProfileEnvLength, "ICAX_PROFILE_DISASSEMBLY");
+        const bool _Profile = _ProfileEnv != nullptr;
+        std::free(_ProfileEnv);
+        auto _ProfileLast = std::chrono::steady_clock::now();
+        const auto _Mark = [&](const char* Phase_) {
+            if (!_Profile) return;
+            const auto _Now = std::chrono::steady_clock::now();
+            std::fprintf(stderr, "Disassembly/%s %.3f s\n", Phase_,
+                std::chrono::duration<double>(_Now - _ProfileLast).count());
+            std::fflush(stderr);
+            _ProfileLast = _Now;
+        };
         if (!Scene_) throw std::invalid_argument("TubeDesigner.Disassemble requires a scene");
         tube::license::Enforce<201, tube::license::Feature::Breakdown>();
         const auto _Payload = DecodeObjectPayload(Request_);
@@ -9283,9 +10032,10 @@ namespace
         for (const auto& _ProductID : _ProductIDs)
         {
             const auto _Update = _ParameterUpdates.find(_ProductID);
-            if (_Update == _ParameterUpdates.end())
+            if (_Update == _ParameterUpdates.end()
+                && (!AssemblyUpdates_ || !AssemblyUpdates_->contains(_ProductID)))
                 _PreparedProducts.push_back(
-                    PrepareProductDisassembly(ApplicationContext_, *Scene_, _ProductID));
+                    PrepareProductDisassembly(ApplicationContext_, *Scene_, _ProductID, ProductContext_));
             else
             {
                 auto& _Repository = Scene_->Database();
@@ -9298,39 +10048,91 @@ namespace
                 if (!_Run) throw std::runtime_error("TubeDesigner product generation run does not exist");
                 _PreparedProducts.push_back(PrepareNeutralModelDisassembly(
                     ApplicationContext_, *Scene_, _ProductID, _GenerationRunID,
-                    *_Product, *_Run, &_Update->second, _ComponentStore.get()));
+                    *_Product, *_Run, _Update == _ParameterUpdates.end() ? nullptr : &_Update->second,
+                    _ComponentStore.get(), AssemblyUpdates_ && AssemblyUpdates_->contains(_ProductID)
+                        ? &AssemblyUpdates_->at(_ProductID) : nullptr, false, ProductContext_));
             }
         }
+        _Mark("prepare-products");
 
         auto _Undo = _Repository.BeginUndoCommand("Disassemble TubeDesigner product instances");
         auto& _Transaction = _Repository.BeginTransaction("Create TubeDesigner manufacturing groups");
         bool _CommitStarted = false;
         try
         {
+            const auto _ExistingParts = Collect<CManufacturingPartComponent>(_Repository);
             for (const auto& _PreparedProduct : _PreparedProducts)
             {
+                if (AssemblyUpdates_ && AssemblyUpdates_->contains(_PreparedProduct.ProductID))
+                    _Transaction.ModifyComponent(_PreparedProduct.ProductID, CProductInstanceComponent::S_ClassName,
+                        {{CProductInstanceComponent::PropertyName_AssemblyBindings,
+                            PropertyValue(_PreparedProduct.AssemblyBindings)}});
                 if (_PreparedProduct.UpdatesProductParameters)
                     _Transaction.ModifyComponent(
                         _PreparedProduct.ProductID, CProductInstanceComponent::S_ClassName, {
                             { CProductInstanceComponent::PropertyName_Parameters,
                                 PropertyValue(_PreparedProduct.ProductParameters) }
                         });
+                const auto _ExtensionsIt = _PreparedProduct.ManufacturingModel.find("extensions");
+                const auto _ManufacturingExtensions =
+                    _ExtensionsIt != _PreparedProduct.ManufacturingModel.end()
+                        && _ExtensionsIt->second.Is<ObjectMap>()
+                    ? _ExtensionsIt->second.To<ObjectMap>() : ObjectMap();
+                const auto _VerifiedParameterKeys = _ManufacturingExtensions.find(
+                    kValidatedManufacturingOnlyParameterKeys);
+                const auto _CommittedRun = GetComponent<CGenerationRunComponent>(
+                    _Repository.GetEntity(_PreparedProduct.GenerationRunID));
+                const bool _FreezeManufacturingRecipe = (_CommittedRun
+                    && GetString(_CommittedRun->GetNeutralModel(), "schema") == "icax.display-model")
+                    || !_PreparedProduct.ManufacturingDefinition.empty()
+                    || !_PreparedProduct.AssemblyBindings.empty()
+                    || _ManufacturingExtensions.contains("tubeDesigner.assemblyProcessNative")
+                    || _ManufacturingExtensions.contains("tubeDesigner.assemblyGeometryProcesses")
+                    || (_VerifiedParameterKeys != _ManufacturingExtensions.end()
+                        && _VerifiedParameterKeys->second.Is<VariantArray>()
+                        && !_VerifiedParameterKeys->second.To<VariantArray>().empty());
                 _Transaction.ModifyComponent(
                     _PreparedProduct.GenerationRunID, CGenerationRunComponent::S_ClassName, {
                         { CGenerationRunComponent::PropertyName_ManufacturingModel,
                             PropertyValue(_PreparedProduct.ManufacturingModel) },
+                        { CGenerationRunComponent::PropertyName_ManufacturingDefinition,
+                            PropertyValue(_PreparedProduct.ManufacturingDefinition) },
+                        { CGenerationRunComponent::PropertyName_ManufacturingParameters,
+                            PropertyValue(_PreparedProduct.ManufacturingParameters) },
+                        { CGenerationRunComponent::PropertyName_AppliedAssemblyBindings,
+                            PropertyValue(_PreparedProduct.AssemblyBindings) },
+                        { CGenerationRunComponent::PropertyName_AssemblyManufacturingModel,
+                            // This is the host's frozen execution recipe,
+                            // separate from the pure manufacturing definition.
+                            PropertyValue(_FreezeManufacturingRecipe
+                                ? _PreparedProduct.ManufacturingModel : ObjectMap{}) },
                         { CGenerationRunComponent::PropertyName_PartCount,
                             PropertyValue(static_cast<unsigned long long>(_PreparedProduct.Parts.size())) }
                     });
-                std::vector<iCAX::Data::uuid> _DesiredPartIDs;
-                _DesiredPartIDs.reserve(_PreparedProduct.Parts.size());
+                std::set<iCAX::Data::uuid> _DesiredPartIDs;
+                std::map<iCAX::Data::uuid, std::pair<std::size_t, iCAX::Data::uuid>> _PartsByMember;
                 for (const auto& _Prepared : _PreparedProduct.Parts)
-                    _DesiredPartIDs.push_back(_Prepared.PartID);
-                for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(_Repository))
+                {
+                    _DesiredPartIDs.insert(_Prepared.PartID);
+                    const auto _Sources = _Prepared.ItemProperties.find("manufacturing.sourceMembers");
+                    if (_Sources != _Prepared.ItemProperties.end())
+                        for (const auto& _Value : _Sources->second.To<VariantArray>()) {
+                            const auto _MemberID = MakeStableEntityID(_PreparedProduct.ProductID, "member",
+                                GetRequiredText(_Value.To<ObjectMap>(), "itemKey"));
+                            if (!GetComponent<CAssemblyMemberComponent>(_Repository.GetEntity(_MemberID)))
+                                throw std::runtime_error("产品母材映射引用不存在的成品构件");
+                            auto& _Membership = _PartsByMember[_MemberID];
+                            ++_Membership.first; _Membership.second = _Prepared.PartID;
+                        }
+                    else {
+                        auto& _Membership = _PartsByMember[_Prepared.MemberID];
+                        ++_Membership.first; _Membership.second = _Prepared.PartID;
+                    }
+                }
+                for (const auto& [_Entity, _Part] : _ExistingParts)
                 {
                     if (_Part->GetProductID() == _PreparedProduct.ProductID
-                        && std::find(_DesiredPartIDs.begin(), _DesiredPartIDs.end(), _Entity->GetID())
-                            == _DesiredPartIDs.end())
+                        && !_DesiredPartIDs.contains(_Entity->GetID()))
                         _Transaction.DisposeEntity(_Entity->GetID());
                 }
                 for (const auto& _Prepared : _PreparedProduct.Parts)
@@ -9355,7 +10157,9 @@ namespace
                             { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID, PropertyValue(_Prepared.ThumbnailResource.URL) },
                             { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion, PropertyValue(_Prepared.ThumbnailResource.nVersion) },
                             { CManufacturingPartComponent::PropertyName_FileName, PropertyValue(_Prepared.FileName) },
-                            { CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready")) },
+                            { CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string(
+                                AssemblyPartAwaitingValidation(_Prepared.ItemProperties)
+                                    ? "AwaitingAssemblyValidation" : "Ready")) },
                             { CManufacturingPartComponent::PropertyName_ItemProperties, PropertyValue(_Prepared.ItemProperties) }
                         });
                     if (!_Prepared.TubeProfile.empty())
@@ -9363,21 +10167,23 @@ namespace
                             _Transaction, _ExistingPart, _Prepared.PartID,
                             CTubeProfileComponent::S_ClassName,
                             TubeProfileComponentPropertiesFromSnapshot(_Prepared.TubeProfile));
-                    const auto _Member = _Repository.GetEntity(_Prepared.MemberID);
-                    if (_Member && _Member->HasComponent(CAssemblyMemberComponent::S_ClassName))
-                    {
-                        _Transaction.ModifyComponent(
-                            _Prepared.MemberID, CAssemblyMemberComponent::S_ClassName, {
-                                { CAssemblyMemberComponent::PropertyName_ManufacturingPartID, PropertyValue(
-                                    std::count_if(
-                                        _PreparedProduct.Parts.begin(), _PreparedProduct.Parts.end(),
-                                        [&_Prepared](const auto& Item_) {
-                                            return Item_.MemberID == _Prepared.MemberID;
-                                        }) == 1
-                                        ? _Prepared.PartID
-                                        : iCAX::Data::uuid()) }
+                }
+                for (const auto& [_MemberEntity, _Member] : Collect<CAssemblyMemberComponent>(_Repository))
+                {
+                    if (_Member->GetProductID() != _PreparedProduct.ProductID) continue;
+                    const auto _Membership = _PartsByMember.find(_MemberEntity->GetID());
+                    const auto _PartID = _Membership != _PartsByMember.end()
+                        && _Membership->second.first == 1
+                        ? _Membership->second.second : iCAX::Data::uuid();
+                    // A continuous stock item may replace several displayed
+                    // members. Clear their obsolete part links in the same
+                    // transaction that removes those manufacturing entities.
+                    if (_Member->GetManufacturingPartID() != _PartID)
+                        _Transaction.ModifyComponent(_MemberEntity->GetID(),
+                            CAssemblyMemberComponent::S_ClassName, {
+                                { CAssemblyMemberComponent::PropertyName_ManufacturingPartID,
+                                    PropertyValue(_PartID) }
                             });
-                    }
                 }
             }
 
@@ -9397,12 +10203,34 @@ namespace
             throw;
         }
         _Undo->End();
+        _Mark("commit");
         std::set<std::string> _PersistedPartIDs;
         for (const auto& _PreparedProduct : _PreparedProducts)
             for (const auto& _Part : _PreparedProduct.Parts)
                 _PersistedPartIDs.insert(UuidToString(_Part.PartID));
         ReleaseTransientParts(*Scene_, _PersistedPartIDs);
-        return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
+        if (AssemblyUpdates_ || std::any_of(_PreparedProducts.begin(), _PreparedProducts.end(),
+            [](const auto& p) {
+                if (!p.AssemblyBindings.empty()) return true;
+                const auto extensions = p.ManufacturingModel.find("extensions");
+                return extensions != p.ManufacturingModel.end() && extensions->second.Is<ObjectMap>()
+                    && extensions->second.To<ObjectMap>().contains("tubeDesigner.assemblyGeometryProcesses");
+            })) SyncNestingPersistence(*Scene_);
+        auto _Snapshot = BuildSnapshot(*Scene_, ApplicationContext_);
+        _Mark("snapshot");
+        auto _Response = MakeResponse(Variant(std::move(_Snapshot)));
+        _Mark("serialize-response");
+        return _Response;
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDisassemble(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext* ProjectContext_,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        return DisassembleProducts(Request_, ApplicationContext_, ProductContext_, ProjectContext_, Scene_);
     }
 
     iCAX::Interaction::CInvocationResult HandleMeasurePartGeometry(
@@ -9476,7 +10304,7 @@ namespace
                 if (_Part)
                 {
                     _FinalShape = RecoverManufacturingShapeFromGeneration(
-                        _Repository, *_Part);
+                        *Scene_, *_Part);
                     _RecoveredFromGeneration = !_FinalShape.IsNull();
                 }
             }
@@ -9588,7 +10416,7 @@ namespace
         if (!_Rebuilt.bOK || _Shape.IsNull())
         {
             if (_Part)
-                _Shape = RecoverManufacturingShapeFromGeneration(_Repository, *_Part);
+                _Shape = RecoverManufacturingShapeFromGeneration(*Scene_, *_Part);
             if (_Shape.IsNull())
                 throw std::runtime_error("无法读取最终零件几何以生成二维展开");
         }
@@ -9655,6 +10483,10 @@ namespace
         return MakeResponse(std::move(_Response));
     }
 
+#include "ProductAssemblyFitChecks.inc"
+#include "ProductAssemblyConnections.inc"
+#include "ProductAssemblyBindings.inc"
+
     iCAX::Interaction::CInvocationResult HandleGetAssemblyTemplates(
         const iCAX::Interaction::CInvocation&,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -9674,6 +10506,28 @@ namespace
     {
         auto _Parameters = DecodeObjectPayload(Request_);
         _Parameters["action"] = std::string("preview-plan");
+        return MakeResponse(InvokeAssemblyTemplateRuntime(ApplicationContext_, _Parameters));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleCheckAssemblyTemplateApplicability(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        auto _Parameters = DecodeObjectPayload(Request_);
+        _Parameters["action"] = std::string("check-applicability");
+        return MakeResponse(InvokeAssemblyTemplateRuntime(ApplicationContext_, _Parameters));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleGetAssemblyTemplateExampleProduct(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        auto _Parameters = DecodeObjectPayload(Request_);
+        _Parameters["action"] = std::string("example-product");
         return MakeResponse(InvokeAssemblyTemplateRuntime(ApplicationContext_, _Parameters));
     }
 
@@ -9848,8 +10702,167 @@ namespace
         if(Payload_.contains("drawing"))return GetRequiredObject(GetRequiredObject(ReadPartDrawing(Payload_),"section"),"profile");
         ObjectMap _Parameters;
         if(Payload_.contains("parameters"))_Parameters=GetRequiredObject(Payload_,"parameters");
-        return ResolveProfileSnapshot(ApplicationContext_,*GetUserDataStore(ProductContext_),ParseProfileReference(Payload_),_Parameters);
+        const auto _Reference = ParseProfileReference(Payload_);
+        if (_Reference.Scope == "system") {
+            auto _Profile = EvaluateSystemProfile(ApplicationContext_, _Reference.ID, _Parameters);
+            _Profile["profileScope"] = std::string("system");
+            _Profile["profileDefinitionId"] = _Reference.ID;
+            return _Profile;
+        }
+        return ResolveProfileSnapshot(ApplicationContext_,*GetUserDataStore(ProductContext_),_Reference,_Parameters);
     }
+
+    iCAX::Interaction::CInvocationResult PreviewAssemblyManufacturingPartInFrame(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext* Scene_,
+        const gp_Trsf& DocumentToStock_)
+    {
+        if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
+            throw std::invalid_argument("装配下料预览请求无效");
+        const auto _Started = std::chrono::steady_clock::now();
+        const auto _Milliseconds = [](const auto& Start_) {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start_).count();
+        };
+        ObjectMap _PerformanceMs{{"profile", 0.0}, {"blank", 0.0}, {"sectionAnalysis", 0.0},
+            {"punchPrepare", 0.0}, {"punchGeometry", 0.0}, {"brepStore", 0.0}, {"mesh", 0.0}, {"total", 0.0}};
+        const auto _Payload = DecodeObjectPayload(Request_);
+        if (!GetString(_Payload, "partEntityId").empty())
+            throw std::invalid_argument("装配下料预览须提供独立制造请求");
+        const auto _ResourceKey = GetString(_Payload, "previewResourceKey", "part");
+        if (_ResourceKey.empty() || _ResourceKey.size() > 96
+            || !std::ranges::all_of(_ResourceKey, [](unsigned char Character_) {
+                return (Character_ >= 'a' && Character_ <= 'z')
+                    || (Character_ >= 'A' && Character_ <= 'Z')
+                    || (Character_ >= '0' && Character_ <= '9')
+                    || Character_ == '-' || Character_ == '_';
+            })) throw std::invalid_argument("装配预览资源标识无效");
+
+        const auto _ProfileStart = std::chrono::steady_clock::now();
+        const auto _Drawing = _Payload.contains("drawing") ? ReadPartDrawing(_Payload) : ObjectMap();
+        const double _Length = GetDouble(_Drawing.empty() ? _Payload : _Drawing, "length", 0);
+        if (!std::isfinite(_Length) || _Length < 1 || _Length > 100000)
+            throw std::invalid_argument("长度须为 1 至 100000 mm");
+        std::map<std::string, ObjectMap> _ProfileCache;
+        const auto _ResolveProfile = [&](const ObjectMap& Source_) {
+            const auto _Reference = ParseProfileReference(Source_);
+            const auto _Parameters = Source_.contains("parameters")
+                ? GetRequiredObject(Source_, "parameters") : ObjectMap();
+            const auto _CacheKey = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(ObjectMap{
+                {"profileRef", GetRequiredObject(Source_, "profileRef")}, {"parameters", _Parameters}
+            }));
+            if (const auto _Found = _ProfileCache.find(_CacheKey); _Found != _ProfileCache.end())
+                return _Found->second;
+            ObjectMap _Resolved;
+            if (_Reference.Scope == "system") {
+                _Resolved = EvaluateSystemProfile(ApplicationContext_, _Reference.ID, _Parameters);
+                _Resolved["profileScope"] = std::string("system");
+                _Resolved["profileDefinitionId"] = _Reference.ID;
+            } else _Resolved = ResolveProfileSnapshot(ApplicationContext_,
+                *GetUserDataStore(ProductContext_), _Reference, _Parameters);
+            _ProfileCache.emplace(_CacheKey, _Resolved);
+            return _Resolved;
+        };
+        ObjectMap _Profile;
+        if (!_Drawing.empty())
+            _Profile = GetRequiredObject(GetRequiredObject(_Drawing, "section"), "profile");
+        else _Profile = _ResolveProfile(_Payload);
+        const auto _ResolveSection = [&](ObjectMap Item_) {
+            if (!Item_.contains("section")) return Item_;
+            auto _Section = GetRequiredObject(Item_, "section");
+            if (!_Section.contains("profile") && _Section.contains("profileRef")) {
+                _Section["profile"] = _ResolveProfile(_Section);
+                Item_["section"] = std::move(_Section);
+            }
+            return Item_;
+        };
+        auto _ManufacturingPayload = _Payload;
+        if (_Payload.contains("features")) {
+            auto _Items = _Payload.at("features").To<VariantArray>();
+            for (auto& _Value : _Items) {
+                const auto _Item = _Value.To<ObjectMap>();
+                const auto _Enabled = _Item.find("enabled");
+                if (_Enabled != _Item.end() && _Enabled->second.Is<bool>() && !_Enabled->second.To<bool>()) continue;
+                _Value = _ResolveSection(_Item);
+            }
+            _ManufacturingPayload["features"] = std::move(_Items);
+        }
+        if (_Payload.contains("ends")) {
+            auto _Items = GetRequiredObject(_Payload, "ends");
+            for (auto& [_Key, _Value] : _Items) {
+                const auto _Item = _Value.To<ObjectMap>();
+                if (GetString(_Item, "type", "keep") == "keep" && !_Item.contains("toolRef")) continue;
+                _Value = _ResolveSection(_Item);
+            }
+            _ManufacturingPayload["ends"] = std::move(_Items);
+        }
+        const auto _UserTools = ProductContext_
+            ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
+        _PerformanceMs["profile"] = _Milliseconds(_ProfileStart);
+
+        const auto _BlankStart = std::chrono::steady_clock::now();
+        const auto _Base = BuildPunchBlank(_Profile, _Length);
+        _PerformanceMs["blank"] = _Milliseconds(_BlankStart);
+        auto _Features = ReadPunchFeatures(_ManufacturingPayload, "features");
+        auto _Ends = ReadPunchEnds(_ManufacturingPayload);
+        SPunchGeometryStatistics _Statistics;
+        SPunchPreviewDiagnostics _Diagnostics;
+        // This entry point always computes a real, valid, single-solid part.
+        // A legacy diagnosticBooleanPreview flag cannot relax its contract.
+        _Diagnostics.AllowDisconnectedResults = false;
+        TopoDS_Shape _Shape;
+        const bool _PlainBlank = _Features.empty() && _Ends.Start.Type == "keep" && _Ends.End.Type == "keep"
+            && _Ends.Start.TemplateData.empty() && _Ends.End.TemplateData.empty();
+        if (_PlainBlank) {
+            const auto _GeometryStart = std::chrono::steady_clock::now();
+            _Shape = iCAX::Tasks::Run([&] {
+                return BuildPunchGeometry(_Base, _Features, _Ends, {}, nullptr, &_Statistics, &_Diagnostics);
+            }, iCAX::OpenCascade::detail::GeometryTaskScheduler()).Result();
+            _PerformanceMs["punchGeometry"] = _Milliseconds(_GeometryStart);
+        } else _Shape = EvaluatePunch(_Base, _Profile, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
+            {}, false, nullptr, &_Statistics, &_Diagnostics, false, 0, _UserTools,
+            EPunchEvaluationPurpose::AssemblyManufacturingPreview, &_PerformanceMs);
+        _Shape = ApplyAssemblyNeutralOperations(_Shape, _ManufacturingPayload, DocumentToStock_);
+        if (!_Diagnostics.ResultComputed || _Shape.IsNull())
+            throw std::runtime_error("装配下料未生成有效的单实体零件");
+        std::size_t _ProcessedSolids=0;
+        for (TopExp_Explorer _It(_Shape,TopAbs_SOLID);_It.More();_It.Next()) ++_ProcessedSolids;
+        if (_ProcessedSolids!=1) throw std::runtime_error("装配下料必须为单实体零件");
+
+        const auto _Bounds = ShapeBounds(_Shape);
+        const auto _StoreStart = std::chrono::steady_clock::now();
+        const auto _Resource = StorePunchBRep(*Scene_, "tube-designer/assembly-manufacturing-preview/" + _ResourceKey,
+            "装配下料预览（未保存）", _Shape, Request_, true);
+        _PerformanceMs["brepStore"] = _Milliseconds(_StoreStart);
+        const auto _MeshStart = std::chrono::steady_clock::now();
+        const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        const auto _Material = EnsurePunchPreviewBlankMaterial(*Scene_);
+        _PerformanceMs["mesh"] = _Milliseconds(_MeshStart);
+        _PerformanceMs["total"] = _Milliseconds(_Started);
+        return MakeResponse(ObjectMap{
+            {"geometry", ObjectMap{{"url", _Mesh.URL}, {"version", _Mesh.nVersion}}},
+            {"material", ObjectMap{{"url", _Material.URL}, {"version", _Material.nVersion}}},
+            {"bounds", _Bounds}, {"length", GetDouble(_Bounds, "width", 0)},
+            {"resultValid", true}, {"previewComputed", true}, {"solidCount", 1ull},
+            {"performanceMs", std::move(_PerformanceMs)}
+        });
+    }
+
+    iCAX::Interaction::CInvocationResult HandlePreviewAssemblyManufacturingPart(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext* ProjectContext_, iCAX::Project::ISceneContext* Scene_)
+    {
+        return PreviewAssemblyManufacturingPartInFrame(Request_, ApplicationContext_,
+            ProductContext_, ProjectContext_, Scene_, gp_Trsf());
+    }
+
+    #include "AssemblyNeutralGeometryOperations.inc"
+    #include "ProductAssemblyProcessPlan.inc"
+    #include "ProductGeneratedAssemblyProcess.inc"
 
     iCAX::Interaction::CInvocationResult PreviewEditableDrawingTools(
         const iCAX::Interaction::CInvocation& Request_,
@@ -9863,7 +10876,19 @@ namespace
         // reserved for native regression probes, never emitted by product UI.
         const auto _DiagnosticFlag=_Payload.find("diagnosticBooleanPreview");
         const bool _ToolsOnly=PartDrawing_||_DiagnosticFlag==_Payload.end()||!_DiagnosticFlag->second.Is<bool>()||!_DiagnosticFlag->second.To<bool>();
-        const std::string _PreviewPrefix=PartDrawing_?"tube-designer/part-drawing-preview":"tube-designer/punch-preview";
+        std::string _PreviewPrefix=PartDrawing_?"tube-designer/part-drawing-preview":"tube-designer/punch-preview";
+        if(const auto _Key=_Payload.find("previewResourceKey");_Key!=_Payload.end()) {
+            if(PartDrawing_ || !_Key->second.Is<std::string>())
+                throw std::invalid_argument("装配预览资源标识无效");
+            const auto& _Value=_Key->second.To<std::string>();
+            const auto _Safe=[](unsigned char value) {
+                return (value>='a'&&value<='z')||(value>='A'&&value<='Z')
+                    ||(value>='0'&&value<='9')||value=='-'||value=='_';
+            };
+            if(_Value.empty()||_Value.size()>96||!std::all_of(_Value.begin(),_Value.end(),_Safe))
+                throw std::invalid_argument("装配预览资源标识无效");
+            _PreviewPrefix+="/assembly/"+_Value;
+        }
         TopoDS_Shape _Base;
         ObjectMap _TargetSection;
         ObjectMap _Original;
@@ -9909,6 +10934,13 @@ namespace
         }
         auto _Features = ReadPunchFeatures(_Payload, "features");
         auto _Ends = ReadPunchEnds(_Payload);
+        // Assembly design members (and unprocessed blanks) have no tool
+        // resolution to perform.  Keep the normal geometry validation, but
+        // avoid analysing the section and invoking the Python tool runtime.
+        const bool _PlainAssemblyBlank = _Payload.contains("previewResourceKey")
+            && _Features.empty() && _Ends.Start.Type == "keep" && _Ends.End.Type == "keep"
+            && _Ends.Start.TemplateData.empty() && _Ends.End.TemplateData.empty()
+            && _Original.empty() && !_Rebased;
         std::vector<SPunchCut> _PreviewCuts;
         SPunchGeometryStatistics _Statistics;
         SPunchPreviewDiagnostics _Diagnostics;
@@ -9918,8 +10950,14 @@ namespace
         TopoDS_Shape _Shape;
         std::string _ResultError;
         try {
-            _Shape = EvaluatePunch(_Base, _TargetSection, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
-                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools);
+            if (_PlainAssemblyBlank && !_ToolsOnly)
+                _Shape = BuildPunchGeometry(_Base, _Features, _Ends, {}, &_PreviewCuts, &_Statistics, &_Diagnostics);
+            else if (_PlainAssemblyBlank) {
+                _Shape = _Base;
+                _Diagnostics.ToolsComplete = true;
+            } else
+                _Shape = EvaluatePunch(_Base, _TargetSection, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
+                    _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools);
         } catch(const std::exception& _Error) {
             // A failed boolean result is not a successful part. Preview alone
             // publishes its current blank/tools so the user can see what failed;
@@ -9955,9 +10993,16 @@ namespace
         _Response["sectionAnalyses"]=_SectionAnalyses;
         if(!_ToolsOnly){_Response["resultValid"]=_ResultValid;_Response["previewComputed"]=_PreviewComputed;}
         if(_HasResultGeometry) {
-            const auto _Resource=StorePunchBRep(*Scene_,_PreviewPrefix,"加工预览（未保存）",_Shape,Request_,true);
-            const auto _Mesh=iCAX::RenderInteraction::EnsureFrontendGeometryResource(Scene_->Resources(),_Resource.URL,iCAX::Render::ERenderGeometryKind::Mesh);
-            _Response["geometry"]=ObjectMap{{"url",_Mesh.URL},{"version",_Mesh.nVersion}};
+            // No-tool assembly geometry is exactly the original blank.  Reuse
+            // the already converted mesh instead of converting/storing it a
+            // second time under a different resource name.
+            if (_PlainAssemblyBlank)
+                _Response["geometry"] = _Response.at("baseGeometry");
+            else {
+                const auto _Resource=StorePunchBRep(*Scene_,_PreviewPrefix,"加工预览（未保存）",_Shape,Request_,true);
+                const auto _Mesh=iCAX::RenderInteraction::EnsureFrontendGeometryResource(Scene_->Resources(),_Resource.URL,iCAX::Render::ERenderGeometryKind::Mesh);
+                _Response["geometry"]=ObjectMap{{"url",_Mesh.URL},{"version",_Mesh.nVersion}};
+            }
         }
         if(!_ToolsOnly&&_PreviewComputed) {
             _Response["solidCount"]=static_cast<unsigned long long>(_Diagnostics.SolidCount);
@@ -10473,6 +11518,13 @@ namespace
             { "ends", PunchEndsSnapshot(_Ends) },
             { "features", std::move(_SavedFeatures) },
         };
+        if (const auto _Origin = _ExistingConfig.find("blankOrigin"); _Origin != _ExistingConfig.end())
+            _PunchConfig["blankOrigin"] = _Origin->second;
+        // Keep the plan's recorded geometry identity unchanged when a user
+        // edits this part directly.  A later plan update can then detect the
+        // independent edit instead of silently overwriting it.
+        if (const auto _Plan = _ExistingConfig.find("assemblyProcessPlan"); _Plan != _ExistingConfig.end())
+            _PunchConfig["assemblyProcessPlan"] = _Plan->second;
         auto _UpdatedProperties = _Properties;
         iCAX::Data::PropertySet _TubeProfileChanges;
         if(!_Drawing.empty()) {
@@ -10563,6 +11615,8 @@ namespace
         _Undo->End();
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
     }
+
+    #include "ProductAssemblyProcessCommit.inc"
 
     iCAX::Interaction::CInvocationResult HandlePreviewPunchWizard(const iCAX::Interaction::CInvocation& r,
         const iCAX::Application::IApplicationContext& a,iCAX::Product::IProductContext* p,iCAX::Project::IProjectContext* j,iCAX::Project::ISceneContext* s)
@@ -10866,6 +11920,12 @@ namespace
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _TargetDirectory = GetString(_Payload, "targetDirectory");
         const auto _ExpectedGenerationRunID = GetString(_Payload, "generationRunId");
+        const auto _DraftFlag = _Payload.find("allowUnverifiedDraft");
+        if (_DraftFlag != _Payload.end() && !_DraftFlag->second.Is<bool>())
+            throw std::invalid_argument("allowUnverifiedDraft must be a boolean");
+        const bool _AllowDraft = _DraftFlag != _Payload.end()
+            && _DraftFlag->second.To<bool>();
+        bool _DraftOnly = false;
         std::set<std::string> _SelectedPartIDs;
         const auto _Selection = _Payload.find("partEntityIds");
         const auto _HasSelection = _Selection != _Payload.end();
@@ -10897,6 +11957,14 @@ namespace
         }
         if (_HasTransientSelection)
         {
+            for (const auto& _Prepared : _TransientDisassembly)
+                for (const auto& _Part : _Prepared.Parts)
+                    if ((!_HasSelection || _SelectedPartIDs.contains(UuidToString(_Part.PartID)))
+                        && AssemblyPartAwaitingValidation(_Part.ItemProperties))
+                        _DraftOnly = true;
+            if (_DraftOnly && !_AllowDraft)
+                throw std::invalid_argument(
+                    "装配工艺尚未完成整件配合验证，不能作为生产下料导出");
             const auto _Result = ExportTransientDisassembly(
                 Request_, *Scene_, _TransientDisassembly, _SelectedPartIDs);
             // The direct-export session has fulfilled its only purpose.
@@ -10907,6 +11975,7 @@ namespace
                 std::string(_Result.Payload.begin(), _Result.Payload.end())).To<ObjectMap>();
             const auto _Snapshot = BuildSnapshot(*Scene_, ApplicationContext_, false);
             _Response["tubeDesigner"] = _Snapshot.at("tubeDesigner");
+            _Response["draftOnly"] = _DraftOnly;
             return MakeResponse(Variant(_Response));
         }
 
@@ -10923,16 +11992,25 @@ namespace
                 if (IsIndependentNestingPart(*_Part))
                 {
                     const auto _ID = UuidToString(_Entity->GetID());
-                    if (_SelectedPartIDs.contains(_ID)) _IndependentSelection.insert(_ID);
+                    if (_SelectedPartIDs.contains(_ID))
+                    {
+                        _IndependentSelection.insert(_ID);
+                        if (AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                            _DraftOnly = true;
+                    }
                 }
             if (!_IndependentSelection.empty() && _IndependentSelection == _SelectedPartIDs)
             {
+                if (_DraftOnly && !_AllowDraft)
+                    throw std::invalid_argument(
+                        "装配工艺尚未完成整件配合验证，不能作为生产下料导出");
                 const auto _Result = ExportIndependentNestingParts(
                     Request_, *Scene_, _SelectedPartIDs);
                 auto _Response = iCAX::Data::VariantSerializer::Deserialize(
                     std::string(_Result.Payload.begin(), _Result.Payload.end())).To<ObjectMap>();
                 const auto _Snapshot = BuildSnapshot(*Scene_, ApplicationContext_, false);
                 _Response["tubeDesigner"] = _Snapshot.at("tubeDesigner");
+                _Response["draftOnly"] = _DraftOnly;
                 return MakeResponse(Variant(_Response));
             }
         }
@@ -10978,6 +12056,8 @@ namespace
             for (const auto& [_PartEntity, _Part] : _Parts)
             {
                 _MatchedPartIDs.insert(UuidToString(_PartEntity->GetID()));
+                if (AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                    _DraftOnly = true;
             }
             _Groups.emplace_back(_ProductEntity, _Product, std::move(_Parts));
         }
@@ -10989,6 +12069,9 @@ namespace
         {
             throw std::invalid_argument("select at least one current manufacturing part");
         }
+        if (_DraftOnly && !_AllowDraft)
+            throw std::invalid_argument(
+                "装配工艺尚未完成整件配合验证，不能作为生产下料导出");
 
         const auto _TotalPartCount = static_cast<std::uint64_t>(std::accumulate(
             _Groups.begin(), _Groups.end(), std::size_t{ 0 },
@@ -11088,6 +12171,7 @@ namespace
         _Result["exportedCount"] = static_cast<unsigned long long>(_Files.size());
         _Result["exportedGroups"] = _ExportedGroups;
         _Result["partListFile"] = Utf8PathText(_PartListPath);
+        _Result["draftOnly"] = _DraftOnly;
         return MakeResponse(Variant(_Result));
     }
 
@@ -11144,7 +12228,7 @@ namespace
         const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BRep);
         auto _Shape = _Rebuilt.Shape;
         if (!_Rebuilt.bOK || _Shape.IsNull())
-            _Shape = RecoverManufacturingShapeFromGeneration(Scene_.Database(), Part_);
+            _Shape = RecoverManufacturingShapeFromGeneration(Scene_, Part_);
         if (_Shape.IsNull()) throw std::runtime_error("无法读取零件最终几何，已停止排样以避免截短零件");
         return _Shape;
     }
@@ -11947,6 +13031,8 @@ namespace
             SNestingGeometrySummary _Geometry;
             if (_Part && IsIndependentNestingPart(*_Part))
             {
+                if (AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                    throw std::invalid_argument("装配工艺尚未完成整件配合验证，不能进行生产排样");
                 if (!IsTubeManufacturingPart(_Part->GetItemProperties()))
                     throw std::invalid_argument("板件或配件不参与管材排样，请在零件模块单独导出");
                 const auto _Presentation = ResolvePartPresentation(_Repository, *_Part);
@@ -11969,6 +13055,8 @@ namespace
                 if (!_Product
                     || _Product->GetActiveGenerationRunID() != _Transient->GenerationRunID)
                     throw std::invalid_argument("零件已过期，请回到产品重新导入下料");
+                if (AssemblyPartAwaitingValidation(_Transient->Part.ItemProperties))
+                    throw std::invalid_argument("装配工艺尚未完成整件配合验证，不能进行生产排样");
                 if (!IsTubeManufacturingPart(_Transient->Part.ItemProperties))
                     throw std::invalid_argument("板件或配件不参与管材排样，请在零件模块单独导出");
                 _Profile = _Transient->Part.TubeProfile;
@@ -12222,6 +13310,10 @@ namespace
                     _Repository.GetEntity(_ParsedPartID));
                 const auto _Transient = FindTransientPartSource(
                     _PreparedProducts, _ParsedPartID);
+                if ((_Part && AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                    || (_Transient && AssemblyPartAwaitingValidation(_Transient->Part.ItemProperties)))
+                    throw std::invalid_argument(
+                        "装配工艺尚未完成整件配合验证，不能导出生产排样");
                 ObjectMap _Profile;
                 if (_Part && IsIndependentNestingPart(*_Part))
                 {
@@ -12579,9 +13671,22 @@ namespace
             ExposeMethod("AddNestingPunchPart", &HandleAddNestingPunchPart);
             ExposeMethod("ApplyPunchWizard", &HandleApplyPunchWizard);
             ExposeMethod("PreviewPunchWizard", &HandlePreviewPunchWizard);
+            ExposeMethod("PreviewAssemblyManufacturingPart", &HandlePreviewAssemblyManufacturingPart);
+            ExposeMethod("EvaluateAssemblyProcess", &HandleEvaluateAssemblyProcess);
+            ExposeMethod("ResolveAssemblyProcessPlan", &HandleResolveAssemblyProcessPlan);
+            ExposeMethod("PreviewAssemblyProcessPlan", &HandlePreviewAssemblyProcessPlan);
+            ExposeMethod("CommitAssemblyProcessPlan", &HandleCommitAssemblyProcessPlan);
+            ExposeMethod("GetAssemblyProcessPlans", &HandleGetAssemblyProcessPlans);
             ExposeMethod("GetPunchTools", &HandleGetPunchTools);
             ExposeMethod("GetAssemblyTemplates", &HandleGetAssemblyTemplates);
+            ExposeMethod("GetProductAssemblyConnections", &HandleGetProductAssemblyConnections);
+            ExposeMethod("GetProductAssemblyBindings", &HandleGetProductAssemblyBindings);
+            ExposeMethod("PreviewProductAssemblyBinding", &HandlePreviewProductAssemblyBinding);
+            ExposeMethod("ApplyProductAssemblyBinding", &HandleApplyProductAssemblyBinding);
+            ExposeMethod("RemoveProductAssemblyBinding", &HandleRemoveProductAssemblyBinding);
             ExposeMethod("ResolveAssemblyTemplatePreview", &HandleResolveAssemblyTemplatePreview);
+            ExposeMethod("CheckAssemblyTemplateApplicability", &HandleCheckAssemblyTemplateApplicability);
+            ExposeMethod("GetAssemblyTemplateExampleProduct", &HandleGetAssemblyTemplateExampleProduct);
             ExposeMethod("SavePunchTool", &HandleSavePunchTool);
             ExposeMethod("ImportPunchToolPackage", &HandleImportPunchToolPackage);
             ExposeMethod("GetPartDrawingTools", &HandleGetPartDrawingTools);

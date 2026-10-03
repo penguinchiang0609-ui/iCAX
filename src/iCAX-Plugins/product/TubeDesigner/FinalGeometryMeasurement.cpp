@@ -1028,29 +1028,51 @@ namespace
     }
 }
 
+namespace
+{
+    TopoDS_Shape NormalizeLinearPartAlongAxis(
+        IN const TopoDS_Shape& Shape_, IN const gp_Dir& Axis_)
+    {
+        gp_Trsf _Rotation;
+        _Rotation.SetRotation(gp_Quaternion(gp_Vec(Axis_), gp_Vec(1.0, 0.0, 0.0)));
+        auto _Normalized = BRepBuilderAPI_Transform(Shape_, _Rotation, true).Shape();
+        // A closed circular edge has only one seam vertex; measure the actual
+        // section bounds rather than shifting the tube by seam-vertex extents.
+        Bnd_Box _Box;
+        BRepBndLib::AddOptimal(_Normalized, _Box, false, false);
+        _Box.SetGap(0);
+        if (_Box.IsVoid() || _Box.IsWhole()) return _Normalized;
+        double _MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ;
+        _Box.Get(_MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ);
+        gp_Trsf _Translation;
+        _Translation.SetTranslation(gp_Vec(
+            -(_MinimumX + _MaximumX) * 0.5,
+            -(_MinimumY + _MaximumY) * 0.5,
+            -(_MinimumZ + _MaximumZ) * 0.5));
+        return BRepBuilderAPI_Transform(_Normalized, _Translation, true).Shape();
+    }
+}
+
 TopoDS_Shape NormalizeLinearPartForManufacturing(IN const TopoDS_Shape& Shape_)
 {
     if (Shape_.IsNull()) return Shape_;
     const auto _Frame = MeasureBodyFrame(Shape_);
     if (!_Frame || _Frame->HalfLength <= kLinearTolerance) return Shape_;
+    return NormalizeLinearPartAlongAxis(Shape_, _Frame->Axis);
+}
 
-    gp_Trsf _Rotation;
-    _Rotation.SetRotation(gp_Quaternion(gp_Vec(_Frame->Axis), gp_Vec(1.0, 0.0, 0.0)));
-    auto _Normalized = BRepBuilderAPI_Transform(Shape_, _Rotation, true).Shape();
-    // A closed circular edge has only one seam vertex; vertex extents are not
-    // section extents and would translate a round tube away from its centre.
-    Bnd_Box _Box;
-    BRepBndLib::AddOptimal(_Normalized, _Box, false, false);
-    _Box.SetGap(0);
-    if (_Box.IsVoid() || _Box.IsWhole()) return _Normalized;
-    double _MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ;
-    _Box.Get(_MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ);
-    gp_Trsf _Translation;
-    _Translation.SetTranslation(gp_Vec(
-        -(_MinimumX + _MaximumX) * 0.5,
-        -(_MinimumY + _MaximumY) * 0.5,
-        -(_MinimumZ + _MaximumZ) * 0.5));
-    return BRepBuilderAPI_Transform(_Normalized, _Translation, true).Shape();
+TopoDS_Shape NormalizeLinearPartForManufacturing(
+    IN const TopoDS_Shape& Shape_, IN const gp_Dir& KnownAxis_)
+{
+    if (Shape_.IsNull()) return Shape_;
+    const auto _CanonicalAxis = CanonicalDirection(KnownAxis_);
+    // Keep the original geometric inference for unexpected solids. A template
+    // axis only bypasses the expensive OBB/frame measurement when it agrees
+    // with the same longest linear edge used by that inference.
+    const auto _ObservedAxis = MeasureLinearBodyAxis(Shape_);
+    if (!_ObservedAxis || Dot(*_ObservedAxis, _CanonicalAxis) < 1.0 - 1.0e-8)
+        return NormalizeLinearPartForManufacturing(Shape_);
+    return NormalizeLinearPartAlongAxis(Shape_, _CanonicalAxis);
 }
 
 SLinearNestingGeometry MeasureLinearNestingGeometry(IN const TopoDS_Shape& Shape_)

@@ -369,3 +369,54 @@ def closed_shell_metrics(section, rotation=0):
     if min(gaps) <= tol or abs(gaps[0]-gaps[1]) > tol:
         raise SectionError("上下基准壁须为等厚的平直壁面")
     return {**data, "circularShell": False, "wallThickness": gaps[0]}
+
+
+def quarter_turn_symmetric(shell):
+    """Whether a square shell has the same exact line/arc boundary after 90°.
+
+    Equal outer widths alone cannot identify the manufacturing orientation:
+    an off-centre bore or unequal walls make the two possibilities different.
+    Unsupported curve kinds conservatively return False.
+    """
+    tolerance = max(shell["tolerance"] * 10, 1e-4)
+
+    def rotated(point_value):
+        return [-point_value[1], point_value[0]]
+
+    def close(first, second):
+        return math.dist(first, second) <= tolerance
+
+    def same_edge(rotated_edge, candidate):
+        if rotated_edge["kind"] != candidate["kind"]:
+            return False
+        forward = close(rotated_edge["start"], candidate["start"]) and close(rotated_edge["end"], candidate["end"])
+        reverse = close(rotated_edge["start"], candidate["end"]) and close(rotated_edge["end"], candidate["start"])
+        if not (forward or reverse):
+            return False
+        if rotated_edge["kind"] == "line":
+            return True
+        return (close(rotated_edge["center"], candidate["center"])
+                and abs(rotated_edge["radius"] - candidate["radius"]) <= tolerance
+                and close(rotated_edge["middle"], candidate["middle"]))
+
+    for contour in shell["contours"]:
+        edges = contour["edges"]
+        if any(edge["kind"] not in ("line", "circleArc") for edge in edges):
+            return False
+        candidates = []
+        for edge in edges:
+            row = {"kind": edge["kind"], "start": edge["start"], "end": edge["end"]}
+            if edge["kind"] == "circleArc":
+                row.update(center=edge["center"], radius=edge["radius"],
+                           middle=arc_point(edge, (edge["first"] + edge["last"]) / 2))
+            candidates.append(row)
+        used = set()
+        for edge in candidates:
+            turned = {key: rotated(value) if key in ("start", "end", "center", "middle") else value
+                      for key, value in edge.items()}
+            match = next((index for index, candidate in enumerate(candidates)
+                          if index not in used and same_edge(turned, candidate)), None)
+            if match is None:
+                return False
+            used.add(match)
+    return True

@@ -303,7 +303,7 @@ namespace
                 throw std::invalid_argument("三维刀具体无效");
             if(f.Opposite || f.Offset!=0
                 || (!f.ToolInPartLocalCoordinates && f.Rotation!=0)
-                || (f.Face!="top"&&f.Face!="left"&&f.Face!="round"))
+                || (f.Face!="top"&&f.Face!="bottom"&&f.Face!="left"&&f.Face!="right"&&f.Face!="round"))
                 throw std::invalid_argument("三维刀具须通过模板参数设置姿态，不使用壁面刀具定位");
             return;
         }
@@ -573,7 +573,8 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
                     }
                     gp_Trsf pose,along;
                     if(source.Face=="round")pose.SetRotation(gp_Ax1(gp_Pnt(0,box.yc(),box.zc()),gp_Dir(1,0,0)),across*Pi/180);
-                    else pose.SetTranslation(source.Face=="left"?gp_Vec(0,0,across):gp_Vec(0,across,0));
+                    else pose.SetTranslation((source.Face=="left" || source.Face=="right")
+                        ? gp_Vec(0,0,across) : gp_Vec(0,across,0));
                     along.SetTranslation(gp_Vec(axial,0,0));add(BRepBuilderAPI_Transform(sourceTool,along*pose,true).Shape());
                 } else {auto f=source;f.Offset+=across;for(const auto& seed:seedTools(f,x+axial))add(seed);}
             }
@@ -752,7 +753,8 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 if(skip(row,col)) continue;
                 gp_Trsf placement;
                 if(source.Face=="round") placement.SetRotation(gp_Ax1(gp_Pnt(0,box.yc(),box.zc()),gp_Dir(1,0,0)),rowOffset(row)*Pi/180);
-                else if(source.Face=="left") placement.SetTranslation(gp_Vec(0,0,rowOffset(row)));
+                else if(source.Face=="left" || source.Face=="right")
+                    placement.SetTranslation(gp_Vec(0,0,rowOffset(row)));
                 else placement.SetTranslation(gp_Vec(0,rowOffset(row),0));
                 gp_Trsf along;along.SetTranslation(gp_Vec(axialOffset(col),0,0));
                 const auto tool=BRepBuilderAPI_Transform(sourceTool,along*placement,true).Shape();

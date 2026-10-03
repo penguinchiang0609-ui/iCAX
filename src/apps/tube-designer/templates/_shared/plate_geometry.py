@@ -56,7 +56,7 @@ def plate_properties(width: float, height: float, thickness: float,
 def emit_rectangular_plate(model: Any, key: str, *, width: float, height: float,
                            thickness: float, center=(0.0, 0.0, 0.0),
                            x_axis=(1.0, 0.0, 0.0), y_axis=(0.0, 0.0, 1.0),
-                           holes=()) -> str:
+                           holes=(), shared_geometry=None) -> str:
     """Emit a centered solid plate; round holes use local center-relative x/y."""
     dimensions = plate_properties(width, height, thickness)["manufacturing.plate"]
     width, height, thickness = (dimensions[name] for name in ("width", "height", "thickness"))
@@ -73,14 +73,22 @@ def emit_rectangular_plate(model: Any, key: str, *, width: float, height: float,
               x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
               x_axis[0] * y_axis[1] - x_axis[1] * y_axis[0])
     origin = [center[i] - normal[i] * thickness / 2 for i in range(3)]
-    contour = model.geometry(f"{key}.outline", "profile2d", arguments={
+    profile_arguments = {
         "placement": {"origin": origin, "xAxis": list(x_axis), "yAxis": list(y_axis)},
         "contours": [_path([
             [-width / 2, -height / 2], [width / 2, -height / 2],
             [width / 2, height / 2], [-width / 2, height / 2]])],
-    })
-    solid = model.geometry(f"{key}.solid", "extrude", inputs=[contour],
-                           arguments={"vector": [v * thickness for v in normal]})
+    }
+    extrusion_arguments = {"vector": [v * thickness for v in normal]}
+    if shared_geometry is None:
+        contour = model.geometry(f"{key}.outline", "profile2d", arguments=profile_arguments)
+        solid = model.geometry(f"{key}.solid", "extrude", inputs=[contour],
+                               arguments=extrusion_arguments)
+    else:
+        # Preserve the per-part .solid key while sharing only identical local
+        # blank geometry. Hole patterns and item identities remain independent.
+        solid = shared_geometry.emit_tube(key, profile_arguments=profile_arguments,
+                                          extrude_arguments=extrusion_arguments)
     cutters: list[str] = []
     for index, hole in enumerate(holes, start=1):
         x, y = float(hole["x"]), float(hole["y"])

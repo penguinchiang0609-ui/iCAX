@@ -11,16 +11,14 @@ from copy import deepcopy
 import hashlib
 import json
 import math
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from icax_template_sdk import NeutralModel
 
 
-def request_geometry_purpose(context: dict[str, Any]) -> str | None:
-    """Missing purpose retains the legacy dual-output template contract."""
-    if "geometryPurpose" not in context:
-        return None
-    purpose = context["geometryPurpose"]
+def request_geometry_purpose(context: dict[str, Any]) -> str:
+    """Each product request explicitly selects its display or manufacturing result."""
+    purpose = context.get("geometryPurpose")
     if purpose not in ("display", "manufacturing"):
         raise ValueError("geometryPurpose must be display or manufacturing")
     return purpose
@@ -35,8 +33,6 @@ def finish_geometry_request(model: NeutralModel, context: dict[str, Any]) -> dic
     """
     document = model.build()
     purpose = request_geometry_purpose(context)
-    if purpose is None:
-        return document
     source_purpose = "display" if purpose == "display" else "export"
     selected_keys = list(dict.fromkeys(
         key for output in document["outputs"] if output["purpose"] == source_purpose
@@ -46,6 +42,11 @@ def finish_geometry_request(model: NeutralModel, context: dict[str, Any]) -> dic
         key for output in document["outputs"] if output["purpose"] == "export"
         for key in output["items"]
     }
+    from icax_template_sdk.manufacturing import is_manufacturing_declaration
+    display_keys = {key for output in document['outputs'] if output['purpose'] == 'display'
+                    for key in output['items']}
+    if purpose == 'manufacturing' and is_manufacturing_declaration() and display_keys != manufacturing_keys:
+        document.setdefault('extensions', {})['tubeDesigner.manufacturingDisplayItemKeys'] = sorted(display_keys)
     items = {item["key"]: item for item in document["items"]}
     geometry = {node["key"]: node for node in document["geometry"]}
     needed: set[str] = set()
@@ -120,6 +121,37 @@ class SharedTubeGeometry:
         self._model = model
         self._profiles: dict[str, str] = {}
         self._extrusions: dict[str, str] = {}
+        self._processed: dict[str, str] = {}
+
+    def emit_translated_processed(
+        self,
+        part_key: str,
+        *,
+        signature: dict[str, Any],
+        origin: Sequence[float],
+        build: Callable[[str], str],
+    ) -> str:
+        """Evaluate one locally declared finished shape per exact tool layout.
+
+        The caller describes *all* geometry affecting a locally translated
+        part and builds it at the origin. Only a rigid translation is applied
+        to each manufacturing item; this does not merge their identities.
+        """
+        encoded = _signature(signature)
+        prototype = self._processed.get(encoded)
+        if prototype is None:
+            prefix = "shared.processed." + hashlib.sha256(encoded.encode("ascii")).hexdigest()
+            prototype = build(prefix)
+            self._processed[encoded] = prototype
+        return self._model.geometry(
+            f"{part_key}.processed.placed", "transform", inputs=[prototype],
+            arguments={"placement": {
+                "origin": _vector(origin, "processed tube origin"),
+                "xAxis": [1.0, 0.0, 0.0],
+                "yAxis": [0.0, 1.0, 0.0],
+                "zAxis": [0.0, 0.0, 1.0],
+            }},
+        )
 
     def emit_tube(
         self,

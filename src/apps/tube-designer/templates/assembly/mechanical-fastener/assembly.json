@@ -1,10 +1,32 @@
 {
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 15 H60 V27 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M4 37 H60 V49 H4 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M20 10 V54 M44 10 V54",
+        "tone": "joint"
+      },
+      {
+        "d": "M17 32 A3 3 0 1 0 23 32 A3 3 0 1 0 17 32 M41 32 A3 3 0 1 0 47 32 A3 3 0 1 0 41 32",
+        "tone": "void"
+      }
+    ]
+  },
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "mechanical-fastener",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "孔系紧固",
   "category": "two-middle-middle",
+  "layoutShape": "parallel",
   "categoryName": "两件 · 中—中",
   "summary": "统一螺栓、长孔调节、销轴、铆钉、拉铆螺母、自攻螺钉和攻丝连接的同轴孔系。",
   "topology": "面—面",
@@ -12,9 +34,71 @@
   "lockType": "标准紧固件",
   "motionType": "法向贴合 / 单轴调节 / 转动",
   "participants": [
-    { "role": "fastenedPart", "label": "被连接件", "responsibility": "通孔或调节孔件", "count": 1 },
-    { "role": "basePart", "label": "基准件", "responsibility": "基准孔或螺纹承接件", "count": 1 }
+    {
+      "role": "fastenedPart",
+      "label": "被连接件",
+      "responsibility": "通孔或调节孔件",
+      "count": 1
+    },
+    {
+      "role": "basePart",
+      "label": "基准件",
+      "responsibility": "基准孔或螺纹承接件",
+      "count": 1
+    }
   ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "parallel"
+      }
+    ],
+    "anchors": {
+      "fastenedPart": "side",
+      "basePart": "side"
+    },
+    "processes": {
+      "round-hole-a": {
+        "target": "side",
+        "opposite": true,
+        "arrayCount": "$count",
+        "arrayPitch": "$pitch",
+        "stationOffset": "-($count - 1) * $pitch / 2"
+      },
+      "round-hole-b": {
+        "target": "side",
+        "opposite": true,
+        "arrayCount": "$count",
+        "arrayPitch": "$pitch",
+        "stationOffset": "-($count - 1) * $pitch / 2"
+      }
+    },
+    "unsupportedBranches": [
+      {
+        "when": {
+          "op": "in",
+          "parameter": "fastenerType",
+          "values": [
+            "adjustableBolt"
+          ]
+        },
+        "reason": "长孔调节需要改变构件位置，当前不支持实际绑定"
+      },
+      {
+        "when": {
+          "op": "in",
+          "parameter": "fastenerType",
+          "values": [
+            "rivetNut",
+            "selfTapping",
+            "tapped"
+          ]
+        },
+        "reason": "缺少已确定的专用底孔或螺纹工序，不能生成实际加工绑定"
+      }
+    ]
+  },
   "parameters": [
     {
       "key": "fastenerType",
@@ -22,20 +106,81 @@
       "valueType": "choice",
       "defaultValue": "bolt",
       "options": [
-        { "value": "bolt", "label": "对穿螺栓" },
-        { "value": "adjustableBolt", "label": "长孔调节螺栓" },
-        { "value": "pin", "label": "销轴" },
-        { "value": "rivet", "label": "铆钉" },
-        { "value": "rivetNut", "label": "拉铆螺母" },
-        { "value": "selfTapping", "label": "自攻螺钉" },
-        { "value": "tapped", "label": "攻丝孔连接" }
+        {
+          "value": "bolt",
+          "label": "对穿螺栓"
+        },
+        {
+          "value": "adjustableBolt",
+          "label": "长孔调节螺栓"
+        },
+        {
+          "value": "pin",
+          "label": "销轴"
+        },
+        {
+          "value": "rivet",
+          "label": "铆钉"
+        },
+        {
+          "value": "rivetNut",
+          "label": "拉铆螺母"
+        },
+        {
+          "value": "selfTapping",
+          "label": "自攻螺钉"
+        },
+        {
+          "value": "tapped",
+          "label": "攻丝孔连接"
+        }
       ],
       "level": "basic"
     },
-    { "key": "nominalDiameter", "displayName": "紧固件公称直径", "valueType": "number", "defaultValue": 10, "min": 2, "max": 48, "step": 0.1, "unit": "mm", "level": "basic" },
-    { "key": "holeClearance", "displayName": "孔径间隙", "valueType": "number", "defaultValue": 1, "min": 0, "max": 6, "step": 0.1, "unit": "mm", "level": "basic" },
-    { "key": "count", "displayName": "紧固点数量", "valueType": "integer", "defaultValue": 2, "min": 1, "max": 20, "step": 1, "unit": "个", "level": "basic" },
-    { "key": "pitch", "displayName": "中心距", "valueType": "number", "defaultValue": 50, "min": 5, "max": 1000, "step": 0.1, "unit": "mm", "level": "basic" },
+    {
+      "key": "nominalDiameter",
+      "displayName": "紧固件公称直径",
+      "valueType": "number",
+      "defaultValue": 10,
+      "min": 2,
+      "max": 48,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
+    {
+      "key": "holeClearance",
+      "displayName": "孔径间隙",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "max": 6,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
+    {
+      "key": "count",
+      "displayName": "紧固点数量",
+      "valueType": "integer",
+      "defaultValue": 2,
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "unit": "个",
+      "level": "basic"
+    },
+    {
+      "key": "pitch",
+      "displayName": "中心距",
+      "valueType": "number",
+      "defaultValue": 50,
+      "min": 5,
+      "max": 1000,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
     {
       "key": "adjustment",
       "displayName": "单向调节量",
@@ -46,106 +191,702 @@
       "step": 0.1,
       "unit": "mm",
       "level": "basic",
-      "visibleWhen": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" }
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "adjustableBolt"
+      }
     },
-    { "key": "washer", "displayName": "垫片配置", "valueType": "choice", "defaultValue": "both", "options": [{ "value": "none", "label": "无" }, { "value": "one", "label": "单侧" }, { "value": "both", "label": "两侧" }], "level": "advanced", "visibleWhen": { "op": "in", "parameter": "fastenerType", "values": ["bolt", "adjustableBolt", "pin"] } },
-    { "key": "retainAdjustment", "displayName": "记录最终调节位置", "valueType": "boolean", "defaultValue": true, "level": "advanced", "visibleWhen": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" } }
+    {
+      "key": "washer",
+      "displayName": "垫片配置",
+      "valueType": "choice",
+      "defaultValue": "both",
+      "options": [
+        {
+          "value": "none",
+          "label": "无"
+        },
+        {
+          "value": "one",
+          "label": "单侧"
+        },
+        {
+          "value": "both",
+          "label": "两侧"
+        }
+      ],
+      "level": "advanced",
+      "visibleWhen": {
+        "op": "in",
+        "parameter": "fastenerType",
+        "values": [
+          "bolt",
+          "adjustableBolt",
+          "pin"
+        ]
+      }
+    },
+    {
+      "key": "retainAdjustment",
+      "displayName": "记录最终调节位置",
+      "valueType": "boolean",
+      "defaultValue": true,
+      "level": "advanced",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "adjustableBolt"
+      }
+    }
   ],
   "partProcesses": [
     {
       "id": "round-hole-a",
-      "participants": ["fastenedPart"],
+      "participants": [
+        "fastenedPart"
+      ],
       "label": "被连接件圆孔组",
-      "appliesWhen": { "op": "ne", "parameter": "fastenerType", "value": "adjustableBolt" },
-      "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" },
-      "parameterBindings": { "diameter": "$nominalDiameter + $holeClearance" },
-      "previewPlacement": { "target": "side", "face": "top", "reference": "center", "station": "-($count - 1) * $pitch / 2", "arrayCount": "$count", "arrayPitch": "$pitch", "opposite": true }
+      "appliesWhen": {
+        "op": "ne",
+        "parameter": "fastenerType",
+        "value": "adjustableBolt"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "circle",
+        "displayName": "圆孔"
+      },
+      "parameterBindings": {
+        "diameter": "$nominalDiameter + $holeClearance"
+      },
+      "previewPlacement": {
+        "target": "side",
+        "face": "top",
+        "reference": "center",
+        "station": "-($count - 1) * $pitch / 2",
+        "arrayCount": "$count",
+        "arrayPitch": "$pitch",
+        "opposite": true
+      }
     },
     {
       "id": "adjust-slot-a",
-      "participants": ["fastenedPart"],
+      "participants": [
+        "fastenedPart"
+      ],
       "label": "被连接件调节长孔",
-      "appliesWhen": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" },
-      "resource": { "kind": "part-process", "id": "slot", "displayName": "腰形孔" },
-      "parameterBindings": { "spanAcross": "$nominalDiameter + $holeClearance", "spanAlong": "$nominalDiameter + $holeClearance + $adjustment" },
-      "previewPlacement": { "target": "side", "face": "top", "reference": "center", "station": "-($count - 1) * $pitch / 2", "arrayCount": "$count", "arrayPitch": "$pitch", "opposite": true }
+      "appliesWhen": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "adjustableBolt"
+      },
+      "resource": {
+        "kind": "part-process",
+        "id": "slot",
+        "displayName": "腰形孔"
+      },
+      "parameterBindings": {
+        "spanAcross": "$nominalDiameter + $holeClearance",
+        "spanAlong": "$nominalDiameter + $holeClearance + $adjustment"
+      },
+      "previewPlacement": {
+        "target": "side",
+        "face": "top",
+        "reference": "center",
+        "station": "-($count - 1) * $pitch / 2",
+        "arrayCount": "$count",
+        "arrayPitch": "$pitch",
+        "opposite": true
+      }
     },
     {
       "id": "round-hole-b",
-      "participants": ["basePart"],
+      "participants": [
+        "basePart"
+      ],
       "label": "基准件承接孔组",
-      "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" },
-      "parameterBindings": { "diameter": "$nominalDiameter + $holeClearance" },
-      "previewPlacement": { "target": "side", "face": "bottom", "reference": "center", "station": "-($count - 1) * $pitch / 2", "arrayCount": "$count", "arrayPitch": "$pitch", "opposite": true }
+      "resource": {
+        "kind": "part-process",
+        "id": "circle",
+        "displayName": "圆孔"
+      },
+      "parameterBindings": {
+        "diameter": "$nominalDiameter + $holeClearance"
+      },
+      "previewPlacement": {
+        "target": "side",
+        "face": "bottom",
+        "reference": "center",
+        "station": "-($count - 1) * $pitch / 2",
+        "arrayCount": "$count",
+        "arrayPitch": "$pitch",
+        "opposite": true
+      }
     }
   ],
   "manufacturingPlan": {
     "realization": "separate",
     "blankPartPolicy": "keep-separate",
     "blankParts": [
-      { "id": "fastenedBlank", "label": "被连接件下料", "participants": ["fastenedPart"] },
-      { "id": "baseBlank", "label": "基准件下料", "participants": ["basePart"] }
-    ]
-  },
-  "assemblyPath": [
-    { "id": "align", "label": "对正两件孔系", "kind": "对正", "direction": "assembly.z", "distance": 0 },
-    { "id": "adjust", "label": "需要时沿长孔完成调节", "kind": "$fastenerType", "direction": "assembly.x", "distance": "$adjustment" },
-    { "id": "lock", "label": "装入并锁定所选紧固件", "kind": "$fastenerType", "direction": "assembly.z", "distance": 0 }
-  ],
-  "previewScene": {
-    "designParts": [
       {
-        "role": "fastenedPart",
-        "profileRef": { "scope": "system", "id": "rect" },
-        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
-        "length": 440,
-        "pose": { "origin": [-220, 0, -10], "direction": [1, 0, 0], "up": [0, 1, 0] },
-        "poseVariants": [
-          { "when": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" }, "value": { "origin": ["-220 + $adjustment / 2", 0, -10], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+        "id": "fastenedBlank",
+        "label": "被连接件下料",
+        "participants": [
+          "fastenedPart"
         ]
       },
       {
-        "role": "basePart",
-        "profileRef": { "scope": "system", "id": "rect" },
-        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
-        "length": 440,
-        "pose": { "origin": [-220, 0, 10], "direction": [1, 0, 0], "up": [0, 1, 0] }
+        "id": "baseBlank",
+        "label": "基准件下料",
+        "participants": [
+          "basePart"
+        ]
       }
-    ],
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "align",
+      "label": "对正两件孔系",
+      "kind": "对正",
+      "direction": "assembly.z",
+      "distance": 0
+    },
+    {
+      "id": "adjust",
+      "label": "沿长孔调节被连接件位置",
+      "kind": "$fastenerType",
+      "direction": "assembly.x",
+      "distance": "$adjustment",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "adjustableBolt"
+      }
+    },
+    {
+      "id": "lock",
+      "label": "穿入螺栓并锁紧",
+      "labelVariants": [
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "pin"
+          },
+          "value": "穿入销轴并固定"
+        },
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "rivet"
+          },
+          "value": "穿入铆钉并铆接"
+        },
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "rivetNut"
+          },
+          "value": "安装拉铆螺母，再装入螺钉完成连接"
+        },
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "selfTapping"
+          },
+          "value": "装入自攻螺钉"
+        },
+        {
+          "when": {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "tapped"
+          },
+          "value": "加工螺纹后装入螺钉"
+        }
+      ],
+      "kind": "$fastenerType",
+      "direction": "assembly.z",
+      "distance": 0
+    },
+    {
+      "id": "record-adjustment",
+      "label": "记录锁紧后的实际调节位置",
+      "kind": "检验记录",
+      "direction": "assembly.x",
+      "distance": "$adjustment",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "fastenerType",
+            "value": "adjustableBolt"
+          },
+          {
+            "op": "eq",
+            "parameter": "retainAdjustment",
+            "value": true
+          }
+        ]
+      }
+    }
+  ],
+  "bomRules": [
+    {
+      "id": "bolt",
+      "label": "螺栓",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "in",
+        "parameter": "fastenerType",
+        "values": [
+          "bolt",
+          "adjustableBolt"
+        ]
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "nut",
+      "label": "螺母",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "in",
+        "parameter": "fastenerType",
+        "values": [
+          "bolt",
+          "adjustableBolt"
+        ]
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard"
+    },
+    {
+      "id": "pin",
+      "label": "销轴",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "pin"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "rivet",
+      "label": "铆钉",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "rivet"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "rivet-nut",
+      "label": "拉铆螺母",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "rivetNut"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard"
+    },
+    {
+      "id": "rivet-nut-screw",
+      "label": "拉铆螺母连接螺钉",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "rivetNut"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "self-tapping",
+      "label": "自攻螺钉",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "selfTapping"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "tapped-screw",
+      "label": "攻丝连接螺钉",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "eq",
+        "parameter": "fastenerType",
+        "value": "tapped"
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard-and-length"
+    },
+    {
+      "id": "washer-one",
+      "label": "平垫片",
+      "quantity": "$count",
+      "unit": "件",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "in",
+            "parameter": "fastenerType",
+            "values": [
+              "bolt",
+              "adjustableBolt",
+              "pin"
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "washer",
+            "value": "one"
+          }
+        ]
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard"
+    },
+    {
+      "id": "washer-both",
+      "label": "平垫片",
+      "quantity": "$count * 2",
+      "unit": "件",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "in",
+            "parameter": "fastenerType",
+            "values": [
+              "bolt",
+              "adjustableBolt",
+              "pin"
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "washer",
+            "value": "both"
+          }
+        ]
+      },
+      "specification": {
+        "nominalDiameter": "$nominalDiameter"
+      },
+      "specificationStatus": "requires-standard"
+    }
+  ],
+  "dimensionChecks": [
+    {
+      "id": "special-fastener-hole-spec",
+      "kind": "required-process",
+      "detail": "拉铆螺母、自攻或攻丝方式需要专用底孔和螺纹工序；当前圆孔示例不能作为产品拆单孔径",
+      "when": {
+        "op": "in",
+        "parameter": "fastenerType",
+        "values": [
+          "rivetNut",
+          "selfTapping",
+          "tapped"
+        ]
+      }
+    }
+  ],
+  "previewScene": {
     "manufacturingParts": [
       {
         "id": "fastenedBlank",
         "label": "被连接件孔系下料",
         "sourceRole": "fastenedPart",
-        "processes": ["round-hole-a", "adjust-slot-a"],
-        "explodedPose": { "origin": [-220, 0, -90], "direction": [1, 0, 0], "up": [0, 1, 0] },
+        "processes": [
+          "round-hole-a",
+          "adjust-slot-a"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$fastenedPart_length / 2",
+            0,
+            -90
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        },
         "explodedPoseVariants": [
-          { "when": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" }, "value": { "origin": ["-220 + $adjustment / 2", 0, -90], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+          {
+            "when": {
+              "op": "eq",
+              "parameter": "fastenerType",
+              "value": "adjustableBolt"
+            },
+            "value": {
+              "origin": [
+                "-$fastenedPart_length / 2 + $adjustment / 2",
+                0,
+                -90
+              ],
+              "direction": [
+                1,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ]
+            }
+          }
         ]
       },
-      { "id": "baseBlank", "label": "基准件孔系下料", "sourceRole": "basePart", "processes": ["round-hole-b"], "explodedPose": { "origin": [-220, 0, 90], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+      {
+        "id": "baseBlank",
+        "label": "基准件孔系下料",
+        "sourceRole": "basePart",
+        "processes": [
+          "round-hole-b"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$basePart_length / 2",
+            0,
+            90
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
     ],
-    "compareLayout": { "designOffset": [0, 0, 110], "manufacturingOffset": [0, 0, -110] }
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        110
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -110
+      ]
+    }
   },
   "parameterDiagram": {
     "schemaVersion": 2,
-    "viewBox": "0 0 260 170",
-    "paths": ["M20 35 H240 V75 H20 Z", "M20 85 H240 V125 H20 Z", "M65 68 H115 A7 7 0 0 1 115 82 H65 A7 7 0 0 1 65 68 Z"],
-    "circles": [{ "cx": 170, "cy": 80, "r": 8 }, { "cx": 205, "cy": 80, "r": 8 }],
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 15 H60 V27 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M4 37 H60 V49 H4 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M20 10 V54 M44 10 V54",
+        "className": "tool-diagram-joint"
+      },
+      {
+        "d": "M17 32 A3 3 0 1 0 23 32 A3 3 0 1 0 17 32 M41 32 A3 3 0 1 0 47 32 A3 3 0 1 0 41 32",
+        "className": "tool-diagram-void"
+      }
+    ],
+    "labels": [
+      {
+        "x": 11,
+        "y": 22,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 11,
+        "y": 44,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
     "annotations": [
-      { "parameter": "fastenerType", "kind": "leader", "side": "top", "point": [130, 80], "description": "选择孔系与标准紧固件语义" },
-      { "parameter": "nominalDiameter", "kind": "leader", "side": "left", "point": [170, 80], "description": "紧固件公称直径" },
-      { "parameter": "holeClearance", "kind": "leader", "side": "right", "point": [205, 80], "description": "孔相对紧固件增加的装配间隙" },
-      { "parameter": "count", "kind": "leader", "side": "left", "point": [130, 80], "description": "两件同步生成的紧固点数量" },
-      { "parameter": "pitch", "kind": "linear", "axis": "x", "side": "bottom", "from": [170, 80], "to": [205, 80], "description": "相邻紧固点中心距" },
-      { "parameter": "adjustment", "kind": "linear", "axis": "x", "side": "bottom", "from": [65, 75], "to": [115, 75], "visibleWhen": { "op": "eq", "parameter": "fastenerType", "value": "adjustableBolt" }, "description": "长孔提供的单向调节范围" }
+      {
+        "parameter": "fastenerType",
+        "kind": "leader",
+        "side": "top",
+        "point": [
+          20,
+          32
+        ],
+        "description": "选择孔系与标准紧固件语义"
+      },
+      {
+        "parameter": "nominalDiameter",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          20,
+          32
+        ],
+        "description": "紧固件公称直径"
+      },
+      {
+        "parameter": "holeClearance",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          20,
+          32
+        ],
+        "description": "孔相对紧固件增加的装配间隙"
+      },
+      {
+        "parameter": "count",
+        "kind": "leader",
+        "side": "left",
+        "point": [
+          44,
+          32
+        ],
+        "description": "两件同步生成的紧固点数量"
+      },
+      {
+        "parameter": "pitch",
+        "kind": "linear",
+        "axis": "x",
+        "side": "bottom",
+        "from": [
+          20,
+          32
+        ],
+        "to": [
+          44,
+          32
+        ],
+        "description": "相邻紧固点中心距"
+      },
+      {
+        "parameter": "adjustment",
+        "kind": "linear",
+        "axis": "x",
+        "side": "bottom",
+        "from": [
+          18,
+          32
+        ],
+        "to": [
+          46,
+          32
+        ],
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "fastenerType",
+          "value": "adjustableBolt"
+        },
+        "description": "长孔提供的单向调节范围"
+      }
     ]
   },
   "outputs": {
     "manufacturingPartCount": 2,
-    "partGeometry": ["被连接件孔系", "基准件孔系"],
-    "secondaryProcess": ["按所选紧固方式装配"],
-    "bom": ["所选螺栓、销轴、铆钉、螺母或螺钉"],
+    "partGeometry": [
+      "被连接件孔系",
+      "基准件孔系"
+    ],
+    "secondaryProcess": [
+      "紧固件装配"
+    ],
+    "bom": [],
     "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "fastenedPart",
+      "basePart"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "overlapLength",
+        "displayName": "轴向重合长度",
+        "valueType": "number",
+        "defaultValue": 440,
+        "min": 1,
+        "max": 100000,
+        "step": 1,
+        "unit": "mm"
+      }
+    ],
+    "requirements": {}
+  },
+  "exampleInput": {
+    "shapeId": "parallel",
+    "roles": {
+      "fastenedPart": "lower",
+      "basePart": "upper"
+    },
+    "parameterBindings": {},
+    "requirements": {}
   }
 }

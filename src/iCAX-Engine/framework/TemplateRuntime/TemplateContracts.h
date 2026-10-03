@@ -17,6 +17,13 @@ namespace iCAX::TemplateRuntime
     inline constexpr std::uint32_t kTemplateDescriptorSchemaVersion = 1;
     inline constexpr const char* kNeutralModelSchema = "icax.neutral-model";
     inline constexpr std::uint32_t kNeutralModelSchemaVersion = 1;
+    inline constexpr std::uint32_t kNeutralModelResourcesSchemaVersion = 2;
+    inline constexpr const char* kDisplayModelSchema = "icax.display-model";
+    inline constexpr std::uint32_t kDisplayModelSchemaVersion = 2;
+    inline constexpr const char* kManufacturingModelSchema = "icax.manufacturing-model";
+    inline constexpr std::uint32_t kManufacturingModelSchemaVersion = 4;
+    inline constexpr std::uint32_t kManufacturingDesignInputModelSchemaVersion = 3;
+    inline constexpr std::uint32_t kManufacturingInputModelSchemaVersion = 2;
     inline constexpr const char* kTemplateProtocol = "icax.template-runtime";
     inline constexpr std::uint32_t kTemplateProtocolVersion = 1;
     inline constexpr std::size_t kMaximumResourceBRepBytes = 32u * 1024u * 1024u;

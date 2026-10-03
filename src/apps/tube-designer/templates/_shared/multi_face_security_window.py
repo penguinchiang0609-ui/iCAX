@@ -105,10 +105,15 @@ class Part:
     category_name: str
     face_index: int = 0
     face_name: str = ""
-    # Slopes of the end planes in (stock length, horizontal transverse) space.
-    # The stock starts/ends at the outside long points, not the corner centers.
-    start_miter: float | None = None
-    end_miter: float | None = None
+    # Actual adjacent design directions, consumed by the local joint function.
+    start_miter: Vector | None = None
+    end_miter: Vector | None = None
+    start_joint: str = ""
+    end_joint: str = ""
+    start_joint_mode: str = "butt"
+    end_joint_mode: str = "butt"
+    start_insertion: float = 0.
+    end_insertion: float = 0.
 
     @property
     def length(self) -> float:
@@ -475,9 +480,9 @@ def _append_access_door(
 
     inner_u_min, inner_u_max = leaf_u_min + leaf_profile.width / 2, leaf_u_max - leaf_profile.width / 2
     inner_v_min, inner_v_max = leaf_v_min + leaf_profile.width / 2, leaf_v_max - leaf_profile.width / 2
-    door_horizontal = _profile(parameters, "doorHorizontal")
-    door_vertical = _profile(parameters, "doorVertical")
     pattern = str(parameters.get("infillPattern", "grid"))
+    door_horizontal = _profile(parameters, "doorHorizontal") if pattern != "vertical" else None
+    door_vertical = _profile(parameters, "doorVertical") if pattern != "horizontal" else None
     horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
         parameters, inner_v_min, inner_v_max,
         start_offset_key="doorHorizontalBottomCenterOffset",
@@ -490,13 +495,17 @@ def _append_access_door(
         end_offset_key="doorVerticalRightCenterOffset",
         maximum_spacing_key="doorVerticalMaximumCenterSpacing", label="窗内竖杆",
     )
-    _validate_positions(horizontal_positions, inner_v_min, inner_v_max,
-                        door_horizontal.width, "窗内横杆")
-    _validate_positions(vertical_positions, inner_u_min, inner_u_max,
-                        door_vertical.width, "窗内竖杆")
-    vertical_reserve = _number(parameters, "verticalBranchReserve")
-    if vertical_positions and vertical_reserve >= leaf_profile.width - leaf_profile.wall:
-        raise ValueError("窗内竖杆入榫深度必须小于窗扇框至对侧内壁的距离")
+    if door_horizontal is not None:
+        _validate_positions(horizontal_positions, inner_v_min, inner_v_max,
+                            door_horizontal.width, "窗内横杆")
+    if door_vertical is not None:
+        _validate_positions(vertical_positions, inner_u_min, inner_u_max,
+                            door_vertical.width, "窗内竖杆")
+    vertical_reserve = _number(parameters, "verticalBranchReserve") if door_vertical is not None else 0.0
+    if vertical_positions:
+        if not parameters.get("_assemblyDesignOnly",False):
+            _frame_geometry._validate_insertion(leaf_profile, door_vertical, vertical_reserve,
+                                                _number(parameters, "assemblyClearance"), "窗扇框与窗内竖杆")
     horizontals: list[Part] = []
     for index, v in enumerate(horizontal_positions, start=1):
         bar = _append_part(
@@ -512,8 +521,8 @@ def _append_access_door(
         bar = _append_part(
             parts, counters, "access_door.leaf.vertical",
             f"{surface.face_name}窗内竖杆 {index}",
-            _surface_point(surface, u, inner_v_min - vertical_reserve),
-            _surface_point(surface, u, inner_v_max + vertical_reserve),
+            _surface_point(surface, u, inner_v_min - (vertical_reserve if parameters.get("_assemblyDesignOnly",False) else leaf_profile.width/2)),
+            _surface_point(surface, u, inner_v_max + (vertical_reserve if parameters.get("_assemblyDesignOnly",False) else leaf_profile.width/2)),
             door_vertical, surface.normal, surface.u_axis,
             "access_door.leaf.vertical", "窗内竖杆", surface.face_index, surface.face_name,
         )
@@ -552,70 +561,37 @@ def _horizontal_transverse(part: Part) -> Vector:
             else part.profile_y_axis)
 
 
-def _miter_planes(part: Part) -> list[tuple[str, Point, Vector]]:
-    direction = _normalize(_subtract(part.end, part.start))
-    transverse = _horizontal_transverse(part)
-    half = part.profile.width / 2
-    result = []
-    if part.start_miter is not None:
-        result.append(("start", _add(part.start, _scale(direction, half)),
-                       _subtract(direction, _scale(transverse, part.start_miter))))
-    if part.end_miter is not None:
-        result.append(("end", _add(part.end, _scale(direction, -half)),
-                       _add(_scale(direction, -1), _scale(transverse, part.end_miter))))
+def _miter_ends(part):
+    result=[]
+    for end,adjacent in (("start",part.start_miter),("end",part.end_miter)):
+        if adjacent is None:
+            continue
+        outgoing=list(adjacent)
+        if end=="start":
+            outgoing=[-v for v in outgoing]
+        station=part.profile.width/2 if end=="start" else part.length-part.profile.width/2
+        result.append((end,station,outgoing))
     return result
 
 
-def _emit_miter_shape(model: NeutralModel, part: Part, raw: str) -> str:
-    """Manufacturing-only trimming of the real hollow, rounded-corner tube."""
-    if part.start_miter is None and part.end_miter is None:
-        return raw
-    direction = _normalize(_subtract(part.end, part.start))
-    transverse = _horizontal_transverse(part)
-    half, margin = part.profile.width / 2, 1.0
-    low, high = -half - margin, half + margin
-    tools = []
-    for end, slope in (("start", part.start_miter), ("end", part.end_miter)):
-        if slope is None:
-            continue
-        center = half if end == "start" else part.length - half
-        outside = -margin * 2 if end == "start" else part.length + margin * 2
-        profile = model.geometry(
-            f"{part.key}.miter.{end}.profile", "profile2d",
-            arguments={
-                "placement": {"origin": [part.start[0], part.start[1], part.start[2] - half - margin],
-                              "xAxis": list(direction), "yAxis": list(transverse)},
-                "contours": [_path([
-                    [outside, low], [center + slope * low, low],
-                    [center + slope * high, high], [outside, high],
-                ])],
-            },
-        )
-        tools.append(model.geometry(
-            f"{part.key}.miter.{end}.solid", "extrude", inputs=[profile],
-            arguments={"vector": [0.0, 0.0, part.profile.width + margin * 2]},
-        ))
-    return model.geometry(
-        f"{part.key}.solid.miter", "boolean", inputs=[raw, *tools],
-        arguments={"operation": "subtract", "target": raw, "tools": tools},
-    )
+def _local_position(point: Point, origin: Point) -> Point:
+    # The model's geometric tolerance is far larger than this rounding. It
+    # removes floating-point drift from subtracting different stock origins.
+    return tuple(0.0 if abs(value) < 5.0e-9 else round(value, 8)
+                 for value in _subtract(point, origin))
 
 
-def _emit_crossing_cutter(
-    model: NeutralModel, target: Part, inserted: Part, index: int, clearance: float,
-) -> str:
-    profile = model.geometry(
-        f"{target.key}.through.{index:04d}.profile", "profile2d",
-        arguments=_profile_arguments(inserted, clearance=clearance, outer_only=True),
-    )
-    return model.geometry(
-        f"{target.key}.through.{index:04d}.solid", "extrude", inputs=[profile],
-        arguments={
-            "vector": list(_subtract(inserted.end, inserted.start)),
-            "extendStart": clearance + 1.0,
-            "extendEnd": clearance + 1.0,
-        },
-    )
+def _emit_finished_part(model,part,inserted_parts,clearance,shared_geometry,raw=None):
+    raw=raw or _emit_tube(model,part,shared_geometry)
+    current=_frame_geometry._machining.process_straight(model,raw,part,inserted_parts,
+        clearance,_profile_arguments,_miter_ends(part))
+    by_key=getattr(model,'_window_actual_members',{})
+    for end,key,mode in (('start',part.start_joint,part.start_joint_mode),
+                         ('end',part.end_joint,part.end_joint_mode)):
+        if key:
+            current=_frame_geometry._machining.connect_end(model,current,part,by_key[key],end,
+                mode,getattr(part,end+'_insertion'),clearance,_profile_arguments)
+    return current
 
 
 def _profile_properties(profile: Profile) -> dict[str, Any]:
@@ -644,17 +620,24 @@ def _horizontal_insertion(parameters: dict[str, Any]) -> float:
     return _number(parameters, "horizontalBranchReserve")
 
 
-def _miter_slope(direction: Vector, transverse: Vector, adjacent: Vector) -> float:
-    bisector = _add(direction, adjacent)
-    denominator = _dot(bisector, direction)
-    if abs(_dot(direction, adjacent)) > 1.0e-7 or abs(denominator) < 1.0e-7:
-        raise ValueError("外框斜拼目前只支持相邻面为90°的方管轮廓")
-    return -_dot(bisector, transverse) / denominator
+def _validate_frame_insertion(receiver: Part, inserted: Profile, direction: Vector,
+                              depth: float, clearance: float, label: str) -> None:
+    # Rectangular corner posts can receive a bar through either section axis.
+    # Use the actual receiving span, not always the profile's nominal width.
+    _frame_geometry._validate_insertion(
+        receiver.profile, inserted, depth, clearance, label,
+        receiver_span=2 * _profile_half_extent(receiver, direction),
+    )
+
+
+def _miter_slope(direction,transverse,adjacent):
+    # Preserve the actual adjoining design axis for the machining function.
+    return tuple(adjacent)
 
 
 def _build_parts(
     parameters: dict[str, Any], points: list[Point], face_names: list[str],
-    frame: Profile, horizontal: Profile, vertical: Profile,
+    frame: Profile, horizontal: Profile | None, vertical: Profile | None,
     door_surface: DoorSurface | None,
     *, closed_perimeter: bool = False,
 ) -> tuple[list[Part], dict[str, list[Part]]]:
@@ -666,19 +649,28 @@ def _build_parts(
     crossing_map: dict[str, list[Part]] = {}
     miter = parameters.get("frameCornerJoin", "post_butt") == "rail_miter"
 
+    post_runtime = _frame_geometry._process_adapter._load('security_window_post_connections')
+    separate_posts = bool(parameters.get('_foldedPostSectionEnabled',
+        post_runtime.active_route(parameters) and parameters.get('foldedPostJoint', 'weld') != 'weld'))
+    folded_post = _profile(parameters, 'foldedPost') if separate_posts else frame
     frame_posts: list[Part] = []
     for vertex_index, point in enumerate(points):
         x_axis = _vertex_profile_axis(faces, vertex_index)
         y_axis = (-x_axis[1], x_axis[0], 0.0)
+        post_profile = (folded_post if separate_posts and (
+            parameters.get('_foldedPostTerminalSectionEnabled',
+                           parameters.get('frameManufacturingMode', 'segment_weld') == 'segment_weld')
+            or closed_perimeter or 0 < vertex_index < len(points) - 1) else frame)
         frame_posts.append(_append_part(
             parts, counters, "outer_frame.vertical", f"外框立柱 {vertex_index + 1}",
-            (point[0], point[1], frame.width if miter else 0.0),
-            (point[0], point[1], height - frame.width if miter else height), frame, x_axis, y_axis,
+            (point[0], point[1], frame.width if miter and parameters.get('_assemblyDesignOnly',False) else 0.0),
+            (point[0], point[1], height-frame.width if miter and parameters.get('_assemblyDesignOnly',False) else height), post_profile, x_axis, y_axis,
             "outer_frame.vertical", "外框立柱",
         ))
 
-    horizontal_reserve = _horizontal_insertion(parameters)
-    vertical_reserve = _number(parameters, "verticalBranchReserve")
+    horizontal_reserve = _horizontal_insertion(parameters) if horizontal is not None else 0.0
+    vertical_reserve = _number(parameters, "verticalBranchReserve") if vertical is not None else 0.0
+    clearance = _number(parameters, "assemblyClearance")
     door_u_min, door_v_min, door_u_max, door_v_max = (
         _door_bounds(parameters) if door_surface is not None else (0.0, 0.0, 0.0, 0.0)
     )
@@ -695,21 +687,29 @@ def _build_parts(
                                  else "sideHorizontalMaximumCenterSpacing"),
             label=f"{face.name}主横杆",
         )
-        _validate_positions(horizontal_positions, frame.width, height - frame.width,
-                            horizontal.width, f"{face.name}主横杆")
+        if horizontal is not None:
+            _validate_positions(horizontal_positions, frame.width, height - frame.width,
+                                horizontal.width, f"{face.name}主横杆")
         has_door = door_surface is not None and door_surface.face_index == face.index
         start_post = frame_posts[face.index - 1]
         end_post = frame_posts[face.index]
         start_extent = _profile_half_extent(start_post, direction)
         end_extent = _profile_half_extent(end_post, direction)
+        if horizontal_positions:
+            if horizontal_reserve == 0:
+                raise ValueError("主横杆插接入榫深度必须大于0")
+            for post in (start_post, end_post):
+                if not parameters.get("_assemblyDesignOnly",False):
+                    _validate_frame_insertion(post, horizontal, direction, horizontal_reserve,
+                                              clearance, f"{post.name}与{face.name}主横杆")
         if face.length <= start_extent + end_extent:
             raise ValueError(f"{face.name}宽度不足以容纳两端外框")
-        rail_start = _add(face.start, _scale(direction, start_extent))
-        rail_end = _add(face.end, _scale(direction, -end_extent))
+        rail_start,rail_end = face.start,face.end
         start_miter = end_miter = None
         if miter:
-            rail_start = _add(face.start, _scale(direction, -frame.width / 2))
-            rail_end = _add(face.end, _scale(direction, frame.width / 2))
+            if parameters.get('_assemblyDesignOnly',False):
+                rail_start = _add(face.start, _scale(direction, -frame.width / 2))
+                rail_end = _add(face.end, _scale(direction, frame.width / 2))
             if face.index > 1 or closed_perimeter:
                 previous = (faces[face.index - 2].direction if face.index > 1
                             else _normalize(_subtract(points[0], points[-1])))
@@ -723,20 +723,34 @@ def _build_parts(
             ("outer_frame.bottom", "下框", frame.width / 2),
             ("outer_frame.top", "上框", height - frame.width / 2),
         ):
-            frame_rails.append(_append_part(
+            rail=_append_part(
                 parts, counters, role, f"{face.name}{label}",
                 (rail_start[0], rail_start[1], z), (rail_end[0], rail_end[1], z),
                 frame, normal, (0.0, 0.0, 1.0), role, "外框横梁",
                 face.index, face.name,
                 start_miter=start_miter, end_miter=end_miter,
-            ))
+            )
+            if not parameters.get('_assemblyDesignOnly',False):
+                machining=_frame_geometry._machining
+                start_mode='miter' if start_miter is not None else ('wrap' if miter else 'butt')
+                end_mode='miter' if end_miter is not None else ('wrap' if miter else 'butt')
+                start=(machining.allocate_miter(rail,'start',_scale(start_miter,-1),_profile_arguments)
+                       if start_mode=='miter' else machining.allocate_joint(rail,start_post,'start',start_mode,0.,clearance,_profile_arguments))
+                end=(machining.allocate_miter(rail,'end',end_miter,_profile_arguments)
+                     if end_mode=='miter' else machining.allocate_joint(rail,end_post,'end',end_mode,0.,clearance,_profile_arguments))
+                rail=replace(rail,start=start,end=end,
+                    start_joint='' if start_mode=='miter' else start_post.key,
+                    end_joint='' if end_mode=='miter' else end_post.key,
+                    start_joint_mode=start_mode,end_joint_mode=end_mode)
+                parts[-1]=rail
+            frame_rails.append(rail)
 
         face_horizontals: list[tuple[Part, float, float, float]] = []
         for index, z in enumerate(horizontal_positions, start=1):
             if has_door and door_v_min - fixed_half - horizontal.width / 2 < z < door_v_max + fixed_half + horizontal.width / 2:
                 segments = (
-                    ("start", "起始段", start_extent - horizontal_reserve, door_u_min - fixed_half),
-                    ("end", "末端段", door_u_max + fixed_half, face.length - end_extent + horizontal_reserve),
+                    ("start", "起始段", start_extent-horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else 0., door_u_min - fixed_half),
+                    ("end", "末端段", door_u_max + fixed_half, face.length-end_extent+horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else face.length),
                 )
                 for side, label, u_start, u_end in segments:
                     horizontal_part = _append_part(
@@ -752,8 +766,8 @@ def _build_parts(
                     if horizontal_reserve > 0:
                         crossing_map.setdefault(boundary_post.key, []).append(horizontal_part)
             else:
-                u_start = start_extent - horizontal_reserve
-                u_end = face.length - end_extent + horizontal_reserve
+                u_start = start_extent-horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else 0.
+                u_end = face.length-end_extent+horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else face.length
                 horizontal_part = _append_part(
                     parts, counters, "main_grid.horizontal", f"{face.name}主横杆 {index}",
                     (*_add(face.start, _scale(direction, u_start))[:2], z),
@@ -778,19 +792,25 @@ def _build_parts(
                                  else "sideVerticalMaximumCenterSpacing"),
             label=f"{face.name}主竖杆",
         )
-        _validate_positions(vertical_positions, vertical_minimum, vertical_maximum,
-                            vertical.width, f"{face.name}主竖杆")
+        if vertical is not None:
+            _validate_positions(vertical_positions, vertical_minimum, vertical_maximum,
+                                vertical.width, f"{face.name}主竖杆")
+        if vertical_positions:
+            for rail in frame_rails:
+                if not parameters.get("_assemblyDesignOnly",False):
+                    _validate_frame_insertion(rail, vertical, (0.0, 0.0, 1.0), vertical_reserve,
+                                              clearance, f"{rail.name}与{face.name}主竖杆")
         for index, distance in enumerate(vertical_positions, start=1):
             base = _add(face.start, _scale(direction, distance))
             if has_door and door_u_min - fixed_half - vertical.width / 2 < distance < door_u_max + fixed_half + vertical.width / 2:
                 vertical_specs = (
-                    ("bottom", "下段", frame.width - vertical_reserve, door_v_min - fixed_half, (frame_rails[0],)),
-                    ("top", "上段", door_v_max + fixed_half, height - frame.width + vertical_reserve, (frame_rails[1],)),
+                    ("bottom", "下段", frame.width-vertical_reserve if parameters.get("_assemblyDesignOnly",False) else frame.width/2, door_v_min - fixed_half, (frame_rails[0],)),
+                    ("top", "上段", door_v_max + fixed_half, height-frame.width+vertical_reserve if parameters.get("_assemblyDesignOnly",False) else height-frame.width/2, (frame_rails[1],)),
                 )
             else:
                 vertical_specs = ((
-                    "full", "", frame.width - vertical_reserve,
-                    height - frame.width + vertical_reserve, tuple(frame_rails),
+                    "full", "", frame.width-vertical_reserve if parameters.get("_assemblyDesignOnly",False) else frame.width/2,
+                    height-frame.width+vertical_reserve if parameters.get("_assemblyDesignOnly",False) else height-frame.width/2, tuple(frame_rails),
                 ),)
             for segment, label, z_start, z_end, boundary_rails in vertical_specs:
                 role = "main_grid.vertical" if segment == "full" else f"main_grid.vertical.{segment}"
@@ -813,6 +833,39 @@ def _build_parts(
                         crossing_map.setdefault(target.key, []).append(vertical_part)
                     else:
                         crossing_map.setdefault(vertical_part.key, []).append(target)
+    if miter and not parameters.get('_assemblyDesignOnly',False):
+        for post in frame_posts:
+            rails=[p for p in parts if p.category_key in ('outer_frame.bottom','outer_frame.top')
+                   and p.face_index==(1 if post.key==frame_posts[0].key else min(len(faces),int(post.key.rsplit('.',1)[1])-1))]
+            bottom=next(p for p in rails if p.category_key=='outer_frame.bottom')
+            top=next(p for p in rails if p.category_key=='outer_frame.top')
+            allocated=replace(post,
+                start=_frame_geometry._machining.allocate_joint(post,bottom,'start','butt',0.,clearance,_profile_arguments),
+                end=_frame_geometry._machining.allocate_joint(post,top,'end','butt',0.,clearance,_profile_arguments),
+                start_joint=bottom.key,end_joint=top.key)
+            parts[parts.index(post)]=allocated
+    if separate_posts and horizontal is not None:
+        branches = [{'key': part.key, 'start': part.start, 'end': part.end,
+                     'section': _profile_arguments(part)} for part in parts
+                    if part.category_key=='main_grid.horizontal']
+        by_key = {part.key: part for part in parts}
+        for post in frame_posts:
+            if post.profile is not folded_post:
+                continue
+            limits = post_runtime.shared_post_horizontal_limits(
+                {'start': post.start, 'end': post.end, 'wallThickness': post.profile.wall,
+                 'section': _profile_arguments(post)}, branches, horizontal_reserve,
+                0. if parameters.get('_assemblyDesignOnly',False) else clearance)
+            for (key,end), limit in limits.items():
+                part = by_key[key]
+                endpoint = tuple(limit['node'][i]+limit['away'][i]*(limit['extent']-limit['depth'])
+                                 for i in range(3))
+                current = replace(part, **{end: endpoint, end+'_joint': post.key,
+                                          end+'_joint_mode': 'insert', end+'_insertion': limit['depth']})
+                parts[parts.index(part)] = current
+                by_key[key] = current
+        for key, values in crossing_map.items():
+            crossing_map[key] = [by_key[part.key] for part in values]
     return parts, crossing_map
 
 
@@ -834,6 +887,7 @@ def _append_five_face_caps(
     depth = math.dist(front_left, back_left)
     horizontal_reserve = _horizontal_insertion(parameters)
     vertical_reserve = _number(parameters, "verticalBranchReserve")
+    clearance = _number(parameters, "assemblyClearance")
     miter = parameters.get("frameCornerJoin", "post_butt") == "rail_miter"
 
     width_start_extent = _profile_half_extent(next(
@@ -845,10 +899,10 @@ def _append_five_face_caps(
     depth_start_extent = _profile_half_extent(next(
         part for part in parts if part.face_index == 2 and part.key.startswith("outer_frame.top.")
     ), depth_direction)
-    rail_start_distance = width_start_extent - horizontal_reserve
-    rail_end_distance = width - width_end_extent + horizontal_reserve
-    rod_start_distance = depth_start_extent - vertical_reserve
-    rod_end_distance = depth - frame.width / 2 + vertical_reserve
+    rail_start_distance = width_start_extent-horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else 0.
+    rail_end_distance = width-width_end_extent+horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else width
+    rod_start_distance = depth_start_extent-vertical_reserve if parameters.get("_assemblyDesignOnly",False) else 0.
+    rod_end_distance = depth-frame.width/2+vertical_reserve if parameters.get("_assemblyDesignOnly",False) else depth
     crossbar_positions = _center_spacing_positions(
         parameters, frame.width, depth - frame.width,
         start_offset_key="topBottomCrossbarFrontCenterOffset",
@@ -904,6 +958,16 @@ def _append_five_face_caps(
             "outer_frame.back", "外框后梁", face_index, face_name,
             start_miter=back_start_miter, end_miter=back_end_miter,
         )
+        if horizontal_reserve == 0:
+            raise ValueError("顶底面横杆插接入榫深度必须大于0")
+        for receiver in (perimeter[1], perimeter[3]):
+            if not parameters.get("_assemblyDesignOnly",False):
+                _validate_frame_insertion(receiver, horizontal, width_direction, horizontal_reserve,
+                                          clearance, f"{receiver.name}与{face_name}横杆")
+        for receiver in (perimeter[2], back_frame):
+            if not parameters.get("_assemblyDesignOnly",False):
+                _validate_frame_insertion(receiver, vertical, depth_direction, vertical_reserve,
+                                          clearance, f"{receiver.name}与{face_name}纵杆")
 
         face_crossbars: list[tuple[Part, float, float, float]] = []
         for index, distance in enumerate(crossbar_positions, start=1):
@@ -967,41 +1031,37 @@ def _append_five_face_caps(
                         crossing_map.setdefault(rod.key, []).append(target)
 
 
-def _validate_through_fit(
-    receiver: Profile, inserted: Profile, clearance: float, label: str,
-) -> None:
-    available = min(receiver.width, receiver.depth) - receiver.wall * 2
-    required = max(inserted.width, inserted.depth) + clearance * 2
-    if available <= required:
-        raise ValueError(
-            f"{label}无法安全穿管：接收管内腔较小边 {available:g} mm，"
-            f"必须大于穿杆及开孔间隙 {required:g} mm"
-        )
+def _validate_through_fit(receiver,inserted,clearance,label):
+    _frame_geometry._machining.check_profiles(receiver,inserted,0.,clearance,label,through=True)
 
 
 def _validate(
     layout: str, parameters: dict[str, Any], points: list[Point], frame: Profile,
-    horizontal: Profile, vertical: Profile, door_surface: DoorSurface | None,
+    horizontal: Profile | None, vertical: Profile | None, door_surface: DoorSurface | None,
+    design_only: bool = False,
 ) -> None:
     height = _number(parameters, "height")
     manufacturing_mode = _frame_paths.mode(parameters)
     if manufacturing_mode == "segment_weld" and parameters.get("frameCornerJoin", "post_butt") not in {"post_butt", "rail_miter"}:
         raise ValueError("frameCornerJoin 仅支持 post_butt 或 rail_miter")
-    if manufacturing_mode == "segment_weld" and parameters.get("frameCornerJoin", "post_butt") == "rail_miter" and (
+    if not design_only and manufacturing_mode == "segment_weld" and parameters.get("frameCornerJoin", "post_butt") == "rail_miter" and (
         frame.kind != "rect" or abs(frame.width - frame.depth) > 1.0e-7
     ):
         raise ValueError("上下框45°斜拼目前仅支持宽深相等的矩形方管外框")
     if height <= frame.width * 2:
         raise ValueError("产品高度必须大于外框宽度的两倍")
-    if not (
-        frame.width > horizontal.width > vertical.width
-        and frame.depth > horizontal.depth > vertical.depth
-    ):
+    if (any(member.width >= frame.width or member.depth >= frame.depth
+            for member in (horizontal, vertical) if member is not None)
+            or horizontal is not None and vertical is not None and not (
+                horizontal.width > vertical.width and horizontal.depth > vertical.depth)):
         raise ValueError("杆件宽深必须满足：外框 > 横杆 > 竖杆")
     clearance = _number(parameters, "assemblyClearance")
     if clearance < 0:
         raise ValueError("装配间隙不能为负数")
     for key in ("horizontalBranchReserve", "verticalBranchReserve"):
+        if (key.startswith("horizontal") and horizontal is None
+                or key.startswith("vertical") and vertical is None):
+            continue
         insertion = _number(parameters, key)
         if not 0 <= insertion <= 20:
             raise ValueError(f"{key} 必须在0到20 mm之间")
@@ -1042,78 +1102,62 @@ def _validate(
         )
 
 
-def _validate_connections(parts: list[Part], crossing_map: dict[str, list[Part]], clearance: float) -> None:
-    by_key = {part.key: part for part in parts}
-    for key, inserted_parts in crossing_map.items():
-        receiver = by_key[key]
-        for inserted in inserted_parts:
-            _validate_through_fit(receiver.profile, inserted.profile, clearance,
-                                  f"{receiver.name}与{inserted.name}")
-            _validate_miter_hole_margin(receiver, inserted, clearance)
-        if receiver.key.startswith("outer_frame.vertical."):
-            for index, first in enumerate(inserted_parts):
-                for second in inserted_parts[index + 1:]:
-                    if first.face_index == second.face_index:
-                        continue
-                    if _part_envelopes_overlap(first, second):
-                        raise ValueError(
-                            f"{receiver.name}内的{first.name}与{second.name}端部相交，"
-                            "请减小横杆入榫深度，或调整横杆高度以错开连接位置"
-                        )
+def _allocate_grid_joints(parts,crossing_map,parameters):
+    machining=_frame_geometry._machining
+    clearance=_number(parameters,"assemblyClearance")
+    for part in list(parts):
+        if not part.category_key.startswith(("main_grid.","cap_grid.","access_door.leaf.horizontal","access_door.leaf.vertical")):
+            continue
+        prefixes=("access_door.leaf.frame.",) if part.category_key.startswith("access_door.leaf.") else ("outer_frame.","access_door.fixed_frame.")
+        updates={}
+        for end in ("start","end"):
+            receiver,mate=machining.select_end_mate(parts,part,end,prefixes)
+            if receiver is None:
+                continue
+            if receiver.key.startswith("access_door.fixed_frame.") or part.category_key=="access_door.leaf.horizontal":
+                mode,depth="butt",0.
+            else:
+                mode="insert"
+                depth=_number(parameters,"horizontalBranchReserve" if part.category_key.endswith("horizontal") else "verticalBranchReserve")
+                if getattr(part,end+'_joint','') == receiver.key and getattr(part,end+'_insertion',0.) > 0:
+                    depth=min(depth,getattr(part,end+'_insertion'))
+            updates[end]=machining.allocate_joint(part,mate,end,mode,depth,clearance,_profile_arguments)
+            updates[end+"_joint"]=receiver.key
+            updates[end+"_joint_mode"]=mode
+            updates[end+"_insertion"]=depth
+        if updates:
+            parts[parts.index(part)]=replace(part,**updates)
+    by_key={part.key:part for part in parts}
+    for key,values in crossing_map.items():
+        crossing_map[key]=[by_key[value.key] for value in values]
 
 
-def _validate_miter_hole_margin(receiver: Part, inserted: Part, clearance: float) -> None:
-    planes = _miter_planes(receiver)
-    if not planes:
-        return
-    # Clip the actual crossing cutter's conservative envelope to the receiver's
-    # stock first; remote portions of a long crossbar do not belong to this joint.
-    direction = _normalize(_subtract(inserted.end, inserted.start))
-    limits = []
-    for index in range(3):
-        axis = tuple(1.0 if i == index else 0.0 for i in range(3))
-        stock_half = _profile_half_extent(receiver, axis)
-        cutter_half = (_profile_half_extent(inserted, axis)
-                       + clearance * (abs(inserted.profile_x_axis[index]) + abs(inserted.profile_y_axis[index]))
-                       + (clearance + 1.0) * abs(direction[index]))
-        low = max(min(receiver.start[index], receiver.end[index]) - stock_half,
-                  min(inserted.start[index], inserted.end[index]) - cutter_half)
-        high = min(max(receiver.start[index], receiver.end[index]) + stock_half,
-                   max(inserted.start[index], inserted.end[index]) + cutter_half)
-        if high <= low:
-            return
-        limits.append((low, high))
-    for _, origin, inward in planes:
-        nearest = tuple(limits[index][0 if inward[index] >= 0 else 1] for index in range(3))
-        if _dot(_subtract(nearest, origin), inward) <= 1.0e-7:
-            raise ValueError(
-                f"{receiver.name}与{inserted.name}的插接孔进入45°斜切端面，"
-                "请减少杆数或调整布置，使孔与拼角保持分离"
-            )
+def _validate_connections(model,parts,crossing_map,clearance):
+    machining=_frame_geometry._machining
+    by_key={part.key:part for part in parts}
+    for key,branches in crossing_map.items():
+        receiver=by_key[key]
+        if receiver.category_key!='outer_frame.vertical':
+            continue
+        stock=machining.actual_part(model,receiver,_profile_arguments)
+        for i,first in enumerate(branches):
+            for second in branches[i+1:]:
+                if first.face_index==second.face_index:
+                    continue
+                process_input=machining.input_of({"stock":stock,
+                    "branch":machining.actual_part(model,first,_profile_arguments),
+                    "other":machining.actual_part(model,second,_profile_arguments)},
+                    {"checkInterference":True})
+                result=machining._load("assembly_geometry_process_runtime").evaluate(
+                    "tube-insertion-check",process_input,{"clearance":clearance})
+                if not result["applicable"]:
+                    raise ValueError(receiver.name+"："+result["reason"])
 
 
-def _part_envelopes_overlap(first: Part, second: Part) -> bool:
-    for index in range(3):
-        axis = tuple(1.0 if i == index else 0.0 for i in range(3))
-        first_half = _profile_half_extent(first, axis)
-        second_half = _profile_half_extent(second, axis)
-        minimum = max(min(first.start[index], first.end[index]) - first_half,
-                      min(second.start[index], second.end[index]) - second_half)
-        maximum = min(max(first.start[index], first.end[index]) + first_half,
-                      max(second.start[index], second.end[index]) + second_half)
-        if maximum - minimum <= 1.0e-7:
-            return False
-    return True
-
-
-def _end_process(part: Part) -> dict[str, Any]:
-    return {
-        "startCut": "miter_45" if part.start_miter is not None else "square",
-        "endCut": "miter_45" if part.end_miter is not None else "square",
-        "lengthReference": "outside_long_points",
-        "cutPlanes": [{"end": end, "origin": list(origin), "inwardNormal": list(_normalize(inward))}
-                      for end, origin, inward in _miter_planes(part)],
-    }
+def _end_process(part):
+    return {"startCut":"miter_45" if part.start_miter is not None else "square",
+            "endCut":"miter_45" if part.end_miter is not None else "square",
+            "lengthReference":"outside_long_points"}
 
 
 def _connection_process(
@@ -1128,9 +1172,9 @@ def _connection_process(
     if part.key.startswith(("outer_frame.", "access_door.fixed_frame.", "access_door.leaf.frame.")):
         process.update({"cornerJoin": "butt_90", "buttWrapMode": "side_wraps_horizontal"})
         if part.key.startswith("outer_frame.") and parameters.get("frameCornerJoin", "post_butt") == "rail_miter":
-            process.update({"cornerJoin": "miter_45" if _miter_planes(part) else "butt_90",
+            process.update({"cornerJoin": "miter_45" if _miter_ends(part) else "butt_90",
                             "buttWrapMode": "horizontal_wraps_posts"})
-            process["endCut"] = "miter_45" if _miter_planes(part) else "square"
+            process["endCut"] = "miter_45" if _miter_ends(part) else "square"
     elif part.key.startswith("access_door.leaf.horizontal."):
         process["endJoin"] = "butt_to_leaf_inner_face"
     elif part.key.startswith(("main_grid.", "cap_grid.")) and any(
@@ -1151,14 +1195,19 @@ def _generate_multi_face_geometry(
     user_mould_root = str(context.get("userMouldRoot", "")).strip()
     points, face_names = _footprint(layout, parameters)
     frame = _profile(parameters, "frame")
-    horizontal = _profile(parameters, "horizontal")
-    vertical = _profile(parameters, "vertical")
+    pattern = str(parameters.get("infillPattern", "grid"))
+    if pattern not in {"grid", "horizontal", "vertical"}:
+        raise ValueError("不支持的填充杆件方向")
+    # Five-face caps always contain both directions, independent of the facade.
+    horizontal = _profile(parameters, "horizontal") if layout == "five-face" or pattern != "vertical" else None
+    vertical = _profile(parameters, "vertical") if layout == "five-face" or pattern != "horizontal" else None
     door_surface = _resolve_door_surface(layout, parameters, points, face_names, frame)
     construction = _door_construction_parameters(parameters, door_surface, points, face_names, frame)
-    construction = dict(construction, faceType={"two-face":"two","three-face":"three","five-face":"five"}[layout])
+    construction = dict(construction, _assemblyDesignOnly=purpose=="display", faceType={"two-face":"two","three-face":"three","five-face":"five"}[layout])
     if _frame_paths.mode(construction) != "segment_weld":
         construction = dict(construction, frameCornerJoin="post_butt")
-    _validate(layout, construction, points, frame, horizontal, vertical, door_surface)
+    _validate(layout, construction, points, frame, horizontal, vertical, door_surface,
+              bool(context.get("_finishedProductContract", False)))
 
     template = context["template"]
     model = NeutralModel(
@@ -1187,7 +1236,10 @@ def _generate_multi_face_geometry(
             construction, door_surface, parts, counters, crossing_map,
         )
     clearance = _number(parameters, "assemblyClearance")
-    _validate_connections(parts, crossing_map, clearance)
+    if purpose != "display":
+        _allocate_grid_joints(parts,crossing_map,parameters)
+        _validate_connections(model, parts, crossing_map, clearance)
+    model._window_actual_members={part.key:part for part in parts}
 
     processed_frames = []
     frame_receivers = {}
@@ -1239,7 +1291,7 @@ def _generate_multi_face_geometry(
             processed_frames.extend(records)
             frame_receivers.update({reference[side].key: key for side, key in sides.items()})
         parts = [part for part in parts if part.key not in frame_receivers]
-    paths = _frame_paths.plan(parts, points, construction, layout)
+    paths = [] if purpose == "display" else _frame_paths.plan(parts, points, construction, layout)
     for path in paths:
         record, references = _frame_paths.emit(path, sys.modules[__name__], _frame_geometry, model,
                                                shared_geometry, construction, crossing_map, purpose, user_mould_root)
@@ -1259,6 +1311,7 @@ def _generate_multi_face_geometry(
             if part.key.startswith('outer_frame.vertical.') and part.key not in full_height_terminals
             else part for part in emitted_parts]
     raw_geometry = {part.key: _emit_tube(model, part, shared_geometry) for part in emitted_parts}
+    model._window_actual_members.update({part.key:part for part in emitted_parts})
     representations: dict[str, tuple[str, str]] = {}
     for part in emitted_parts:
         display = raw_geometry[part.key]
@@ -1266,16 +1319,9 @@ def _generate_multi_face_geometry(
         if purpose == "display":
             representations[part.key] = (display, display)
             continue
-        export = _emit_miter_shape(model, part, export)
-        cutters = [
-            _emit_crossing_cutter(model, part, inserted, index, clearance)
-            for index, inserted in enumerate(crossing_map.get(part.key, []), start=1)
-        ]
-        if cutters:
-            export = model.geometry(
-                f"{part.key}.solid.final", "boolean", inputs=[export, *cutters],
-                arguments={"operation": "subtract", "target": export, "tools": cutters},
-            )
+        inserted_parts = crossing_map.get(part.key, [])
+        if inserted_parts or part.start_miter is not None or part.end_miter is not None or part.start_joint or part.end_joint:
+            export = _emit_finished_part(model, part, inserted_parts, clearance, shared_geometry, display)
         representations[part.key] = (display, export)
 
     item_keys: list[str] = []
@@ -1290,9 +1336,14 @@ def _generate_multi_face_geometry(
             "manufacturing.categoryKey": part.category_key,
             "manufacturing.categoryName": part.category_name,
             "tubeDesigner.profile": _profile_properties(part.profile),
+            "tubeDesigner.manufacturingAxis": list(_normalize(_subtract(part.end, part.start))),
             "tubeDesigner.faceIndex": part.face_index,
             "tubeDesigner.faceName": part.face_name,
+            "tubeDesigner.designSegment": {"start":list(part.start), "end":list(part.end),
+                "profileCoordinateMap": [[0.,1.],[1.,0.]],
+                **_profile_arguments(part)},
             "tubeDesigner.endProcess": _end_process(part),
+            **getattr(model,"_assembly_process_records",{}).get(part.key,{}),
             "tubeDesigner.connectionProcess": _connection_process(part, crossing_map, construction),
         }
         connection = properties["tubeDesigner.connectionProcess"]

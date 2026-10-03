@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 import sys
 import unittest
@@ -22,13 +23,21 @@ class WindowCatalogueTests(unittest.TestCase):
                 for purpose in ("display", "manufacturing"):
                     with self.subTest(face=face, opening=opening, purpose=purpose):
                         p = dict(defaults, faceType=face, accessDoorEnabled=opening)
-                        result = module.generate(p, {"template": d, "geometryPurpose": purpose})
+                        saved = deepcopy(p)
+                        result = (module.display(p) if purpose == "display" else
+                                  module.generate(p, {"template": d, "geometryPurpose": purpose}))
                         self.assertTrue(result["items"])
-                        self.assertEqual(result["parameters"], p)
+                        self.assertEqual(p, saved)
+                        if purpose == "display":
+                            self.assertEqual(result["schema"], "icax.display-model")
+                            self.assertNotIn("parameters", result)
+                            self.assertNotIn("template", result)
+                        else:
+                            self.assertEqual(result["parameters"], p)
         with self.assertRaises(ValueError):
             module.generate(dict(defaults, faceType="four"), {"template": d})
         # A top-face draft belongs to five-face only and must not invalidate two-face.
-        module.generate(dict(defaults, faceType="two", accessDoorFace5="top"), {"template": d, "geometryPurpose": "display"})
+        module.display(dict(defaults, faceType="two", accessDoorFace5="top"))
         for preset in d["extensions"]["parameterPresets"]["presets"]:
             for face in ("single", "two", "three", "five"):
                 with self.subTest(preset=preset["value"], face=face):
@@ -40,7 +49,16 @@ class WindowCatalogueTests(unittest.TestCase):
             for angle in (-90, -45, 0, 45, 90):
                 for purpose in ("display", "manufacturing"):
                     with self.subTest(direction=direction, angle=angle, purpose=purpose):
-                        result = module.generate(dict(defaults, bladeDirectionAngle=direction, bladeRollAngle=angle, bladePitch=100), {"template": d, "geometryPurpose": purpose})
+                        values = dict(defaults, bladeDirectionAngle=direction, bladeRollAngle=angle, bladePitch=100)
+                        saved = deepcopy(values)
+                        result = (module.display(values) if purpose == "display" else
+                                  module.generate(values, {"template": d, "geometryPurpose": purpose}))
+                        self.assertEqual(values, saved)
+                        if purpose == "display":
+                            self.assertEqual(result["schema"], "icax.display-model")
+                            self.assertNotIn("parameters", result)
+                        else:
+                            self.assertEqual(result["parameters"], values)
                         self.assertGreater(len(result["items"]), 4)
         for changes in ({"bladeRollAngle": 0, "bladePitch": 10}, {"bladePitch": 0}, {"bladeRollAngle": 100},
                         {"bladeWallThickness": 100}, {"width": 50}, {"bladePitch": 1, "height": 10000}):

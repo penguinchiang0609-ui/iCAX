@@ -2,12 +2,19 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "aluminium-window",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": {
     "zh-CN": "普通铝合金窗"
   },
   "description": "按型材系列规则生成固定、推拉、平开和组合窗，活动纱窗独立拆单。内置仅为结构演示，不能用于生产；正式拆单须提供厂家系列截面与规则。预览为关闭状态。",
   "extensions": {
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "glassType",
+        "meshType"
+      ]
+    },
     "catalog": {
       "categoryPath": [
         "窗"
@@ -204,6 +211,18 @@
           }
         }
       ]
+    },
+    {
+      "key": "assemblyPlanningMode",
+      "displayName": { "zh-CN": "装配工艺来源" },
+      "valueType": "enum",
+      "defaultValue": "builtin_rules",
+      "group": "basic",
+      "choices": [
+        { "value": "builtin_rules", "displayName": { "zh-CN": "型材系列内置加工规则" } },
+        { "value": "external_templates", "displayName": { "zh-CN": "按连接节点选择装配工艺模板" } }
+      ],
+      "description": "独立工艺模式保留方头原管并输出框角与中梃、横梃连接节点。节点工艺与整窗适配通过验证前不能生产下料。"
     },
     {
       "key": "columns",

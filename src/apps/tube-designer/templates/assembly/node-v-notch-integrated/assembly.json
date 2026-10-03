@@ -1,0 +1,290 @@
+{
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M27 45 L33 52 L39 45",
+        "tone": "cut"
+      }
+    ]
+  },
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "node-v-notch-integrated",
+  "version": "1.0.2",
+  "displayName": "V 槽开槽折弯",
+  "category": "integrated",
+  "layoutShape": "l",
+  "categoryName": "一体成形 · 连续母材",
+  "summary": "在一根连续方矩管的两段逻辑管段交界处开 V 槽，再折成目标角度；槽根尖底、平底、圆角避空或释放孔由 V 槽单件工艺控制。 当前仅可预览工艺示例，真实产品的两构件归并为一根下料件尚未实现。",
+  "topology": "两逻辑管段—单根连续母材—节点折弯",
+  "interfaceType": "V 槽 / 连续母材",
+  "lockType": "连续母材一体成形",
+  "motionType": "开槽后绕槽根折弯",
+  "participants": [
+    {
+      "role": "segmentA",
+      "label": "逻辑管段 A",
+      "responsibility": "折弯前段",
+      "count": 1
+    },
+    {
+      "role": "segmentB",
+      "label": "逻辑管段 B",
+      "responsibility": "折弯后段",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "unsupported",
+    "reason": "当前无法把实际产品的两个构件归并为一根连续下料件；V 槽仅提供单根母材的示例预览，不能向既有两件追加切槽假称已装配"
+  },
+  "parameters": [],
+  "partProcesses": [
+    {
+      "id": "node-slot",
+      "participants": [
+        "segmentA",
+        "segmentB"
+      ],
+      "label": "V 槽节点槽",
+      "resource": {
+        "kind": "part-process",
+        "id": "v-notch-sharp"
+      },
+      "parameterBindings": {
+        "angle": "$angle"
+      },
+      "parameterMode": "inherit-resource",
+      "previewPlacement": {
+        "target": "part",
+        "reference": "center",
+        "station": 0,
+        "face": "top"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "integrated",
+    "blankPartPolicy": "merge-participants",
+    "blankParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "participants": [
+          "segmentA",
+          "segmentB"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "merge",
+      "label": "将两段逻辑管段作为同一根母材下料",
+      "kind": "连续下料",
+      "direction": "连续轴线",
+      "distance": 0
+    },
+    {
+      "id": "cut",
+      "label": "在两段交界处加工V 槽",
+      "kind": "V 槽",
+      "direction": "节点槽位",
+      "distance": 0
+    },
+    {
+      "id": "form",
+      "label": "沿节点槽形成目标夹角，核对留底和干涉",
+      "kind": "槽后成形",
+      "direction": "折弯轴",
+      "distance": "$angle"
+    }
+  ],
+  "previewScene": {
+    "manufacturingParts": [
+      {
+        "id": "continuousBlank",
+        "label": "单根连续下料件",
+        "sourceRole": "segmentA",
+        "length": "$segmentA_length + $segmentB_length",
+        "processes": [
+          "node-slot"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-($segmentA_length + $segmentB_length) / 2 - 40",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    ],
+    "formedPreviews": [
+      {
+        "kind": "node-groove-fold",
+        "blankId": "continuousBlank",
+        "roles": [
+          "segmentA",
+          "segmentB"
+        ],
+        "angle": "$angle",
+        "processId": "node-slot"
+      }
+    ],
+    "annotations": [
+      {
+        "id": "blank-length",
+        "view": "blank",
+        "kind": "length-blank",
+        "blankId": "continuousBlank",
+        "label": "总下料长度"
+      },
+      {
+        "id": "node-angle",
+        "view": "finished",
+        "kind": "value-note",
+        "label": "节点折弯角",
+        "value": "$angle",
+        "unit": "°"
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        140
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -160
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H29 Q33 45 33 41 V6 H45 V45 Q45 57 33 57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M27 45 L33 52 L39 45",
+        "className": "tool-diagram-cut-line"
+      }
+    ],
+    "labels": [
+      {
+        "x": 16,
+        "y": 52,
+        "text": "一根",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "angle",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          33,
+          49
+        ],
+        "description": "同一根母材开槽折弯后的目标夹角；图中折线只表示两段轴向，不表示成品外轮廓或真实槽根位置"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 1,
+    "partGeometry": [
+      "单根连续下料件上的V 槽"
+    ],
+    "secondaryProcess": [
+      "V 槽加工",
+      "折弯成形待实体验证"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "segmentA",
+      "segmentB"
+    ],
+    "supportedInputModes": [
+      "local-parts",
+      "stock-operation"
+    ],
+    "geometryParameters": [
+      {
+        "key": "angle",
+        "displayName": "成品转角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 0,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      },
+      {
+        "key": "planeRotation",
+        "displayName": "外形平面转角",
+        "valueType": "number",
+        "defaultValue": 0,
+        "min": -180,
+        "max": 180,
+        "step": 1,
+        "unit": "°",
+        "level": "advanced"
+      }
+    ],
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "l",
+    "roles": {
+      "segmentA": "armA",
+      "segmentB": "armB"
+    },
+    "parameterBindings": {
+      "angle": "angle"
+    },
+    "requirements": {
+      "angle": {
+        "min": 1,
+        "max": 170
+      },
+      "planeRotation": {
+        "min": 0,
+        "max": 0
+      }
+    }
+  }
+}

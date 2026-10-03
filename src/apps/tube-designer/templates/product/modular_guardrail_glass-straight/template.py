@@ -7,6 +7,9 @@ import importlib.util
 from pathlib import Path
 import sys
 
+from icax_template_sdk import to_resource_model, display_context, to_display_model
+from icax_template_sdk import manufacturing_context, manufacturing_declaration, to_manufacturing_model
+
 _script = Path(__file__).resolve().parent.parent.parent / "_shared" / "modular_guardrail.py"
 _name = "icax_modular_guardrail_" + hashlib.sha256(_script.read_bytes()).hexdigest()[:16]
 if _name not in sys.modules:
@@ -24,12 +27,26 @@ def _parameters(parameters):
         raise ValueError("此款式不支持围墙出头竖杆构造")
     return {**parameters, "infillType": "glass", "guardrailUse": "platform", "spearTipEnabled": False, "_infillPanelKind": "board"}
 
-def generate(parameters, context):
+def _generate_resource_document(parameters, context):
     original = deepcopy(parameters)
     document = sys.modules[_name].generate(_parameters(parameters), context)
     # Internal construction inputs are not public normalized parameters.
     document["parameters"] = original
-    return document
+    return to_resource_model(document)
 
 def build_layout(parameters):
     return sys.modules[_name].build_layout(_parameters(parameters))
+
+
+def display(parameter_values):
+    """Generate display data from the values owned by the product instance."""
+    return to_display_model(_generate_resource_document(parameter_values, display_context(__file__)))
+
+
+
+
+def manufacturing(parameter_values):
+    """Return manufacturing declarations from the values owned by the host."""
+    with manufacturing_declaration():
+        return to_manufacturing_model(
+            _generate_resource_document(parameter_values, manufacturing_context(__file__)))

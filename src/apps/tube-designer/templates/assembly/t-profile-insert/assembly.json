@@ -1,0 +1,480 @@
+{
+  "catalogueDiagram": {
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H60 V57 H4 Z",
+        "tone": "a"
+      },
+      {
+        "d": "M26 6 H38 V45 H26 Z",
+        "tone": "b"
+      },
+      {
+        "d": "M26 45 H38",
+        "tone": "joint"
+      }
+    ]
+  },
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "t-profile-insert",
+  "version": "1.0.3",
+  "displayName": "相贯插入",
+  "category": "two-end-middle",
+  "layoutShape": "t",
+  "categoryName": "T 形 · 插入",
+  "summary": "支管端部沿相贯轴线插入主管中段的单面轮廓孔；分别设定插入量与孔单边间隙。",
+  "topology": "T 形端接中段",
+  "interfaceType": "单面相贯插入",
+  "lockType": "焊接或结构固定",
+  "motionType": "沿支管轴线插入",
+  "participants": [
+    {
+      "role": "host",
+      "label": "主管 / 母件",
+      "responsibility": "提供中段连接位置",
+      "count": 1
+    },
+    {
+      "role": "branch",
+      "label": "支管 / 插入件",
+      "responsibility": "以端部接入",
+      "count": 1
+    }
+  ],
+  "productBinding": {
+    "mode": "incremental-cut",
+    "compatibleProductTopologies": [
+      {
+        "topology": "T"
+      }
+    ],
+    "anchors": {
+      "host": "side",
+      "branch": "end"
+    },
+    "axisAngle": {
+      "roles": [
+        "host",
+        "branch"
+      ],
+      "directions": [
+        "startToEnd",
+        "awayFromAnchor"
+      ],
+      "measure": "direct",
+      "expected": {
+        "parameter": "intersectionAngle"
+      }
+    },
+    "fitChecks": [
+      {
+        "id": "single-insert",
+        "kind": "end-side-single-insert",
+        "topology": "T",
+        "roles": {
+          "host": "host",
+          "branch": "branch"
+        },
+        "hostFaceSource": "anchor.face",
+        "processIds": [
+          "single-opening",
+          "single-branch-end"
+        ],
+        "gap": {
+          "parameter": "fitGap"
+        }
+      }
+    ],
+    "processes": {
+      "single-opening": {
+        "target": "part",
+        "sectionRole": "branch",
+        "parameterSources": {
+          "length": {
+            "role": "branch",
+            "field": "length"
+          },
+          "azimuth": {
+            "role": "host",
+            "endRole": "branch",
+            "field": "anchor.faceByProductEnd",
+            "map": {
+              "end": {
+                "top": 180,
+                "bottom": 0,
+                "left": 90,
+                "right": -90
+              },
+              "start": {
+                "top": 0,
+                "bottom": 180,
+                "left": -90,
+                "right": 90
+              }
+            }
+          },
+          "direction": {
+            "role": "branch",
+            "field": "productAnchor.end",
+            "map": {
+              "start": "positive",
+              "end": "negative"
+            },
+            "matchHostFaceNormal": true
+          }
+        }
+      },
+      "single-branch-end": {
+        "target": "end",
+        "parameterSources": {
+          "trim": {
+            "role": "branch",
+            "field": "anchor.stockAllowance",
+            "addField": "anchor.contactInset",
+            "min": 0.01,
+            "offsetParameter": "insertDepth",
+            "offsetFactor": -1
+          }
+        }
+      }
+    }
+  },
+  "parameters": [
+    {
+      "key": "insertDepth",
+      "displayName": "插入量",
+      "valueType": "number",
+      "defaultValue": 12,
+      "min": 0.1,
+      "max": 100,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    },
+    {
+      "key": "fitGap",
+      "displayName": "孔单边配合间隙",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 10,
+      "step": 0.1,
+      "unit": "mm",
+      "level": "basic"
+    }
+  ],
+  "partProcesses": [
+    {
+      "id": "single-opening",
+      "participants": [
+        "host"
+      ],
+      "label": "单面轮廓插入口",
+      "resource": {
+        "kind": "part-process",
+        "id": "branch-profile",
+        "displayName": "支管相贯"
+      },
+      "parameterBindings": {
+        "angle": "$intersectionAngle",
+        "azimuth": 0,
+        "roll": 0,
+        "direction": "positive",
+        "length": 120,
+        "clearance": "$fitGap",
+        "offsetY": 0,
+        "offsetZ": 0
+      },
+      "previewPlacement": {
+        "target": "part",
+        "reference": "center",
+        "station": 0,
+        "face": "top",
+        "sectionRole": "branch"
+      }
+    },
+    {
+      "id": "single-branch-end",
+      "participants": [
+        "branch"
+      ],
+      "label": "支管端部平切至接头",
+      "resource": {
+        "kind": "part-process",
+        "id": "end-miter",
+        "displayName": "端面切割"
+      },
+      "parameterBindings": {
+        "angle": 0,
+        "trim": 0,
+        "rotation": 0,
+        "datum": "long"
+      },
+      "previewPlacement": {
+        "target": "end",
+        "end": "end",
+        "datum": "long"
+      }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管下料",
+        "participants": [
+          "host"
+        ]
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管下料",
+        "participants": [
+          "branch"
+        ]
+      }
+    ]
+  },
+  "assemblyPath": [
+    {
+      "id": "prepare",
+      "label": "在主管中段加工与支管外轮廓配合的单面孔",
+      "kind": "轮廓开孔",
+      "direction": "主管连接面",
+      "distance": 0
+    },
+    {
+      "id": "insert",
+      "label": "支管沿相贯轴线插入主管单面孔",
+      "kind": "插入",
+      "direction": "支管轴",
+      "distance": "$insertDepth"
+    }
+  ],
+  "previewScene": {
+    "preferredView": "front-top-right",
+    "manufacturingParts": [
+      {
+        "id": "hostBlank",
+        "label": "主管接口下料",
+        "sourceRole": "host",
+        "processes": [
+          "single-opening"
+        ],
+        "explodedPose": {
+          "origin": [
+            "-$host_length / 2",
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "id": "branchBlank",
+        "label": "支管端部下料",
+        "sourceRole": "branch",
+        "stockLengthAddition": "$insertDepth",
+        "processes": [
+          "single-branch-end"
+        ],
+        "explodedPose": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "direction": [
+            1,
+            0,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "bendAngle": "180 - $intersectionAngle",
+          "bendPlaneRotation": 0,
+          "axialTranslation": "-$branch_length - 100"
+        }
+      }
+    ],
+    "compareLayout": {
+      "designOffset": [
+        0,
+        0,
+        120
+      ],
+      "manufacturingOffset": [
+        0,
+        0,
+        -120
+      ]
+    }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 64 64",
+    "paths": [
+      {
+        "d": "M4 45 H60 V57 H4 Z",
+        "className": "tool-diagram-part-a"
+      },
+      {
+        "d": "M26 6 H38 V45 H26 Z",
+        "className": "tool-diagram-part-b"
+      },
+      {
+        "d": "M26 45 H38",
+        "className": "tool-diagram-joint"
+      }
+    ],
+    "labels": [
+      {
+        "x": 15,
+        "y": 51,
+        "text": "A",
+        "className": "is-material"
+      },
+      {
+        "x": 32,
+        "y": 24,
+        "text": "B",
+        "className": "is-material"
+      }
+    ],
+    "annotations": [
+      {
+        "parameter": "intersectionAngle",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          32,
+          44
+        ],
+        "description": "主管与支管轴线夹角"
+      },
+      {
+        "parameter": "fitGap",
+        "kind": "leader",
+        "side": "bottom",
+        "point": [
+          32,
+          45
+        ],
+        "description": "主管单面开口相对支管外轮廓的单边放大量；同时校验主管内孔容纳余量"
+      },
+      {
+        "parameter": "insertDepth",
+        "kind": "leader",
+        "side": "right",
+        "point": [
+          32,
+          45
+        ],
+        "description": "支管端部越过主管外壁的轴向插入量"
+      }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": [
+      "主管单面相贯孔",
+      "支管平切端"
+    ],
+    "secondaryProcess": [
+      "沿相贯轴线插入",
+      "固定连接"
+    ],
+    "bom": [],
+    "assemblyInstruction": true
+  },
+  "dimensionChecks": [
+    {
+      "id": "insertion-past-wall",
+      "kind": "minimum",
+      "label": "支管越过主管近侧壁的深度",
+      "value": "$insertDepth - $host_wallThickness / sin($intersectionAngle * pi / 180)",
+      "minimum": 0.01,
+      "unit": "mm",
+      "fatalOnFail": true
+    },
+    {
+      "id": "insertion-away-from-opposite-wall",
+      "kind": "minimum",
+      "label": "支管端部与主管对侧内壁余量",
+      "value": "($host_depth - $host_wallThickness) / sin($intersectionAngle * pi / 180) - $insertDepth",
+      "minimum": 0.01,
+      "unit": "mm",
+      "fatalOnFail": true
+    },
+    {
+      "id": "branch-stock-length",
+      "kind": "minimum",
+      "label": "支管露出长度",
+      "value": "$branch_length",
+      "minimum": 0.01,
+      "unit": "mm",
+      "fatalOnFail": true
+    }
+  ],
+  "inputContract": {
+    "schemaVersion": 1,
+    "roles": [
+      "host",
+      "branch"
+    ],
+    "supportedInputModes": [
+      "local-parts"
+    ],
+    "geometryParameters": [
+      {
+        "key": "intersectionAngle",
+        "displayName": "成品轴线夹角",
+        "valueType": "number",
+        "defaultValue": 90,
+        "min": 1,
+        "max": 179,
+        "step": 1,
+        "unit": "°",
+        "level": "basic"
+      }
+    ],
+    "requirements": {
+      "intersectionAngle": {
+        "min": 10,
+        "max": 170
+      }
+    }
+  },
+  "exampleInput": {
+    "shapeId": "t",
+    "roles": {
+      "host": "main",
+      "branch": "branch"
+    },
+    "parameterBindings": {
+      "intersectionAngle": "intersectionAngle"
+    },
+    "requirements": {
+      "intersectionAngle": {
+        "min": 10,
+        "max": 170
+      }
+    }
+  }
+}

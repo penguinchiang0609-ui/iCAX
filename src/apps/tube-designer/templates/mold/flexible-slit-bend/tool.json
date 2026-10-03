@@ -2,7 +2,7 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "flexible-slit-bend",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "sectionAnalysis": { "schemaVersion": 1 },
   "inputs": [
     { "key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true }
@@ -36,7 +36,7 @@
       { "parameter": "slitWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [136, 132], "to": [144, 132], "description": "单道割缝沿管轴方向的宽度" },
       { "parameter": "rootClearance", "kind": "linear", "axis": "y", "side": "left", "from": [70, 132], "to": [70, 160], "description": "槽根相对目标管型内底面的距离" },
       { "parameter": "minimumLand", "kind": "linear", "axis": "x", "side": "bottom", "from": [144, 146], "to": [175, 146], "description": "相邻槽之间保留的最小筋宽" },
-      { "parameter": "uSpan", "kind": "linear", "axis": "x", "side": "right", "from": [105, 132], "to": [175, 132], "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" }, "description": "U 槽两条纵向切缝的中心距" },
+      { "parameter": "uSpan", "kind": "linear", "axis": "x", "side": "bottom", "from": [105, 132], "to": [175, 132], "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" }, "description": "U 槽两条纵向切缝的中心距" },
       { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [20, 28], "description": "由目标管型截面实测，用于工艺记录" }
     ]
   },
@@ -52,7 +52,7 @@
     { "key": "slitWidth", "displayName": "割缝宽度（mm）", "valueType": "number", "defaultValue": 1, "min": 0.01, "max": 1000 },
     { "key": "rootClearance", "displayName": "槽根到内底面距离（mm）", "valueType": "number", "defaultValue": 1, "min": 0, "max": 10000 },
     { "key": "minimumLand", "displayName": "相邻槽最小筋宽（mm）", "valueType": "number", "defaultValue": 1, "min": 0.01, "max": 10000 },
-    { "key": "uSpan", "displayName": "U 槽开口宽度（mm）", "valueType": "number", "defaultValue": 8, "min": 0.01, "max": 10000, "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" } },
+    { "key": "uSpan", "displayName": "U 槽开口宽度（mm）", "valueType": "number", "defaultValue": 6, "min": 0.01, "max": 10000, "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" } },
     { "key": "wallThickness", "displayName": "截面实测壁厚（mm）", "valueType": "number", "defaultValue": 0, "min": 0, "max": 10000, "derived": true, "readOnly": true }
   ]
 }

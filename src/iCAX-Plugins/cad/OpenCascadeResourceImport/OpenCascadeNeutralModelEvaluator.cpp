@@ -496,8 +496,12 @@ namespace
         for (std::size_t _Index = 0; _Index < _Segments.size(); ++_Index)
         {
             const auto _SegmentPath = strPath_ + ".segments[" + std::to_string(_Index) + "]";
-            _Wire.Add(MakePathEdge(
-                Placement_, RequireObject(_Segments[_Index], _SegmentPath), _SegmentPath));
+            const auto& _Segment = RequireObject(_Segments[_Index], _SegmentPath);
+            auto _Edge = MakePathEdge(Placement_, _Segment, _SegmentPath);
+            // Keep exact spline poles/knots and its trimmed parameter interval;
+            // traversal direction belongs to the edge, not a resampled curve.
+            if (OptionalBoolean(_Segment, "reversed", false, _SegmentPath)) _Edge.Reverse();
+            _Wire.Add(_Edge);
             if (!_Wire.IsDone())
                 throw std::invalid_argument(_SegmentPath + " is disconnected from the path");
         }
@@ -782,6 +786,40 @@ namespace
         // complex cut result again (which can cost more than the quick rejection).
         if (UseBoundingBoxFilter_ && _Operation == "subtract")
             BRepBndLib::Add(_Result, _TargetBox, false);
+        // One OCCT cut can classify all tools against the target together.
+        // Sequential cuts repeatedly rebuild the increasingly complex result.
+        if (_Operation == "subtract" && _Inputs.size() > 2)
+        {
+            NCollection_List<TopoDS_Shape> _Tools;
+            for (std::size_t _Index = 1; _Index < _Inputs.size(); ++_Index)
+            {
+                const auto& _Tool = Resolve_(_Inputs[_Index]);
+                if (UseBoundingBoxFilter_)
+                {
+                    Bnd_Box _ToolBox;
+                    BRepBndLib::Add(_Tool, _ToolBox, false);
+                    if (!_TargetBox.IsVoid() && !_ToolBox.IsVoid()
+                        && _TargetBox.IsOut(_ToolBox)) continue;
+                }
+                _Tools.Append(_Tool);
+            }
+            if (!_Tools.IsEmpty())
+            {
+                BRepAlgoAPI_Cut _Builder;
+                _Builder.SetNonDestructive(true);
+                _Builder.SetRunParallel(false);
+                _Builder.SetFuzzyValue(1.e-6);
+                NCollection_List<TopoDS_Shape> _Arguments;
+                _Arguments.Append(_Result);
+                _Builder.SetArguments(_Arguments);
+                _Builder.SetTools(_Tools);
+                _Builder.Build();
+                if (!_Builder.IsDone()) throw std::runtime_error(_Path + " subtraction failed");
+                _Result = _Builder.Shape();
+                if (_Result.IsNull()) throw std::runtime_error(_Path + " produced an empty shape");
+            }
+        }
+        else
         for (std::size_t _Index = 1; _Index < _Inputs.size(); ++_Index)
         {
             const auto& _Tool = Resolve_(_Inputs[_Index]);

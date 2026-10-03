@@ -77,6 +77,25 @@ class NeutralModel:
             "children": list(children),
             "properties": deepcopy(dict(properties or {})),
         })
+        # Keep constructor identity before instance transforms are factored out
+        # into resource references. Ownership follows explicit graph ancestry.
+        from .manufacturing import DECLARATIONS, is_manufacturing_declaration
+        if is_manufacturing_declaration():
+            nodes = {node["key"]: node for node in self._document["geometry"]}
+            ancestry = set()
+            def visit(geometry_key):
+                if geometry_key in ancestry:
+                    return
+                ancestry.add(geometry_key)
+                for source in nodes.get(geometry_key, {}).get("inputs", []):
+                    visit(source)
+            for geometry_key in (representations or {}).values():
+                visit(geometry_key)
+            for call in self._document.get("extensions", {}).get(DECLARATIONS, []):
+                if call["targetKey"] in ancestry:
+                    candidates = call.setdefault("ownerCandidates", [])
+                    if key not in candidates:
+                        candidates.append(key)
         return key
 
     def output(
