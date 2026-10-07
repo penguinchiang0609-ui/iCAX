@@ -6,6 +6,7 @@ import { renderRibbonCommandIcon } from "../../iCAX-UI/SDK/AppShell/app/ribbonIc
 import { AppProxy } from "../../iCAX-UI/AppProxy/AppProxy.mjs";
 import { loadProductModule } from "../../iCAX-UI/ProductProxy/productModuleLoader.mjs";
 import { createWorkbench } from "../../apps/_shared/workbench/createWorkbench.mjs";
+import { createNewProjectMemory } from "../../iCAX-UI/SDK/AppShell/app/newProjectMemory.mjs";
 
 const shellUrl = new URL("../../iCAX-UI/SDK/AppShell/app/bootstrap.mjs", import.meta.url);
 const source = readFileSync(shellUrl, "utf8");
@@ -14,11 +15,12 @@ const script = source
   .replace(/^import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";\s*/gm, "")
   .replaceAll("import.meta.url", JSON.stringify(shellUrl.href))
   .replace(/actions\.bootstrap\(\)\.catch\([\s\S]*$/, "")
-  + "\nglobalThis.shell = { state, actions, render, getApplicationTitle, makeSafeProjectFileName };";
+  + "\nglobalThis.shell = { state, actions, render, renderGlobalProgress, getApplicationTitle, makeSafeProjectFileName };";
 const root = {
   innerHTML: "",
   addEventListener() {},
   querySelector() { return null; },
+  querySelectorAll() { return []; },
   insertAdjacentHTML(_position, html) { this.innerHTML += html; },
 };
 const document = {
@@ -35,19 +37,25 @@ const sandbox = {
   escapeAttr,
   escapeText,
   renderRibbonCommandIcon,
+  createStartupScreen() { return { setStage() {}, finish() {}, fail() {} }; },
+  createNewProjectMemory,
 };
 runInNewContext(script, sandbox, { filename: shellUrl.pathname });
 let contextMenuPrevented = false;
 windowListeners.get("contextmenu")({ preventDefault() { contextMenuPrevented = true; }, stopPropagation() { throw new Error("Application right-click handlers must remain active"); } });
 assert.equal(contextMenuPrevented, true);
-const { state, actions, render, getApplicationTitle, makeSafeProjectFileName } = sandbox.shell;
+const { state, actions, render, renderGlobalProgress, getApplicationTitle, makeSafeProjectFileName } = sandbox.shell;
 const visibleText = (html) => html.replace(/<[^>]*>/g, "");
 const assertNoBranding = (html) => assert.doesNotMatch(visibleText(html), /icax/i);
 
 await render();
-assert.equal(document.title, "工作台");
+assert.equal(document.title, "TubeDesigner");
 assertNoBranding(root.innerHTML);
-assert.match(readFileSync(new URL("../../iCAX-UI/SDK/AppShell/index.html", import.meta.url), "utf8"), /<title>工作台<\/title>/);
+assert.match(readFileSync(new URL("../../iCAX-UI/SDK/AppShell/index.html", import.meta.url), "utf8"), /<title>TubeDesigner<\/title>/);
+assert.equal(state.startupPhase, "loading");
+assert.equal(state.startCenterOpen, false);
+assert.doesNotMatch(root.innerHTML, /start-center|最近项目|选择产品/);
+state.startupPhase = "ready";
 actions.openNewProjectDialog();
 assert.equal(state.newProjectName, "未命名项目");
 assert.equal(makeSafeProjectFileName("  "), "未命名项目");
@@ -89,7 +97,8 @@ state.pendingCount = 1;
 state.pendingOperations = [{ label: "App.GetState" }];
 await render();
 assert.equal(document.title, "工作台");
-assert.match(root.innerHTML, /后台任务/);
+assert.match(renderGlobalProgress(), /后台任务/);
+assertNoBranding(renderGlobalProgress());
 assertNoBranding(root.innerHTML);
 
 let dialogOptions;
@@ -119,11 +128,11 @@ state.bridge.saveFileDialog = async (options) => {
   assert.equal(options.defaultExtension, "ictd");
   return chosenPath;
 };
-await actions.saveProject();
+assert.equal(await actions.saveProject(), false, "cancelled save must not allow project close");
 assert.equal(saveCount, 0, "cancel must not save");
 assert.equal(state.savedProjectIds.has(project.projectId), false);
 chosenPath = "D:/projects/测试项目.ictd";
-await actions.saveProject();
+assert.equal(await actions.saveProject(), true, "only completed save allows project close");
 assert.equal(saveCount, 1);
 assert.equal(project.state.projectPath, chosenPath);
 assert.equal(state.savedProjectIds.has(project.projectId), true);
@@ -131,7 +140,7 @@ await actions.saveProject();
 assert.equal(saveCount, 2);
 assert.equal(saveDialogCount, 2, "subsequent save must not ask for location");
 chosenPath = null;
-await actions.saveProject(true);
+assert.equal(await actions.saveProject(true), false, "cancelled save-as must not allow project close");
 assert.equal(saveCount, 2);
 assert.equal(project.state.projectPath, "D:/projects/测试项目.ictd");
 chosenPath = "D:/projects/second.ictd";

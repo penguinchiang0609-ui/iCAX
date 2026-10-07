@@ -702,133 +702,212 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
         _Result.Diagnostics = _Direction.Diagnostics;
         return _Result;
     }
-    _Result.Direction = _Direction.Direction;
-    _Result.Diagnostics.insert(
-        _Result.Diagnostics.end(),
-        _Direction.Diagnostics.begin(),
-        _Direction.Diagnostics.end());
-
-    const auto _Sections = _DirectionService.ExtractSectionWires(
-        _Direction.AlignedGeometry);
-    if (!_Sections.bSuccess)
+    // Preserve the current voted-axis path and template priority. Alternative
+    // evidence axes are considered only after every fitter completed no-match.
+    const auto _TryDirection = [&](const SExtrusionDirectionResult& _Direction,
+        bool& CompleteNoMatch_, bool& HadFitterError_) -> SRecognitionResult
     {
-        _Result.Status = ERecognitionStatus::SectionExtractionFailed;
+        CompleteNoMatch_ = false;
+        HadFitterError_ = false;
+        SRecognitionResult _Result;
+        _Result.Direction = _Direction.Direction;
         _Result.Diagnostics.insert(
             _Result.Diagnostics.end(),
-            _Sections.Diagnostics.begin(),
-            _Sections.Diagnostics.end());
-        return _Result;
-    }
-    _Result.Section = MakeSnapshot(_Sections.Wires);
-    _Result.dLength = AxialExtent(Geometry_, _Direction.Direction);
-    // Even when every type-specific fitter rejects the contour, the part is
-    // still a valid linear extrusion.  Keep the direction-normalized result
-    // so callers can persist an "irregular" tube without running another
-    // geometry recognition pass.
-    _Result.NormalizedGeometry = _Direction.AlignedGeometry;
-    _Result.TRSF = _Direction.TRSF;
+            _Direction.Diagnostics.begin(),
+            _Direction.Diagnostics.end());
 
-    const auto _Contours = MakeContourArray(_Sections.Wires);
-    bool _AnyCompleted = false;
-    for (const auto& _Fitter : OrderedFitters_)
-    {
-        if (_Fitter.TypeID.empty() || _Fitter.ScriptPath.empty())
+        const auto _Sections = _DirectionService.ExtractSectionWires(
+            _Direction.AlignedGeometry);
+        if (!_Sections.bSuccess)
         {
-            _Result.Diagnostics.push_back("Skipped Python fitter with empty type id or script path");
-            continue;
+            _Result.Status = ERecognitionStatus::SectionExtractionFailed;
+            _Result.Diagnostics.insert(
+                _Result.Diagnostics.end(),
+                _Sections.Diagnostics.begin(),
+                _Sections.Diagnostics.end());
+            return _Result;
         }
-        try
+        _Result.Section = MakeSnapshot(_Sections.Wires);
+        _Result.dLength = AxialExtent(Geometry_, _Direction.Direction);
+        // Even when every type-specific fitter rejects the contour, the part is
+        // still a valid linear extrusion.  Keep the direction-normalized result
+        // so callers can persist an "irregular" tube without running another
+        // geometry recognition pass.
+        _Result.NormalizedGeometry = _Direction.AlignedGeometry;
+        _Result.TRSF = _Direction.TRSF;
+
+        const auto _Contours = MakeContourArray(_Sections.Wires);
+        bool _AnyCompleted = false;
+        bool _AllNoMatch = true;
+        for (const auto& _Fitter : OrderedFitters_)
         {
-            const auto _Script = std::filesystem::path(_Fitter.ScriptPath);
-            const auto _ProfileRoot = _Script.parent_path().parent_path();
-            const auto _AdjacentRuntime = _ProfileRoot.parent_path() / "_shared" / "profile_package_runtime.py";
-            const auto _Runtime = ResolveRuntimeFile(
-                std::filesystem::is_regular_file(_AdjacentRuntime) ? _AdjacentRuntime.string() : "",
-                { "apps/tube-designer/templates/_shared/profile_package_runtime.py",
-                  "src/apps/tube-designer/templates/_shared/profile_package_runtime.py" },
-                "direct profile fitting runtime");
-            ObjectMap _Request{
-                { "protocol", std::string("icax.template-runtime") },
-                { "protocolVersion", static_cast<unsigned int>(1) },
-                { "operation", std::string("evaluate") },
-                { "templatePath", _Runtime.string() },
-                { "template", ObjectMap{ { "packageDigest", _Fitter.PackageDigest } } },
-                { "parameters", ObjectMap{
-                    { "action", std::string("recognize-system") },
-                    { "profileRoot", _ProfileRoot.string() },
-                    { "profileId", _Fitter.TypeID },
-                    { "section", ObjectMap{ { "contours", _Contours } } },
-                    { "tolerance", FitterOptions_.dLinearTolerance } } },
-                { "context", ObjectMap{} }
-            };
-            // This runtime dispatches fitting.py with preview=False. No
-            // profile.py/build or generated candidate geometry is executed.
-            const auto _Response = PythonHost(FitterOptions_).Invoke(_Request);
-            SSectionMatchResult _Match;
-            std::string _Error;
-            if (!TryReadFitterResult(_Response, _Match, _Error))
+            if (_Fitter.TypeID.empty() || _Fitter.ScriptPath.empty())
             {
+                _AllNoMatch = false;
+                HadFitterError_ = true;
+                _Result.Diagnostics.push_back("Skipped Python fitter with empty type id or script path");
+                continue;
+            }
+            try
+            {
+                const auto _Script = std::filesystem::path(_Fitter.ScriptPath);
+                const auto _ProfileRoot = _Script.parent_path().parent_path();
+                const auto _AdjacentRuntime = _ProfileRoot.parent_path() / "_shared" / "profile_package_runtime.py";
+                const auto _Runtime = ResolveRuntimeFile(
+                    std::filesystem::is_regular_file(_AdjacentRuntime) ? _AdjacentRuntime.string() : "",
+                    { "apps/tube-designer/templates/_shared/profile_package_runtime.py",
+                      "src/apps/tube-designer/templates/_shared/profile_package_runtime.py" },
+                    "direct profile fitting runtime");
+                ObjectMap _Request{
+                    { "protocol", std::string("icax.template-runtime") },
+                    { "protocolVersion", static_cast<unsigned int>(1) },
+                    { "operation", std::string("evaluate") },
+                    { "templatePath", _Runtime.string() },
+                    { "template", ObjectMap{ { "packageDigest", _Fitter.PackageDigest } } },
+                    { "parameters", ObjectMap{
+                        { "action", std::string("recognize-system") },
+                        { "profileRoot", _ProfileRoot.string() },
+                        { "profileId", _Fitter.TypeID },
+                        { "section", ObjectMap{ { "contours", _Contours } } },
+                        { "tolerance", FitterOptions_.dLinearTolerance } } },
+                    { "context", ObjectMap{} }
+                };
+                // This runtime dispatches fitting.py with preview=False. No
+                // profile.py/build or generated candidate geometry is executed.
+                const auto _Response = PythonHost(FitterOptions_).Invoke(_Request);
+                SSectionMatchResult _Match;
+                std::string _Error;
+                if (!TryReadFitterResult(_Response, _Match, _Error))
+                {
+                    _AllNoMatch = false;
+                    HadFitterError_ = true;
+                    if (!FitterOptions_.bContinueAfterFitterError)
+                    {
+                        _Result.Status = ERecognitionStatus::SectionTypeDefinitionInvalid;
+                        _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Error);
+                        return _Result;
+                    }
+                    _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Error);
+                    continue;
+                }
+                _AnyCompleted = true;
+                if (!_Match.bMatched)
+                {
+                    const auto _Items = _Response.at("results").To<VariantArray>();
+                    _AllNoMatch = _AllNoMatch
+                        && _Items.front().To<ObjectMap>().at("status").To<std::string>() == "no-match";
+                    for (const auto& _Diagnostic : _Match.Diagnostics)
+                        _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Diagnostic);
+                    continue;
+                }
+
+                std::string _TransformError;
+                BRepModel _FittedGeometry;
+                if (!TryApplyBRepTransform(
+                        _Direction.AlignedGeometry,
+                        _Match.TRSF,
+                        _FittedGeometry,
+                        _TransformError))
+                {
+                    _Result.Status = ERecognitionStatus::PlacementFailed;
+                    _Result.Diagnostics.push_back(
+                        _Fitter.TypeID + ": failed to apply fitter trsf: " + _TransformError);
+                    return _Result;
+                }
+                _Result.Status = ERecognitionStatus::Success;
+                _Result.SectionTypeID = _Fitter.TypeID;
+                _Result.SectionParameters = std::move(_Match.Parameters);
+                _Result.NormalizedGeometry = std::move(_FittedGeometry);
+                TransformSnapshot(_Result.Section, _Match.TRSF);
+                // Recompute analytic extrema in the fitted frame. Rotating a
+                // sampled circle/ellipse polygon underestimates its envelope.
+                _Result.Section.Bounds = SectionBounds(_Sections.Wires, _Match.TRSF);
+                _Result.TRSF = Multiply(_Match.TRSF, _Direction.TRSF);
+                _Result.Diagnostics.insert(
+                    _Result.Diagnostics.end(),
+                    _Match.Diagnostics.begin(),
+                    _Match.Diagnostics.end());
+                _Result.Diagnostics.push_back(
+                    "Python section fitter matched in supplied order: " + _Fitter.TypeID);
+                return _Result;
+            }
+            catch (const std::exception& Error_)
+            {
+                _AllNoMatch = false;
+                HadFitterError_ = true;
                 if (!FitterOptions_.bContinueAfterFitterError)
                 {
                     _Result.Status = ERecognitionStatus::SectionTypeDefinitionInvalid;
-                    _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Error);
+                    _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + Error_.what());
                     return _Result;
                 }
-                _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Error);
-                continue;
-            }
-            _AnyCompleted = true;
-            if (!_Match.bMatched)
-            {
-                for (const auto& _Diagnostic : _Match.Diagnostics)
-                    _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Diagnostic);
-                continue;
-            }
-
-            std::string _TransformError;
-            BRepModel _FittedGeometry;
-            if (!TryApplyBRepTransform(
-                    _Direction.AlignedGeometry,
-                    _Match.TRSF,
-                    _FittedGeometry,
-                    _TransformError))
-            {
-                _Result.Status = ERecognitionStatus::PlacementFailed;
-                _Result.Diagnostics.push_back(
-                    _Fitter.TypeID + ": failed to apply fitter trsf: " + _TransformError);
-                return _Result;
-            }
-            _Result.Status = ERecognitionStatus::Success;
-            _Result.SectionTypeID = _Fitter.TypeID;
-            _Result.SectionParameters = std::move(_Match.Parameters);
-            _Result.NormalizedGeometry = std::move(_FittedGeometry);
-            TransformSnapshot(_Result.Section, _Match.TRSF);
-            // Recompute analytic extrema in the fitted frame. Rotating a
-            // sampled circle/ellipse polygon underestimates its envelope.
-            _Result.Section.Bounds = SectionBounds(_Sections.Wires, _Match.TRSF);
-            _Result.TRSF = Multiply(_Match.TRSF, _Direction.TRSF);
-            _Result.Diagnostics.insert(
-                _Result.Diagnostics.end(),
-                _Match.Diagnostics.begin(),
-                _Match.Diagnostics.end());
-            _Result.Diagnostics.push_back(
-                "Python section fitter matched in supplied order: " + _Fitter.TypeID);
-            return _Result;
-        }
-        catch (const std::exception& Error_)
-        {
-            if (!FitterOptions_.bContinueAfterFitterError)
-            {
-                _Result.Status = ERecognitionStatus::SectionTypeDefinitionInvalid;
                 _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + Error_.what());
-                return _Result;
             }
-            _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + Error_.what());
+        }
+        CompleteNoMatch_ = _AnyCompleted && _AllNoMatch;
+        _Result.Status = _AnyCompleted ? ERecognitionStatus::SectionTypeNotMatched
+            : ERecognitionStatus::SectionTypeDefinitionInvalid;
+        _Result.Diagnostics.push_back("No Python section fitter matched the extracted contours");
+        return _Result;
+    };
+
+    bool _PrimaryNoMatch = false, _PrimaryFitterError = false;
+    auto _PrimaryResult = _TryDirection(_Direction, _PrimaryNoMatch, _PrimaryFitterError);
+    if (!_PrimaryNoMatch || _Direction.CandidateDirections.size() <= 1)
+        return _PrimaryResult;
+
+    std::optional<SRecognitionResult> _Accepted;
+    std::optional<ERecognitionStatus> _Failure;
+    bool _Ambiguous = false, _UnsupportedCandidate = false;
+    auto _Diagnostics = _PrimaryResult.Diagnostics;
+    for (std::size_t _Index = 1; _Index < _Direction.CandidateDirections.size(); ++_Index)
+    {
+        const auto _Candidate = _DirectionService.AlignCandidate(Geometry_, _Direction, _Index);
+        bool _CompleteNoMatch = false, _HadFitterError = false;
+        auto _Attempt = _TryDirection(_Candidate, _CompleteNoMatch, _HadFitterError);
+        _Diagnostics.insert(_Diagnostics.end(), _Attempt.Diagnostics.begin(), _Attempt.Diagnostics.end());
+        if (_HadFitterError)
+        {
+            // A failed fitter cannot prove that a competing axis does not
+            // match, even if another template on that axis subsequently fits.
+            _Failure = ERecognitionStatus::SectionTypeDefinitionInvalid;
+        }
+        else if (_Attempt.IsOK())
+        {
+            if (_Accepted) _Ambiguous = true;
+            else _Accepted = std::move(_Attempt);
+        }
+        else if (_Attempt.Status == ERecognitionStatus::SectionTypeNotMatched)
+        {
+            _UnsupportedCandidate = _UnsupportedCandidate || !_CompleteNoMatch;
+        }
+        else if (_Attempt.Status != ERecognitionStatus::SectionExtractionFailed)
+        {
+            _Failure = _Attempt.Status;
         }
     }
-    _Result.Status = _AnyCompleted ? ERecognitionStatus::SectionTypeNotMatched
-        : ERecognitionStatus::SectionTypeDefinitionInvalid;
-    _Result.Diagnostics.push_back("No Python section fitter matched the extracted contours");
-    return _Result;
+    _PrimaryResult.Diagnostics = std::move(_Diagnostics);
+    if (_Failure)
+    {
+        _PrimaryResult.Status = *_Failure;
+        _PrimaryResult.Diagnostics.push_back("Alternative-axis fitting failed; no partial match was committed");
+    }
+    else if (_Ambiguous)
+    {
+        _PrimaryResult.Diagnostics.push_back("Ambiguous direct section matches on multiple extrusion axes");
+    }
+    else if (_UnsupportedCandidate)
+    {
+        _PrimaryResult.Diagnostics.push_back("Alternative-axis uniqueness is unsupported; no partial match was committed");
+    }
+    else if (_Accepted)
+    {
+        _Accepted->Diagnostics = std::move(_PrimaryResult.Diagnostics);
+        _Accepted->Diagnostics.push_back("Direct section fitting selected the unique matching alternative extrusion axis");
+        return std::move(*_Accepted);
+    }
+    // The unrecognized result remains wholly in the primary frame. Never
+    // combine another axis's parameters, length or transform with that BRep.
+    return _PrimaryResult;
 }
 }

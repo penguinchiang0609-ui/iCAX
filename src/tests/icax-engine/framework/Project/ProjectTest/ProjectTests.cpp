@@ -842,6 +842,35 @@ TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
     EXPECT_NE(std::this_thread::get_id(), _HandlerThreadID);
 }
 
+TEST(ProjectTest, StopSignalsInFlightSceneWorkBeforeJoining)
+{
+    std::mutex _Mutex;
+    std::condition_variable _Condition;
+    bool _Entered = false;
+    std::atomic_bool _ObservedStop = false;
+    auto _Info = MakeProjectInfo();
+    _Info.OnSceneFrame = [&](CProjectScene& Scene_, const auto&) {
+        {
+            std::lock_guard _Lock(_Mutex);
+            _Entered = true;
+        }
+        _Condition.notify_all();
+        const auto _Deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!Scene_.IsStopRequested() && std::chrono::steady_clock::now() < _Deadline)
+            std::this_thread::yield();
+        _ObservedStop.store(Scene_.IsStopRequested());
+    };
+    CProject _Project(_Info);
+    _Project.Start();
+    EXPECT_TRUE(WaitFor(_Condition, _Mutex, [&] { return _Entered; }));
+    const auto _Started = std::chrono::steady_clock::now();
+    _Project.Stop();
+    EXPECT_TRUE(_ObservedStop.load());
+    EXPECT_LT(std::chrono::steady_clock::now() - _Started, std::chrono::seconds(2));
+    EXPECT_FALSE(_Project.IsRunning());
+    EXPECT_TRUE(_Project.GetMainScene().IsStopRequested());
+}
+
 TEST(ProjectTest, ChildSceneUsesProjectFrameHandlerWithOwnSceneContext)
 {
     std::mutex _Mutex;

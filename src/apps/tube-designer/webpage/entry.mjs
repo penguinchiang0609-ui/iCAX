@@ -1,14 +1,24 @@
 import * as workbench from "../../_shared/workbench/entry.mjs";
+import { releaseProject as releaseWorkbenchProject } from "../../_shared/workbench/createWorkbench.mjs";
 import { installTubeDesignerBranding } from "./branding.mjs";
+import { bindTubeDesignerWindowMemory, rememberLinkedWindowControls } from "./windowStateMemory.mjs";
+import { restoreLibraryNavigation, rememberLibraryNavigation } from "./libraryNavigationMemory.mjs";
 import { attachPunchEditor } from "./punchEditor.mjs";
-import { patchPunchDom } from "./punchDomPatch.mjs";
-import { scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
-import { scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
+import { patchPunchDom, closePunchDom } from "./punchDomPatch.mjs";
+import { cancelDesignerPartThumbnailHydration, scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
+import { disposeDesignerPartInspection, scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
 import { attachPartDrawingEditor, renderPartDrawingDialog } from "./partDrawing.mjs";
 import { attachPartDrawingPreview, disposePartDrawingPreview } from "./partDrawingPreview.mjs";
 import { patchPartDrawingDom, rememberPartDrawingDom } from "./partDrawingDom.mjs";
 import { patchLibraryDom, rememberLibraryDom } from "./libraryDomPatch.mjs";
+import { bindFloatingEditorWindows, patchFloatingEditorDom, rememberFloatingEditorDom } from "./floatingEditorDom.mjs";
+import { capturePaneInteraction } from "../../_shared/workbench/utils/paneInteractionState.mjs";
+import { bindProductPartsScene, hoverProductSceneMember, selectProductSceneMember, updateProductSceneEmphasis } from "./productPartsScene.mjs";
+import { attachNestingDocking, captureNestingDockInteraction,
+  nestingDockZoneCounts, restoreNestingDockInteraction } from "./nestingDock.mjs";
 import {
+  bindDesignerProductPartsInspection,
+  synchronizeBatchExcelTemplateSelection,
   fitDesignerDefaultView,
   captureDesignerScrollState,
   clearDesignerRightParameterHistories,
@@ -17,6 +27,8 @@ import {
   handleDesignerAreaAction,
   handleDesignerRibbonCommand,
   preloadTubeDesignerTemplates,
+  prepareDesignerProjectSave,
+  rememberDesignerCreationWindowState,
   refreshDesignerState,
   refreshDesignerUserData,
   restoreLoadedProductTemplateDescriptors,
@@ -29,16 +41,17 @@ import {
   renderDesignerProductPartsDock,
   renderDesignerRightPane,
   renderDesignerViewportOverlay,
-  renderDesignerToolDiagramDock,
 } from "./designerViews.mjs";
 import { getRibbonDefinition as getDesignerRibbonDefinition } from "./ribbonDefinition.mjs";
 import { ensureTubeDesignerStyles } from "./styles/ensureStyles.mjs";
 import { renderNestingSettingsDialogs } from "./nestingSettings.mjs";
-import { renderNestingPartImportDialog } from "./nestingPartImport.mjs";
-import { renderNestingStandardPartDialog } from "./nestingStandardPart.mjs";
+import { connectBatchExcelAutomation, renderBatchExcelAutomationDialog, stopBatchExcelAutomation } from "./batchExcelAutomation.mjs";
+import { renderNestingStandardPartDialog, captureNestingStandardPartDisclosures,
+  rememberNestingStandardPartDom, patchNestingStandardPartDom } from "./nestingStandardPart.mjs";
+import { disposeInactiveNestingPartFilePicker, disposeNestingPartFilePicker } from "./nestingPartFilePicker.mjs";
 import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
 import { bindToolParameterDiagrams } from "./toolParameterDiagram.mjs";
-import { bindFloatingParameterDiagram, bindDiagramDragging } from "./floatingParameterDiagram.mjs";
+import { bindDiagramDragging } from "./floatingParameterDiagram.mjs";
 import {
   bindProductParameterDiagrams,
   bindProductSpecificationAnnotations,
@@ -47,7 +60,13 @@ import {
 import { renderNestingPunchPartDialog } from "./nestingPunchPart.mjs";
 import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs } from "./machiningArea.mjs";
 import { hasUnsavedMachiningPaths } from "./machiningEditor.mjs";
-import { getProjectView } from "../../_shared/workbench/state/projectViewStore.mjs";
+import { findProjectView, getProjectView } from "../../_shared/workbench/state/projectViewStore.mjs";
+import { restoreProductResources } from "./productResourceSession.mjs";
+import {
+  actionLicenseFeature, allowLicenseFeature, commandLicenseFeature,
+  ensureLicenseStatus, handleLicenseCommand, hasLicenseFeature, licenseDenialMessage,
+  isLicenseWorkspaceReadOnly,
+} from "./licensing.mjs";
 import { renderProgress } from "../../_shared/workbench/layout/commonViews.mjs";
 import { typedVariant } from "../../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import {
@@ -71,8 +90,6 @@ import {
   renderAssemblyLibraryRightPane,
   renderAssemblyLibraryViewportOverlay,
 } from "./assemblyLibrary.mjs";
-import { ensureProductAssemblyConnections } from "./productAssemblyConnections.mjs";
-import { ensureProductAssemblyBindings } from "./productAssemblyBindings.mjs";
 import {
   attachComponentLibrary,
   renderComponentLibraryDialogs,
@@ -83,6 +100,7 @@ import {
 import {
   attachNestingPartContextMenu,
   clearPartsViewportAnnotations,
+  handlePartsAreaViewportPick,
   renderNestingLeftPane,
   renderNestingResultDock,
   renderNestingRightPane,
@@ -116,20 +134,74 @@ export function getRibbonDefinition(context = {}) {
   const view = getProjectView(projectId);
   return getDesignerRibbonDefinition({
     resourceArea: view.tubeDesignerResourceLibraryArea ?? "profiles",
+    licenseContext: context,
+    licenseView: view,
   });
 }
 
+export function beforeSelectRibbonTab() {
+  // Navigation and viewing are public; the commands and editors enforce grants.
+  return true;
+}
+
+export function isProjectReadOnly(context) {
+  return isLicenseWorkspaceReadOnly(context, getProjectView(context.project?.projectId ?? ""));
+}
+
+export function shouldPreserveRibbonCommandSurface(context, commandId) {
+  const view = getProjectView(context.project?.projectId ?? "");
+  return commandId.startsWith("licensing.")
+    || isLicenseWorkspaceReadOnly(context, view)
+    || !hasLicenseFeature(context, view, commandLicenseFeature(commandId, view.activeAreaId));
+}
+
 export function mountProduct(context) {
+  disposeInactiveNestingPartFilePicker(context, null);
   ensureTubeDesignerStyles();
   installTubeDesignerBranding();
+  bindTubeDesignerWindowMemory(context, null);
   workbench.mountProduct(context);
 }
 
+export async function prepareProjectSave(context) {
+  const designerContext = withDesignerContext(context);
+  await workbench.waitForActiveAreaAction(designerContext);
+  await prepareDesignerProjectSave(designerContext, getProjectView(context.project?.projectId ?? ""));
+}
+
+export async function releaseProject(context) {
+  const view = findProjectView(context?.project?.projectId);
+  if (!view) return false;
+  // Product catalogues remain in the product session; only this project's
+  // editors, scene readers and renderer belong to the closed file.
+  const released = releaseWorkbenchProject(context);
+  const cleanup = (work) => { try { work(); } catch {} };
+  cleanup(() => disposeNestingPartFilePicker(view));
+  cleanup(() => disposeAssemblyLibraryViewports(view));
+  if (context.mount && context.isCurrentProject?.() !== false) {
+    cleanup(() => cancelDesignerPartThumbnailHydration(context));
+    cleanup(() => disposeDesignerPartInspection(context));
+    cleanup(() => disposePartDrawingPreview(context.mount));
+    cleanup(() => stopBatchExcelAutomation());
+  }
+  return released;
+}
+
 export async function mountProject(context) {
+  if (context.isCurrentProject?.() === false) return;
   ensureTubeDesignerStyles();
   installTubeDesignerBranding();
   const view = getProjectView(context.project?.projectId ?? "");
-  // 下料已经是产品主流程的一部分，不再通过旧“零件与排样”商业权限分叉界面。
+  await ensureLicenseStatus(context, view);
+  if (view.disposed || context.isCurrentProject?.() === false) return;
+  context.actions?.refreshProductRibbon?.();
+  if (context.activeRibbonTabId === "about") {
+    return workbench.mountProject(withDesignerContext(context));
+  }
+  restoreProductResources(context, view);
+  bindTubeDesignerWindowMemory(context, view);
+  // Keep the unified workflow presentation; page and operation access is
+  // checked independently through the native capability catalogue.
   view.tubeDesignerProductionAccess = true;
   view.tubeDesignerResourceLibraryArea ??= "profiles";
   if (view.tubeDesignerResourceLibraryArea === "components") {
@@ -150,10 +222,11 @@ export async function mountProject(context) {
   const designerContext = withDesignerContext(context);
   const shouldRefresh = (!view.tubeDesignerLoaded || (historyChanged && !ownMutation))
     && !view.tubeDesignerLoading;
-  const shouldRefreshUserData = !view.tubeDesignerUserDataLoaded
+  const shouldRefreshUserData = !shouldRefresh && !view.tubeDesignerUserDataLoaded
     && !view.tubeDesignerUserDataLoading;
   if (shouldRefresh) {
     view.tubeDesignerLoading = true;
+    view.error = "";
   }
   if (shouldRefreshUserData) {
     view.tubeDesignerUserDataLoading = true;
@@ -192,7 +265,7 @@ export async function mountProject(context) {
           && !view.tubeDesignerUserDataError
           && Array.isArray(view.tubeDesignerSystemProfiles)
           && view.tubeDesignerSystemProfiles.length > 0;
-        workbench.mountProject(designerContext);
+        if (!view.disposed && designerContext.isCurrentProject?.() !== false) workbench.mountProject(designerContext);
       }
     })();
     view.tubeDesignerUserDataSynchronizationPromise = userDataSynchronization;
@@ -228,12 +301,14 @@ export async function mountProject(context) {
     .map((member) => String(member?.entityId ?? "").trim())
     .filter(Boolean);
   const synchronization = (async () => {
+    let synchronized = false;
     try {
       if (loadProgress) {
         await waitForPaint();
         loadProgress.visibleAt = nowMilliseconds();
       }
       await refreshDesignerState(designerContext, view);
+      if (view.disposed || designerContext.isCurrentProject?.() === false) return;
       await preloadTubeDesignerTemplates(designerContext, view,
         async (kind, completed, total, detail) => {
           const labels = {
@@ -247,11 +322,13 @@ export async function mountProject(context) {
           const resourceLabel = labels[kind] ?? "模板";
           if (updateDesignerLoadProgress(view, loadProgress,
             `加载${resourceLabel} ${count}`, detail, `正在加载${resourceLabel}`)) {
+            if (view.disposed || designerContext.isCurrentProject?.() === false) return;
             workbench.mountProject(designerContext);
             await waitForPaint();
           }
         });
       const designer = view.scene?.tubeDesigner ?? {};
+      if (view.disposed || designerContext.isCurrentProject?.() === false) return;
       const generationRunId = String(designer.generationRun?.entityId ?? "").trim();
       const memberIds = (designer.members ?? [])
         .map((member) => String(member?.entityId ?? "").trim())
@@ -281,7 +358,9 @@ export async function mountProject(context) {
           workbench.mountProject(designerContext);
           await waitForPaint();
         }
+        if (view.disposed || designerContext.isCurrentProject?.() === false) return;
         const viewContent = await workbench.synchronizeActiveAreaView(designerContext, expectation);
+        if (view.disposed || designerContext.isCurrentProject?.() === false) return;
         const defaultViewReceipt = memberIds.length > 0
           ? fitDesignerDefaultView(view, viewContent.revision, designer.product)
           : null;
@@ -296,14 +375,15 @@ export async function mountProject(context) {
         };
       }
       view.tubeDesignerRenderSignature = getDesignerRenderSignature(designer);
+      synchronized = true;
     } finally {
       await finishDesignerLoadProgress(view, loadProgress);
-      if (shouldRefresh) {
+      if (view.tubeDesignerSynchronizationPromise === synchronization) {
         view.tubeDesignerLoading = false;
-        view.tubeDesignerLoaded = true;
+        view.tubeDesignerLoaded = synchronized;
       }
       resolveSceneRefreshReady();
-      workbench.mountProject(designerContext);
+      if (!view.disposed && designerContext.isCurrentProject?.() !== false) workbench.mountProject(designerContext);
     }
   })();
   view.tubeDesignerSynchronizationPromise = synchronization;
@@ -317,6 +397,8 @@ export async function mountProject(context) {
 }
 
 export function handleRibbonCommand(context, commandId) {
+  const view = getProjectView(context.project?.projectId ?? "");
+  if (!allowDesignerInteraction(context, view, commandLicenseFeature(commandId, view.activeAreaId), commandId)) return true;
   return workbench.handleRibbonCommand(withDesignerContext(context), commandId);
 }
 
@@ -326,6 +408,8 @@ export function getProjectHistoryState(context) {
 
 export function handleProjectHistoryCommand(context, direction) {
   const commandId = direction === "redo" ? "designer.history.redo" : "designer.history.undo";
+  const view = getProjectView(context.project?.projectId ?? "");
+  if (!allowLicenseFeature(context, view, commandLicenseFeature(commandId, view.activeAreaId))) return true;
   return workbench.handleRibbonCommand({
     ...withDesignerContext(context),
     onlyHandleAreaRibbonCommand: true,
@@ -347,9 +431,18 @@ export function getWindowCloseGuard(context) {
   };
 }
 
+function allowDesignerInteraction(context, view, featureId, commandId = "") {
+  if (!commandId.startsWith("licensing.") && isLicenseWorkspaceReadOnly(context, view)) {
+    return allowLicenseFeature(context, view, "page.product");
+  }
+  return allowLicenseFeature(context, view, featureId);
+}
+
 function withDesignerContext(context) {
   return {
     ...context,
+    noticePresentation: "log",
+    errorPresentation: "log",
     forceThreeViewport: true,
     showViewportGrid: false,
     areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "单件工艺库", assemblies: "装配库", components: "配件库", sketch: "草图", about: "关于" },
@@ -403,26 +496,59 @@ function withDesignerContext(context) {
         ? tabId : "view";
     },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
-      className: `tube-designer-workspace ${areaId === "view" ? "tube-designer-product-workspace" : ""} ${areaId === "nesting" ? "tube-designer-production-workspace" : ""} ${areaId === "assemblies" ? "tube-designer-assembly-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
-      style: areaId === "nesting" ? renderNestingWorkspaceStyle() : areaId === "view" ? renderProductWorkspaceStyle() : "",
+      className: `tube-designer-workspace ${areaId === "view" ? "tube-designer-product-workspace" : ""} ${areaId === "nesting" ? `tube-designer-production-workspace ${Object.entries(nestingDockZoneCounts(_view, _context)).filter(([, count]) => !count).map(([zone]) => `tube-designer-dock-${zone}-empty`).join(" ")}` : ""} ${areaId === "assemblies" ? "tube-designer-assembly-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
+      style: areaId === "nesting" ? renderNestingWorkspaceStyle(_view, _context) : areaId === "view" ? renderProductWorkspaceStyle() : "",
     }),
     resolveViewportBackgroundColor: () => 0x13252d,
     configureViewport: configureDesignerViewport,
     resolveAreaViewDefinition: resolveDesignerAreaViewDefinition,
     renderViewportOverlay: renderDesignerAreaViewportOverlay,
     renderWorkbenchSuffix: renderDesignerWorkbenchSuffix,
-    handleAreaAction: handleDesignerAreaAction,
+    refreshLicenseWorkspace: () => mountProject(context),
+    refreshLicenseControls: (view) => applyLicenseControlState(context, view, context.mount),
+    async handleAreaAction(context, view, action, target, ops) {
+      if (await handleLicenseCommand(context, view, action, ops)) return { handled: true };
+      if (!allowDesignerInteraction(context, view, actionLicenseFeature(action, view.activeAreaId))) return { handled: true };
+      const result = await handleDesignerAreaAction(context, view, action, target, ops);
+      rememberDesignerCreationWindowState(context, view);
+      rememberLinkedWindowControls(context, view, action, target);
+      rememberLibraryNavigation(view);
+      return result;
+    },
     handleAreaViewportPick: handleDesignerViewportPick,
-    handleAreaRibbonCommand: handleDesignerRibbonCommand,
+    handleAreaViewportHover: handleDesignerViewportHover,
+    handleAreaRibbonCommand: async (context, view, commandId, ops) => {
+      if (!allowDesignerInteraction(context, view, commandLicenseFeature(commandId, view.activeAreaId), commandId)) return true;
+      // Authorization remains available even while another editor is pending.
+      if (await handleLicenseCommand(context, view, commandId, ops)) return true;
+      return handleDesignerRibbonCommand(context, view, commandId, ops);
+    },
     tryRenderProjectPatch(context,view,mount,ops) {
-      if(["tools","profiles","assemblies"].includes(view.activeAreaId)) {
+      if(view.activeAreaId==='nesting' && !view.tubeDesignerPartDrawing && !view.tubeDesignerPunchWizard
+        && !view.tubeDesignerNestingStandardPartDraft && patchFloatingEditorDom(view,mount,{
+        suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+        left:renderNestingLeftPane(context,view), right:renderNestingRightPane(context,view),
+        overlay:()=>renderNestingViewportOverlay(context,view),
+        sceneProxy:context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null,
+      }))return true;
+      if(view.activeAreaId==='nesting' && view.tubeDesignerNestingStandardPartDraft) {
+        const html=renderNestingStandardPartDialog(view)+renderDesignerOperationOverlay(context,view);
+        if(!patchNestingStandardPartDom(view,mount,html,context.sceneProxy))return false;
+        bindProfileParameterDiagrams(mount);
+        return true;
+      }
+      if(["tools","profiles","assemblies","view"].includes(view.activeAreaId)) {
         const tools=view.activeAreaId==="tools";
         const assemblies=view.activeAreaId==="assemblies";
+        const product=view.activeAreaId==="view";
+        const inspection = product && retainPartInspectionWindow(mount);
         const patched=patchLibraryDom(view,mount,{
-          left:(assemblies?renderAssemblyLibraryLeftPane:tools?renderToolLibraryLeftPane:renderProfileLibraryLeftPane)(context,view),
-          right:(assemblies?renderAssemblyLibraryRightPane:tools?renderToolLibraryRightPane:renderProfileLibraryRightPane)(context,view),
-          overlay:(assemblies?renderAssemblyLibraryViewportOverlay:tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
+          left:(product?renderDesignerLeftPane:assemblies?renderAssemblyLibraryLeftPane:tools?renderToolLibraryLeftPane:renderProfileLibraryLeftPane)(context,view),
+          right:product ? renderDesignerRightPane(context,view,{includePartInspection:!inspection})
+            : (assemblies?renderAssemblyLibraryRightPane:tools?renderToolLibraryRightPane:renderProfileLibraryRightPane)(context,view),
+          overlay:(product?renderDesignerViewportOverlay:assemblies?renderAssemblyLibraryViewportOverlay:tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+          sceneProxy:context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null,
         });
         if(patched){bindDiagramDragging(mount,view);bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindAssemblyParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view,(level,message)=>ops.appendProjectLog(context,level,message));bindProductParameterDiagrams(mount);return true;}
         return false;
@@ -430,9 +556,14 @@ function withDesignerContext(context) {
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
         const html=renderPartDrawingDialog(view)+renderDesignerOperationOverlay(context,view);
         if(!patchPartDrawingDom(view,mount,html))return false;
+        bindDiagramDragging(mount,view);
         bindProfileParameterDiagrams(mount);
         attachPartDrawingPreview(context,view,mount,ops);
         attachPartDrawingEditor(context,view,mount,ops);
+        return true;
+      }
+      if(closePunchDom(view,mount)) {
+        attachPunchEditor(context,view,mount,ops);
         return true;
       }
       if(!view.tubeDesignerPunchWizard||view.tubeDesignerPartDrawing||view.activeAreaId!=="nesting")return false;
@@ -447,27 +578,42 @@ function withDesignerContext(context) {
       return true;
     },
     beforeProjectRender(context, view) {
+      captureNestingStandardPartDisclosures(view, context.mount);
+      restoreLibraryNavigation(view);
+      disposeInactiveNestingPartFilePicker(context, view);
+      captureNestingDockInteraction(context.mount, view);
       captureDesignerScrollState(context, view);
       captureProductTemplateLibraryScrollState(context, view);
     },
-    afterProjectPatch(context, view) {
-      restoreDesignerScrollState(context, view);
+    afterProjectPatch(context, view, _mount, ops) {
+      applyLicenseControlState(context, view, _mount);
+      bindFloatingEditorWindows(_mount,view);
+      rememberFloatingEditorDom(view,_mount,{suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+        sceneProxy:context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null});
+      connectBatchExcelAutomation(context, view, { ...ops, refreshDesignerState, fitDesignerDefaultView });
+      synchronizeBatchExcelTemplateSelection(view, _mount);
+      bindDesignerProductPartsInspection(context, view, ops);
+      restoreNestingDockInteraction(view);
+      restoreDesignerScrollState(context, view, { deferred: false });
       restoreProductTemplateLibraryScrollState(context, view);
-      bindFloatingParameterDiagram(context.mount,view,renderDesignerToolDiagramDock);
+      bindDiagramDragging(context.mount,view);
       bindToolParameterDiagrams(context.mount);
       bindAssemblyParameterDiagrams(context.mount);
       attachAssemblyLibraryViewports(context, view, context.mount);
-      if (view.activeAreaId === "assemblies") {
-        void ensureProductAssemblyConnections(context, view, {
-          renderProject: () => view.tubeDesignerAssemblyLibraryRenderProject?.(),
-        });
-        if (view.tubeDesignerAssemblyLibrary?.workMode === "product") void ensureProductAssemblyBindings(context, view, {
-          renderProject: () => view.tubeDesignerAssemblyLibraryRenderProject?.(),
-        });
-      }
+      bindTubeDesignerWindowMemory(context, view, ops);
     },
     afterProjectRender(context, view, mount, ops) {
-      rememberLibraryDom(view,mount,renderDesignerWorkbenchSuffix(context,view,view.scene??{}));
+      applyLicenseControlState(context, view, mount);
+      bindFloatingEditorWindows(mount,view);
+      rememberFloatingEditorDom(view,mount,{suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+        sceneProxy:context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null});
+      rememberNestingStandardPartDom(view, mount, context.sceneProxy);
+      connectBatchExcelAutomation(context, view, { ...ops, refreshDesignerState, fitDesignerDefaultView });
+      synchronizeBatchExcelTemplateSelection(view, mount);
+      bindDesignerProductPartsInspection(context, view, ops);
+      rememberLibraryDom(view,mount,renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+        context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null);
+      attachNestingDocking(context, view, mount, ops);
       restoreDesignerScrollState(context, view);
       restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);
@@ -475,7 +621,7 @@ function withDesignerContext(context) {
       bindAssemblyParameterDiagrams(mount);
       bindProductSceneParameterHighlights(mount, view, (level, message) => ops.appendProjectLog(context, level, message));
       bindProductParameterDiagrams(mount);
-      bindFloatingParameterDiagram(mount,view,renderDesignerToolDiagramDock);
+      bindDiagramDragging(mount,view);
       if (view.activeAreaId === "assemblies") attachAssemblyLibraryViewports(context, view, mount);
       else disposeAssemblyLibraryViewports(view);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
@@ -506,8 +652,6 @@ function withDesignerContext(context) {
         view.tubeDesignerAssemblyLibraryRenderProject = () => ops.renderProject(context, view);
         const catalogueStatus = view.tubeDesignerAssemblyLibrary?.catalogueStatus ?? "idle";
         if (catalogueStatus === "idle") ensureAssemblyLibraryCatalogue(context, view, ops);
-        void ensureProductAssemblyConnections(context, view, ops);
-        if (view.tubeDesignerAssemblyLibrary?.workMode === "product") void ensureProductAssemblyBindings(context, view, ops);
       }
       if (view.activeAreaId === "templates") {
         view.tubeDesignerProductTemplateLibraryRenderProject = () => ops.renderProject(context, view);
@@ -519,6 +663,7 @@ function withDesignerContext(context) {
         scheduleDesignerPartInspectionHydration(context, view.scene?.tubeDesigner ?? {}, view);
       }
       restoreNestingPartListScroll(context, view, mount);
+      restoreNestingDockInteraction(view);
       attachNestingPartContextMenu(context, view, mount, ops);
       attachSketchAreaInteractions(context, view, mount, ops);
       attachComponentLibrary(context, view, mount, ops);
@@ -531,18 +676,36 @@ function withDesignerContext(context) {
         attachPunchEditor(context,view,mount,ops);
       }
       attachTubeMachining(context, view, mount, ops);
+      bindTubeDesignerWindowMemory(context, view, ops);
     },
   };
 }
 
-function renderNestingWorkspaceStyle() {
+function renderNestingWorkspaceStyle(view, context) {
+  const counts = nestingDockZoneCounts(view, context);
   return [
     "width:100%",
     "height:100%",
-    "grid-template-columns:var(--cam-left-width,300px) 5px minmax(0,1fr) 5px var(--cam-right-width,320px)",
-    "grid-template-rows:auto minmax(0,1fr) 5px var(--cam-bottom-height,156px)",
+    `grid-template-columns:${counts.left ? "var(--cam-left-width,300px) 5px" : "0px 0px"} minmax(0,1fr) ${counts.right ? "5px var(--cam-right-width,320px)" : "0px 0px"}`,
+    `grid-template-rows:auto minmax(0,1fr) ${counts.bottom ? "5px var(--cam-bottom-height,156px)" : "0px 0px"}`,
     "grid-template-areas:'notice notice notice notice notice' 'left left-resize viewer right-resize right' 'bottom-resize bottom-resize bottom-resize bottom-resize bottom-resize' 'bottom bottom bottom bottom bottom'",
   ].join(";");
+}
+
+function retainPartInspectionWindow(mount) {
+  const inspection = mount.querySelector(".tube-designer-part-inspection-backdrop");
+  if (!inspection || inspection.parentElement === mount) return inspection;
+  const restorePanes = capturePaneInteraction(mount);
+  const active = mount.ownerDocument.activeElement;
+  const focused = inspection.contains(active);
+  const scrolls = [inspection, ...inspection.querySelectorAll("*")]
+    .filter((node) => node.scrollTop || node.scrollLeft)
+    .map((node) => [node, node.scrollTop, node.scrollLeft]);
+  mount.appendChild(inspection);
+  if (focused && active.isConnected) active.focus({ preventScroll: true });
+  restorePanes();
+  for (const [node, top, left] of scrolls) { node.scrollTop = top; node.scrollLeft = left; }
+  return inspection;
 }
 
 function renderProductWorkspaceStyle() {
@@ -577,10 +740,9 @@ function configureDesignerViewport(_context, view, areaId) {
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
   viewport.setProjectionToggleVisible?.(!["sketch", "about", "assemblies"].includes(normalizedAreaId));
-  // The product scene is presentation-first: products and parts are selected
-  // from their lists, while left-clicks in the viewport remain available to
-  // specification annotations without selecting arbitrary members.
-  viewport.setPickingEnabled?.(!["view", "profiles", "assemblies", "sketch", "about"].includes(normalizedAreaId));
+  // Product members can be selected directly to locate their realised parts.
+  // Specification annotations keep their own double-click editing path.
+  viewport.setPickingEnabled?.(!["profiles", "assemblies", "sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(!["sketch", "assemblies"].includes(normalizedAreaId));
   viewport.setProjectionChangeHandler?.((mode) => {
     const currentAreaId = ["view", "templates", "profiles", "tools", "assemblies", "components", "nesting", "machining"].includes(view.activeAreaId)
@@ -590,6 +752,7 @@ function configureDesignerViewport(_context, view, areaId) {
   });
   viewport.setProjectionMode?.(projectionMode);
   viewport.setOrbitConstrained?.(normalizedAreaId === "view");
+  viewport.setBlankDoubleClickFitEnabled?.(!["sketch", "about"].includes(normalizedAreaId));
 }
 
 function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
@@ -630,21 +793,15 @@ function renderDesignerAreaViewportOverlay(context, view, scene) {
 }
 
 const productSceneParameterHighlightListeners = new WeakSet();
-const PRODUCT_PARAMETER_EMPHASIS_VISUAL = Object.freeze({
-  color: 0xa855f7,
-  emissive: 0x6b21a8,
-  emissiveIntensity: 0.78,
-  linewidth: 2,
-});
-
 export function bindProductSceneParameterHighlights(mount, view, _appendLog = null) {
   bindProductSpecificationAnnotations(mount, view);
   bindProfileSpecificationAnnotations(mount, view);
+  bindProductPartsScene(mount, view);
   if (!mount || productSceneParameterHighlightListeners.has(mount)) return;
   productSceneParameterHighlightListeners.add(mount);
   const clear = () => {
     view.tubeDesignerProductParameterHighlightIds = [];
-    view.viewport?.setEmphasizedObjectIds?.([], { visual: PRODUCT_PARAMETER_EMPHASIS_VISUAL });
+    updateProductSceneEmphasis(view);
   };
   mount.addEventListener("tube-designer-product-parameter-focus", (event) => {
     const { key, mode, profileRole, category } = event.detail ?? {};
@@ -663,20 +820,27 @@ export function bindProductSceneParameterHighlights(mount, view, _appendLog = nu
     const template = (designer.templates ?? []).find((item) => item?.id === product?.templateId);
     const ids = productSceneMemberIds(template, designer.members ?? [], key, { profileRole });
     view.tubeDesignerProductParameterHighlightIds = ids;
-    view.viewport?.setEmphasizedObjectIds?.(ids, { visual: PRODUCT_PARAMETER_EMPHASIS_VISUAL });
+    updateProductSceneEmphasis(view);
   });
 }
 
 export function handleDesignerViewportPick(context, view, userData, hit, event, hits, ops) {
+  if (view.activeAreaId === "view") {
+    if (view.pending || view.tubeDesignerExportOperation) return true;
+    const selected = selectProductSceneMember(context.mount, view, hit ? userData?.objectId ?? userData?.entityId ?? "" : "", { reveal: true });
+    if (!hit || selected) return true;
+  }
+  if (handlePartsAreaViewportPick(context, view, userData, hit, event)) return true;
   return handleTubeMachiningViewportPick(context, view, userData, hit, event, hits, ops);
+}
+
+export function handleDesignerViewportHover(context, view, userData, hit, event, hits, { pointerActive = false } = {}) {
+  return hoverProductSceneMember(context.mount, view, hit ? userData?.objectId ?? userData?.entityId ?? "" : "", { active: pointerActive });
 }
 
 function renderDesignerWorkbenchSuffix(context, view, scene) {
   const punchWizardDialog = view.activeAreaId === "nesting"
     ? renderPunchWizardDialog(context, view)
-    : "";
-  const nestingPartImportDialog = view.activeAreaId === "nesting"
-    ? renderNestingPartImportDialog(view)
     : "";
   const nestingStandardPartDialog = view.activeAreaId === "nesting"
     ? renderNestingStandardPartDialog(view)
@@ -696,9 +860,90 @@ function renderDesignerWorkbenchSuffix(context, view, scene) {
   const areaDialogs = view.activeAreaId === "view"
     ? ""
     : renderDesignerDialogs(view.scene?.tubeDesigner ?? {}, view);
-  return `${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${productPartsDock}${areaDialogs}${nestingPartImportDialog}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${punchWizardDialog}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
-    view.tubeDesignerLoadProgress ? renderProgress(view.tubeDesignerLoadProgress) : ""
+  const loadProgress = view.tubeDesignerLoadProgress;
+  // During application startup the loading status belongs to the animated
+  // startup screen. Later project/history loads retain their regular feedback.
+  const startupOwnsProgress = loadProgress
+    && context.actions?.reportStartupProgress?.(loadProgress, context.project?.projectId) === true;
+  return `${renderBatchExcelAutomationDialog(view)}${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${productPartsDock}${areaDialogs}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${punchWizardDialog}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
+    loadProgress && !startupOwnsProgress ? renderProgress(loadProgress) : ""
   }`;
+}
+
+const licenseControlSelector = [
+  "[data-cam-action]", "[data-cam-change-action]",
+  "[data-tube-designer-parameter]", "[data-product-control-key]",
+  "[data-tube-designer-instance-quantity]", "[data-tube-designer-part-field]",
+  "[data-tube-designer-punch-field]", "[data-tube-designer-punch-profile-parameter]",
+  "[data-tube-designer-punch-array-field]", "[data-tube-designer-nesting-punch-field]",
+  "[data-tube-designer-main-profile-parameter]", "[data-punch-batch-field]",
+  "[data-punch-batch-definition-feature-id]", "[data-drawing-field]", "[data-drawing-parameter]",
+  "[data-tube-profile-editor-name]", "[data-tube-profile-editor-parameter]",
+  "[data-tube-template-create-base]", "[data-tube-template-create-name]", "[data-tube-template-create-description]",
+  "[data-tube-template-library-parameter]", "[data-profile-parameter-key]", "[data-tool-parameter-key]", "[data-operation-parameter-key]",
+  "[data-assembly-parameter-key]", "[data-tube-part-process-parameter]", "[data-process-anchor-key]",
+  "[data-stock-operation-parameter]", "[data-stock-instance]", "[data-finished-parameter]", "[data-finished-profile-parameter]",
+].join(",");
+const licenseControlBindings = new WeakMap();
+
+function controlLicenseFeature(control, areaId) {
+  // Some existing editors collect their fields when Save is pressed instead
+  // of giving each input a delegated action. Gate those fields as well.
+  if (control.matches("input,select,textarea")) {
+    if (control.matches("[data-tube-designer-part-field],[data-tube-designer-punch-field],[data-tube-designer-punch-profile-parameter],[data-tube-designer-punch-array-field],[data-tube-designer-nesting-punch-field],[data-tube-designer-main-profile-parameter],[data-punch-batch-field],[data-punch-batch-definition-feature-id],[data-drawing-field],[data-drawing-parameter]")) return "nesting.edit";
+    if (areaId === "view" && control.matches("[data-tube-designer-parameter],[data-product-control-key],[data-tube-designer-instance-quantity]")) return "product.design";
+    if (["templates", "profiles", "tools", "assemblies", "components"].includes(areaId)
+        && !control.dataset.camAction && !control.dataset.camChangeAction) return ["product.design", "nesting.edit"];
+  }
+  return actionLicenseFeature(control.dataset.camAction ?? control.dataset.camChangeAction ?? "", areaId);
+}
+
+function applyLicenseControlState(context, view, mount, roots = [mount]) {
+  if (!mount?.querySelectorAll) return;
+  const readOnly = isLicenseWorkspaceReadOnly(context, view);
+  // The public tabs and licensing commands live outside this surface.
+  // Inert also stops camera, annotation, list and splitter interactions.
+  mount.inert = readOnly;
+  const controls = new Set(roots.flatMap(root => root?.querySelectorAll
+    ? [...(root.matches?.(licenseControlSelector) ? [root] : []), ...root.querySelectorAll(licenseControlSelector)] : []));
+  for (const control of controls) {
+    const featureId = controlLicenseFeature(control, view.activeAreaId);
+    const denied = readOnly || !hasLicenseFeature(context, view, featureId);
+    if (denied) {
+      if (!control.dataset.tubeDesignerLicenseDisabled) {
+        control.dataset.tubeDesignerLicenseDisabled = "1";
+        control.dataset.tubeDesignerLicensePreviousDisabled = control.disabled ? "1" : "0";
+        control.dataset.tubeDesignerLicensePreviousTitle = control.getAttribute("title") ?? "";
+      }
+      control.setAttribute("aria-disabled", "true");
+      control.setAttribute("title", licenseDenialMessage(context, view, featureId));
+      if (control.matches("button,input,select,textarea")) {
+        control.disabled = true;
+      }
+    } else if (control.dataset.tubeDesignerLicenseDisabled) {
+      delete control.dataset.tubeDesignerLicenseDisabled;
+      if (control.matches("button,input,select,textarea")) control.disabled = control.dataset.tubeDesignerLicensePreviousDisabled === "1";
+      control.removeAttribute("aria-disabled");
+      if (control.dataset.tubeDesignerLicensePreviousTitle) control.setAttribute("title", control.dataset.tubeDesignerLicensePreviousTitle);
+      else control.removeAttribute("title");
+      delete control.dataset.tubeDesignerLicensePreviousDisabled;
+      delete control.dataset.tubeDesignerLicensePreviousTitle;
+    }
+  }
+  // Scene annotation inputs and inline sheet editors can be inserted without
+  // a workbench render. Apply the same policy to those actual new nodes.
+  let binding = licenseControlBindings.get(mount);
+  if (!binding && mount.ownerDocument?.defaultView?.MutationObserver) {
+    binding = { context, view };
+    binding.observer = new mount.ownerDocument.defaultView.MutationObserver(records => {
+      if (binding.view.disposed || binding.context.isCurrentProject?.() === false) return;
+      const added = records.flatMap(record => [...record.addedNodes]).filter(node => node.nodeType === 1);
+      if (added.length) applyLicenseControlState(binding.context, binding.view, mount, added);
+    });
+    binding.observer.observe(mount, { childList: true, subtree: true });
+    licenseControlBindings.set(mount, binding);
+  }
+  if (binding) { binding.context = context; binding.view = view; }
 }
 
 function getHistoryToken(scene) {
@@ -716,22 +961,25 @@ function beginDesignerLoadProgress(view, historyChanged, shouldRefresh, shouldRe
   // `pending` gates the base workbench's initial scene read. Loading feedback must
   // therefore use its own state while reusing the same full-screen progress view.
   const token = {};
+  const resourcesReady = view.tubeDesignerUserDataLoaded
+    && view.tubeDesignerToolLibrary?.catalogueStatus === "ready";
+  const minimumVisibleMs = resourcesReady ? 0 : TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS;
   const readsProductAndUserData = shouldRefresh && shouldRefreshUserData;
   view.tubeDesignerLoadProgress = {
-    title: historyChanged ? "正在恢复产品历史" : "正在准备资源模板",
-    detail: readsProductAndUserData
+    title: historyChanged ? "正在恢复产品历史" : resourcesReady ? "正在打开项目" : "正在准备资源模板",
+    detail: resourcesReady ? "正在读取项目和产品场景" : readsProductAndUserData
       ? "正在准备产品、管型和单件工艺"
       : shouldRefresh
         ? "正在准备产品、管型和单件工艺"
         : "正在读取用户配置",
-    stage: readsProductAndUserData
+    stage: resourcesReady ? "读取项目" : readsProductAndUserData
       ? "准备模板载入"
       : shouldRefresh ? "准备模板载入" : "读取用户数据",
     mode: "Tube Designer",
-    minimumVisibleMs: TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS,
+    minimumVisibleMs,
   };
   view.tubeDesignerLoadProgressToken = token;
-  return { token, startedAt: nowMilliseconds() };
+  return { token, startedAt: nowMilliseconds(), minimumVisibleMs };
 }
 
 function updateDesignerLoadProgress(view, operation, stage, detail, title = null) {
@@ -753,7 +1001,7 @@ async function finishDesignerLoadProgress(view, operation) {
   if (!operation) return;
   await waitForMinimumDuration(
     operation.visibleAt ?? operation.startedAt,
-    TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS,
+    operation.minimumVisibleMs,
   );
   if (view.tubeDesignerLoadProgressToken !== operation.token) return;
   view.tubeDesignerLoadProgress = null;

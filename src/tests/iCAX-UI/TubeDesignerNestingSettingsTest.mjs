@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import { buildProfileGroups } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import {
   getNestingParameters,
@@ -15,11 +16,13 @@ Object.defineProperty(globalThis, "localStorage", { configurable: true, get() {
 } });
 
 const rectangularProfile = {
+  sectionIdentity: nativeSectionIdentity("rect-40-20-r2-t1.5"),
   id: "rect", kind: "rect", packageVersion: "1.0.0", displayName: "矩形管",
   specification: "40 × 20 × R2 × 1.5", width: 40, depth: 20,
   wallThickness: 1.5, cornerRadius: 2, hollow: true,
 };
 const roundProfile = {
+  sectionIdentity: nativeSectionIdentity("round-19-t1"),
   id: "round", kind: "round", packageVersion: "1.0.0", displayName: "圆管",
   specification: "⌀19 × 1", width: 19, depth: 19,
   wallThickness: 1, cornerRadius: 0, hollow: true,
@@ -112,7 +115,7 @@ await test("Cross-material parts share their section without merging different d
   assert.equal(groups.find((group) => group.profile.includes("矩形管")).quantity, 2);
   assert.equal(buildProfileGroups([
     parts[0],
-    { ...parts[1], profile: { ...parts[1].profile, width: 50 } },
+    { ...parts[1], profile: { ...parts[1].profile, width: 50, sectionIdentity: nativeSectionIdentity("rect-50-20-r2-t1.5") } },
   ]).length, 2);
 });
 
@@ -236,7 +239,7 @@ await test("Section changes preserve saved settings for sections which later ret
   await harness.act("stock-save");
   const originalParts = structuredClone(partsIn(harness.view));
   harness.view.scene.tubeDesigner.manufacturingGroups[0].parts = [originalParts[2],
-    createPart("new-profile", { ...rectangularProfile, width: 60, specification: "60 × 20 × R2 × 1.5" })];
+    createPart("new-profile", { ...rectangularProfile, width: 60, specification: "60 × 20 × R2 × 1.5", sectionIdentity: nativeSectionIdentity("rect-60-20-r2-t1.5") })];
   await harness.open();
   const html = renderNestingSettingsDialogs(harness.context, harness.view);
   assert.doesNotMatch(html, /40 × 20 × R2 × 1\.5/);

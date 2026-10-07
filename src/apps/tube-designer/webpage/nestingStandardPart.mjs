@@ -1,8 +1,10 @@
-import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { parameterVisible, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
-import { libraryProfiles, profileRef, profileScope, profileSelectionKey, renderProfileSvg } from "./profileLibrary.mjs";
+import { libraryProfiles, profileRef, profileScope, profileSelectionKey, renderProfileSvg, renderProfileParameterControl, renderProfileParameterGroups } from "./profileLibrary.mjs";
 import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { chooseNestingProfileDxf } from "./nestingPartFilePicker.mjs";
+import { patchDomNode } from './punchDomPatch.mjs';
 
 const PREFIX = "tube-designer-nesting-standard-";
 const DXF_KEY = "__dxf__";
@@ -15,6 +17,44 @@ const nameOf = (profile) => localized(profile?.name ?? profile?.descriptor?.disp
 const parametric = (profile) => !!profile && (profile.profileForm ?? profile.descriptor?.profileForm ?? snapshot(profile)?.profileForm) === "parametric";
 const definitionsOf = (profile) => parametric(profile)
   ? profile?.descriptor?.parameters ?? snapshot(profile)?.parameterDefinitions ?? [] : [];
+const rendered = new WeakMap();
+
+// Read live disclosure state immediately before any refresh. Keep it within
+// this draft/profile, so a different dialog or project cannot inherit it.
+export function captureNestingStandardPartDisclosures(view, mount) {
+  const draft = view.tubeDesignerNestingStandardPartDraft;
+  const dialog = mount?.querySelector?.('.tube-nesting-standard-part-dialog');
+  if (!draft || !dialog || rendered.get(mount)?.draft !== draft) return;
+  const states = {};
+  for (const details of dialog.querySelectorAll('details')) {
+    const key = details.dataset.parameterAdvancedKey ?? details.id;
+    if (key) states[key] = details.open;
+  }
+  draft.disclosures ??= {};
+  draft.disclosures[dialog.dataset.standardPartProfile] = states;
+}
+
+export function rememberNestingStandardPartDom(view, mount, sceneProxy) {
+  rendered.set(mount, { draft:view.tubeDesignerNestingStandardPartDraft, scene:view.scene?.tubeDesigner, sceneProxy });
+}
+
+export function patchNestingStandardPartDom(view, mount, html, sceneProxy) {
+  const previous = rendered.get(mount), old = mount?.querySelector('.tube-nesting-standard-part-backdrop');
+  if (!old || view.activeAreaId !== 'nesting' || !view.tubeDesignerNestingStandardPartDraft
+    || previous?.draft !== view.tubeDesignerNestingStandardPartDraft || previous.scene !== view.scene?.tubeDesigner
+    || previous.sceneProxy !== sceneProxy) return false;
+  const template = mount.ownerDocument.createElement('template'); template.innerHTML = html;
+  const next = template.content.querySelector('.tube-nesting-standard-part-backdrop');
+  if (!next) return false;
+  const parent = old.parentNode;
+  patchDomNode(old, next);
+  const progress = mount.querySelector('[data-tube-designer-operation-wait]');
+  const nextProgress = template.content.querySelector('[data-tube-designer-operation-wait]');
+  if (progress && nextProgress) patchDomNode(progress, nextProgress);
+  else if (progress) progress.remove();
+  else if (nextProgress) parent.append(nextProgress);
+  return true;
+}
 
 export function standardPartProfiles(view) {
   return libraryProfiles(view).filter((profile) => ["system", "user"].includes(profileScope(profile)) && profile.id);
@@ -48,31 +88,6 @@ function openDialog(view) {
   view.error = "";
 }
 
-function visible(condition, values = {}) {
-  return matchesParameterCondition(condition, values);
-}
-
-function renderParameter(definition, values, disabled) {
-  const key = definition.key;
-  const value = values[key] ?? definition.defaultValue ?? "";
-  const label = localized(definition.displayName ?? definition.name, key);
-  const common = `data-profile-parameter-key="${escapeAttr(key)}" data-cam-change-action="${action("parameter")}" data-standard-part-parameter="${escapeAttr(key)}" ${disabled}`;
-  let control;
-  if (definition.valueType === "boolean") {
-    control = `<input type="checkbox" ${common} ${value === true ? "checked" : ""} />`;
-  } else if (Array.isArray(definition.options) && definition.options.length) {
-    control = `<select ${common}>${definition.options.map((option) => {
-      const optionValue = typeof option === "object" ? option.value : option;
-      return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(localized(option?.displayName ?? option?.label, optionValue))}</option>`;
-    }).join("")}</select>`;
-  } else {
-    const minimum = definition.min ?? definition.minimum;
-    const maximum = definition.max ?? definition.maximum;
-    control = `<input type="${definition.valueType === "string" ? "text" : "number"}" value="${escapeAttr(value)}" ${common} step="${escapeAttr(definition.step ?? (definition.valueType === "integer" ? 1 : "any"))}" ${minimum != null ? `min="${escapeAttr(minimum)}"` : ""} ${maximum != null ? `max="${escapeAttr(maximum)}"` : ""} />`;
-  }
-  return `<label class="tube-designer-field"><span>${escapeText(label)}${definition.unit ? `（${escapeText(localized(definition.unit))}）` : ""}</span>${control}</label>`;
-}
-
 export function renderNestingStandardPartDialog(view) {
   const draft = view.tubeDesignerNestingStandardPartDraft;
   if (!draft) return "";
@@ -81,11 +96,11 @@ export function renderNestingStandardPartDialog(view) {
   const source = draft.profileKey === DXF_KEY ? draft.importedProfile : profile;
   const preview = draft.previewInvalid ? null : draft.profile ?? snapshot(source);
   const disabled = view.pending ? "disabled" : "";
-  const definitions = definitionsOf(profile).filter((item) => visible(item.visibleWhen, draft.parameters));
-  return `<div class="tube-designer-modal-backdrop tube-designer-preset-dialog-backdrop" role="presentation">
-    <section class="tube-designer-preset-dialog tube-nesting-standard-part-dialog" data-profile-parameter-scope role="dialog" aria-modal="true" aria-labelledby="nesting-standard-part-title">
+  const definitions = definitionsOf(profile).filter((item) => parameterVisible(item, draft.parameters));
+  return `<div class="tube-designer-modal-backdrop tube-designer-preset-dialog-backdrop tube-nesting-standard-part-backdrop" role="presentation">
+    <section class="tube-designer-preset-dialog tube-nesting-standard-part-dialog" data-standard-part-profile="${escapeAttr(draft.profileKey)}" data-profile-parameter-scope role="dialog" aria-modal="true" aria-labelledby="nesting-standard-part-title" data-window-state-controls="[data-cam-change-action='tube-designer-nesting-standard-profile-select'],[data-standard-part-parameter],[data-cam-change-action='tube-designer-nesting-standard-length']">
       <header class="tube-designer-dialog-header">
-        <div><strong id="nesting-standard-part-title">添加标准零件</strong><span>选择截面并输入长度，生成直管下料零件</span></div>
+        <strong id="nesting-standard-part-title">添加标准零件</strong>
         <button class="tube-designer-dialog-close" data-cam-action="${action("cancel")}" aria-label="取消添加" ${disabled}>×</button>
       </header>
       <div class="tube-nesting-standard-part-body">
@@ -103,13 +118,13 @@ export function renderNestingStandardPartDialog(view) {
             }).join("")}
             <option value="${DXF_KEY}" ${draft.profileKey === DXF_KEY ? "selected" : ""}>${draft.importedProfile ? `本地 DXF · ${escapeText(nameOf(draft.importedProfile))}` : "从本地 DXF 导入…"}</option>
           </select></label>
-          <div class="tube-nesting-standard-part-source"><span>仅显示系统和我的管型</span><button class="tube-designer-secondary" data-cam-action="${action("import-dxf")}" ${disabled}>导入 DXF</button></div>
-          ${definitions.length ? `<section class="tube-nesting-standard-part-parameters"><strong>截面参数</strong><div>${definitions.map((item) => renderParameter(item, draft.parameters, disabled)).join("")}</div><small>仅用于本次零件，不修改管型库</small></section>` : source ? `<p class="tube-nesting-standard-part-note">${parametric(profile) ? "此程式管型未提供可编辑参数，使用默认截面。" : "定式截面保持原始轮廓，直接设置长度即可。"}</p>` : ""}
+          <div class="tube-nesting-standard-part-source"><button class="tube-designer-secondary" data-cam-action="${action("import-dxf")}" ${disabled}>导入 DXF</button></div>
+          ${definitions.length ? `<section class="tube-nesting-standard-part-parameters"><strong>截面参数</strong><div>${renderProfileParameterGroups(profile, definitions, draft.parameters, view.pending, { keyPrefix: "nesting-standard", disclosures: draft.disclosures?.[draft.profileKey] ?? {}, renderControl: (definition, values, pending) => renderProfileParameterControl(definition, values, pending, { changeAction: action("parameter"), attributes: { "data-standard-part-parameter": definition.key } }) })}</div></section>` : source ? `<p class="tube-nesting-standard-part-note">${parametric(profile) ? "此程式管型未提供可编辑参数，使用默认截面。" : "定式截面保持原始轮廓，直接设置长度即可。"}</p>` : ""}
           <label class="tube-designer-field"><span>长度（mm）</span><input aria-label="长度（mm）" type="number" min="1" max="100000" step="any" value="${escapeAttr(draft.length)}" data-cam-change-action="${action("length")}" ${disabled} /></label>
           ${draft.error ? `<div class="tube-designer-punch-error" role="alert">${escapeText(draft.error)}</div>` : ""}
         </div>
       </div>
-      <footer class="tube-designer-preset-dialog-footer"><small>添加后可在零件列表调整数量</small><button class="tube-designer-secondary" data-cam-action="${action("cancel")}" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${action("confirm")}" ${disabled || (!source ? "disabled" : "")}>${view.pending ? "处理中…" : "添加零件"}</button></footer>
+      <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${action("cancel")}" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${action("confirm")}" ${disabled || (!source ? "disabled" : "")}>${view.pending ? "处理中…" : "添加零件"}</button></footer>
     </section>
   </div>`;
 }
@@ -117,7 +132,7 @@ export function renderNestingStandardPartDialog(view) {
 function parametersFor(profile, draft) {
   const parameters = { ...draft.parameters };
   for (const definition of definitionsOf(profile)) {
-    if (!visible(definition.visibleWhen, parameters)) continue;
+    if (!parameterVisible(definition, parameters) || !parameterEnabled(definition, parameters)) continue;
     const key = definition.key;
     const label = localized(definition.displayName ?? definition.name, key);
     const raw = parameters[key] ?? definition.defaultValue;
@@ -179,26 +194,20 @@ function waitForProgressPaint() {
 }
 
 async function importDxf(context, view, draft, ops) {
-  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge;
-  if (typeof bridge?.openFileDialog !== "function") throw new Error("当前宿主没有提供文件选择能力。");
+  const productProxy = context.productProxy;
+  const sceneProxy = context.sceneProxy;
+  const sourcePath = await chooseNestingProfileDxf(context, view);
+  if (!sourcePath || view.tubeDesignerNestingStandardPartDraft !== draft
+    || context.productProxy !== productProxy || context.sceneProxy !== sceneProxy || view.activeAreaId !== 'nesting') return null;
   const operationId = beginOperation(context, view, ops, {
-    kind: "nesting-standard-dxf", title: "正在导入 DXF 截面", phase: "selecting-file",
-    phaseLabel: "等待选择文件", message: "请在文件窗口中选择 DXF 截面，或取消返回。",
+    kind: "nesting-standard-dxf", title: "正在导入 DXF 截面", phase: "importing-dxf",
+    phaseLabel: "读取并检查 DXF 轮廓", message: "正在读取截面曲线并检查封闭轮廓，完成后更新示意图。",
   });
   try {
     await waitForProgressPaint();
-    const sourcePath = String(await bridge.openFileDialog({ title: "选择标准零件的 DXF 截面", filters: [{ name: "DXF 截面", extensions: ["dxf"] }] }) ?? "").trim();
-    if (!sourcePath) return null;
-    if (!/\.dxf$/i.test(sourcePath)) throw new Error("请选择 DXF 截面文件。");
-    updateOperation(view, operationId, {
-      phase: "importing-dxf", phaseLabel: "读取并检查 DXF 轮廓",
-      message: "正在读取截面曲线并检查封闭轮廓，完成后更新示意图。",
-    });
-    ops.renderProject(context, view);
-    await waitForProgressPaint();
-    const response = await context.productProxy?.invoke("TubeDesigner.ImportProfileDxf", { sourcePath }, { timeoutMs: 60000 });
+    const response = await productProxy.invoke("TubeDesigner.ImportProfileDxf", { sourcePath }, { timeoutMs: 60000 });
     if (!response?.profile?.contours?.length) throw new Error("DXF 未返回有效的封闭截面。");
-    if (view.tubeDesignerNestingStandardPartDraft !== draft) return null;
+    if (view.tubeDesignerNestingStandardPartDraft !== draft || context.productProxy !== productProxy || context.sceneProxy !== sceneProxy) return null;
     draft.importedProfile = clone(response.profile);
     draft.profile = draft.importedProfile;
     draft.profileKey = DXF_KEY;
@@ -263,7 +272,7 @@ async function confirmPart(context, view, draft, ops) {
     });
     view.scene ??= {};
     view.scene.tubeDesigner = response.tubeDesigner;
-    restoreSavedNestingTask(view, context);
+    await restoreSavedNestingTask(view, context);
     const partId = String(response.partEntityId);
     view.tubeDesignerNestingSelectedPartIds = [partId];
     view.tubeDesignerActivePartId = partId;

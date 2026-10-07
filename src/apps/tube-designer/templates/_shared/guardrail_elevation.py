@@ -174,11 +174,17 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
         def beam(suffix, name, profile, intercept, category, vertical_width=False):
             start = bay.left.point
             end = bay.right.point
+            top_cap = category == "guardrail.handrail"
             lateral_width = profile.depth if vertical_width else profile.width
-            if lateral_width > min(bay.left.profile.width, bay.left.profile.depth) + 1e-7:
+            if not top_cap and lateral_width > min(bay.left.profile.width, bay.left.profile.depth) + 1e-7:
                 start = add(start, direction, bay.left.half_extent(direction))
-            if lateral_width > min(bay.right.profile.width, bay.right.profile.depth) + 1e-7:
+            if not top_cap and lateral_width > min(bay.right.profile.width, bay.right.profile.depth) + 1e-7:
                 end = add(end, direction, -bay.right.half_extent(direction))
+            if top_cap:
+                if bay.left is built.bays[0].left:
+                    start = add(start, direction, -bay.left.half_extent(direction) - number(p,"startExtension",30,0,2000)*cosine)
+                if bay.right is built.bays[-1].right:
+                    end = add(end, direction, bay.right.half_extent(direction) + number(p,"finishExtension",30,0,2000)*cosine)
             # Raw rails reach the post centreplanes and are coped by both post
             # envelopes. This also resolves rounded rectangular corner regions.
             depth = profile.width if vertical_width else profile.depth
@@ -188,7 +194,7 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
                         (a[0], a[1], z_at(a, intercept)), (b[0], b[1], z_at(b, intercept)),
                         profile, normal if vertical_width else side,
                         tuple(-v for v in side) if vertical_width else normal,
-                        category, bay.key, [bay.left.key, bay.right.key])
+                        category, bay.key, [] if top_cap else [bay.left.key, bay.right.key])
             tube.diagonal = abs(slope) > 1e-9
             vertical_ends(tube, start, end, direction)
             # Partition shared-post corners with complementary plan bisectors.
@@ -325,8 +331,8 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
                 continue
             first, last = group[0], group[-1]
             d, cosine = s["direction"], s["cos"]
-            start = number(p,"startExtension",0,0,2000) if index == 0 else 0
-            finish = number(p,"finishExtension",0,0,2000) if index == len(segments)-1 else 0
+            start = number(p,"startExtension",30,0,2000) + built.bays[0].left.half_extent(d)/cosine if index == 0 else 0
+            finish = number(p,"finishExtension",30,0,2000) + built.bays[-1].right.half_extent(d)/cosine if index == len(segments)-1 else 0
             intercept = height-cap_profile.depth/(2*cosine)
             a, b = add(s["origin"],d,-start*cosine), add(s["origin"],d,s["length"]+finish*cosine)
             z = lambda q: s["base"]+intercept+station(q,s)*s["slope"]

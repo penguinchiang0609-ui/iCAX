@@ -26,7 +26,8 @@ class FoldedPostProductTests(unittest.TestCase):
                                    ('three', 'spatial_v_notch', [38, 30, 30, 38])):
             for joint in ('insert', 'tabs'):
                 with self.subTest(face=face, mode=mode, joint=joint):
-                    values = self.values(faceType=face, frameManufacturingMode=mode, foldedPostJoint=joint)
+                    values = self.values(faceType=face, frameManufacturingMode=mode, foldedPostJoint=joint,
+                                         outerFramePostMaterial='independent' if face == 'five' else 'middle_only')
                     original = deepcopy(values)
                     with forbid_product_processing():
                         design = self.core.display(values)
@@ -94,6 +95,7 @@ class FoldedPostProductTests(unittest.TestCase):
         from icax_template_sdk.profile_constraints import _profile_validation_scope
         frame, folded = snapshot(42., 42., 'frame'), snapshot(28., 30., 'post')
         values = self.values(faceType='three', frameManufacturingMode='plane_v_notch', foldedPostJoint='insert',
+                             outerFramePostMaterial='middle_only',
                              tubeDesignerProfileOverrides={'frame': frame, 'foldedPost': folded})
         original = deepcopy(values)
         with _profile_validation_scope(self.descriptor):

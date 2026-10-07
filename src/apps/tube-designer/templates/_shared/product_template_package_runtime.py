@@ -118,7 +118,7 @@ def _resource_name(value: object) -> str:
     return "/".join(part for part in path.parts if part not in ("", "."))
 
 
-def _validate_descriptor(value: object, *, allow_legacy_presets: bool = False) -> dict:
+def _validate_descriptor(value: object) -> dict:
     if not isinstance(value, dict) or value.get("schema") != "icax.template-descriptor":
         raise ValueError("itpt 的 template.json 不是产品模板描述")
     if value.get("schemaVersion") != 1:
@@ -133,12 +133,12 @@ def _validate_descriptor(value: object, *, allow_legacy_presets: bool = False) -
     # turn one package into several templates, which is intentionally not part
     # of the package format.  Each style gets its own .itpt instead.
     catalog = value.get("extensions", {}).get("catalog") if isinstance(value.get("extensions"), dict) else None
-    if isinstance(catalog, dict) and "presets" in catalog and not allow_legacy_presets:
+    if isinstance(catalog, dict) and "presets" in catalog:
         raise ValueError("itpt 一个压缩包只能包含一个产品模板，请为每个款式分别导出 .itpt")
     return value
 
 
-def _read(path: Path, *, allow_legacy_presets: bool = False) -> tuple[dict, str, dict[str, str]]:
+def _read(path: Path) -> tuple[dict, str, dict[str, str]]:
     if not path.is_file() or path.stat().st_size > MAX_ARCHIVE_BYTES:
         raise ValueError("itpt 文件不存在或超过 64 MB")
     try:
@@ -177,13 +177,11 @@ def _read(path: Path, *, allow_legacy_presets: bool = False) -> tuple[dict, str,
             raise ValueError("itpt 密码校验失败或压缩包已损坏") from error
         except (UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile, zlib.error) as error:
             raise ValueError("itpt 内容不是有效 UTF-8 或 JSON") from error
-    return _validate_descriptor(descriptor, allow_legacy_presets=allow_legacy_presets), script, resources
+    return _validate_descriptor(descriptor), script, resources
 
 
 def _inspect(source_path: str) -> dict:
-    # Import/inspection remains backward compatible with old multi-style
-    # packages; migration turns those records into one descriptor per style.
-    descriptor, script, resources = _read(Path(source_path), allow_legacy_presets=True)
+    descriptor, script, resources = _read(Path(source_path))
     return {
         "descriptor": descriptor,
         "scriptSource": script,
@@ -203,9 +201,7 @@ def _inspect_directory(source_path: str) -> dict:
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
     script = script_path.read_text(encoding="utf-8-sig")
     return {
-        # Directory inspection also reads legacy development templates so an
-        # existing installation can be migrated without blocking startup.
-        "descriptor": _validate_descriptor(descriptor, allow_legacy_presets=True),
+        "descriptor": _validate_descriptor(descriptor),
         "scriptSource": script,
         "resources": _read_directory_resources(root),
         "sourceFileName": root.name + ".itpt",

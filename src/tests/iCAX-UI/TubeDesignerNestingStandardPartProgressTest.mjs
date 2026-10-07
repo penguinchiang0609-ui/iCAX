@@ -35,7 +35,7 @@ async function harness() {
   const calls = [], renders = [], notices = [];
   const file = deferred(), evaluation = deferred(), creation = deferred(), refresh = deferred();
   const view = { activeAreaId: "nesting", pending: false, scene: { tubeDesigner: { nestingGroups: [] } },
-    tubeDesignerSystemProfiles: [{ id: "rect", name: "矩形管", profileType: "parametric-package",
+    tubeDesignerSystemProfiles: [{ id: "rect", name: "矩形管", profileType: "parametric-package", profileForm: "parametric",
       previewProfile: profile, defaultParameters: { width: 40 },
       descriptor: { parameters: [{ key: "width", displayName: "外宽", valueType: "number", defaultValue: 40, min: 1 }] },
     }], tubeDesignerUserData: { profiles: [] },
@@ -91,27 +91,8 @@ await test("creation progress paints before invocation and stays through scene r
   h.idle(); assert.equal(h.notices.length, 1);
 });
 
-await test("DXF picker and import each show their current waiting stage", async ({ paint }) => {
-  const h = await harness();
-  const result = h.act("import-dxf");
-  h.progress("selecting-file"); assert.deepEqual(h.calls, []);
-  await paint(); assert.deepEqual(h.calls, ["file"]);
-  await h.act("import-dxf");
-  h.file.resolve("D:\\Profiles\\round.dxf"); await drain();
-  h.progress("importing-dxf"); assert.deepEqual(h.calls, ["file"]);
-  await paint();
-  assert.deepEqual(h.calls, ["file", "TubeDesigner.ImportProfileDxf"]);
-  h.evaluation.resolve({ profile }); await result;
-  h.idle(); assert.equal(h.view.tubeDesignerNestingStandardPartDraft.profileKey, "__dxf__");
-});
-
-await test("cancelling the DXF picker clears progress and preserves the selected profile", async ({ paint }) => {
-  const h = await harness();
-  const result = h.act("import-dxf"); await paint();
-  h.file.resolve(""); await result;
-  h.idle(); assert.deepEqual(h.calls, ["file"]);
-  assert.equal(h.view.tubeDesignerNestingStandardPartDraft.profileKey, "system:rect");
-});
+// Custom DXF picker loading, cancellation, error and retry are covered by
+// TubeDesignerNestingStandardPart.browser.mjs using actual browser interactions.
 
 await test("program evaluation has indeterminate progress and blocks overlapping edits", async ({ paint }) => {
   const h = await harness();
@@ -125,7 +106,7 @@ await test("program evaluation has indeterminate progress and blocks overlapping
   assert.equal(h.view.tubeDesignerNestingStandardPartDraft.previewInvalid, false);
 });
 
-for (const operation of ["file", "dxf", "parameter", "creation"]) {
+for (const operation of ["parameter", "creation"]) {
   await test(`${operation} failure clears waiting state and leaves an actionable error`, async ({ paint }) => {
     const h = await harness();
     const result = operation === "parameter"

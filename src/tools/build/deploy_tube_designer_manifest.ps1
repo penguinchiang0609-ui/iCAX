@@ -47,4 +47,8 @@ if (!$ValidateOnly) {
     [IO.Directory]::CreateDirectory($productRoot) | Out-Null
     [IO.File]::WriteAllText($targetManifest, $deployedText, [Text.UTF8Encoding]::new($false))
 }
+if (!(Test-Path -LiteralPath $targetManifest -PathType Leaf) -or
+    ![string]::Equals([IO.File]::ReadAllText($targetManifest), $deployedText, [StringComparison]::Ordinal)) {
+    throw "Deployed manifest differs from the current source deployment: $targetManifest"
+}
 Write-Output "Validated $(@($modulePaths | Sort-Object -Unique).Count) module paths; manifest: $targetManifest"

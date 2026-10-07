@@ -12,27 +12,30 @@ ObjectMap AssemblyProcessAuthoritativeStockSection(ObjectMap Input_,
 {
     const auto _PartsIt = Input_.find("parts");
     if (_PartsIt == Input_.end() || !_PartsIt->second.Is<ObjectMap>()) return Input_;
-    auto _Parts = _PartsIt->second.To<ObjectMap>();
+    auto& _Parts = std::get<ObjectMap>(_PartsIt->second.m_Value);
     for (auto& [_Role,_Value] : _Parts) {
         if (!_Value.Is<ObjectMap>()) continue;
-        auto _Part = _Value.To<ObjectMap>();
+        auto& _Part = std::get<ObjectMap>(_Value.m_Value);
         if (!_Part.contains("profileRef")) continue;
         _Part["section"] = ObjectMap{{"profile", Resolve_(AssemblyProcessProfileInput(_Part))}};
-        _Value = std::move(_Part);
     }
-    Input_["parts"] = std::move(_Parts);
     return Input_;
 }
 
-ObjectMap ResolveAssemblyProcessPlanRequest(
-    const iCAX::Interaction::CInvocation& Request_,
+ObjectMap ResolveAssemblyProcessPlanParameters(
+    ObjectMap _Parameters,
     const iCAX::Application::IApplicationContext& ApplicationContext_,
     iCAX::Product::IProductContext* ProductContext_,
     const std::map<std::string, ObjectMap>* AuthoritativeProductProfiles_ = nullptr)
 {
-    if (Request_.Payload.size() > 16 * 1024 * 1024)
-        throw std::invalid_argument("装配工艺计划请求过大");
-    auto _Parameters = DecodeObjectPayload(Request_);
+    const bool _ProfilePerformance = GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) > 0;
+    const auto _Started = std::chrono::steady_clock::now();
+    const auto _Mark = [&](const char* Phase_) {
+        if (_ProfilePerformance) std::fprintf(stderr, "Disassembly/process-plan/%s %.3f ms\n", Phase_,
+            std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-_Started).count());
+    };
+    const auto _Expected = GetString(_Parameters, "expectedPlanDigest");
+    _Mark("decode");
     _Parameters.erase("expectedPlanDigest");
     _Parameters.erase("previewResourceKey");
     _Parameters.erase("planId");
@@ -47,13 +50,16 @@ ObjectMap ResolveAssemblyProcessPlanRequest(
         _ProfileInputs.emplace(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Input)), _Input);
     };
     if (const auto _It = _Parameters.find("stocks"); _It != _Parameters.end() && _It->second.Is<VariantArray>())
-        for (const auto& _Stock : _It->second.To<VariantArray>()) _AddProfile(_Stock.To<ObjectMap>());
+        for (const auto& _Stock : std::get<VariantArray>(_It->second.m_Value))
+            _AddProfile(std::get<ObjectMap>(_Stock.m_Value));
     if (const auto _It = _Parameters.find("instances"); _It != _Parameters.end() && _It->second.Is<VariantArray>())
-        for (const auto& _Value : _It->second.To<VariantArray>())
-            for (const auto& [_Role, _Part] : GetRequiredObject(
-                GetRequiredObject(_Value.To<ObjectMap>(), "processInput"), "parts"))
-                _AddProfile(_Part.To<ObjectMap>());
+        for (const auto& _Value : std::get<VariantArray>(_It->second.m_Value))
+            for (const auto& [_Role, _Part] : GetRequiredObjectView(
+                GetRequiredObjectView(std::get<ObjectMap>(_Value.m_Value), "processInput"), "parts"))
+                _AddProfile(std::get<ObjectMap>(_Part.m_Value));
     VariantArray _Dependencies;
+    _Dependencies.reserve(_ProfileInputs.size());
+    _Mark("profile-inputs");
     std::map<std::string, ObjectMap> _ResolvedProfiles;
     for (const auto& [_Key, _Input] : _ProfileInputs) {
         const auto _ProductProfile = AuthoritativeProductProfiles_
@@ -90,29 +96,41 @@ ObjectMap ResolveAssemblyProcessPlanRequest(
         _Dependencies.emplace_back(std::move(_Dependency));
     }
     _Parameters["nativeProfileDependencies"] = std::move(_Dependencies);
+    _Mark("profiles-resolved");
     if (const auto _It = _Parameters.find("instances"); _It != _Parameters.end() && _It->second.Is<VariantArray>()) {
-        auto _Instances = _It->second.To<VariantArray>();
+        auto& _Instances = std::get<VariantArray>(_It->second.m_Value);
         for (auto& _Value : _Instances) {
-            auto _Instance = _Value.To<ObjectMap>();
+            auto& _Instance = std::get<ObjectMap>(_Value.m_Value);
+            (void)GetRequiredObjectView(_Instance, "processInput");
             _Instance["processInput"] = AssemblyProcessAuthoritativeStockSection(
-                GetRequiredObject(_Instance, "processInput"), [&](const ObjectMap& _Input) {
+                std::move(std::get<ObjectMap>(_Instance.at("processInput").m_Value)), [&](const ObjectMap& _Input) {
                     return _ResolvedProfiles.at(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Input)));
                 });
-            _Value = std::move(_Instance);
         }
-        _Parameters["instances"] = std::move(_Instances);
     }
     _Parameters["action"] = std::string("process-plan");
+    _Mark("invoke-begin");
     auto _Plan = InvokeAssemblyTemplateRuntime(ApplicationContext_, _Parameters);
+    _Mark("invoke-complete");
     if (GetString(_Plan, "schema") != "icax.assembly-process-plan"
         || GetUInt64(_Plan, "schemaVersion", 0) != 1)
         throw std::runtime_error("装配工艺计划格式无效");
     const auto _Digest = GetRequiredText(_Plan, "planDigest", 128);
-    const auto _Payload = DecodeObjectPayload(Request_);
-    const auto _Expected = GetString(_Payload, "expectedPlanDigest");
     if (!_Expected.empty() && _Expected != _Digest)
         throw std::invalid_argument("装配工艺计划或资源已改变，请重新生成预览");
     return _Plan;
+}
+
+ObjectMap ResolveAssemblyProcessPlanRequest(
+    const iCAX::Interaction::CInvocation& Request_,
+    const iCAX::Application::IApplicationContext& ApplicationContext_,
+    iCAX::Product::IProductContext* ProductContext_,
+    const std::map<std::string, ObjectMap>* AuthoritativeProductProfiles_ = nullptr)
+{
+    if (Request_.Payload.size() > 16 * 1024 * 1024)
+        throw std::invalid_argument("装配工艺计划请求过大");
+    return ResolveAssemblyProcessPlanParameters(DecodeObjectPayload(Request_),
+        ApplicationContext_, ProductContext_, AuthoritativeProductProfiles_);
 }
 
 iCAX::Interaction::CInvocationResult HandleEvaluateAssemblyProcess(

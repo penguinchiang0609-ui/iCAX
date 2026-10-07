@@ -70,7 +70,11 @@ def _multiply(a, b):
 
 
 def _rotation(axis, angle, hinge):
-    """Rigid rotation about an actual material hinge, in row-major stock space."""
+    """Rigid rotation about a declared centre, in row-major stock space.
+
+    A distributed-root arc labels its equivalent final-pose centre explicitly;
+    that centre is not a physical material hinge.
+    """
     x, y, z = axis
     c, s, t = math.cos(angle), math.sin(angle), 1-math.cos(angle)
     rows = [[t*x*x+c, t*x*y-s*z, t*x*z+s*y],
@@ -200,6 +204,73 @@ def _cutter_interval(output):
     return bounds(output["outputKey"])
 
 
+def _edge_root_arc_final_pose(cutter, parameters, root, beta, matrix, axis):
+    """Read the unchanged frozen cutter's root band and solve its final pose.
+
+    The flat root band becomes the retained-side circular arc. Only the rigid
+    outgoing tube's final transform is solved here, not plastic deformation or
+    a collision-free intermediate motion. K remains a separate material amount.
+    """
+    nodes = {node['key']: node for node in cutter['model']['geometry']}
+    base = nodes['notch-base-profile']['arguments']
+    circle = nodes['arc-cylinder-profile']['arguments']
+    for arguments in (base, circle):
+        placement = arguments['placement']
+        if (math.dist(placement['xAxis'], [1., 0., 0.]) > 1.e-7
+                or math.dist(placement['yAxis'], [0., 0., 1.]) > 1.e-7):
+            raise ValueError('边弧根部需要实际刀口的轴向圆柱基准')
+    base_origin = base['placement']['origin']
+    root_edges = [edge for contour in base['contours'] for edge in contour['segments']
+                  if edge['kind'] == 'line'
+                  and abs(edge['start'][1]+base_origin[2]-root) < 1.e-7
+                  and abs(edge['end'][1]+base_origin[2]-root) < 1.e-7]
+    if len(root_edges) != 1:
+        raise ValueError('边弧刀口必须具有唯一的平根展开段')
+    a, b = sorted(point[0]+base_origin[0] for point in (root_edges[0]['start'], root_edges[0]['end']))
+    arcs = [edge for contour in circle['contours'] for edge in contour['segments']]
+    if len(arcs) != 2 or any(edge['kind'] != 'arc' for edge in arcs):
+        raise ValueError('边弧刀口必须保留实际圆柱圆弧')
+    circles = [_curves.arc(edge['start'], edge['middle'], edge['end']) for edge in arcs]
+    radius = circles[0]['radius']
+    centre = [circles[0]['center'][0]+circle['placement']['origin'][0],
+              circles[0]['center'][1]+circle['placement']['origin'][2]]
+    if (radius <= 0 or abs(circles[1]['radius']-radius) > 1.e-7
+            or math.dist(circles[0]['center'], circles[1]['center']) > 1.e-7
+            or abs(centre[1]-root-radius) > 1.e-7
+            or abs(centre[0]-(a if parameters['leftArc'] else b)) > 1.e-7):
+        raise ValueError('边弧平根与实际圆柱切口的圆弧基准不一致')
+    compensation = (beta*parameters['kFactor']*parameters['wallThickness']
+                    if parameters.get('bendCompensation', False) else 0.)
+    if abs((b-a)-(radius*beta+compensation)) > 1.e-7:
+        raise ValueError('边弧平根展开长度与实际圆弧及独立K补偿不一致')
+    cosine, sine = math.cos(beta), math.sin(beta)
+    endpoint = [a+radius*sine, 0., root+radius*(1.-cosine)]
+    tx = endpoint[0]-(cosine*b-sine*root)
+    tz = endpoint[2]-(sine*b+cosine*root)
+    # The nominal incoming centreline z=0 meets the transformed outgoing one.
+    outgoing = -tz/sine
+    corner = tx+cosine*outgoing
+    reserves = {'incoming': -corner-compensation/2., 'outgoing': outgoing-compensation/2.}
+    denominator = (1.-cosine)**2+sine*sine
+    equivalent = [((1.-cosine)*tx-sine*tz)/denominator, 0.,
+                  (sine*tx+(1.-cosine)*tz)/denominator]
+    equivalent_stock = _point(matrix, equivalent)
+    return {'targetTransform': _rotation(axis, beta, equivalent_stock),
+            'equivalentCentre': equivalent_stock,
+            'materialCornerReserves': reserves, 'materialLengthAddition': compensation,
+            'rootArc': {'model': 'distributed-root-arc-final-pose', 'radius': radius,
+                'angle': math.degrees(beta), 'flatRootInterval': [a, b],
+                'rootHeight': root, 'rootArcLength': radius*beta,
+                'compensationLength': compensation,
+                'fixedArcSide': 'incoming' if parameters['leftArc'] else 'outgoing',
+                'flatRootStart': _point(matrix, [a, 0., root]),
+                'flatRootEnd': _point(matrix, [b, 0., root]),
+                'formedRootEnd': _point(matrix, endpoint),
+                'localRigidTranslation': [tx, 0., tz],
+                'validation': 'final-pose-only',
+                'limitations': ['plastic root deformation and intermediate sweep are not evaluated']}}
+
+
 def _tool_values(tool, values, drafts, angle, resolved):
     if resolved is not None:
         match = next((item for item in resolved if item.get("id") == "node-slot"), None)
@@ -258,6 +329,8 @@ def _evaluate(template_id, process_input, values, drafts, resolved):
     base = {"applicable": True, "reason": "", "parameters": copy.deepcopy(values),
             "operations": [], "materialRequirements": [], "forming": [], "checks": []}
     axis = [-v for v in frame["yAxis"]]
+    forming_extras = {}
+    equivalent_centre = None
     if template_id == "bend":
         radius, factor = _number(values["bendRadius"], "折弯半径"), _number(values["bendFactor"], "折弯因子")
         if radius <= 0 or not 0 <= factor <= 1:
@@ -321,6 +394,14 @@ def _evaluate(template_id, process_input, values, drafts, resolved):
             for i in range(3):
                 target[4*i+3] = destination[i]-target[4*i]*interval[1]
             hinges, kind = [], "flexible-slit-bend"
+        elif template_id == 'node-edge-arc-integrated':
+            solved = _edge_root_arc_final_pose(cutter, p, root, beta, matrix, axis)
+            target, equivalent_centre = solved['targetTransform'], solved['equivalentCentre']
+            hinges, kind = [], 'distributed-root-arc'
+            validation = 'not-performed'
+            forming_extras = {key: copy.deepcopy(solved[key]) for key in
+                              ('materialCornerReserves', 'materialLengthAddition', 'rootArc')}
+            forming_extras['hingePointKind'] = 'equivalent-final-pose-centre'
         else:
             count = int(calc.get("segmentCount", 1))
             pitch = calc.get("slotPitch", calc.get("chordPitch", 0))
@@ -351,8 +432,9 @@ def _evaluate(template_id, process_input, values, drafts, resolved):
         "stockLength": length, "datum": "stock-start"})
     base["forming"].append({"id": "fold", "role": role, "kind": kind, "station": station,
         "angle": angle, "frame": frame, "matrix": matrix, "axis": axis,
-        "hingePoint": _point(matrix, [0, 0, root]), "targetTransform": target,
-        "localFolds": hinges, "validation": validation, "calculation": copy.deepcopy(calc)})
+        "hingePoint": equivalent_centre if equivalent_centre is not None else _point(matrix, [0, 0, root]),
+        "targetTransform": target, "localFolds": hinges, "validation": validation,
+        "calculation": copy.deepcopy(calc), **forming_extras})
     base["checks"].append({"id": "material-range", "status": "pass", "interval": interval})
     return base
 

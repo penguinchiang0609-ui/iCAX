@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><ProjectGuid>{E06809D4-6293-4ABC-9C5C-BBED319AB72E}</ProjectGuid><Keyword>Win32Proj</Keyword><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion><ImportDirectoryBuildProps>false</ImportDirectoryBuildProps><ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <ICAXRepoRoot>$(MSBuildProjectDirectory)\..\..\..</ICAXRepoRoot>
+    <ICAXCefHarnessOutput Condition="'$(ICAXCefHarnessOutput)'==''">$(ICAXRepoRoot)\output\tests\cef-shutdown\baseline</ICAXCefHarnessOutput>
+    <ICAXCefHarnessLibraries Condition="'$(ICAXCefHarnessLibraries)'==''">$(ICAXRepoRoot)\src\x64\Debug</ICAXCefHarnessLibraries>
+    <ICAXCefHarnessFactory Condition="'$(ICAXCefHarnessFactory)'==''">0</ICAXCefHarnessFactory>
+    <OutDir>$(ICAXCefHarnessOutput)\</OutDir><IntDir>$(ICAXCefHarnessOutput)\obj\</IntDir><TargetName>CefShutdownHarness</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><PrecompiledHeader>NotUsing</PrecompiledHeader><LanguageStandard>stdcpp20</LanguageStandard><ConformanceMode>true</ConformanceMode><RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary><AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions><PreprocessorDefinitions>_DEBUG;UNICODE;_UNICODE;NOMINMAX;ICAX_CEF_SHUTDOWN_FACTORY=$(ICAXCefHarnessFactory);%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ICAXRepoRoot)\src\iCAX-UI;$(ICAXRepoRoot)\src\iCAX-Engine\foundation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalLibraryDirectories>$(ICAXCefHarnessLibraries);$(ICAXRepoRoot)\src\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>CefUIContainer.lib;UIContainer.lib;Task.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="CefShutdown.native.cpp" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

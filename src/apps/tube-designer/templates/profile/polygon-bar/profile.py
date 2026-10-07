@@ -228,10 +228,10 @@ def envelope(contours):
             else:
                 raise ValueError("该曲线尚未提供包络计算，不能静默忽略")
         if ordinary:converted.append({"kind":"path","segments":ordinary})
-    return _legacy_envelope(converted)
+    return _primitive_envelope(converted)
 
 
-def _legacy_envelope(contours):
+def _primitive_envelope(contours):
     points=[]
     for c in contours:
         kind=c["kind"]
@@ -418,17 +418,12 @@ def spline_support(segment, direction, tolerance=1e-12):
 
 def build(p):
     p=dict(p)
-    sides=p.get("sideCount")
-    if sides is None:
-        sides=6 if p.get("sectionModel","hexagonal-bar")=="hexagonal-bar" else 8
+    sides=p["sideCount"]
     if isinstance(sides,bool) or not isinstance(sides,(int,float)) or int(sides)!=sides:
         raise ValueError("边数必须为整数")
     sides=int(sides)
     if not 3<=sides<=32:raise ValueError("边数必须在 3 到 32 之间")
-    radius=p.get("radius")
-    if radius is None:
-        radius=float(p.get("width",30))/(2*math.cos(math.pi/sides))
-    radius=float(radius);corner_radius=float(p.get("cornerRadius",0))
+    radius=float(p["radius"]);corner_radius=float(p.get("cornerRadius",0))
     positive(radius)
     if not math.isfinite(corner_radius) or corner_radius<0:
         raise ValueError("圆角 R 必须为非负有限数值")

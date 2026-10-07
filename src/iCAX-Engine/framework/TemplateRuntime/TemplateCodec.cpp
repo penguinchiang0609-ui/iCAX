@@ -1011,7 +1011,13 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateConsumedProductProfileOverri
 iCAX::Data::ObjectMap
 iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(const Variant& Document_)
 {
-    const auto& _Root = RequireObject(Document_, "display model");
+    return AdaptDisplayModel(RequireObject(Document_, "display model"));
+}
+
+iCAX::Data::ObjectMap
+iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(const ObjectMap& Document_)
+{
+    const auto& _Root = Document_;
     if (RequireString(_Root, "schema", "display model") != kDisplayModelSchema)
         throw std::invalid_argument("unsupported display model schema");
     const auto _Version = Find(_Root, "schemaVersion");
@@ -1128,14 +1134,20 @@ iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(const Variant& Document
         if (Find(_Root, _Key)) _Adapted[_Key] = RequireString(_Root, _Key, "display model");
     // Reuse resource, placement, alias and connection validation before exposing
     // an internal adapter result. The script's display document remains intact.
-    (void)ParseNeutralModel(Variant(_Adapted));
+    (void)ParseNeutralModel(_Adapted);
     return _Adapted;
 }
 
 iCAX::Data::ObjectMap
 iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingModel(const Variant& Document_)
 {
-    const auto& _Root = RequireObject(Document_, "manufacturing model");
+    return AdaptManufacturingModel(RequireObject(Document_, "manufacturing model"));
+}
+
+iCAX::Data::ObjectMap
+iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingModel(const ObjectMap& Document_)
+{
+    const auto& _Root = Document_;
     if (RequireString(_Root, "schema", "manufacturing model") != kManufacturingModelSchema)
         throw std::invalid_argument("unsupported manufacturing model schema");
     const auto _Version = Find(_Root, "schemaVersion");
@@ -1147,7 +1159,13 @@ iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingModel(const Variant& Do
 iCAX::Data::ObjectMap
 iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(const Variant& Document_)
 {
-    const auto& _Root = RequireObject(Document_, "manufacturing input model");
+    return AdaptManufacturingInputModel(RequireObject(Document_, "manufacturing input model"));
+}
+
+iCAX::Data::ObjectMap
+iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(const ObjectMap& Document_)
+{
+    const auto& _Root = Document_;
     const auto _Version = Find(_Root, "schemaVersion")
         ? ToDouble(_Root.at("schemaVersion"), "manufacturing input schemaVersion") : 0;
     if (RequireString(_Root, "schema", "manufacturing input model") != kManufacturingModelSchema
@@ -1380,7 +1398,7 @@ iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(const Varian
         {"resources", _Resources}, {"items", std::move(_TreeItems)}, {"roots", _Root.at("roots")},
         {"coordinateSystem", RequireString(_Root, "coordinateSystem", "manufacturing model")},
         {"lengthUnit", RequireString(_Root, "lengthUnit", "manufacturing model")}};
-    auto _Adapted = AdaptDisplayModel(Variant(_Tree));
+    auto _Adapted = AdaptDisplayModel(_Tree);
     auto& _Items = std::get<VariantArray>(_Adapted.at("items").m_Value);
     for (auto& _Value : _Items)
     {
@@ -1519,9 +1537,12 @@ iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(const Varian
                     throw std::invalid_argument("unsupported assembly resource ref scope");
                 (void)RequireString(_Reference, "id", "assembly resource ref");
                 for (const auto& [_Field, _Entry] : _Reference)
-                    if (_Field != "scope" && _Field != "id" && !(_Scope == "template" && _Field == "templateId"))
+                    if (_Field != "scope" && _Field != "id" && _Field != "version" && _Field != "digest"
+                        && !(_Scope == "template" && _Field == "templateId"))
                         throw std::invalid_argument("unsupported assembly resource ref field");
                 if (_Scope == "template") ValidateStableKey(RequireString(_Reference, "templateId", "assembly resource ref"), "assembly resource templateId");
+                for (const auto _Pin : {"version", "digest"})
+                    if (Find(_Reference, _Pin)) (void)RequireString(_Reference, _Pin, "assembly resource ref");
             }
         const auto& _Parts = RequireObject(_Input.at("parts"), "assembly input parts");
         const ObjectMap _NoTargets;
@@ -1642,14 +1663,15 @@ iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(const Varian
         {"tubeDesigner.manufacturingProcessDeclarations", _Root.at("processes")}};
     // Unallocated inputs have no representation: this validates declarations
     // and object count without inventing final geometry or executing a process.
-    (void)ParseNeutralModel(Variant(_Adapted));
+    (void)ParseNeutralModel(_Adapted);
     return _Adapted;
 }
 
-ObjectMap iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(
-    const Variant& Definition_, const Variant& Design_)
+static ObjectMap ComposeManufacturingModelImpl(
+    const ObjectMap& Definition_, const Variant* DesignValue_, const ObjectMap* DesignDocument_)
 {
-    const auto& _Declaration = RequireObject(Definition_, "manufacturing declaration");
+    using namespace iCAX::TemplateRuntime;
+    const auto& _Declaration = Definition_;
     const std::set<std::string> _Fields{"schema", "schemaVersion", "connections", "processes"};
     if (_Declaration.size() != _Fields.size()
         || RequireString(_Declaration, "schema", "manufacturing declaration") != kManufacturingModelSchema
@@ -1677,9 +1699,12 @@ ObjectMap iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(
         else if ((Value_.Is<double>() && !std::isfinite(Value_.To<double>())) || (Value_.Is<float>() && !std::isfinite(Value_.To<float>())))
             throw std::invalid_argument("manufacturing declaration values must be finite");
     };
-    _ValidatePending(Definition_, 0);
-    const auto& _Design = RequireObject(Design_, "shared design model");
-    (void)AdaptDisplayModel(Design_);
+    // The declaration root is already restricted to these four keys; its
+    // children start at the same depth as the Variant object traversal.
+    for (const auto& [_Key, _Value] : _Declaration) _ValidatePending(_Value, 1);
+    const auto& _Design = DesignDocument_ ? *DesignDocument_
+        : RequireObject(*DesignValue_, "shared design model");
+    (void)iCAX::TemplateRuntime::CTemplateCodec::AdaptDisplayModel(_Design);
     auto _Processes = RequireArray(_Declaration.at("processes"), "manufacturing process declarations");
     auto _Items = RequireArray(_Design.at("items"), "shared design items");
     auto _Resources = RequireArray(_Design.at("resources"), "shared design resources");
@@ -1957,8 +1982,23 @@ ObjectMap iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(
         {"coordinateSystem", _Design.at("coordinateSystem")}, {"lengthUnit", _Design.at("lengthUnit")},
         {"resources", std::move(_Resources)}, {"items", std::move(_Items)}, {"roots", std::move(_Roots)},
         {"sourceMappings", std::move(_Mappings)}, {"processes", std::move(_Processes)}};
-    (void)AdaptManufacturingInputModel(Variant(_Composed));
+    (void)iCAX::TemplateRuntime::CTemplateCodec::AdaptManufacturingInputModel(_Composed);
     return _Composed;
+}
+
+ObjectMap iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(
+    const Variant& Definition_, const Variant& Design_)
+{
+    // Delay the shared-design type check until after declaration validation,
+    // preserving the original error order without cloning either document.
+    return ComposeManufacturingModelImpl(
+        RequireObject(Definition_, "manufacturing declaration"), &Design_, nullptr);
+}
+
+ObjectMap iCAX::TemplateRuntime::CTemplateCodec::ComposeManufacturingModel(
+    const ObjectMap& Definition_, const ObjectMap& Design_)
+{
+    return ComposeManufacturingModelImpl(Definition_, nullptr, &Design_);
 }
 
 void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
@@ -1969,20 +2009,43 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
         && ToDouble(_DefinitionDocument.at("schemaVersion"), "manufacturing definition version") == kManufacturingModelSchemaVersion)
     {
         if (!Design_) throw std::invalid_argument("manufacturing declaration execution requires shared design");
-        ValidateManufacturingExecutionModel(Variant(ComposeManufacturingModel(Definition_, *Design_)), Execution_);
+        const auto _Composed = ComposeManufacturingModel(Definition_, *Design_);
+        ValidateManufacturingExecutionModel(_Composed,
+            RequireObject(Execution_, "manufacturing execution"));
         return;
     }
-    const auto& _ExecutionDocument = RequireObject(Execution_, "manufacturing execution");
+    ValidateManufacturingExecutionModel(_DefinitionDocument,
+        RequireObject(Execution_, "manufacturing execution"));
+}
+
+void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
+    const ObjectMap& Definition_, const ObjectMap& Execution_, const ObjectMap* Design_)
+{
+    (void)ValidateAndParseManufacturingExecutionModel(Definition_, Execution_, Design_);
+}
+
+iCAX::TemplateRuntime::SNeutralModel
+iCAX::TemplateRuntime::CTemplateCodec::ValidateAndParseManufacturingExecutionModel(
+    const ObjectMap& Definition_, const ObjectMap& Execution_, const ObjectMap* Design_)
+{
+    if (Find(Definition_, "schemaVersion")
+        && ToDouble(Definition_.at("schemaVersion"), "manufacturing definition version") == kManufacturingModelSchemaVersion)
+    {
+        if (!Design_) throw std::invalid_argument("manufacturing declaration execution requires shared design");
+        return ValidateAndParseManufacturingExecutionModel(ComposeManufacturingModel(Definition_, *Design_), Execution_);
+    }
+    const auto& _ExecutionDocument = Execution_;
     if (RequireString(_ExecutionDocument, "schema", "manufacturing execution") != kNeutralModelSchema
         || !Find(_ExecutionDocument, "schemaVersion")
         || ToDouble(_ExecutionDocument.at("schemaVersion"), "manufacturing execution schemaVersion") != kNeutralModelResourcesSchemaVersion)
         throw std::invalid_argument("manufacturing execution must return a private neutral model version two");
-    const auto _Declared = ParseNeutralModel(Definition_), _Actual = ParseNeutralModel(Execution_);
+    const auto _Declared = ParseNeutralModel(Definition_);
+    auto _Actual = ParseNeutralModel(Execution_);
     if (_Declared.Outputs.size() != 1 || _Actual.Outputs.size() != 1
         || _Actual.Outputs.front().Purpose != "result")
         throw std::invalid_argument("manufacturing execution must return one actual result output");
-    const auto& _Root = RequireObject(Definition_, "manufacturing definition");
-    std::map<std::string, ObjectMap> _Definitions;
+    const auto& _Root = Definition_;
+    std::map<std::string, const ObjectMap*> _Definitions;
     using SOutputIdentity = std::pair<std::string, std::string>;
     std::map<SOutputIdentity, std::string> _ExpectedOutputs;
     std::set<std::string> _ConsumedInputs;
@@ -1992,7 +2055,7 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
         const auto& _Process = RequireObject(_Value, "manufacturing declaration");
         const auto _ProcessKey = RequireString(_Process, "key", "manufacturing declaration");
         const auto& _Definition = RequireObject(_Process.at("definition"), "manufacturing definition");
-        _Definitions.emplace(_ProcessKey, _Definition);
+        _Definitions.emplace(_ProcessKey, &_Definition);
         if (const auto _Outputs = Find(_Definition, "outputs"))
         {
             for (const auto& [_Role, _Output] : RequireObject(*_Outputs, "manufacturing output declarations"))
@@ -2014,7 +2077,7 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
         if (const auto _Sets = Find(_Actual.Extensions, "tubeDesigner.assemblyOutputSets");
             _Sets && !RequireArray(*_Sets, "assembly output sets").empty())
             throw std::invalid_argument("manufacturing execution returned undeclared generated output sets");
-        return;
+        return _Actual;
     }
     // Resolve provenance from explicit design bindings or prior generated sets.
     // Dependency validation already excludes cycles and undeclared producer roles.
@@ -2023,7 +2086,7 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
         [&](const SOutputIdentity& Identity_) -> const std::set<std::string>& {
         if (_ExpectedSources.contains(Identity_)) return _ExpectedSources.at(Identity_);
         std::set<std::string> _Values;
-        const auto& _Definition = _Definitions.at(Identity_.first);
+        const auto& _Definition = *_Definitions.at(Identity_.first);
         const auto& _Parts = RequireObject(RequireObject(_Definition.at("processInput"), "assembly input").at("parts"), "assembly parts");
         for (const auto& [_Role, _Value] : _Parts)
         {
@@ -2100,12 +2163,19 @@ void iCAX::TemplateRuntime::CTemplateCodec::ValidateManufacturingExecutionModel(
     for (const auto& _Item : _Actual.Items)
         if (_ActualOutputItems.contains(_Item.Key) && !_Item.Representations.contains("result"))
             throw std::invalid_argument("manufacturing execution output item has no actual result geometry");
+    return _Actual;
 }
 
 iCAX::Data::ObjectMap
 iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const Variant& Document_)
 {
-    const auto& _Root = RequireObject(Document_, "neutral model");
+    return ExpandNeutralModelResources(RequireObject(Document_, "neutral model"));
+}
+
+iCAX::Data::ObjectMap
+iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const ObjectMap& Document_)
+{
+    const auto& _Root = Document_;
     if (RequireString(_Root, "schema", "neutral model") != kNeutralModelSchema)
         throw std::invalid_argument("unsupported neutral model schema");
     const auto _SchemaVersion = Find(_Root, "schemaVersion");
@@ -2118,11 +2188,11 @@ iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const Variant
         throw std::invalid_argument("neutral model version 2 must use resources, not geometry");
     const auto _ResourceValue = Find(_Root, "resources");
     if (!_ResourceValue) throw std::invalid_argument("neutral model.resources is required");
-    auto _Geometry = RequireArray(*_ResourceValue, "neutral model.resources");
+    const auto& _Resources = RequireArray(*_ResourceValue, "neutral model.resources");
     std::unordered_set<std::string> _ResourceKeys;
     SNeutralModel _ResourceGraph;
     std::size_t _Index = 0;
-    for (const auto& _Value : _Geometry)
+    for (const auto& _Value : _Resources)
     {
         const auto _Path = "neutral model.resources[" + std::to_string(_Index++) + "]";
         const auto& _Node = RequireObject(_Value, _Path);
@@ -2139,15 +2209,15 @@ iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const Variant
         if (!_Inputs || !_Arguments)
             throw std::invalid_argument(_Path + ".inputs and .arguments are required");
         _Definition.Inputs = ToStringVector(_Inputs, _Path + ".inputs");
-        _Definition.Arguments = RequireObject(*_Arguments, _Path + ".arguments");
+        const auto& _ArgumentValues = RequireObject(*_Arguments, _Path + ".arguments");
         if (_Definition.Operator == EGeometryOperator::Boolean)
         {
             // Boolean declarations also carry named dependencies. Validate
             // those before any item instance is synthesized, just as the SDK
             // resource adapter does.
-            if (Find(_Definition.Arguments, "target"))
-                _Definition.Inputs.push_back(RequireString(_Definition.Arguments, "target", _Path + ".arguments"));
-            const auto _Tools = ToStringVector(Find(_Definition.Arguments, "tools"), _Path + ".arguments.tools");
+            if (Find(_ArgumentValues, "target"))
+                _Definition.Inputs.push_back(RequireString(_ArgumentValues, "target", _Path + ".arguments"));
+            const auto _Tools = ToStringVector(Find(_ArgumentValues, "tools"), _Path + ".arguments.tools");
             _Definition.Inputs.insert(_Definition.Inputs.end(), _Tools.begin(), _Tools.end());
         }
         _ResourceGraph.Geometry.push_back(std::move(_Definition));
@@ -2208,7 +2278,12 @@ iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const Variant
         }
     }
 
-    auto _Expanded = _Root;
+    // Own the returned data, while avoiding a second copy of resources which
+    // would immediately be erased from the expanded document.
+    ObjectMap _Expanded;
+    for (const auto& [_Key, _Value] : _Root)
+        if (_Key != "resources") _Expanded.emplace(_Key, _Value);
+    auto _Geometry = _Resources;
     std::unordered_map<std::string, ObjectMap> _Instances;
     for (const auto& _Reference : _References)
     {
@@ -2249,12 +2324,18 @@ iCAX::TemplateRuntime::CTemplateCodec::ExpandNeutralModelResources(const Variant
 iCAX::TemplateRuntime::SNeutralModel
 iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(const Variant& Document_)
 {
-    const auto& _Root = RequireObject(Document_, "neutral model");
+    return ParseNeutralModel(RequireObject(Document_, "neutral model"));
+}
+
+iCAX::TemplateRuntime::SNeutralModel
+iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(const ObjectMap& Document_)
+{
+    const auto& _Root = Document_;
     const auto _Schema = RequireString(_Root, "schema", "neutral model");
     if (_Schema == kDisplayModelSchema || _Schema == kManufacturingModelSchema)
     {
-        auto _Result = ParseNeutralModel(Variant(_Schema == kDisplayModelSchema
-            ? AdaptDisplayModel(Document_) : AdaptManufacturingModel(Document_)));
+        auto _Result = ParseNeutralModel(_Schema == kDisplayModelSchema
+            ? AdaptDisplayModel(Document_) : AdaptManufacturingModel(Document_));
         _Result.TemplateID.clear();
         _Result.TemplateVersion.clear();
         _Result.PackageDigest.clear();
@@ -2265,7 +2346,7 @@ iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(const Variant& Document
         throw std::invalid_argument("unsupported neutral model schema");
     const auto _SchemaVersion = Find(_Root, "schemaVersion");
     if (_SchemaVersion && ToDouble(*_SchemaVersion, "schemaVersion") == kNeutralModelResourcesSchemaVersion)
-        return ParseNeutralModel(Variant(ExpandNeutralModelResources(Document_)));
+        return ParseNeutralModel(ExpandNeutralModelResources(Document_));
     if (!_SchemaVersion || ToDouble(*_SchemaVersion, "schemaVersion") != kNeutralModelSchemaVersion)
         throw std::invalid_argument("unsupported neutral model schema version");
 

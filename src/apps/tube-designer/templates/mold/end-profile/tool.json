@@ -13,6 +13,16 @@
     "profileRef": {
       "scope": "system",
       "id": "round"
+    },
+    "section": {
+      "profileRef": {
+        "scope": "system",
+        "id": "round"
+      },
+      "parameters": {
+        "width": 20,
+        "wallThickness": 2
+      }
     }
   },
   "illustration": {

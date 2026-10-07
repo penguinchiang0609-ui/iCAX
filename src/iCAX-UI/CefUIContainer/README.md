@@ -62,6 +62,6 @@ allowFileAccessFromFiles=true
 disableGpu=true
 ```
 
-`Application.exe` 会先启动后端，再加载 `modulePath`，触发 CEF 容器静态注册，最后由工厂构造 `CCefUIContainer`。
+`TubeDesigner.exe` 会先启动后端，再加载 `modulePath`，触发 CEF 容器静态注册，最后由工厂构造 `CCefUIContainer`。
 
 `allowFileAccessFromFiles=true` 用于允许本地 `AppShell` 以 ES module 方式加载；`disableGpu=true` 适合当前开发环境，避免 GPU 子进程在没有稳定图形环境时反复崩溃。

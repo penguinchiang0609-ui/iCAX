@@ -19,7 +19,7 @@ namespace iCAX::TubeDesigner
         double Projection = 0.0;
         std::string NestingPlane;
         bool AllowTrapezoidNesting = false;
-        // 展开条带端曲线编码；空编码时保持旧版包络排样行为。
+        // 展开条带端曲线编码；空编码使用保守包络排样。
         iCAX::TubeNesting::CutLineFeatureCode Feature;
     };
 
@@ -52,10 +52,8 @@ namespace iCAX::TubeDesigner
         // Preferred production boundary from tube/profile recognition.  The
         // coefficients use TubeNesting's integer length unit (0.01 mm in this
         // adapter).  If absent, the adapter creates a conservative flat AABB
-        // profile. NumericOnly/missing spectra and legacy cut-line samples are
-        // diagnostic migration inputs only: production nesting falls back to
-        // the non-overlapping axial envelope, and sequence search never
-        // performs online curve matching.
+        // profile. NumericOnly/missing spectra use the non-overlapping axial
+        // envelope; sequence search never performs online curve matching.
         std::optional<iCAX::TubeNesting::PairTypeGeometry> PairGeometry;
         std::array<bool, 2> DirectionAllowed{ true, true };
         // Strict nesting priority. Smaller values are solved first; all parts
@@ -87,11 +85,17 @@ namespace iCAX::TubeDesigner
     _TUBE_DESIGNER_EXP std::vector<SNestingVariant> BuildKnifePlaneNestingVariants(
         const SLinearNestingGeometry& Geometry_, double EnvelopeLength_, bool AllowHalfTurn_);
 
-    // Legacy untyped tube items remain supported. Explicit empty/unknown kinds,
-    // malformed tags and all plate metadata are rejected before linear nesting.
+    // Explicit current part kind is required. Missing/unknown kinds, malformed
+    // tags and all plate metadata are rejected before linear nesting.
     _TUBE_DESIGNER_EXP bool IsTubeManufacturingPart(const iCAX::Data::ObjectMap& Properties_);
 
-    // Verify the browser's grouping against the manufacturing part's section snapshot.
+    // Physical section identity, independent of resource IDs, names and curve
+    // traversal. The actual curves remain authoritative; dimensions alone never
+    // establish that two profiles use the same stock.
+    _TUBE_DESIGNER_EXP std::string BuildNestingSectionIdentity(
+        const iCAX::Data::ObjectMap& Profile_);
+
+    // Verify the browser's identity against the actual manufacturing section.
     _TUBE_DESIGNER_EXP bool MatchesNestingProfileKey(
         const std::string& Key_, const iCAX::Data::ObjectMap& Profile_, const std::string& PartID_);
 

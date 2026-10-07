@@ -333,7 +333,7 @@ TEST(UserDataStoreTest, ManifestDescriptorEnforcesSingletonRecordIdentity)
     EXPECT_EQ(1u, _Saved.Revision);
 }
 
-TEST(UserDataStoreTest, Version1DatabaseUpgradesWithoutDiscardingLegacyRecords)
+TEST(UserDataStoreTest, RejectsObsoleteDatabaseWithoutMigratingRecords)
 {
     auto _Path = MakeTempConfigPath();
     _Path.replace_extension(".db");
@@ -344,18 +344,26 @@ TEST(UserDataStoreTest, Version1DatabaseUpgradesWithoutDiscardingLegacyRecords)
         CSqliteUserDataStore _Store(_Path.string());
         CUserDataQuery _Query;
         _Query.ProductID = "icax.tube-designer";
-        _Query.FeatureID = "_legacy";
-        _Query.RecordType = "parameter-presets";
-        const auto _Records = _Store.List(_Query);
-        ASSERT_EQ(1u, _Records.size());
-        EXPECT_EQ("product", _Records.front().SubjectType);
-        EXPECT_EQ("icax.tube-designer", _Records.front().SubjectID);
-        EXPECT_EQ(3u, _Records.front().Revision);
-        EXPECT_EQ(
-            "Legacy preset",
-            _Records.front().Payload.To<iCAX::Data::ObjectMap>()
-                .at("name").To<std::string>());
+        _Query.FeatureID = "template";
+        _Query.RecordType = "parameter-preset";
+        EXPECT_THROW((void)_Store.List(_Query), std::runtime_error);
     }
+
+    sqlite3* _Database = nullptr;
+    ASSERT_EQ(SQLITE_OK, sqlite3_open(_Path.string().c_str(), &_Database));
+    sqlite3_stmt* _Statement = nullptr;
+    ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(_Database,
+        "SELECT user_version FROM pragma_user_version;", -1, &_Statement, nullptr));
+    ASSERT_EQ(SQLITE_ROW, sqlite3_step(_Statement));
+    EXPECT_EQ(1, sqlite3_column_int(_Statement, 0));
+    sqlite3_finalize(_Statement);
+    ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(_Database,
+        "SELECT record_id, revision FROM user_records;", -1, &_Statement, nullptr));
+    ASSERT_EQ(SQLITE_ROW, sqlite3_step(_Statement));
+    EXPECT_STREQ("legacy-1", reinterpret_cast<const char*>(sqlite3_column_text(_Statement, 0)));
+    EXPECT_EQ(3, sqlite3_column_int(_Statement, 1));
+    sqlite3_finalize(_Statement);
+    sqlite3_close(_Database);
 
     RemoveSqliteFiles(_Path);
 }

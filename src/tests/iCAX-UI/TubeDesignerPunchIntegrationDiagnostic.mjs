@@ -14,7 +14,7 @@ export async function verifyPunchButtonIntents(page) {
   await page.locator('[data-tube-designer-punch-row="draft"] [data-tube-designer-punch-editor-mode="shape"]').click();await idle();
   const popup=page.locator('[data-punch-parameter-dialog]');
   await popup.locator('[data-tube-designer-punch-parameter="diameter"]').fill("12");
-  await popup.locator('[data-cam-action$="parameters-apply"]').click();await idle();
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();
   await page.locator('[data-tube-designer-punch-row="draft"] [data-cam-action="tube-designer-punch-add"]').click();
   await idle();
   const afterFirstAdd = await page.evaluate(() => ({ count: window.fixture.view.tubeDesignerPunchWizard.features.length,
@@ -218,7 +218,7 @@ async function verifyPunchFailureAndReopen(page) {
   await page.evaluate(() => { window.fixture.context.sceneProxy.resources = { async get() { return new Response("intent failure", { status: 503 }); } }; });
   const diameter = popup.locator('[data-tube-designer-punch-parameter="diameter"]');
   await diameter.fill("22");
-  await popup.locator('[data-cam-action$="parameters-apply"]').click(); await idle();
+  await popup.locator('[data-cam-action$="parameters-close"]').click(); await idle();
   assert.equal(await popup.count(), 1, "A failed display keeps the parameter transaction open instead of silently confirming it");
   assert.match(await page.evaluate(() => window.fixture.view.tubeDesignerPunchWizard.previewRenderError), /503/);
   const beforeRollback = await page.evaluate(() => { window.fixture.context.sceneProxy.resources = window.fixture.workingResources; return window.fixture.previewCalls.length; });

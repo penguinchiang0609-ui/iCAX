@@ -57,6 +57,7 @@ def build_plan(plan):
                                direction="positive", length=2 * near + 20)
             else:
                 feature["toolParameters"]["pairRotation"] = placement["pairRotation"]
+                feature["toolParameters"]["allowSideOpening"] = sizes["allowSideOpening"]
     # Keep the workflow as a precise description of the same standard request.
     for operation in plan["resolvedWorkflow"]["partOperations"]:
         role = next(part["sourceRole"] for part in blanks.values() if part["blankId"] == operation["blankId"])
@@ -180,7 +181,8 @@ def build_bound_operations(context):
                     azimuth=math.degrees(math.atan2(axis[1], axis[2])), roll=0,
                     direction="positive", length=2*near+20, offsetY=0, offsetZ=0)
             else:
-                values.update(pairRotation=0, allowEndOpening=False)
+                values.update(pairRotation=0, allowEndOpening=False,
+                              allowSideOpening=sizes["allowSideOpening"])
         operation = {"processId": pid, "role": role, "values": values, "anchor": anchor}
         if section_frame is not None:
             operation["sectionFrame"] = section_frame

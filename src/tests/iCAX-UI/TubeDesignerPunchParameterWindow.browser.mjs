@@ -9,6 +9,10 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 const sourceRoot = fileURLToPath(new URL("../../", import.meta.url)).replace(/[\\/]$/, "");
 const artifacts = resolve(sourceRoot, "../tmp/punch-parameter-window-browser");
 const descriptor = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/mold/circle/tool.json"), "utf8"));
+const sideSlots = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/mold/paired-side-slots/tool.json"), "utf8"));
+// The native mesh fixture stays a circle; its UI descriptor includes the actual
+// internal mould declaration to cover hidden fields during production patches.
+descriptor.parameters.push(sideSlots.parameters.find(field => field.key === "allowSideOpening"));
 const tool = { ...descriptor, digest: "parameter-window-fixture", defaultParameters: Object.fromEntries(descriptor.parameters.map(p => [p.key, p.defaultValue])) };
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 mkdirSync(artifacts, { recursive: true });
@@ -44,7 +48,21 @@ try {
     const state = wizard.createPunchWizardState({ entityId: "__new_nesting_punch_part__", length: 1000, name: draft.name, profile: profile.previewProfile });
     state.creationMode = "main-tube-punch";
     state.creationInput = { draft, profileParameters: { "system:round": structuredClone(profile.defaultParameters) } };
+    await Promise.resolve();
     wizard.installPunchCatalogue(state, { tools: [tool] });
+    if (state.draft.toolRef?.id !== "circle") throw new Error("The new draft did not bind the current circle catalogue asynchronously.");
+    const unreferenced = wizard.createPunchWizardState({ length: 1000, properties: {
+      "tubeDesigner.punchWizard": { features: [{ id: "unreferenced-saved", type: "circle", diameter: 24 }],
+        ends: { start: { type: "miter", angle: 30 }, end: { type: "keep" } } },
+    } });
+    const beforeSaved = JSON.stringify({ features: unreferenced.features, ends: unreferenced.ends });
+    wizard.installPunchCatalogue(unreferenced, { tools: [tool, { id: "end-miter", target: "end", parameters: [] }] });
+    if (JSON.stringify({ features: unreferenced.features, ends: unreferenced.ends }) !== beforeSaved
+        || !/请选择刀具模板/.test(wizard.validatePunchWizard({ tubeDesignerPunchWizard: unreferenced }, { length: 1000 })))
+      throw new Error("A saved record without an explicit tool reference was migrated or accepted.");
+    unreferenced.features = [];
+    if (!/请选择端部刀具模板/.test(wizard.validatePunchWizard({ tubeDesignerPunchWizard: unreferenced }, { length: 1000 })))
+      throw new Error("An unreferenced saved end was accepted.");
     const feature = wizard.normalizePunchFeature({ recordKind: "tool", layoutDatum: "base", face: "top", station: 300, arrayCount: 1 });
     wizard.selectPunchTool(state, feature, "circle"); feature.toolParameters.diameter = 12;
     state.features = [feature]; state.draft = structuredClone(feature); state.draft.id += "-draft"; state.draft.station = 600;
@@ -112,7 +130,7 @@ try {
   const drag = async (x, y, dx, dy, button = "left") => {
     await page.mouse.move(x, y); await page.mouse.down({ button }); await page.mouse.move(x + dx, y + dy, { steps: 12 }); await page.mouse.up({ button }); await frame();
   };
-  await page.locator('[data-cam-action="tube-designer-nesting-punch-create-preview"]').click(); await ready();
+  await page.evaluate(() => window.fixture.dispatch("tube-designer-nesting-punch-create-preview", {})); await ready();
   const beforeOpen = await camera(); await open();
   assert.equal(await popup.getAttribute("aria-modal"), "false");
   let box = await popup.boundingBox();
@@ -127,9 +145,22 @@ try {
   await page.screenshot({ path: resolve(artifacts, "01-centered-window-live-scene.png") });
 
   const diameter = popup.locator('[data-tube-designer-punch-parameter="diameter"]');
+  assert.equal(await popup.locator('[data-tube-designer-punch-parameter="allowSideOpening"]').count(), 0);
   const beforeUnsubmitted = await page.evaluate(() => window.fixture.calls.length);
   await diameter.fill("14");
   assert.equal(await page.evaluate(() => window.fixture.view.tubeDesignerPunchWizard.features[0].toolParameters.diameter), 12, "Typing without blur leaves the committed parameter unchanged");
+  const beforeHiddenPatch = await camera();
+  await page.evaluate(() => {
+    const f = window.fixture;
+    f.hiddenPatchInput = document.querySelector('[data-punch-parameter-dialog] [data-tube-designer-punch-parameter="diameter"]');
+    f.view.tubeDesignerPunchWizard.features[0].toolParameters.allowSideOpening = true;
+    f.render();
+  });
+  assert.equal(await popup.locator('[data-tube-designer-punch-parameter="allowSideOpening"]').count(), 0, "Internal true and false values remain hidden");
+  assert.equal(await diameter.inputValue(), "14", "Hidden parameter patches preserve dirty text");
+  assert.ok(await diameter.evaluate(element => element === window.fixture.hiddenPatchInput && element === document.activeElement), "The actual parameter input and focus survive the hidden-field patch");
+  assert.equal(await page.evaluate(() => window.fixture.calls.length), beforeUnsubmitted, "An unchanged hidden-field UI patch does not request geometry");
+  assert.deepEqual(await camera(), beforeHiddenPatch);
   const beforeDrag = await camera(), header = await popup.locator("[data-punch-parameter-drag]").boundingBox();
   await drag(header.x + 90, header.y + 20, -box.x + 20, 120);
   let moved = await popup.boundingBox();
@@ -189,11 +220,11 @@ try {
   await page.mouse.click(outside.x, outside.y); await idle();
   assert.equal(await popup.count(), 1, "Clicking the scene neither confirms nor cancels the transaction");
   assert.equal(await page.evaluate(() => window.fixture.view.tubeDesignerPunchWizard.features[0].toolParameters.diameter), 18);
-  const locked = await page.evaluate(() => ['[data-tube-designer-nesting-punch-field="length"]', '[data-tube-designer-punch-row="0"] input', '[data-tube-designer-punch-new]', '.tube-designer-punch-footer button']
+  const locked = await page.evaluate(() => ['[data-tube-designer-nesting-punch-field="length"]', '[data-tube-designer-punch-row="0"] input', '[data-tube-designer-punch-new]', '.tube-designer-punch-sidebar-actions button']
     .map(selector => { const e = document.querySelector(selector); return { selector, exists: !!e, locked: !!e && (e.matches(":disabled") || !!e.closest("[inert]")) }; }));
   assert.ok(locked.every(item => item.exists && item.locked), "Only scene interaction is unlocked: " + JSON.stringify(locked));
   const beforeLockedClick = await page.evaluate(() => ({ calls: window.fixture.calls.length, length: window.fixture.view.tubeDesignerNestingPunchPartDraft.length, count: window.fixture.view.tubeDesignerPunchWizard.features.length }));
-  for (const selector of ['[data-tube-designer-nesting-punch-field="length"]', '[data-tube-designer-punch-row="0"] [data-cam-action$="-copy"]']) {
+  for (const selector of ['[data-tube-designer-nesting-punch-field="length"]', '[data-cam-action$="-copy-selected"]']) {
     const controlBox = await page.locator(selector).boundingBox();
     await page.mouse.click(controlBox.x + controlBox.width / 2, controlBox.y + controlBox.height / 2); await idle();
   }
@@ -201,7 +232,7 @@ try {
   assert.equal(await popup.count(), 1);
   await page.screenshot({ path: resolve(artifacts, "02-dragged-window-cube-and-patch.png") });
   // Parameter edits are live; closing the window keeps the displayed recipe.
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click(); await ready();
+  await popup.locator('[data-cam-action$="parameters-close"]').click(); await ready();
   assert.equal(await popup.count(), 0);
   assert.equal(await page.evaluate(() => window.fixture.view.tubeDesignerPunchWizard.features[0].toolParameters.diameter), 18, "Closing the parameter window keeps live edits");
   assert.deepEqual(await camera(), chosenCamera, "Cancel must not undo the camera changes made outside the window");
@@ -211,7 +242,7 @@ try {
   await drag(header2.x + 90, header2.y + 20, 650, 350);
   await page.setViewportSize({ width: 900, height: 650 }); await frame();
   const smallBox = await popup.boundingBox(), smallHeader = await popup.locator("[data-punch-parameter-drag]").boundingBox();
-  const close = popup.locator('[data-cam-action$="parameters-cancel"]'), closeBox = await close.boundingBox();
+  const close = popup.locator('[data-cam-action$="parameters-close"]'), closeBox = await close.boundingBox();
   assert.ok(smallHeader.x >= 0 && smallHeader.y >= 0 && smallHeader.x + smallHeader.width <= 901 && smallHeader.y + smallHeader.height <= 651, "After resize the drag header remains reachable: " + JSON.stringify(smallHeader));
   assert.ok(closeBox.x >= 0 && closeBox.y >= 0 && closeBox.x + closeBox.width <= 901 && closeBox.y + closeBox.height <= 651, "After resize the close button remains reachable: " + JSON.stringify(closeBox));
   assert.ok(smallBox.y >= 0 && smallBox.y < 650);
@@ -224,7 +255,7 @@ try {
   const countBefore = await page.evaluate(() => window.fixture.calls.length);
   await diameter.fill("16"); await diameter.press("Tab"); await ready();
   const countChanged = await page.evaluate(() => window.fixture.calls.length);
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click(); await ready();
+  await popup.locator('[data-cam-action$="parameters-close"]').click(); await ready();
   const ordinaryCircleRequests = await page.evaluate(({ countBefore, countChanged }) => {
     const calls = window.fixture.calls;
     return { change: countChanged - countBefore, confirm: calls.length - countChanged,
@@ -233,7 +264,7 @@ try {
   assert.equal(ordinaryCircleRequests.change, 1, "One ordinary circle change sends one preview request");
   assert.equal(ordinaryCircleRequests.confirm, 0, "Confirming an already displayed unchanged recipe must not repeat the preview request");
   assert.deepEqual(errors, []); assert.deepEqual(externalRequests, []);
-  const result = { passed: true, scenarios: ["centered non-modal window", "real pointer rotation and wheel zoom", "real ViewCube click", "title drag retains camera/DOM/parameters", "dirty input survives title drag without request", "dirty input commits once on scene right-drag without stealing focus or resetting camera", "local patch retains dragged position", "outside click preserves transaction", "background controls remain locked", "close keeps live parameters and camera", "resize keeps title and close reachable"],
+  const result = { passed: true, scenarios: ["new draft binds current circle catalogue asynchronously", "saved records and ends without explicit tool references are rejected unchanged", "centered non-modal window", "real pointer rotation and wheel zoom", "real ViewCube click", "title drag retains camera/DOM/parameters", "dirty input survives title drag without request", "dirty input commits once on scene right-drag without stealing focus or resetting camera", "local patch retains dragged position", "outside click preserves transaction", "background controls remain locked", "close keeps live parameters and camera", "resize keeps title and close reachable"],
     ordinaryCircleRequests, metrics: await page.evaluate(() => ({ calls: window.fixture.calls.length, resources: window.fixture.resources.length, patches: window.fixture.patches })) };
   writeFileSync(resolve(artifacts, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));

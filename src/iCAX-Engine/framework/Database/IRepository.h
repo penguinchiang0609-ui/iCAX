@@ -79,6 +79,18 @@ namespace iCAX
             virtual void DisableComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_) = 0;
         };
 
+        // Add one new entity with its initial components as one repository fact.
+        // Components_ is an ordered array of {class, properties, enabled?} records.
+        // Existing foreign transaction implementations use the ordinary path.
+        void _DATABASE_EXP QueueCreateEntityWithComponents(ITransaction& Transaction_,
+            const iCAX::Data::uuid& EntityID_, iCAX::Data::VariantArray&& Components_);
+
+        // Transfer an already prepared property set into a transaction intent.
+        // This preserves the ordinary modification fact and setter semantics.
+        void _DATABASE_EXP QueueModifyComponentProperties(ITransaction& Transaction_,
+            const iCAX::Data::uuid& EntityID_, const std::string& Class_,
+            iCAX::Data::PropertySet&& Properties_);
+
         /*
         * @brief Repository 撤销还原记录作用域
         * @details BeginUndoCommand/End 之间提交的操作会合并为一个 undo step。

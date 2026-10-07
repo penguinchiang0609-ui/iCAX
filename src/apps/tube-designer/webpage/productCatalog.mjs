@@ -56,10 +56,6 @@ export function getCatalogTemplatePath(template) {
   return path.length > 1 ? path : ["其他产品", path[0] ?? "产品"];
 }
 
-export function getCatalogEntryId(templateId, presetId = "") {
-  return presetId ? `${encodeURIComponent(templateId)}::${encodeURIComponent(presetId)}` : String(templateId ?? "");
-}
-
 export function sortTemplatesByCatalog(templates = []) {
   return [...templates].sort((left, right) => {
     const a = left?.extensions?.catalog ?? {};
@@ -70,55 +66,29 @@ export function sortTemplatesByCatalog(templates = []) {
   });
 }
 
-export function getCatalogParameters(template, preset = null) {
+export function getCatalogParameters(template) {
   const values = Object.fromEntries((template?.parameters ?? [])
     .map((field) => [field.key ?? field.name, field.defaultValue]));
-  // Restrict the overlay to declared parameters: IDs and other request metadata
-  // cannot be overwritten by a card's preset.
-  for (const [key, value] of Object.entries(preset?.parameters ?? {})) {
-    if (Object.hasOwn(values, key)) values[key] = value;
-  }
   return structuredClone(values);
 }
 
 export function buildCatalogEntries(templates = []) {
-  // `presets` is retained only as a defensive reader for old in-memory
-  // descriptors.  Shipped and imported .itpt descriptors must not contain it;
-  // each former style is now its own descriptor/package and gets its own ID.
   return sortTemplatesByCatalog(templates).filter((template) => template?.available
-    && template?.extensions?.catalog?.listed !== false).flatMap((template) => {
+    && template?.extensions?.catalog?.listed !== false).map((template) => {
     const path = getCatalogTemplatePath(template);
-    const rawPresets = template?.extensions?.catalog?.presets;
-    const seen = new Set();
-    const presets = (Array.isArray(rawPresets) ? rawPresets : []).filter((preset) => {
-      const id = String(preset?.id ?? "").trim();
-      if (!id || seen.has(id) || preset?.available === false
-        || !preset?.parameters || typeof preset.parameters !== "object" || Array.isArray(preset.parameters)) return false;
-      seen.add(id);
-      return true;
-    });
-    return (presets.length ? presets : [null]).map((preset) => {
-      const presetId = String(preset?.id ?? "").trim();
-      const displayName = catalogText(preset?.displayName, path.at(-1));
-      const categories = Array.isArray(preset?.categoryPath)
-        ? preset.categoryPath.filter((part) => typeof part === "string").map((part) => part.trim()).filter(Boolean)
-        : [];
-      return {
-        ...template,
-        templateId: template.id,
-        presetId,
-        catalogEntryId: getCatalogEntryId(template.id, presetId),
-        displayName,
-        catalogPath: [...(categories.length ? categories : path.slice(0, -1)), displayName],
-        catalogParameters: getCatalogParameters(template, preset),
-      };
-    });
+    return {
+      ...template,
+      templateId: template.id,
+      catalogEntryId: String(template.id ?? ""),
+      displayName: path.at(-1),
+      catalogPath: path,
+      catalogParameters: getCatalogParameters(template),
+    };
   });
 }
 
-export function getCatalogEntry(templates, templateId, presetId = "") {
-  const entries = buildCatalogEntries(templates).filter((entry) => entry.templateId === templateId);
-  return presetId ? entries.find((entry) => entry.presetId === presetId) ?? null : entries[0] ?? null;
+export function getCatalogEntry(templates, templateId) {
+  return buildCatalogEntries(templates).find((entry) => entry.templateId === templateId) ?? null;
 }
 
 export function buildTemplateGroupTree(templates = []) {
@@ -141,10 +111,15 @@ export function buildTemplateGroupTree(templates = []) {
   return roots;
 }
 
+export function getCatalogGroupKeys(templates = []) {
+  const collect = (groups) => groups.flatMap((group) => [group.key, ...collect(group.children)]);
+  return collect(buildTemplateGroupTree(templates));
+}
+
 // Return every enclosing category for one catalog card, from the root down.
 // The add dialog uses this to keep its left-hand tree in sync with its active card.
-export function getCatalogEntryGroupKeys(templates = [], templateId = "", presetId = "") {
-  const entry = getCatalogEntry(templates, templateId, presetId);
+export function getCatalogEntryGroupKeys(templates = [], templateId = "") {
+  const entry = getCatalogEntry(templates, templateId);
   if (!entry) return [];
   const find = (groups, ancestors = []) => {
     for (const group of groups) {

@@ -53,8 +53,22 @@ export function attachViewCube(view, mount) {
     host,
     frameId: 0,
     lastSignature: "",
+    onKeyDown: null,
     tick: null,
   };
+  animation.onKeyDown = (event) => {
+    if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") {
+      return;
+    }
+    const target = event.target?.closest?.('[data-cam-action="view-standard"]');
+    if (!target || !host.contains(target)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    view.viewport.setStandardView?.(target.dataset.camView);
+  };
+  host.addEventListener("keydown", animation.onKeyDown);
   animation.tick = () => {
     animation.frameId = 0;
     updateViewCube(view, animation);
@@ -72,6 +86,7 @@ export function stopViewCubeAnimation(view) {
   if (animation.frameId) {
     window.cancelAnimationFrame(animation.frameId);
   }
+  animation.host.removeEventListener("keydown", animation.onKeyDown);
   animation.host.replaceChildren();
   view[VIEW_CUBE_ANIMATION_KEY] = null;
 }
@@ -102,7 +117,16 @@ function updateViewCube(view, animation) {
   animation.host.style.setProperty("--viewcube-pitch", `${rotation.pitch.toFixed(1)}deg`);
   animation.host.style.setProperty("--viewcube-yaw", `${rotation.yaw.toFixed(1)}deg`);
   animation.host.dataset.camViewCubePieceCount = String(VIEW_CUBE_PIECES.length);
+  const focusedPiece = animation.host.contains(animation.host.ownerDocument.activeElement)
+    ? animation.host.ownerDocument.activeElement.closest?.('[data-cam-action="view-standard"]')
+    : null;
+  const focusedView = focusedPiece?.dataset.camView;
   animation.host.innerHTML = renderViewCubeSvg(basis);
+  if (focusedView) {
+    const pieces = animation.host.querySelectorAll('[data-cam-action="view-standard"]');
+    const nextFocus = [...pieces].find((piece) => piece.dataset.camView === focusedView) ?? pieces[0];
+    nextFocus?.focus({ preventScroll: true });
+  }
 }
 
 function renderViewCubeSvg(basis) {
@@ -126,7 +150,7 @@ function renderViewCubeSvg(basis) {
       viewBox="0 0 ${VIEW_CUBE_SIZE} ${VIEW_CUBE_SIZE}"
       width="${VIEW_CUBE_SIZE}"
       height="${VIEW_CUBE_SIZE}"
-      role="img"
+      role="group"
       aria-label="视角导航">
       <defs>
         <filter id="cam-viewcube-shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -197,6 +221,8 @@ function renderPiece(group, scale, offsetX, offsetY) {
       class="cam-viewcube-piece cam-viewcube-piece-${group.piece.kind}"
       data-cam-action="view-standard"
       data-cam-view="${escapeAttr(group.piece.name)}"
+      role="button"
+      tabindex="0"
       aria-label="${escapeAttr(viewTitle(group.piece.name))}">
       ${faceMarkup}
       ${labelMarkup}

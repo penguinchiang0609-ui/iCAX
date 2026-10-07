@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import authority
+from feature_catalog import validate_mask
 from enrollment import parse_request, verify_ek_native
 from tpm_credential import make_credential, sha256_name
 
@@ -106,6 +107,7 @@ class ProductionIssuer:
             raise ValueError("Unknown license kind")
         if not isinstance(customer, str) or not customer.strip() or len(customer) > 256:
             raise ValueError("请填写客户名称（最多 256 字符）")
+        validate_mask(features)
         request, fingerprint = self.inspect(request_path)
         config, public = self.configuration()
         key = authority.load_private_key(self.directory / "issuer-private.pem", password)

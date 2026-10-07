@@ -1,5 +1,7 @@
 // The 3D editor owns a local DOM boundary. Parameter edits never remount the
 // surrounding project or the native-resource viewport inside this boundary.
+import { capturePaneInteraction } from "../../_shared/workbench/utils/paneInteractionState.mjs";
+
 const sessions = new WeakMap();
 
 export function rememberPartDrawingDom(view, mount) {
@@ -10,7 +12,24 @@ export function rememberPartDrawingDom(view, mount) {
 function identity(node) {
   if (node.nodeType !== 1) return null;
   if (node.hasAttribute("data-part-drawing-viewport")) return "drawing-viewport";
-  if (node.tagName === "DETAILS") return "details:" + node.querySelector("summary")?.textContent;
+  if (node.hasAttribute("data-drawing-splitter")) return "drawing-splitter:" + node.getAttribute("data-drawing-splitter");
+  if (node.hasAttribute("data-drawing-array-dimension")) return "array-dimension:" + node.getAttribute("data-drawing-array-dimension");
+  if (node.hasAttribute("data-parameter-advanced-item"))
+    return "advanced-item:" + node.getAttribute("data-parameter-advanced-item");
+  if (node.tagName === "DETAILS") {
+    if (node.id) return "details#" + node.id;
+    if (node.hasAttribute("data-parameter-advanced-key"))
+      return "advanced:" + node.getAttribute("data-parameter-advanced-key");
+    return "details:" + node.querySelector("summary")?.textContent;
+  }
+  if (node.tagName === "LABEL") {
+    const control = node.querySelector("[data-drawing-parameter]");
+    if (control) return "section-field:" + control.getAttribute("data-drawing-section")
+      + ":" + control.getAttribute("data-drawing-parameter");
+    const field = node.querySelector("[data-tube-designer-punch-field]");
+    if (field) return "drawing-field:" + field.getAttribute("data-tube-designer-punch-field")
+      + ":" + (field.getAttribute("data-tube-designer-punch-parameter") ?? "");
+  }
   if (node.matches("input,select,textarea,button")) return node.tagName + ":" + JSON.stringify(
     [...node.attributes].filter(a => a.name.startsWith("data-")).map(a => [a.name, a.value]).sort());
   if (node.id) return node.tagName + "#" + node.id;
@@ -68,11 +87,15 @@ export function patchPartDrawingDom(view, mount, html) {
   template.innerHTML = html;
   const next = template.content.querySelector(".td-draw-backdrop");
   if (!next) return false;
+  // Moving a retained field past a removed sibling can still blur it. Capture
+  // the latest draft, selection and nested scroll immediately before the patch.
+  const restore = capturePaneInteraction(current, [".td-draw-sidebar", ".td-draw-property-scroll"]);
   reconcile(current, next);
   const oldProgress = mount.querySelector("[data-tube-designer-operation-wait]");
   const newProgress = template.content.querySelector("[data-tube-designer-operation-wait]");
   if (oldProgress && newProgress) reconcile(oldProgress, newProgress);
   else if (oldProgress) oldProgress.remove();
   else if (newProgress) current.parentNode.append(newProgress);
+  restore();
   return true;
 }

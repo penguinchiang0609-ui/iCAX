@@ -1,4 +1,5 @@
 import { buildProfileGroups, listNestingParts } from "./partsArea.mjs";
+import { renderFloatingEditorResizeHandles } from "./floatingEditorDom.mjs";
 
 const VERSION = 2;
 const ACTION_PREFIX = "tube-designer-nesting-";
@@ -232,12 +233,12 @@ function escape(value) {
 
 function renderStockGroup(group, draft, saving) {
   const rows = draft.find((item) => item.profileKey === group.key)?.rows ?? [];
-  return `<section class="tube-nesting-stock-group">
+  return `<section class="tube-nesting-stock-group" data-profile-key="${escape(group.key)}">
     <header><div><strong>${escape(group.profile)}</strong><span>${group.quantity} 件零件</span></div>
       <button type="button" data-cam-action="${ACTION_PREFIX}stock-add" data-profile-key="${escape(group.key)}" ${saving ? "disabled" : ""}>＋ 添加长度</button>
     </header>
     <div class="tube-nesting-stock-columns" aria-hidden="true"><span>母材长度（mm）</span><span>数量（根）</span><span></span></div>
-    ${rows.map((row, index) => `<div class="tube-nesting-stock-row">
+    ${rows.map((row, index) => `<div class="tube-nesting-stock-row" data-profile-key="${escape(group.key)}" data-row-id="${escape(row.id)}">
       <input type="number" min="0" step="any" value="${escape(row.length)}" placeholder="填写母材长度" aria-label="${escape(group.profile)} 第${index + 1}行 母材长度（mm）" data-tube-nesting-stock-field data-cam-change-action="${ACTION_PREFIX}stock-change" data-profile-key="${escape(group.key)}" data-row-id="${escape(row.id)}" data-field="length" ${saving ? "disabled" : ""} />
       <input type="number" min="-1" step="1" value="${escape(row.quantity)}" title="-1 不限，0 不用，正整数为有限库存" aria-label="${escape(group.profile)} 第${index + 1}行 数量（根）" data-tube-nesting-stock-field data-cam-change-action="${ACTION_PREFIX}stock-change" data-profile-key="${escape(group.key)}" data-row-id="${escape(row.id)}" data-field="quantity" ${saving ? "disabled" : ""} />
       <button type="button" class="tube-nesting-remove-row" data-cam-action="${ACTION_PREFIX}stock-remove" data-profile-key="${escape(group.key)}" data-row-id="${escape(row.id)}" aria-label="删除${escape(group.profile)}第${index + 1}行" ${saving ? "disabled" : ""}>删除</button>
@@ -256,8 +257,9 @@ export function renderNestingSettingsDialogs(context, view) {
   const title = stock ? "母材设置" : "排样参数";
   const error = view.tubeDesignerNestingSettingsError;
   const saving = Boolean(view.tubeDesignerNestingSettingsSaving);
-  return `<div class="tube-nesting-settings-backdrop">
-    <section class="tube-nesting-settings-dialog ${stock ? "is-stock" : "is-parameters"}" data-tube-nesting-dialog="${kind}" role="dialog" aria-modal="true" aria-labelledby="tube-nesting-settings-title">
+  return `<div class="tube-nesting-settings-backdrop tube-floating-editor-layer" data-floating-editor-layer="nesting-settings">
+    <section class="tube-nesting-settings-dialog ${stock ? "is-stock" : "is-parameters"}" data-floating-editor-window="nesting-settings-${kind}" data-tube-nesting-dialog="${kind}" role="dialog" aria-modal="false" aria-labelledby="tube-nesting-settings-title"
+      data-window-state-controls="[data-tube-nesting-stock-field],[data-tube-nesting-parameter]">
       <header class="tube-nesting-settings-header"><div><strong id="tube-nesting-settings-title">${title}</strong><span>${stock ? "按零件截面生成，默认 6000 mm；可添加不同长度。设置保存在当前项目中。" : "设置排样时相邻零件之间预留的距离，保存在当前项目中。"}</span></div>
         <button type="button" data-cam-action="${ACTION_PREFIX}settings-cancel" class="tube-nesting-settings-close" aria-label="关闭${title}" ${saving ? "disabled" : ""}>×</button></header>
       <div class="tube-nesting-settings-body">
@@ -268,6 +270,7 @@ export function renderNestingSettingsDialogs(context, view) {
         <button type="button" data-cam-action="${ACTION_PREFIX}settings-cancel" ${saving ? "disabled" : ""}>取消</button>
         <button type="button" class="tube-nesting-settings-save" data-cam-action="${ACTION_PREFIX}${stock ? "stock-save" : "parameters-save"}" ${saving || stock && !groups.length ? "disabled" : ""}>${saving ? "保存中…" : "确定"}</button>
       </footer>
+      ${renderFloatingEditorResizeHandles()}
     </section>
   </div>`;
 }

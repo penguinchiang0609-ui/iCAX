@@ -7,6 +7,8 @@
 #include <Database/IFieldPolicyProvider.h>
 #include <Database/IRepository.h>
 #include <Database/OperationLog.h>
+#include <Database/ChangeSetKeys.h>
+#include <Database/RepositoryUndoRedoHistory.h>
 #include <DatabaseLanguage/EntityLanguage.h>
 #include <Data/uuid.h>
 
@@ -48,6 +50,22 @@ namespace
     {
         return Lhs_ == Rhs_;
     }
+
+    PropertyValue ToObjectVariant(const ObjectMap& Value_) { return PropertyValue(Value_); }
+    ObjectMap FromObjectVariant(const PropertyValue& Value_) { return Value_.To<ObjectMap>(); }
+    bool ObjectEqual(const ObjectMap& Lhs_, const ObjectMap& Rhs_) { return Lhs_ == Rhs_; }
+
+    class CStructuredPropertyComponent final : public CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CStructuredPropertyComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CStructuredPropertyComponent)
+        DECLARED_ICAX_FIELD(CStructuredPropertyComponent, ObjectMap, Recipe, ObjectMap(),
+            ObjectEqual, ToObjectVariant, FromObjectVariant)
+        DECLARED_ICAX_FIELD(CStructuredPropertyComponent, ObjectMap, FrozenRecipe, ObjectMap(),
+            ObjectEqual, ToObjectVariant, FromObjectVariant)
+        DECLARED_ICAX_OBSERVABLE_FIELD(CStructuredPropertyComponent, ObjectMap, RuntimeRecipe,
+            ObjectMap(), ObjectEqual, ToObjectVariant, FromObjectVariant)
+    };
 
     class CSumComponent final : public CComponentBase
     {
@@ -2354,6 +2372,394 @@ TEST(DatabaseRepositoryTest, BatchCommandEmitsOneBatchEvent)
     EXPECT_FALSE(_Repository->CanUndo());
 }
 
+TEST(DatabaseRepositoryTest, TransactionKeepsExternalEventSnapshotsAndNotificationOrder)
+{
+    struct Collector final : IEntityEventListener, IComponentEventListener
+    {
+        std::vector<std::string> Order;
+        std::vector<EntityEventArgs> EntityChanging, EntityChanged;
+        std::vector<ComponentEventArgs> ComponentChanging, ComponentChanged;
+        void OnEntityChanging(void*, const EntityEventArgs& Args_) override
+        { Order.push_back("entity-changing"); EntityChanging.push_back(Args_); }
+        void OnEntityChanged(void*, const EntityEventArgs& Args_) override
+        { Order.push_back("entity-changed"); EntityChanged.push_back(Args_); }
+        void OnComponentChanging(void*, const ComponentEventArgs& Args_) override
+        { Order.push_back("component-changing"); ComponentChanging.push_back(Args_); }
+        void OnComponentChanged(void*, const ComponentEventArgs& Args_) override
+        { Order.push_back("component-changed"); ComponentChanged.push_back(Args_); }
+    };
+    auto repository = GenerateTestRepository();
+    auto entity = repository->CreateEntity(GenerateNewUUID());
+    auto component = entity->AddComponent<CSumComponent>();
+    auto collector = std::make_shared<Collector>();
+    auto repositoryCollector = std::make_shared<CRepositoryEventCollector>();
+    entity->AddObserver(collector);
+    component->AddObserver(collector);
+    repository->AddObserver(repositoryCollector);
+
+    auto undo = repository->BeginUndoCommand("Set observed properties");
+    auto& transaction = repository->BeginTransaction("Set observed properties");
+    PropertySet properties{{CSumComponent::PropertyName_A, PropertyValue(10)},
+        {CSumComponent::PropertyName_B, PropertyValue(20)}};
+    QueueModifyComponentProperties(transaction, entity->GetID(),
+        CSumComponent::S_ClassName, std::move(properties));
+    ASSERT_TRUE(repository->CommitTransaction(transaction));
+    undo->End();
+    const std::vector<std::string> expected{
+        "entity-changing", "component-changing", "entity-changed", "component-changed"};
+    EXPECT_EQ(expected, collector->Order);
+    ASSERT_EQ(1u, collector->EntityChanged.size());
+    ASSERT_EQ(1u, collector->ComponentChanged.size());
+    ASSERT_EQ(1u, repositoryCollector->ChangedEvents.size());
+    const auto batch = repositoryCollector->ChangedEvents.front().pBatch;
+    ASSERT_TRUE(batch);
+    ASSERT_EQ(1u, batch->Records.size());
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_EQ(0, component->GetA());
+    EXPECT_EQ(0, component->GetB());
+    ASSERT_TRUE(repository->Redo());
+    EXPECT_EQ(10, component->GetA());
+    EXPECT_EQ(20, component->GetB());
+    ASSERT_TRUE(component->SetA(99));
+    // The caller can retain an event by value after dispatch. Neither later
+    // mutations nor undo/redo may change its complete owning field snapshots.
+    EXPECT_EQ(0, collector->EntityChanging.front().PreviousProperties.at("A").To<int>());
+    EXPECT_EQ(10, collector->EntityChanged.front().NewProperties.at("A").To<int>());
+    EXPECT_EQ(10, collector->ComponentChanged.front().NewProperties.at("A").To<int>());
+    EXPECT_EQ(10, batch->Records.front().NewProperties.at("A").To<int>());
+}
+
+TEST(DatabaseRepositoryTest, OwnedTransactionModificationRollsBackEarlierAndPartialChanges)
+{
+    auto repository = GenerateTestRepository();
+    auto firstEntity = repository->CreateEntity(GenerateNewUUID());
+    auto first = firstEntity->AddComponent<CStructuredPropertyComponent>();
+    const ObjectMap original{{"items", VariantArray{ObjectMap{{"value", 7}}}}};
+    ASSERT_TRUE(first->SetRecipe(original));
+    auto secondEntity = repository->CreateEntity(GenerateNewUUID());
+    auto second = secondEntity->AddComponent<CPartialThrowingComponent>();
+    auto observer = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer);
+    auto& transaction = repository->BeginTransaction("Owned modification rollback");
+    QueueModifyComponentProperties(transaction, firstEntity->GetID(),
+        CStructuredPropertyComponent::S_ClassName,
+        {{"Recipe", PropertyValue(ObjectMap{{"items", VariantArray{ObjectMap{{"value", 15}}}}})}});
+    QueueModifyComponentProperties(transaction, secondEntity->GetID(),
+        CPartialThrowingComponent::S_ClassName,
+        {{"A", PropertyValue(10)}, {"B", PropertyValue(20)}});
+    std::string error;
+    EXPECT_FALSE(repository->CommitTransaction(transaction, error));
+    EXPECT_NE(std::string::npos, error.find("B failed"));
+    EXPECT_EQ(original, first->GetRecipe());
+    EXPECT_EQ(0, second->A);
+    EXPECT_EQ(0, second->B);
+    EXPECT_TRUE(observer->ChangedEvents.empty());
+    EXPECT_FALSE(repository->CanUndo());
+}
+
+TEST(DatabaseRepositoryTest, OwnedStructuredModificationKeepsRecipesSnapshotsUndoAndJournal)
+{
+    const auto entityID = GenerateNewUUID();
+    const auto logPath = MakeTempOperationLogPath();
+    auto repository = GenerateTestRepository();
+    repository->OpenOperationLog(logPath, true,
+        S_TestOperationLogMagic, S_TestOperationLogVersion);
+    auto entity = repository->CreateEntity(entityID);
+    auto component = entity->AddComponent<CStructuredPropertyComponent>();
+    auto observer = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer);
+
+    ObjectMap recipe{{"schema", std::string("frozen-recipe")},
+        {"items", VariantArray{ObjectMap{{"key", std::string("member.1")},
+            {"parameters", ObjectMap{{"clearance", 0.1}, {"mode", std::string("tabs")}}}}}}};
+    const auto expected = recipe;
+    PropertySet properties;
+    properties["FrozenRecipe"].m_Value = recipe;
+    properties["RuntimeRecipe"].m_Value = recipe;
+    properties["Recipe"].m_Value = std::move(recipe);
+    const auto* queuedRecipeNode = &std::get<ObjectMap>(properties.at("Recipe").m_Value).at("items");
+    auto undo = repository->BeginUndoCommand("Owned structured modification");
+    auto& transaction = repository->BeginTransaction("Owned structured modification");
+    QueueModifyComponentProperties(transaction, entityID,
+        CStructuredPropertyComponent::S_ClassName, std::move(properties));
+    // Reusing invocation-local storage must not alias the queued intent.
+    properties["Recipe"] = PropertyValue(ObjectMap{{"wrong", true}});
+    recipe["wrong"] = true;
+    ASSERT_TRUE(repository->CommitTransaction(transaction));
+    undo->End();
+    EXPECT_EQ(expected, component->GetRecipe());
+    EXPECT_EQ(expected, component->GetFrozenRecipe());
+    EXPECT_EQ(expected, component->GetRuntimeRecipe());
+    ASSERT_EQ(1u, observer->ChangedEvents.size());
+    const auto savedBatch = observer->ChangedEvents.front().pBatch;
+    ASSERT_TRUE(savedBatch);
+    ASSERT_EQ(1u, savedBatch->Records.size());
+    ASSERT_TRUE(savedBatch->pOperationBatch);
+    ASSERT_EQ(1u, savedBatch->pOperationBatch->Operations.size());
+    EXPECT_EQ(queuedRecipeNode, &std::get<ObjectMap>(savedBatch->Records.front()
+        .NewProperties.at("Recipe").m_Value).at("items"));
+    EXPECT_NE(queuedRecipeNode, &std::get<ObjectMap>(savedBatch->pOperationBatch->Operations.front()
+        .NewProperties.at("Recipe").m_Value).at("items"));
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_TRUE(component->GetRecipe().empty());
+    EXPECT_TRUE(component->GetFrozenRecipe().empty());
+    EXPECT_EQ(expected, component->GetRuntimeRecipe());
+    ASSERT_TRUE(repository->Redo());
+    EXPECT_EQ(expected, component->GetRecipe());
+    EXPECT_EQ(expected, component->GetFrozenRecipe());
+    const ObjectMap changed{{"revision", 2}};
+    ASSERT_TRUE(component->SetRecipe(changed));
+    EXPECT_EQ(expected, savedBatch->Records.front().NewProperties.at("Recipe").To<ObjectMap>());
+    EXPECT_EQ(expected, savedBatch->Records.front().NewProperties.at("FrozenRecipe").To<ObjectMap>());
+    EXPECT_EQ(expected, savedBatch->pOperationBatch->Operations.front()
+        .NewProperties.at("RuntimeRecipe").To<ObjectMap>());
+    repository->CloseOperationLog();
+
+    auto recovered = GenerateTestRepository();
+    recovered->ReplayOperationLog(logPath, S_TestOperationLogMagic, S_TestOperationLogVersion);
+    const auto recoveredComponent = recovered->GetEntity(entityID)
+        ->GetComponent<CStructuredPropertyComponent>();
+    ASSERT_TRUE(recoveredComponent);
+    EXPECT_EQ(changed, recoveredComponent->GetRecipe());
+    EXPECT_EQ(expected, recoveredComponent->GetFrozenRecipe());
+    EXPECT_TRUE(recoveredComponent->GetRuntimeRecipe().empty());
+    std::filesystem::remove(logPath);
+}
+
+TEST(DatabaseRepositoryTest, SharedCommittedFactsPreserveMixedBatchOrderAndRollback)
+{
+    auto repository = GenerateTestRepository();
+    auto entity = repository->CreateEntity(GenerateNewUUID());
+    auto component = entity->AddComponent<CStructuredPropertyComponent>();
+    auto failing = repository->CreateEntity(GenerateNewUUID())->AddComponent<CPartialThrowingComponent>();
+    ASSERT_TRUE(component->SetProperties({{"Recipe", ObjectMap{{"revision", 0}}},
+        {"FrozenRecipe", ObjectMap{{"revision", 0}}}, {"RuntimeRecipe", ObjectMap{{"revision", 0}}}}));
+    auto collector = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(collector);
+    auto undo = repository->BeginUndoCommand("Mixed committed facts");
+    const auto commit = [&](int Revision_) {
+        auto& transaction = repository->BeginTransaction("Committed recipe");
+        const ObjectMap recipe{{"revision", Revision_}};
+        QueueModifyComponentProperties(transaction, entity->GetID(),
+            CStructuredPropertyComponent::S_ClassName,
+            {{"Recipe", recipe}, {"FrozenRecipe", recipe}, {"RuntimeRecipe", recipe}});
+        ASSERT_TRUE(repository->CommitTransaction(transaction));
+    };
+    commit(1);
+    ASSERT_EQ(1u, collector->ChangedEvents.size());
+    const auto firstBatch = collector->ChangedEvents.front().pBatch;
+    ASSERT_TRUE(firstBatch);
+    ASSERT_TRUE(component->SetRecipe(ObjectMap{{"revision", 2}}));
+    commit(3);
+    const auto beforeFailed = collector->ChangedEvents.size();
+    auto& failed = repository->BeginTransaction("Failed after successful batches");
+    QueueModifyComponentProperties(failed, entity->GetID(),
+        CStructuredPropertyComponent::S_ClassName, {{"Recipe", ObjectMap{{"revision", 4}}}});
+    QueueModifyComponentProperties(failed, failing->GetEntity()->GetID(),
+        CPartialThrowingComponent::S_ClassName, {{"A", 10}, {"B", 20}});
+    std::string error;
+    EXPECT_FALSE(repository->CommitTransaction(failed, error));
+    EXPECT_EQ(beforeFailed, collector->ChangedEvents.size());
+    EXPECT_EQ(3, component->GetRecipe().at("revision").To<int>());
+    undo->End();
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_EQ(0, component->GetRecipe().at("revision").To<int>());
+    EXPECT_EQ(0, component->GetFrozenRecipe().at("revision").To<int>());
+    EXPECT_EQ(3, component->GetRuntimeRecipe().at("revision").To<int>());
+    const auto undone = collector->ChangedEvents.back().pBatch;
+    ASSERT_TRUE(undone);
+    ASSERT_EQ(3u, undone->pOperationBatch->Operations.size());
+    for (std::size_t index = 0; index < 3; ++index)
+        EXPECT_EQ(2 - static_cast<int>(index), undone->pOperationBatch->Operations[index]
+            .NewProperties.at("Recipe").To<ObjectMap>().at("revision").To<int>());
+    ASSERT_TRUE(repository->Redo());
+    EXPECT_EQ(3, component->GetRecipe().at("revision").To<int>());
+    EXPECT_EQ(3, component->GetFrozenRecipe().at("revision").To<int>());
+    const auto redone = collector->ChangedEvents.back().pBatch;
+    ASSERT_EQ(3u, redone->pOperationBatch->Operations.size());
+    for (std::size_t index = 0; index < 3; ++index)
+        EXPECT_EQ(1 + static_cast<int>(index), redone->pOperationBatch->Operations[index]
+            .NewProperties.at("Recipe").To<ObjectMap>().at("revision").To<int>());
+    EXPECT_EQ(1, firstBatch->pOperationBatch->Operations.front()
+        .NewProperties.at("RuntimeRecipe").To<ObjectMap>().at("revision").To<int>());
+    EXPECT_EQ(1, firstBatch->Records.front().NewProperties.at("FrozenRecipe")
+        .To<ObjectMap>().at("revision").To<int>());
+}
+
+TEST(DatabaseRepositoryTest, SharedFactSurvivesObserverReentryAndUndoEndInsideNotification)
+{
+    struct Observer final : IRepositoryEventListener
+    {
+        std::shared_ptr<CStructuredPropertyComponent> Component;
+        std::unique_ptr<IRepositoryUndoScope>* Undo = nullptr;
+        std::shared_ptr<const RepositoryEventBatch> Saved;
+        bool Reentered = false;
+        void OnRepositoryChanging(void*, const RepositoryEventArgs&) override {}
+        void OnRepositoryChanged(void*, const RepositoryEventArgs& Args_) override
+        {
+            if (Reentered || Args_.nType != RepositoryEventArgs::kBatchChanged) return;
+            Reentered = true;
+            Saved = Args_.pBatch;
+            EXPECT_TRUE(Component->SetRecipe(ObjectMap{{"revision", 2}}));
+            (*Undo)->End();
+            EXPECT_EQ(1, Args_.pBatch->pOperationBatch->Operations.front()
+                .NewProperties.at("Recipe").To<ObjectMap>().at("revision").To<int>());
+            EXPECT_EQ(1, Args_.pBatch->pOperationBatch->Operations.front()
+                .NewProperties.at("RuntimeRecipe").To<ObjectMap>().at("revision").To<int>());
+        }
+    };
+    auto repository = GenerateTestRepository();
+    auto entity = repository->CreateEntity(GenerateNewUUID());
+    auto component = entity->AddComponent<CStructuredPropertyComponent>();
+    ASSERT_TRUE(component->SetRecipe(ObjectMap{{"revision", 0}}));
+    auto undo = repository->BeginUndoCommand("Observer ends undo");
+    auto observer = std::make_shared<Observer>();
+    observer->Component = component;
+    observer->Undo = &undo;
+    repository->AddObserver(observer);
+    auto& transaction = repository->BeginTransaction("Shared recipe fact");
+    QueueModifyComponentProperties(transaction, entity->GetID(),
+        CStructuredPropertyComponent::S_ClassName,
+        {{"Recipe", ObjectMap{{"revision", 1}}}, {"RuntimeRecipe", ObjectMap{{"revision", 1}}}});
+    ASSERT_TRUE(repository->CommitTransaction(transaction));
+    EXPECT_TRUE(undo->IsCompleted());
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_EQ(0, component->GetRecipe().at("revision").To<int>());
+    EXPECT_EQ(1, component->GetRuntimeRecipe().at("revision").To<int>());
+    ASSERT_TRUE(repository->Redo());
+    EXPECT_EQ(2, component->GetRecipe().at("revision").To<int>());
+    EXPECT_EQ(1, observer->Saved->pOperationBatch->Operations.front()
+        .NewProperties.at("RuntimeRecipe").To<ObjectMap>().at("revision").To<int>());
+}
+
+TEST(DatabaseRepositoryTest, PublicUndoBatchSnapshotIsIndependentAndMetadataProjectionStaysAtEnd)
+{
+    auto meta = CreateMetaRegistry();
+    CRepositoryUndoRedoHistory history(meta);
+    auto undo = history.BeginCommand("Delayed metadata projection");
+    COperationBatch batch;
+    CRepositoryOperation operation;
+    operation.Type = RepositoryEventArgs::kModifyComponent;
+    operation.EntityID = GenerateNewUUID();
+    operation.ComponentClass = "DeferredStructured";
+    operation.PreviousProperties = {{"Recipe", ObjectMap{}}, {"RuntimeRecipe", ObjectMap{}}};
+    operation.NewProperties = {{"Recipe", ObjectMap{{"revision", 1}}},
+        {"RuntimeRecipe", ObjectMap{{"revision", 1}}}};
+    batch.Operations.push_back(std::move(operation));
+    // Recording precedes registration: metadata is still consulted at End,
+    // while the public const-reference API owns its snapshot immediately.
+    ASSERT_NO_THROW(history.HandleCommittedOperationBatch(batch));
+    batch.Operations.front().NewProperties.at("Recipe").SetByPath("revision", 99);
+    meta->RegistType("DeferredStructured", "");
+    const auto getter = [](const void*) { return PropertyValue::Nil; };
+    const auto setter = [](void*, const PropertyValue&) {};
+    meta->RegistPropertyByName("DeferredStructured", "Recipe", getter, setter,
+        EPropertyPersistence::Persistent, EPropertyChangePolicy::Transactional);
+    meta->RegistPropertyByName("DeferredStructured", "RuntimeRecipe", getter, setter,
+        EPropertyPersistence::NonPersistent, EPropertyChangePolicy::Observable);
+    undo->End();
+    ASSERT_TRUE(history.CanUndo());
+    const auto& saved = history.GetUndoOperationBatch();
+    ASSERT_EQ(1u, saved.Operations.size());
+    EXPECT_EQ(1, saved.Operations.front().NewProperties.at("Recipe")
+        .To<ObjectMap>().at("revision").To<int>());
+    EXPECT_FALSE(saved.Operations.front().NewProperties.contains("RuntimeRecipe"));
+    auto canceled = history.BeginCommand("Clear pending facts");
+    history.HandleCommittedOperationBatch(batch);
+    history.Clear();
+    canceled->End();
+    EXPECT_FALSE(history.IsRecording());
+    EXPECT_FALSE(history.CanUndo());
+    EXPECT_FALSE(history.CanRedo());
+}
+
+TEST(DatabaseRepositoryTest, OwnedChangedSnapshotsSurviveReentrantGrowthAndLateObservers)
+{
+    struct ComponentCollector final : IComponentEventListener
+    {
+        std::vector<std::string>* Order = nullptr;
+        std::vector<ComponentEventArgs> Saved;
+        void OnComponentChanging(void*, const ComponentEventArgs&) override {}
+        void OnComponentChanged(void*, const ComponentEventArgs& Args_) override
+        {
+            Saved.push_back(Args_);
+            const auto& recipe = std::get<ObjectMap>(Args_.NewProperties.at("Recipe").m_Value);
+            const auto revision = recipe.find("revision");
+            Order->push_back("C" + std::to_string(revision == recipe.end()
+                ? 0 : revision->second.To<int>()));
+        }
+    };
+    struct EntityMutator final : IEntityEventListener
+    {
+        std::shared_ptr<CStructuredPropertyComponent> Component;
+        std::shared_ptr<CSumComponent> Auxiliary;
+        std::shared_ptr<ComponentCollector> LateObserver;
+        std::vector<std::string>* Order = nullptr;
+        std::vector<EntityEventArgs> Saved;
+        bool Reentered = false;
+        void OnEntityChanging(void*, const EntityEventArgs&) override {}
+        void OnEntityChanged(void*, const EntityEventArgs& Args_) override
+        {
+            Saved.push_back(Args_);
+            const auto& recipe = std::get<ObjectMap>(Args_.NewProperties.at("Recipe").m_Value);
+            const auto revision = recipe.find("revision");
+            Order->push_back("E" + std::to_string(revision == recipe.end()
+                ? 0 : revision->second.To<int>()));
+            if (Reentered) return;
+            Reentered = true;
+            Component->AddObserver(LateObserver);
+            EXPECT_TRUE(Component->SetRecipe(ObjectMap{{"revision", 2}}));
+            // One queued intent reserved three notification slots. Grow both
+            // the fact and event vectors well beyond that capacity while the
+            // outer callback still holds its original owning arguments.
+            for (int value = 1; value <= 320; ++value)
+                EXPECT_TRUE(Auxiliary->SetA(value));
+            EXPECT_EQ(1, std::get<ObjectMap>(Args_.NewProperties.at("Recipe").m_Value)
+                .at("revision").To<int>());
+        }
+    };
+    auto repository = GenerateTestRepository();
+    auto entity = repository->CreateEntity(GenerateNewUUID());
+    auto component = entity->AddComponent<CStructuredPropertyComponent>();
+    auto auxiliary = repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    std::vector<std::string> order;
+    auto componentObserver = std::make_shared<ComponentCollector>();
+    componentObserver->Order = &order;
+    auto entityObserver = std::make_shared<EntityMutator>();
+    entityObserver->Component = component;
+    entityObserver->Auxiliary = auxiliary;
+    entityObserver->LateObserver = componentObserver;
+    entityObserver->Order = &order;
+    entity->AddObserver(entityObserver);
+    auto repositoryObserver = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(repositoryObserver);
+    auto undo = repository->BeginUndoCommand("Reentrant owned modification");
+    auto& transaction = repository->BeginTransaction("Reentrant owned modification");
+    QueueModifyComponentProperties(transaction, entity->GetID(),
+        CStructuredPropertyComponent::S_ClassName, {{"Recipe", ObjectMap{{"revision", 1}}}});
+    ASSERT_TRUE(repository->CommitTransaction(transaction));
+    undo->End();
+    EXPECT_EQ(std::vector<std::string>({"E1", "E2", "C2", "C1"}), order);
+    EXPECT_EQ(2, component->GetRecipe().at("revision").To<int>());
+    ASSERT_EQ(2u, componentObserver->Saved.size());
+    ASSERT_EQ(1u, repositoryObserver->ChangedEvents.size());
+    const auto batch = repositoryObserver->ChangedEvents.front().pBatch;
+    ASSERT_TRUE(batch);
+    ASSERT_EQ(322u, batch->Records.size());
+    EXPECT_EQ(1, batch->Records.front().NewProperties.at("Recipe")
+        .To<ObjectMap>().at("revision").To<int>());
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_TRUE(component->GetRecipe().empty());
+    EXPECT_EQ(0, auxiliary->GetA());
+    ASSERT_TRUE(repository->Redo());
+    EXPECT_EQ(2, component->GetRecipe().at("revision").To<int>());
+    EXPECT_EQ(320, auxiliary->GetA());
+    EXPECT_EQ(1, componentObserver->Saved.at(1).NewProperties.at("Recipe")
+        .To<ObjectMap>().at("revision").To<int>());
+    EXPECT_EQ(1, entityObserver->Saved.front().NewProperties.at("Recipe")
+        .To<ObjectMap>().at("revision").To<int>());
+}
+
 TEST(DatabaseRepositoryTest, LoadBaselineDoesNotNotifyOrMarkDirty)
 {
     auto _Repository = GenerateTestRepository();
@@ -2559,6 +2965,110 @@ TEST(DatabaseRepositoryTest, TransactionCommitWritesOperationLogButDoesNotCreate
     EXPECT_EQ(11, _RecoveredComponent->GetA());
 
     std::filesystem::remove(_LogPath);
+}
+
+TEST(DatabaseRepositoryTest, CompositeEntityInsertSupportsUndoRedoAndJournalReplay)
+{
+    const auto entityID = GenerateNewUUID();
+    const auto logPath = MakeTempOperationLogPath();
+    auto repository = GenerateTestRepository();
+    auto observer = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer);
+    repository->OpenOperationLog(logPath, true,
+        S_TestOperationLogMagic, S_TestOperationLogVersion);
+    auto& cache = repository->GetComponentFrameCache();
+    cache.EnsureComponentCache(CSumComponent::S_ClassName);
+    const auto initialCount = cache.GetCurrentComponents(CSumComponent::S_ClassName).size();
+
+    auto undo = repository->BeginUndoCommand("CompositeInsert");
+    auto& transaction = repository->BeginTransaction("CompositeInsert");
+    QueueCreateEntityWithComponents(transaction, entityID, VariantArray{
+        ObjectMap{{"class", std::string(CSumComponent::S_ClassName)},
+            {"properties", ObjectMap{
+                {CSumComponent::PropertyName_A, PropertyValue(11)},
+                {CSumComponent::PropertyName_B, PropertyValue(12)}}}}
+    });
+    ASSERT_TRUE(repository->CommitTransaction(transaction));
+    undo->End();
+
+    ASSERT_EQ(1, observer->ChangedEvents.size());
+    const auto batch = observer->ChangedEvents.front().pBatch;
+    ASSERT_NE(nullptr, batch);
+    ASSERT_EQ(2, batch->Records.size());
+    EXPECT_EQ(RepositoryEventArgs::kAddEntity, batch->Records[0].nType);
+    EXPECT_EQ(RepositoryEventArgs::kAddComponent, batch->Records[1].nType);
+    ASSERT_NE(nullptr, batch->pOperationBatch);
+    EXPECT_EQ(1, batch->pOperationBatch->Operations.size());
+    auto component = repository->GetEntity(entityID)->GetComponent<CSumComponent>();
+    ASSERT_NE(nullptr, component);
+    EXPECT_EQ(11, component->GetA());
+    EXPECT_EQ(12, component->GetB());
+    EXPECT_EQ(initialCount + 1, cache.GetCurrentComponents(CSumComponent::S_ClassName).size());
+
+    ASSERT_TRUE(repository->Undo());
+    EXPECT_FALSE(repository->HasEntity(entityID));
+    EXPECT_EQ(initialCount, cache.GetCurrentComponents(CSumComponent::S_ClassName).size());
+    ASSERT_TRUE(repository->Redo());
+    component = repository->GetEntity(entityID)->GetComponent<CSumComponent>();
+    ASSERT_NE(nullptr, component);
+    EXPECT_EQ(11, component->GetA());
+    EXPECT_EQ(12, component->GetB());
+    EXPECT_EQ(initialCount + 1, cache.GetCurrentComponents(CSumComponent::S_ClassName).size());
+    repository->CloseOperationLog();
+
+    auto recovered = GenerateTestRepository();
+    recovered->ReplayOperationLog(logPath,
+        S_TestOperationLogMagic, S_TestOperationLogVersion);
+    component = recovered->GetEntity(entityID)->GetComponent<CSumComponent>();
+    ASSERT_NE(nullptr, component);
+    EXPECT_EQ(11, component->GetA());
+    EXPECT_EQ(12, component->GetB());
+    std::filesystem::remove(logPath);
+}
+
+TEST(DatabaseRepositoryTest, CompositeEntityInsertRollsBackFailedInitialization)
+{
+    auto meta = CreateMetaRegistry();
+    CMetaRegistrationCatalog::ReplayAll(*meta);
+    meta->RegistChecker<CSumComponent>(std::make_shared<CRejectNegativeSumChecker>());
+    auto repository = GenerateRepository(GenerateNewUUID(), meta);
+    auto observer = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer);
+    const auto firstID = GenerateNewUUID();
+    const auto failedID = GenerateNewUUID();
+    auto& transaction = repository->BeginTransaction("CompositeRollback");
+    QueueCreateEntityWithComponents(transaction, firstID, VariantArray{
+        ObjectMap{{"class", std::string(CSumComponent::S_ClassName)},
+            {"properties", ObjectMap{{CSumComponent::PropertyName_A, PropertyValue(5)}}}}
+    });
+    QueueCreateEntityWithComponents(transaction, failedID, VariantArray{
+        ObjectMap{{"class", std::string(CSumComponent::S_ClassName)},
+            {"properties", ObjectMap{{CSumComponent::PropertyName_A, PropertyValue(-1)}}}}
+    });
+    std::string error;
+    EXPECT_FALSE(repository->CommitTransaction(transaction, error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(repository->HasEntity(firstID));
+    EXPECT_FALSE(repository->HasEntity(failedID));
+    EXPECT_TRUE(observer->ChangedEvents.empty());
+}
+
+TEST(DatabaseRepositoryTest, CompositeEntityInsertRollsBackThrowingSetter)
+{
+    auto repository = GenerateTestRepository();
+    const auto entityID = GenerateNewUUID();
+    auto observer = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer);
+    auto& transaction = repository->BeginTransaction("ThrowingCompositeInsert");
+    QueueCreateEntityWithComponents(transaction, entityID, VariantArray{
+        ObjectMap{{"class", std::string(CPartialThrowingComponent::S_ClassName)},
+            {"properties", ObjectMap{{"A", PropertyValue(10)}, {"B", PropertyValue(20)}}}}
+    });
+    std::string error;
+    EXPECT_FALSE(repository->CommitTransaction(transaction, error));
+    EXPECT_NE(std::string::npos, error.find("B failed"));
+    EXPECT_FALSE(repository->HasEntity(entityID));
+    EXPECT_TRUE(observer->ChangedEvents.empty());
 }
 
 TEST(DatabaseRepositoryTest, TransactionCanPersistComponentEnabledState)
@@ -3239,6 +3749,198 @@ TEST(DatabaseRepositoryTest, OperationLogRejectsInvalidKindAndType)
     EXPECT_THROW(OperationBatchFromVariant(Variant(_InvalidType)), std::runtime_error);
 }
 
+TEST(DatabaseRepositoryTest, OwnedUndoFilterMatchesCompleteFactPolicyAndTransfersValues)
+{
+    const auto meta = CreateTestMetaRegistry();
+    const auto entityID = GenerateNewUUID();
+    COperationBatch batch;
+    batch.Kind = EOperationBatchKind::UserCommand;
+    batch.Name = "Owned undo filter";
+    CRepositoryOperation modification;
+    modification.Type = RepositoryEventArgs::kModifyComponent;
+    modification.EntityID = entityID;
+    modification.ComponentClass = CStructuredPropertyComponent::S_ClassName;
+    modification.PreviousProperties = {{"Recipe", ObjectMap{}}, {"RuntimeRecipe", ObjectMap{}}};
+    modification.NewProperties = {
+        {"Recipe", ObjectMap{{"items", VariantArray{ObjectMap{{"key", std::string("part.1")}}}}}},
+        {"RuntimeRecipe", ObjectMap{{"runtime", true}}},
+        {"FrozenRecipe", ObjectMap{{"unpaired", true}}}};
+    batch.Operations.push_back(std::move(modification));
+    CRepositoryOperation runtimeOnly;
+    runtimeOnly.Type = RepositoryEventArgs::kModifyComponent;
+    runtimeOnly.EntityID = entityID;
+    runtimeOnly.ComponentClass = CPolicyComponent::S_ClassName;
+    runtimeOnly.PreviousProperties = {{"RuntimeValue", 0}};
+    runtimeOnly.NewProperties = {{"RuntimeValue", 2}};
+    batch.Operations.push_back(std::move(runtimeOnly));
+
+    CRepositoryOperation composite;
+    composite.Type = RepositoryEventArgs::kAddEntity;
+    composite.EntityID = entityID;
+    composite.NewProperties[kInitialComponentsProperty] = VariantArray{ObjectMap{
+        {"class", std::string(CPolicyComponent::S_ClassName)},
+        {"properties", ObjectMap{{"PersistentValue", 1}, {"RuntimeValue", 2}, {"CacheValue", 3}}},
+        {"enabled", false}, {"extra", 9}}};
+    composite.NewProperties["extra"] = 8;
+    batch.Operations.push_back(std::move(composite));
+    for (const auto type : {RepositoryEventArgs::kAddComponent, RepositoryEventArgs::kRemoveComponent,
+        RepositoryEventArgs::kEnableComponent, RepositoryEventArgs::kDisableComponent,
+        RepositoryEventArgs::kDeleteEntity})
+    {
+        CRepositoryOperation operation;
+        operation.Type = type;
+        operation.EntityID = entityID;
+        operation.ComponentClass = CPolicyComponent::S_ClassName;
+        operation.PreviousProperties = {{"PersistentValue", 0}, {"RuntimeValue", 2}};
+        operation.NewProperties = {{"PersistentValue", 1}, {"RuntimeValue", 3}};
+        operation.PreviousEnabled = true;
+        operation.NewEnabled = false;
+        batch.Operations.push_back(std::move(operation));
+    }
+    const auto expected = OperationBatchToVariant(FilterTransactionalOperationBatch(batch, *meta));
+    const auto* recipeNode = &std::get<ObjectMap>(
+        batch.Operations.front().NewProperties.at("Recipe").m_Value).at("items");
+    const auto actual = FilterTransactionalOperationBatch(std::move(batch), *meta);
+    EXPECT_EQ(expected, OperationBatchToVariant(actual));
+    EXPECT_EQ(recipeNode, &std::get<ObjectMap>(
+        actual.Operations.front().NewProperties.at("Recipe").m_Value).at("items"));
+}
+
+TEST(DatabaseRepositoryTest, InternalChangeKeysMatchOwningSummaryForOrderedOperations)
+{
+    const auto project = [](const CChangeSet& Summary_) {
+        iCAX::Database::detail::CChangeSetKeys keys;
+        for (const auto& change : Summary_.CreatedEntities) keys.CreatedEntities.insert(change.Key);
+        for (const auto& change : Summary_.DeletedEntities) keys.DeletedEntities.insert(change.Key);
+        for (const auto& change : Summary_.AddedComponents)
+        {
+            auto& names = keys.AddedComponents[change.Key];
+            for (const auto& [name, _] : change.NewProperties) names.insert(name);
+        }
+        for (const auto& change : Summary_.RemovedComponents)
+        {
+            auto& names = keys.RemovedComponents[change.Key];
+            for (const auto& [name, _] : change.PreviousProperties) names.insert(name);
+        }
+        for (const auto& change : Summary_.ModifiedProperties) keys.ModifiedProperties.insert(change.Key);
+        for (const auto& change : Summary_.ModifiedComponentStates)
+            keys.ModifiedComponentStates.emplace(change.Key,
+                std::pair{change.PreviousEnabled, change.NewEnabled});
+        return keys;
+    };
+    const auto check = [&](const COperationBatch& Batch_) {
+        const auto expected = project(BuildChangeSetFromOperationBatch(Batch_));
+        const auto actual = iCAX::Database::detail::BuildChangeSetKeys(Batch_);
+        EXPECT_EQ(expected.CreatedEntities, actual.CreatedEntities);
+        EXPECT_EQ(expected.DeletedEntities, actual.DeletedEntities);
+        EXPECT_EQ(expected.AddedComponents, actual.AddedComponents);
+        EXPECT_EQ(expected.RemovedComponents, actual.RemovedComponents);
+        EXPECT_EQ(expected.ModifiedProperties, actual.ModifiedProperties);
+        EXPECT_EQ(expected.ModifiedComponentStates, actual.ModifiedComponentStates);
+        EXPECT_EQ(expected.IsEmpty(), actual.IsEmpty());
+    };
+    const auto firstID = GenerateNewUUID();
+    const auto secondID = GenerateNewUUID();
+    const auto operation = [&](RepositoryEventArgs::EventType Type_, const uuid& Entity_,
+        const std::string& Class_, PropertySet Previous_, PropertySet New_) {
+        CRepositoryOperation result;
+        result.Type = Type_;
+        result.EntityID = Entity_;
+        result.ComponentClass = Class_;
+        result.PreviousProperties = std::move(Previous_);
+        result.NewProperties = std::move(New_);
+        return result;
+    };
+    std::vector<CRepositoryOperation> patterns;
+    patterns.push_back(operation(RepositoryEventArgs::kAddEntity, firstID, {}, {}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kDeleteEntity, firstID, {}, {}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kAddComponent, firstID, "A", {}, {{"X", 0}, {"Y", 1}}));
+    patterns.push_back(operation(RepositoryEventArgs::kRemoveComponent, firstID, "A", {{"Y", 1}}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, firstID, "A", {{"X", 0}}, {{"X", 1}}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, firstID, "A", {{"X", 1}}, {{"X", 0}}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, firstID, "A", {{"X", 1}}, {{"X", 2}}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, firstID, "A", {{"X", 0}}, {{"X", 0}}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, firstID, "A", {{"X", 0}}, {{"Unpaired", 1}}));
+    patterns.push_back(operation(RepositoryEventArgs::kEnableComponent, firstID, "A", {}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kDisableComponent, firstID, "A", {}, {}));
+    auto unchangedState = patterns.back();
+    unchangedState.PreviousEnabled = false;
+    unchangedState.NewEnabled = false;
+    patterns.push_back(std::move(unchangedState));
+    patterns.push_back(operation(RepositoryEventArgs::kAddComponent, firstID, "B", {}, {{"Y", 2}}));
+    patterns.push_back(operation(RepositoryEventArgs::kRemoveComponent, firstID, "B", {{"Y", 2}}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kAddEntity, secondID, {}, {},
+        {{kInitialComponentsProperty, VariantArray{
+            ObjectMap{{"class", std::string("A")}, {"properties", ObjectMap{{"X", 1}}}},
+            ObjectMap{{"class", std::string("B")}, {"properties", ObjectMap{}}}
+        }}}));
+    patterns.push_back(operation(RepositoryEventArgs::kDeleteEntity, secondID, {}, {}, {}));
+    patterns.push_back(operation(RepositoryEventArgs::kModifyComponent, secondID, "A", {{"X", 1}}, {{"X", 0}}));
+
+    for (const auto kind : {EOperationBatchKind::UserCommand, EOperationBatchKind::Transaction,
+        EOperationBatchKind::Replay, EOperationBatchKind::LoadBaseline})
+    {
+        COperationBatch batch;
+        batch.Kind = kind;
+        check(batch);
+        for (const auto& first : patterns)
+        {
+            batch.Operations = {first};
+            check(batch);
+            for (const auto& second : patterns)
+            {
+                batch.Operations = {first, second};
+                check(batch);
+                for (const auto& third : patterns)
+                {
+                    batch.Operations = {first, second, third};
+                    check(batch);
+                }
+            }
+        }
+        batch.Operations.clear();
+        for (const auto& item : patterns)
+        {
+            batch.Operations.push_back(item);
+            check(batch);
+        }
+    }
+}
+
+TEST(DatabaseRepositoryTest, InternalChangeKeysOwnKeysAfterFactLifetimeEnds)
+{
+    const auto entityID = GenerateNewUUID();
+    COperationBatch batch;
+    CRepositoryOperation operation;
+    operation.Type = RepositoryEventArgs::kModifyComponent;
+    operation.EntityID = entityID;
+    operation.ComponentClass = CStructuredPropertyComponent::S_ClassName;
+    operation.PreviousProperties = {{"Recipe", ObjectMap{}}};
+    operation.NewProperties = {{"Recipe", ObjectMap{{"items", VariantArray{
+        ObjectMap{{"parameters", ObjectMap{{"clearance", 0.1}}}}
+    }}}}};
+    batch.Operations.push_back(std::move(operation));
+    const auto owning = BuildChangeSetFromOperationBatch(batch);
+    const auto keys = iCAX::Database::detail::BuildChangeSetKeys(batch);
+    batch.Operations.front().NewProperties.at("Recipe")
+        .SetByPath("items[0].parameters.clearance", 0.2);
+    batch.Operations.clear();
+    ASSERT_EQ(1u, keys.ModifiedProperties.size());
+    EXPECT_EQ(entityID, keys.ModifiedProperties.begin()->EntityID);
+    EXPECT_EQ(CStructuredPropertyComponent::S_ClassName, keys.ModifiedProperties.begin()->ComponentClass);
+    EXPECT_EQ("Recipe", keys.ModifiedProperties.begin()->PropertyName);
+    ASSERT_EQ(1u, owning.ModifiedProperties.size());
+    EXPECT_EQ(0.1, owning.ModifiedProperties.front().NewValue
+        .GetByPath("items[0].parameters.clearance")->To<double>());
+
+    batch.Operations.emplace_back();
+    batch.Operations.back().Type = RepositoryEventArgs::kAddEntity;
+    batch.Operations.back().EntityID = entityID;
+    batch.Operations.back().NewProperties[kInitialComponentsProperty] = 42;
+    EXPECT_THROW(iCAX::Database::detail::BuildChangeSetKeys(batch), std::runtime_error);
+    EXPECT_THROW(BuildChangeSetFromOperationBatch(batch), std::runtime_error);
+}
+
 TEST(DatabaseRepositoryTest, OperationLogRejectsInvalidInMemoryEnums)
 {
     CRepositoryOperation _InvalidOperation;
@@ -3255,7 +3957,11 @@ TEST(DatabaseRepositoryTest, OperationLogRejectsInvalidInMemoryEnums)
 
     EXPECT_THROW(OperationBatchToVariant(_InvalidOperationBatch), std::runtime_error);
     EXPECT_THROW(BuildChangeSetFromOperationBatch(_InvalidOperationBatch), std::runtime_error);
+    EXPECT_THROW(iCAX::Database::detail::BuildChangeSetKeys(_InvalidOperationBatch), std::runtime_error);
     EXPECT_THROW(FilterTransactionalOperationBatch(_InvalidOperationBatch, *CreateTestMetaRegistry()), std::runtime_error);
+    auto ownedInvalidBatch = _InvalidOperationBatch;
+    EXPECT_THROW(FilterTransactionalOperationBatch(std::move(ownedInvalidBatch),
+        *CreateTestMetaRegistry()), std::runtime_error);
     EXPECT_THROW(MakeInverseOperationBatch(_InvalidOperationBatch), std::runtime_error);
 
     COperationBatch _InvalidKindBatch;

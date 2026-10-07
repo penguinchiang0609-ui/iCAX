@@ -13,6 +13,49 @@ namespace
 
     constexpr const char* S_OperationLogHeaderRecord = "iCAX.OperationLog.Header";
 
+    template<class TEvent>
+    std::optional<CRepositoryOperation> MakeRepositoryOperation(const TEvent& Event_)
+    {
+        switch (Event_.nType)
+        {
+        case RepositoryEventArgs::kAddEntity:
+        case RepositoryEventArgs::kDeleteEntity:
+        case RepositoryEventArgs::kAddComponent:
+        case RepositoryEventArgs::kRemoveComponent:
+        case RepositoryEventArgs::kModifyComponent:
+        case RepositoryEventArgs::kEnableComponent:
+        case RepositoryEventArgs::kDisableComponent:
+            break;
+        case RepositoryEventArgs::kBatchChanged:
+            return std::nullopt;
+        default:
+            throw std::runtime_error("Invalid repository operation type");
+        }
+
+        CRepositoryOperation operation;
+        operation.Type = Event_.nType;
+        operation.EntityID = Event_.EntityID;
+        operation.ComponentClass = Event_.strClassName;
+        operation.PreviousProperties = Event_.PreviousProperties;
+        operation.NewProperties = Event_.NewProperties;
+        if (Event_.nType == RepositoryEventArgs::kAddComponent)
+            operation.NewEnabled = Event_.pComponent ? Event_.pComponent->IsEnable() : true;
+        else if (Event_.nType == RepositoryEventArgs::kRemoveComponent)
+            operation.PreviousEnabled = Event_.pComponent ? Event_.pComponent->IsEnable() : true;
+        else if (Event_.nType == RepositoryEventArgs::kEnableComponent)
+        {
+            operation.PreviousEnabled = false;
+            operation.NewEnabled = true;
+        }
+        else if (Event_.nType == RepositoryEventArgs::kDisableComponent)
+        {
+            operation.PreviousEnabled = true;
+            operation.NewEnabled = false;
+        }
+        if (operation.IsEmpty()) return std::nullopt;
+        return std::optional<CRepositoryOperation>{std::move(operation)};
+    }
+
     void ValidateOperationLogIdentity(IN const std::string& strMagic_, IN const uint32_t nVersion_)
     {
         if (strMagic_.empty())
@@ -260,7 +303,49 @@ namespace
 
     CRepositoryOperation FilterOperation(IN const CRepositoryOperation& Operation_, IN const IMetaRegistry& Meta_, IN const bool bRequirePersistent_)
     {
-        CRepositoryOperation _Result = Operation_;
+        if (Operation_.Type == RepositoryEventArgs::kAddEntity)
+        {
+            const auto found = Operation_.NewProperties.find(kInitialComponentsProperty);
+            if (found != Operation_.NewProperties.end())
+            {
+                if (!found->second.Is<VariantArray>())
+                    throw std::runtime_error("Entity snapshot components must be an array");
+                CRepositoryOperation result;
+                result.Type = Operation_.Type;
+                result.EntityID = Operation_.EntityID;
+                VariantArray components;
+                const auto& source = std::get<VariantArray>(found->second.m_Value);
+                components.reserve(source.size());
+                for (const auto& value : source)
+                {
+                    const auto& record = std::get<ObjectMap>(value.m_Value);
+                    const auto componentClass = record.at("class").To<std::string>();
+                    ObjectMap filtered;
+                    filtered["class"] = componentClass;
+                    filtered["properties"].m_Value = FilterProperties(Meta_, componentClass,
+                        std::get<ObjectMap>(record.at("properties").m_Value),
+                        bRequirePersistent_);
+                    if (const auto enabled = record.find("enabled"); enabled != record.end())
+                        filtered.emplace("enabled", enabled->second);
+                    Variant item;
+                    item.m_Value = std::move(filtered);
+                    components.push_back(std::move(item));
+                }
+                Variant snapshot;
+                snapshot.m_Value = std::move(components);
+                result.NewProperties.emplace(kInitialComponentsProperty, std::move(snapshot));
+                return result;
+            }
+        }
+        // Decide which fields survive before copying their values. In
+        // particular, an observable runtime recipe can be much larger than
+        // the persistent fields that actually belong in undo/history.
+        CRepositoryOperation _Result;
+        _Result.Type = Operation_.Type;
+        _Result.EntityID = Operation_.EntityID;
+        _Result.ComponentClass = Operation_.ComponentClass;
+        _Result.PreviousEnabled = Operation_.PreviousEnabled;
+        _Result.NewEnabled = Operation_.NewEnabled;
 
         // 结构性操作必须保留；字段集合只按 meta 裁剪。
         // Modify 操作要求 Previous/New 成对出现，避免只保留一侧导致回放无法恢复。
@@ -268,12 +353,12 @@ namespace
         {
         case RepositoryEventArgs::kAddComponent:
         case RepositoryEventArgs::kRemoveComponent:
-            _Result.PreviousProperties = FilterProperties(Meta_, _Result.ComponentClass, _Result.PreviousProperties, bRequirePersistent_);
-            _Result.NewProperties = FilterProperties(Meta_, _Result.ComponentClass, _Result.NewProperties, bRequirePersistent_);
+            _Result.PreviousProperties = FilterProperties(Meta_, _Result.ComponentClass, Operation_.PreviousProperties, bRequirePersistent_);
+            _Result.NewProperties = FilterProperties(Meta_, _Result.ComponentClass, Operation_.NewProperties, bRequirePersistent_);
             return _Result;
         case RepositoryEventArgs::kModifyComponent:
-            _Result.PreviousProperties = FilterProperties(Meta_, _Result.ComponentClass, _Result.PreviousProperties, bRequirePersistent_);
-            _Result.NewProperties = FilterProperties(Meta_, _Result.ComponentClass, _Result.NewProperties, bRequirePersistent_);
+            _Result.PreviousProperties = FilterProperties(Meta_, _Result.ComponentClass, Operation_.PreviousProperties, bRequirePersistent_);
+            _Result.NewProperties = FilterProperties(Meta_, _Result.ComponentClass, Operation_.NewProperties, bRequirePersistent_);
             for (auto _Ite = _Result.PreviousProperties.begin(); _Ite != _Result.PreviousProperties.end(); )
             {
                 if (!_Result.NewProperties.contains(_Ite->first))
@@ -299,12 +384,88 @@ namespace
             return _Result;
         case RepositoryEventArgs::kEnableComponent:
         case RepositoryEventArgs::kDisableComponent:
-            return _Result;
+            return Operation_;
         case RepositoryEventArgs::kAddEntity:
+            return Operation_;
         case RepositoryEventArgs::kDeleteEntity:
-            return _Result;
+            return Operation_;
         }
 
+        throw std::runtime_error("Invalid repository operation type");
+    }
+
+    void FilterPropertiesInPlace(IN const IMetaRegistry& Meta_,
+        IN const std::string& Class_, IN PropertySet& Properties_, IN const bool Persistent_)
+    {
+        for (auto it = Properties_.begin(); it != Properties_.end(); )
+        {
+            if (!ShouldKeepProperty(Meta_, Class_, it->first, Persistent_))
+                it = Properties_.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    void FilterOperationInPlace(IN CRepositoryOperation& Operation_,
+        IN const IMetaRegistry& Meta_, IN const bool Persistent_)
+    {
+        if (Operation_.Type == RepositoryEventArgs::kAddEntity)
+        {
+            const auto found = Operation_.NewProperties.find(kInitialComponentsProperty);
+            if (found != Operation_.NewProperties.end())
+            {
+                if (!found->second.Is<VariantArray>())
+                    throw std::runtime_error("Entity snapshot components must be an array");
+                for (auto& value : std::get<VariantArray>(found->second.m_Value))
+                {
+                    auto& record = std::get<ObjectMap>(value.m_Value);
+                    const auto componentClass = record.at("class").To<std::string>();
+                    FilterPropertiesInPlace(Meta_, componentClass,
+                        std::get<ObjectMap>(record.at("properties").m_Value), Persistent_);
+                    for (auto it = record.begin(); it != record.end(); )
+                    {
+                        if (it->first != "class" && it->first != "properties" && it->first != "enabled")
+                            it = record.erase(it);
+                        else
+                            ++it;
+                    }
+                    record["class"] = componentClass;
+                }
+                auto initial = Operation_.NewProperties.extract(found);
+                Operation_.NewProperties.clear();
+                Operation_.NewProperties.insert(std::move(initial));
+                Operation_.ComponentClass.clear();
+                Operation_.PreviousProperties.clear();
+                Operation_.PreviousEnabled.reset();
+                Operation_.NewEnabled.reset();
+                return;
+            }
+        }
+        switch (Operation_.Type)
+        {
+        case RepositoryEventArgs::kAddComponent:
+        case RepositoryEventArgs::kRemoveComponent:
+        case RepositoryEventArgs::kModifyComponent:
+            FilterPropertiesInPlace(Meta_, Operation_.ComponentClass,
+                Operation_.PreviousProperties, Persistent_);
+            FilterPropertiesInPlace(Meta_, Operation_.ComponentClass,
+                Operation_.NewProperties, Persistent_);
+            if (Operation_.Type == RepositoryEventArgs::kModifyComponent)
+            {
+                std::erase_if(Operation_.PreviousProperties, [&](const auto& item) {
+                    return !Operation_.NewProperties.contains(item.first);
+                });
+                std::erase_if(Operation_.NewProperties, [&](const auto& item) {
+                    return !Operation_.PreviousProperties.contains(item.first);
+                });
+            }
+            return;
+        case RepositoryEventArgs::kEnableComponent:
+        case RepositoryEventArgs::kDisableComponent:
+        case RepositoryEventArgs::kAddEntity:
+        case RepositoryEventArgs::kDeleteEntity:
+            return;
+        }
         throw std::runtime_error("Invalid repository operation type");
     }
 
@@ -313,6 +474,7 @@ namespace
         COperationBatch _Result;
         _Result.Kind = Batch_.Kind;
         _Result.Name = Batch_.Name;
+        _Result.Operations.reserve(Batch_.Operations.size());
 
         // 过滤时只删除不可参与目标语义的字段或空操作，不改变剩余操作的相对顺序。
         for (const auto& _Operation : Batch_.Operations)
@@ -396,7 +558,15 @@ void iCAX::Database::COperationBatchBuilder::RecordRepositoryEvent(IN const Repo
 {
     // LoadBaseline 同样保留内存中的事实操作，以便加载失败时能够完整回滚；
     // 成功 EndLoadBaseline 后该 Batch 会被直接丢弃，不进入历史或快速保存日志。
-    AppendBatch(MakeOperationBatchFromRepositoryEvent(Args_, m_Batch.Kind, m_Batch.Name));
+    if (auto operation = MakeRepositoryOperation(Args_))
+        AppendOperation(std::move(*operation));
+}
+
+void iCAX::Database::COperationBatchBuilder::RecordRepositoryEvent(
+    IN const RepositoryEventRecord& Record_)
+{
+    if (auto operation = MakeRepositoryOperation(Record_))
+        AppendOperation(std::move(*operation));
 }
 
 void iCAX::Database::COperationBatchBuilder::AppendOperation(IN const CRepositoryOperation& Operation_)
@@ -407,8 +577,18 @@ void iCAX::Database::COperationBatchBuilder::AppendOperation(IN const CRepositor
     }
 }
 
+void iCAX::Database::COperationBatchBuilder::AppendOperation(CRepositoryOperation&& Operation_)
+{
+    if (!Operation_.IsEmpty())
+        m_Batch.Operations.push_back(std::move(Operation_));
+}
+
 void iCAX::Database::COperationBatchBuilder::AppendBatch(IN const COperationBatch& Batch_)
 {
+    // Reserving once prevents vector growth from repeatedly copying the
+    // already recorded large property snapshots on implementations whose
+    // associative-container move constructor can throw.
+    ReserveOperations(m_Batch.Operations.size() + Batch_.Operations.size());
     for (const auto& _Operation : Batch_.Operations)
     {
         AppendOperation(_Operation);
@@ -420,57 +600,24 @@ iCAX::Database::COperationBatch iCAX::Database::COperationBatchBuilder::Build() 
     return m_Batch;
 }
 
+void iCAX::Database::COperationBatchBuilder::ReserveOperations(std::size_t Count_)
+{
+    m_Batch.Operations.reserve(Count_);
+}
+
+iCAX::Database::COperationBatch iCAX::Database::COperationBatchBuilder::Take()
+{
+    return std::move(m_Batch);
+}
+
 iCAX::Database::COperationBatch iCAX::Database::MakeOperationBatchFromRepositoryEvent(IN const RepositoryEventArgs& Args_, IN EOperationBatchKind Kind_, IN const std::string& strName_)
 {
     COperationBatch _Result;
     _Result.Kind = Kind_;
     _Result.Name = strName_;
 
-    switch (Args_.nType)
-    {
-    case RepositoryEventArgs::kAddEntity:
-    case RepositoryEventArgs::kDeleteEntity:
-    case RepositoryEventArgs::kAddComponent:
-    case RepositoryEventArgs::kRemoveComponent:
-    case RepositoryEventArgs::kModifyComponent:
-    case RepositoryEventArgs::kEnableComponent:
-    case RepositoryEventArgs::kDisableComponent:
-        break;
-    case RepositoryEventArgs::kBatchChanged:
-        return _Result;
-    default:
-        throw std::runtime_error("Invalid repository operation type");
-    }
-
-    CRepositoryOperation _Operation;
-    _Operation.Type = Args_.nType;
-    _Operation.EntityID = Args_.EntityID;
-    _Operation.ComponentClass = Args_.strClassName;
-    _Operation.PreviousProperties = Args_.PreviousProperties;
-    _Operation.NewProperties = Args_.NewProperties;
-    if (Args_.nType == RepositoryEventArgs::kAddComponent)
-    {
-        _Operation.NewEnabled = Args_.pComponent ? Args_.pComponent->IsEnable() : true;
-    }
-    else if (Args_.nType == RepositoryEventArgs::kRemoveComponent)
-    {
-        _Operation.PreviousEnabled = Args_.pComponent ? Args_.pComponent->IsEnable() : true;
-    }
-    else if (Args_.nType == RepositoryEventArgs::kEnableComponent)
-    {
-        _Operation.PreviousEnabled = false;
-        _Operation.NewEnabled = true;
-    }
-    else if (Args_.nType == RepositoryEventArgs::kDisableComponent)
-    {
-        _Operation.PreviousEnabled = true;
-        _Operation.NewEnabled = false;
-    }
-
-    if (!_Operation.IsEmpty())
-    {
-        _Result.Operations.push_back(std::move(_Operation));
-    }
+    if (auto operation = MakeRepositoryOperation(Args_))
+        _Result.Operations.push_back(std::move(*operation));
     return _Result;
 }
 
@@ -486,6 +633,19 @@ iCAX::Database::CChangeSet iCAX::Database::BuildChangeSetFromOperationBatch(IN c
         {
         case RepositoryEventArgs::kAddEntity:
             _Builder.RecordAddEntity({ _Operation.EntityID });
+            if (const auto found = _Operation.NewProperties.find(kInitialComponentsProperty);
+                found != _Operation.NewProperties.end())
+            {
+                if (!found->second.Is<VariantArray>())
+                    throw std::runtime_error("Entity snapshot components must be an array");
+                for (const auto& value : std::get<VariantArray>(found->second.m_Value))
+                {
+                    const auto& record = std::get<ObjectMap>(value.m_Value);
+                    _Builder.RecordAddComponent({ _Operation.EntityID,
+                        record.at("class").To<std::string>() },
+                        std::get<ObjectMap>(record.at("properties").m_Value));
+                }
+            }
             break;
         case RepositoryEventArgs::kDeleteEntity:
             _Builder.RecordDeleteEntity({ _Operation.EntityID });
@@ -510,12 +670,21 @@ iCAX::Database::CChangeSet iCAX::Database::BuildChangeSetFromOperationBatch(IN c
             throw std::runtime_error("Invalid repository operation type");
         }
     }
-    return _Builder.Build();
+    return _Builder.Take();
 }
 
 iCAX::Database::COperationBatch iCAX::Database::FilterTransactionalOperationBatch(IN const COperationBatch& Batch_, IN const IMetaRegistry& Meta_)
 {
     return FilterBatch(Batch_, Meta_, false);
+}
+
+iCAX::Database::COperationBatch iCAX::Database::FilterTransactionalOperationBatch(
+    IN COperationBatch&& Batch_, IN const IMetaRegistry& Meta_)
+{
+    for (auto& operation : Batch_.Operations)
+        FilterOperationInPlace(operation, Meta_, false);
+    std::erase_if(Batch_.Operations, [](const auto& operation) { return operation.IsEmpty(); });
+    return std::move(Batch_);
 }
 
 iCAX::Database::COperationBatch iCAX::Database::FilterPersistentOperationBatch(IN const COperationBatch& Batch_, IN const IMetaRegistry& Meta_)

@@ -1,0 +1,704 @@
+{
+  "templateId": "single-face-security-window",
+  "cases": [
+    {
+      "id": "SW01",
+      "name": "SW01 单面四边方格正面开启",
+      "quantity": 1,
+      "coverage": [
+        "单面",
+        "四边框",
+        "方格",
+        "正面开启",
+        "均衡不锈钢",
+        "穿插间隙0.1mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "four_sides",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "tubeSpecificationPreset": "stainless_balanced",
+        "assemblyClearance": 0.1
+      }
+    },
+    {
+      "id": "SW02",
+      "name": "SW02 单面四边方格固定",
+      "quantity": 2,
+      "coverage": [
+        "单面",
+        "四边框",
+        "方格",
+        "不开启",
+        "标准不锈钢",
+        "较小尺寸",
+        "穿插间隙0mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "four_sides",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "stainless_standard",
+        "width": 1000,
+        "height": 1500,
+        "assemblyClearance": 0
+      }
+    },
+    {
+      "id": "SW03",
+      "name": "SW03 单面左右框方格固定",
+      "quantity": 3,
+      "coverage": [
+        "单面",
+        "左右框",
+        "方格",
+        "不开启",
+        "加强不锈钢",
+        "穿插间隙0.15mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "left_right",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "stainless_reinforced",
+        "width": 1600,
+        "height": 1800,
+        "assemblyClearance": 0.15
+      }
+    },
+    {
+      "id": "SW04",
+      "name": "SW04 单面上下框方格固定",
+      "quantity": 1,
+      "coverage": [
+        "单面",
+        "上下框",
+        "方格",
+        "不开启",
+        "镀锌方管",
+        "方管竖杆",
+        "穿插间隙0.2mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "top_bottom",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "galvanized_square",
+        "width": 1500,
+        "height": 1600,
+        "assemblyClearance": 0.2
+      }
+    },
+    {
+      "id": "SW05",
+      "name": "SW05 单面左右框横杆自定方管",
+      "quantity": 2,
+      "coverage": [
+        "单面",
+        "左右框",
+        "横杆",
+        "不开启",
+        "自定管型",
+        "自定横杆尺寸",
+        "穿插间隙0.05mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "left_right",
+        "infillPattern": "horizontal",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "custom",
+        "width": 1300,
+        "height": 1700,
+        "horizontalWidth": 24,
+        "horizontalDepth": 24,
+        "horizontalCornerRadius": 2,
+        "horizontalWallThickness": 1.2,
+        "assemblyClearance": 0.05
+      }
+    },
+    {
+      "id": "SW06",
+      "name": "SW06 单面上下框竖杆固定",
+      "quantity": 4,
+      "coverage": [
+        "单面",
+        "上下框",
+        "竖杆",
+        "不开启",
+        "均衡不锈钢",
+        "圆管竖杆",
+        "穿插间隙0.25mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "top_bottom",
+        "infillPattern": "vertical",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1000,
+        "height": 1400,
+        "assemblyClearance": 0.25
+      }
+    },
+    {
+      "id": "SW07",
+      "name": "SW07 单面四边横杆正面开启",
+      "quantity": 1,
+      "coverage": [
+        "单面",
+        "四边框",
+        "横杆",
+        "正面开启",
+        "标准不锈钢",
+        "开启口尺寸和位置",
+        "穿插间隙0.15mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "four_sides",
+        "infillPattern": "horizontal",
+        "accessDoorEnabled": true,
+        "tubeSpecificationPreset": "stainless_standard",
+        "width": 1400,
+        "height": 1800,
+        "doorClearWidth": 600,
+        "doorClearHeight": 900,
+        "doorLeft": 260,
+        "doorBottom": 380,
+        "doorHorizontalTopCenterOffset": 270,
+        "doorHorizontalBottomCenterOffset": 270,
+        "assemblyClearance": 0.15
+      }
+    },
+    {
+      "id": "SW08",
+      "name": "SW08 单面四边竖杆正面开启",
+      "quantity": 2,
+      "coverage": [
+        "单面",
+        "四边框",
+        "竖杆",
+        "正面开启",
+        "加强不锈钢",
+        "较大尺寸",
+        "穿插间隙0.2mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "four_sides",
+        "infillPattern": "vertical",
+        "accessDoorEnabled": true,
+        "tubeSpecificationPreset": "stainless_reinforced",
+        "width": 1600,
+        "height": 2000,
+        "doorClearWidth": 900,
+        "doorClearHeight": 1100,
+        "doorLeft": 200,
+        "doorBottom": 420,
+        "assemblyClearance": 0.2
+      }
+    },
+    {
+      "id": "SW09",
+      "name": "SW09 单面四边方格七百宽开启",
+      "quantity": 1,
+      "coverage": [
+        "单面",
+        "四边框",
+        "方格",
+        "正面开启",
+        "开启口净宽变化",
+        "穿插间隙0.05mm"
+      ],
+      "parameters": {
+        "faceType": "single",
+        "frameLayout": "four_sides",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1400,
+        "height": 1900,
+        "doorClearWidth": 700,
+        "doorClearHeight": 1000,
+        "assemblyClearance": 0.05
+      }
+    },
+    {
+      "id": "SW10",
+      "name": "SW10 双面左侧方格正面开启",
+      "quantity": 2,
+      "coverage": [
+        "双面",
+        "左侧",
+        "方格",
+        "正面开启",
+        "左侧深度",
+        "穿插间隙0.15mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "two",
+        "sidePosition": "left",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace2": "front",
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1300,
+        "height": 1800,
+        "sideWidth": 600,
+        "assemblyClearance": 0.15,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW11",
+      "name": "SW11 双面右侧横杆正面开启",
+      "quantity": 1,
+      "coverage": [
+        "双面",
+        "右侧",
+        "横杆",
+        "正面开启",
+        "标准不锈钢",
+        "穿插间隙0.2mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "two",
+        "sidePosition": "right",
+        "infillPattern": "horizontal",
+        "accessDoorEnabled": true,
+        "accessDoorFace2": "front",
+        "tubeSpecificationPreset": "stainless_standard",
+        "width": 1400,
+        "height": 1900,
+        "sideWidth": 700,
+        "doorClearWidth": 650,
+        "doorClearHeight": 1000,
+        "assemblyClearance": 0.2,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW12",
+      "name": "SW12 双面左侧竖杆侧面开启",
+      "quantity": 3,
+      "coverage": [
+        "双面",
+        "左侧",
+        "竖杆",
+        "侧面开启",
+        "加强不锈钢",
+        "窄开启口",
+        "穿插间隙0.05mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "two",
+        "sidePosition": "left",
+        "infillPattern": "vertical",
+        "accessDoorEnabled": true,
+        "accessDoorFace2": "side",
+        "tubeSpecificationPreset": "stainless_reinforced",
+        "width": 1500,
+        "height": 1900,
+        "sideWidth": 700,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "assemblyClearance": 0.05,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW13",
+      "name": "SW13 双面右侧方格侧面开启",
+      "quantity": 1,
+      "coverage": [
+        "双面",
+        "右侧",
+        "方格",
+        "侧面开启",
+        "镀锌方管",
+        "侧面开启口位置",
+        "穿插间隙0.15mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "two",
+        "sidePosition": "right",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace2": "side",
+        "tubeSpecificationPreset": "galvanized_square",
+        "width": 1400,
+        "height": 1800,
+        "sideWidth": 650,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "doorHorizontalTopCenterOffset": 200,
+        "doorHorizontalBottomCenterOffset": 200,
+        "assemblyClearance": 0.15,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW14",
+      "name": "SW14 双面右侧方格固定",
+      "quantity": 2,
+      "coverage": [
+        "双面",
+        "右侧",
+        "方格",
+        "不开启",
+        "双面宽度变化",
+        "穿插间隙0.2mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "two",
+        "sidePosition": "right",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1500,
+        "height": 1800,
+        "sideWidth": 600,
+        "assemblyClearance": 0.2,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW15",
+      "name": "SW15 三面方格正面开启",
+      "quantity": 1,
+      "coverage": [
+        "三面",
+        "方格",
+        "正面开启",
+        "标准不锈钢",
+        "左右深度不同",
+        "穿插间隙0.25mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "three",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace3": "front",
+        "tubeSpecificationPreset": "stainless_standard",
+        "width": 1400,
+        "height": 1900,
+        "leftWidth": 550,
+        "rightWidth": 700,
+        "assemblyClearance": 0.25,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW16",
+      "name": "SW16 三面横杆左侧开启",
+      "quantity": 2,
+      "coverage": [
+        "三面",
+        "横杆",
+        "左侧开启",
+        "加强不锈钢",
+        "窄开启口",
+        "穿插间隙0.05mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "three",
+        "infillPattern": "horizontal",
+        "accessDoorEnabled": true,
+        "accessDoorFace3": "left",
+        "tubeSpecificationPreset": "stainless_reinforced",
+        "width": 1500,
+        "height": 2000,
+        "leftWidth": 700,
+        "rightWidth": 600,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "doorHorizontalTopCenterOffset": 200,
+        "doorHorizontalBottomCenterOffset": 200,
+        "assemblyClearance": 0.05,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW17",
+      "name": "SW17 三面竖杆右侧开启",
+      "quantity": 3,
+      "coverage": [
+        "三面",
+        "竖杆",
+        "右侧开启",
+        "镀锌方管",
+        "方管竖杆",
+        "穿插间隙0.15mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "three",
+        "infillPattern": "vertical",
+        "accessDoorEnabled": true,
+        "accessDoorFace3": "right",
+        "tubeSpecificationPreset": "galvanized_square",
+        "width": 1200,
+        "height": 1800,
+        "leftWidth": 600,
+        "rightWidth": 650,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "assemblyClearance": 0.15,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW18",
+      "name": "SW18 三面方格深度非对称固定",
+      "quantity": 1,
+      "coverage": [
+        "三面",
+        "方格",
+        "不开启",
+        "较大尺寸",
+        "左右深度不同",
+        "穿插间隙0.2mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "three",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1600,
+        "height": 2000,
+        "leftWidth": 600,
+        "rightWidth": 750,
+        "assemblyClearance": 0.2,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW19",
+      "name": "SW19 三面方格自定管型正面开启",
+      "quantity": 2,
+      "coverage": [
+        "三面",
+        "方格",
+        "正面开启",
+        "左右深度相同",
+        "自定管型",
+        "方管竖杆",
+        "穿插间隙0.25mm",
+        "立柱平切贴焊",
+        "自定逃生窗框尺寸"
+      ],
+      "parameters": {
+        "faceType": "three",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace3": "front",
+        "tubeSpecificationPreset": "custom",
+        "width": 1600,
+        "height": 2000,
+        "leftWidth": 650,
+        "rightWidth": 650,
+        "frameWidth": 40,
+        "frameDepth": 40,
+        "frameCornerRadius": 2,
+        "frameWallThickness": 1.5,
+        "horizontalWidth": 25,
+        "horizontalDepth": 25,
+        "horizontalCornerRadius": 2,
+        "horizontalWallThickness": 1,
+        "verticalProfileType": "rect",
+        "verticalWidth": 16,
+        "verticalDepth": 16,
+        "verticalCornerRadius": 1.5,
+        "verticalWallThickness": 1,
+        "assemblyClearance": 0.25,
+        "foldedPostJoint": "weld",
+        "doorFrameWidth": 32,
+        "doorFrameDepth": 32,
+        "doorFrameCornerRadius": 2,
+        "doorFrameWallThickness": 1.2
+      }
+    },
+    {
+      "id": "SW20",
+      "name": "SW20 五面方格正面开启",
+      "quantity": 1,
+      "coverage": [
+        "五面",
+        "方格",
+        "正面开启",
+        "顶底格栅",
+        "出墙深度",
+        "穿插间隙0.15mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "five",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace5": "front",
+        "tubeSpecificationPreset": "stainless_balanced",
+        "width": 1400,
+        "height": 1900,
+        "depth": 600,
+        "assemblyClearance": 0.15,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW21",
+      "name": "SW21 五面横杆左侧开启",
+      "quantity": 2,
+      "coverage": [
+        "五面",
+        "横杆",
+        "左侧开启",
+        "顶底格栅",
+        "标准不锈钢",
+        "穿插间隙0.2mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "five",
+        "infillPattern": "horizontal",
+        "accessDoorEnabled": true,
+        "accessDoorFace5": "left",
+        "tubeSpecificationPreset": "stainless_standard",
+        "width": 1500,
+        "height": 2000,
+        "depth": 650,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "doorHorizontalTopCenterOffset": 200,
+        "doorHorizontalBottomCenterOffset": 200,
+        "assemblyClearance": 0.2,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW22",
+      "name": "SW22 五面竖杆右侧开启",
+      "quantity": 1,
+      "coverage": [
+        "五面",
+        "竖杆",
+        "右侧开启",
+        "顶底格栅",
+        "加强不锈钢",
+        "侧面窄开启口",
+        "穿插间隙0.05mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "five",
+        "infillPattern": "vertical",
+        "accessDoorEnabled": true,
+        "accessDoorFace5": "right",
+        "tubeSpecificationPreset": "stainless_reinforced",
+        "width": 1300,
+        "height": 1900,
+        "depth": 700,
+        "doorClearWidth": 420,
+        "doorClearHeight": 900,
+        "doorUOffset": 70,
+        "doorVOffset": 350,
+        "assemblyClearance": 0.05,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW23",
+      "name": "SW23 五面方格底面逃生口",
+      "quantity": 3,
+      "coverage": [
+        "五面",
+        "方格",
+        "底面开启",
+        "顶底格栅",
+        "镀锌方管",
+        "底面开口位置",
+        "穿插间隙0.15mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "five",
+        "infillPattern": "grid",
+        "accessDoorEnabled": true,
+        "accessDoorFace5": "bottom",
+        "tubeSpecificationPreset": "galvanized_square",
+        "width": 1400,
+        "height": 1800,
+        "depth": 600,
+        "doorClearWidth": 500,
+        "doorClearHeight": 260,
+        "doorUOffset": 180,
+        "doorVOffset": 80,
+        "doorHorizontalTopCenterOffset": 70,
+        "doorHorizontalBottomCenterOffset": 70,
+        "assemblyClearance": 0.15,
+        "foldedPostJoint": "weld"
+      }
+    },
+    {
+      "id": "SW24",
+      "name": "SW24 五面方格自定管型固定",
+      "quantity": 2,
+      "coverage": [
+        "五面",
+        "方格",
+        "不开启",
+        "顶底格栅",
+        "较大出墙深度",
+        "自定管型",
+        "穿插间隙0.2mm",
+        "立柱平切贴焊"
+      ],
+      "parameters": {
+        "faceType": "five",
+        "infillPattern": "grid",
+        "accessDoorEnabled": false,
+        "tubeSpecificationPreset": "custom",
+        "width": 1600,
+        "height": 2000,
+        "depth": 800,
+        "frameWidth": 40,
+        "frameDepth": 40,
+        "frameCornerRadius": 2,
+        "frameWallThickness": 1.5,
+        "horizontalWidth": 25,
+        "horizontalDepth": 25,
+        "horizontalCornerRadius": 2,
+        "horizontalWallThickness": 1,
+        "verticalProfileType": "rect",
+        "verticalWidth": 16,
+        "verticalDepth": 16,
+        "verticalCornerRadius": 1.5,
+        "verticalWallThickness": 1,
+        "assemblyClearance": 0.2,
+        "foldedPostJoint": "weld"
+      }
+    }
+  ]
+}

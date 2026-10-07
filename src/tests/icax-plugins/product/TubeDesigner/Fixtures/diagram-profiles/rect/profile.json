@@ -3,10 +3,6 @@
   "schemaVersion": 3,
   "profileForm": "parametric",
   "id": "rect",
-  "fitterPriority": 90,
-  "pythonModulePaths": [
-    "../../_shared/profiles"
-  ],
   "version": "2.1.0",
   "displayName": {
     "zh-CN": "矩形管",

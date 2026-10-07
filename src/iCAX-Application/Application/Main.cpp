@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "Application.h"
 #include "UIContainer/UIContainer.h"
+#include <chrono>
+#include <exception>
 
 
 namespace
@@ -97,12 +99,29 @@ namespace
         return true;
     }
 
+    std::filesystem::path ExecutableDirectory()
+    {
+        std::vector<wchar_t> _Buffer(32768);
+        while (true)
+        {
+            const auto _Length = GetModuleFileNameW(
+                nullptr, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            if (_Length == 0) return {};
+            if (_Length < _Buffer.size() - 1)
+                return std::filesystem::path(
+                    std::wstring(_Buffer.data(), _Length)).parent_path();
+            _Buffer.resize(_Buffer.size() * 2);
+        }
+    }
+
     std::filesystem::path FindDefaultWebPageRoot()
     {
         const auto _Current = std::filesystem::current_path();
+        const auto _Executable = ExecutableDirectory();
         const auto _SourceRoot = std::filesystem::weakly_canonical(
             std::filesystem::path(__FILE__)).parent_path().parent_path().parent_path();
         const std::filesystem::path _Candidates[] = {
+            _Executable / "iCAX-UI" / "SDK" / "AppShell",
             _Current / "src" / "iCAX-UI" / "SDK" / "AppShell",
             _Current / "iCAX-UI" / "SDK" / "AppShell",
             _Current / ".." / ".." / "iCAX-UI" / "SDK" / "AppShell",
@@ -132,9 +151,12 @@ namespace
         }
 
         const auto _Current = std::filesystem::current_path();
+        const auto _Executable = ExecutableDirectory();
         const std::filesystem::path _ConfigCandidates[] = {
             _Current / "Setting" / "UIContainer.Setting",
-            _Current / "UIContainer.Setting"
+            _Current / "UIContainer.Setting",
+            _Executable / "Setting" / "UIContainer.Setting",
+            _Executable / "UIContainer.Setting"
         };
 
         for (const auto& _ConfigPath : _ConfigCandidates)
@@ -168,12 +190,56 @@ namespace
 
 namespace
 {
+    void LogShutdownStage(const char* Stage_, const char* State_, long long Milliseconds_ = -1) noexcept
+    {
+        try
+        {
+            const auto _Root = iCAX::Application::ResolveDefaultUserDataDirectory();
+            const auto _Path = std::filesystem::path(std::u8string(_Root.begin(), _Root.end()))
+                / "Logs" / "ApplicationShutdown.log";
+            std::ofstream _Output(_Path, std::ios::app);
+            _Output << "pid=" << GetCurrentProcessId() << " " << Stage_ << " " << State_;
+            if (Milliseconds_ >= 0) _Output << " " << Milliseconds_ << "ms";
+            _Output << '\n';
+        }
+        catch (...) {}
+    }
+
     int RunApplication(IN iCAX::Frontend::CUIContainerConfig UIConfig_)
     {
         iCAX::Application::CApplication _Application;
         _Application.Start();
 
         iCAX::Frontend::CUIContainerInstance _UIContainer;
+        const auto _StopApplication = [&]()
+        {
+            std::exception_ptr _Failure;
+            const auto _Stage = [&](const char* Name_, const auto& Stop_)
+            {
+                const auto _Start = std::chrono::steady_clock::now();
+                LogShutdownStage(Name_, "begin");
+                try
+                {
+                    Stop_();
+                    LogShutdownStage(Name_, "end", std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - _Start).count());
+                }
+                catch (...)
+                {
+                    LogShutdownStage(Name_, "failed", std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - _Start).count());
+                    if (!_Failure) _Failure = std::current_exception();
+                }
+            };
+            _Stage("ui-stop", [&]() {
+                if (_UIContainer.IsValid() && _UIContainer->IsRunning()) _UIContainer->Stop();
+            });
+            _Stage("ui-runtime-shutdown", [&]() {
+                iCAX::Frontend::CUIContainerFactory::ShutdownRuntime(UIConfig_);
+            });
+            _Stage("application-stop", [&]() { _Application.Stop(); });
+            if (_Failure) std::rethrow_exception(_Failure);
+        };
         try
         {
             UIConfig_.pFrontendBridge = &_Application.Frontend();
@@ -182,18 +248,15 @@ namespace
             _UIContainer->Start();
             _UIContainer->WaitForExit();
 
-            _UIContainer->Stop();
-            _Application.Stop();
         }
         catch (...)
         {
-            if (_UIContainer.IsValid() && _UIContainer->IsRunning())
-            {
-                _UIContainer->Stop();
-            }
-            _Application.Stop();
-            throw;
+            const auto _Failure = std::current_exception();
+            try { _StopApplication(); } catch (...) {}
+            std::rethrow_exception(_Failure);
         }
+        _StopApplication();
+        LogShutdownStage("run-return", "end");
         return 0;
     }
 }

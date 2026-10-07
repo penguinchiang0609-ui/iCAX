@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "WorkpieceSDOImplement.h"
@@ -16,7 +17,7 @@ namespace
         CWorkpieceModelSDO()
             : CSDO("WorkpieceModel")
         {
-            ExposeMethod("Import", &iCAX::CAM::SDO::HandleImportWorkpieceModel);
+            ExposeMethod("Import", tube::license::ProtectProductMethod<11045, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleImportWorkpieceModel));
         }
     };
 

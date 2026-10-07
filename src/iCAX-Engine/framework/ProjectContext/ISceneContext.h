@@ -129,6 +129,9 @@ namespace iCAX
             * @brief 获取当前 Scene 可用的服务容器。
             */
             virtual iCAX::Services::CServiceProvider& Services() const = 0;
+
+            // Long-running scene work must observe this thread-safe shutdown signal.
+            virtual bool IsStopRequested() const noexcept;
         };
     }
 }

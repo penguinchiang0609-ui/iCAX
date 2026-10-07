@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { renderToolLibraryRightPane, handleToolLibraryAction } from "../../apps/tube-designer/webpage/toolLibrary.mjs";
+import { importBrowserAsset, serveBrowserAsset } from './browserPackageRuntime.mjs';
+const { renderToolLibraryRightPane, handleToolLibraryAction } = await importBrowserAsset('apps/tube-designer/webpage/toolLibrary.mjs');
 const collapseView = {
   tubeDesignerSystemPunchTools: [{ id: "test-mold", displayName: "测试模具", kind: "programmatic", target: "part", category: "槽口", inputs: [{ key: "targetSection", valueType: "profile", required: true }], parameters: [] }],
   tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::test-mold", previewLength: 500 },
@@ -8,21 +8,15 @@ const collapseView = {
 const collapsedPane = renderToolLibraryRightPane({}, collapseView);
 await handleToolLibraryAction({}, collapseView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
 const expandedPane = renderToolLibraryRightPane({}, collapseView);
-const read=path=>readFileSync(new URL(path,import.meta.url),"utf8");
-const data=source=>"data:text/javascript;charset=utf-8,"+encodeURIComponent(source);
-const patchUrl=data(read("../../apps/tube-designer/webpage/punchDomPatch.mjs"));
-const floatingUrl=data('export function floatingParameterDiagramHost(){return null} export function moveFloatingParameterDiagramsToWorkspace(){return null}');
-const libraryUrl=data(read("../../apps/tube-designer/webpage/libraryDomPatch.mjs")
-  .replace('"./punchDomPatch.mjs"',JSON.stringify(patchUrl))
-  .replace('"./floatingParameterDiagram.mjs"',JSON.stringify(floatingUrl)));
-const stateUrl=data(read("../../apps/_shared/workbench/utils/paneInteractionState.mjs"));
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const browser=await chromium.launch({headless:true,channel:"msedge"});
 try {
   const page=await browser.newPage();
-  const result=await page.evaluate(async ({libraryUrl,stateUrl,expandedPane,collapsedPane})=>{
-    const {patchLibraryDom,rememberLibraryDom}=await import(libraryUrl);
-    const {capturePaneInteraction}=await import(stateUrl);
+  await page.route('http://library-dom-patch.test/**', serveBrowserAsset);
+  await page.goto('http://library-dom-patch.test/');
+  const result=await page.evaluate(async ({expandedPane,collapsedPane})=>{
+    const {patchLibraryDom,rememberLibraryDom}=await import('/src/apps/tube-designer/webpage/libraryDomPatch.mjs');
+    const {capturePaneInteraction}=await import('/src/apps/_shared/workbench/utils/paneInteractionState.mjs');
     const results=[];
     for(const area of ["tools","profiles","assemblies"]) {
       const hud=area==="tools"?"tube-tool-library-hud":area==="assemblies"?"tube-connection-library-hud":"tube-profile-library-preview-hud";
@@ -56,6 +50,26 @@ try {
         leftPane.scrollTop===340 && rightPane.scrollTop===450 &&
         mount.querySelector('.nested-scroll').scrollTop===180 && !mount.querySelector('[data-condition-field="extra"]') &&
         mount.querySelector("."+hud).textContent==="new status" && mount.querySelector(".cam-status.error").textContent==="preview error");
+      // The shared node patch itself must protect a focused draft even when
+      // the caller does not perform a complete pane replacement/restoration.
+      // Keep typing and scrolling after a response has already been queued.
+      let release;
+      const response=new Promise(resolve=>{release=resolve;}).then(()=>patchLibraryDom(view,mount,{left,right:right("12"),
+        overlay:'<div class="'+hud+'">late response</div>',suffix:""}));
+      input.value="12345";input.setSelectionRange(2,4,"backward");
+      leftPane.scrollTop=380;rightPane.scrollTop=470;mount.querySelector('.nested-scroll').scrollTop=220;
+      release();const latePatched=await response;
+      results.push(latePatched && input===mount.querySelector("input") && document.activeElement===input &&
+        input.value==="12345" && input.selectionStart===2 && input.selectionEnd===4 && input.selectionDirection==="backward" &&
+        leftPane.scrollTop===380 && rightPane.scrollTop===470 && mount.querySelector('.nested-scroll').scrollTop===220 &&
+        canvas===mount.querySelector("canvas") && cube===mount.querySelector(".cube"));
+      // A new authoritative value must not be mistaken for the stale default.
+      results.push(patchLibraryDom(view,mount,{left,right:right("20"),overlay:'<div class="'+hud+'">new model</div>',suffix:""}) &&
+        input.value==="20" && input.defaultValue==="20" && document.activeElement===input);
+      input.value="unsubmitted";input.setSelectionRange(2,5);
+      const replacement=right("20").replace('data-parameter="width"','data-parameter="another-resource-width"');
+      results.push(patchLibraryDom(view,mount,{left,right:replacement,overlay:'<div class="'+hud+'">new resource</div>',suffix:""}) &&
+        !input.isConnected && mount.querySelector('[data-parameter="another-resource-width"]').value==="20" && document.activeElement!==input);
       results.push(!patchLibraryDom({...view,activeAreaId:"components"},mount,{suffix:""}));
       results.push(!patchLibraryDom(view,mount,{suffix:"new dialog"}));
     }
@@ -81,8 +95,39 @@ try {
         canvas===mount.querySelector('canvas') && left.scrollTop===340 && right.scrollTop===400);
     }
     results.push(clicks===3);
+    // Disassembly progress belongs to the product workspace, not the model
+    // lifecycle. Adding, updating and removing it must preserve both editors.
+    const productLeft='<div class="nested-left" style="height:120px;overflow:auto"><input data-note value="draft"><div style="height:1400px"></div></div><div style="height:1400px"></div>';
+    const productRight='<input data-parameter="code" value="original"><div class="nested-right" style="height:120px;overflow:auto"><div style="height:1400px"></div></div><div style="height:1400px"></div>';
+    document.body.innerHTML='<main><div class="cam-workbench"><aside class="cam-context-pane" style="height:200px;overflow:auto">'+productLeft+'</aside><div class="cam-viewport"><canvas></canvas><button class="cube">view</button></div><aside class="cam-info-pane" style="height:200px;overflow:auto">'+productRight+'</aside></div></main>';
+    const productMount=document.querySelector('main');
+    const productView={activeAreaId:'view',scene:{tubeDesigner:{product:{entityId:'product',templateId:'window'},members:[{entityId:'member',previewGeometryResourceId:'geometry',previewGeometryResourceVersion:1,transform:[1,0,0]}]}}};
+    const productCanvas=productMount.querySelector('canvas'),productCube=productMount.querySelector('.cube');
+    const productInput=productMount.querySelector('[data-parameter="code"]');
+    const scrolls=['.cam-context-pane','.cam-info-pane','.nested-left','.nested-right'].map(selector=>productMount.querySelector(selector));
+    let productClicks=0;productInput.addEventListener('click',()=>productClicks++);
+    rememberLibraryDom(productView,productMount,'');
+    productInput.focus({preventScroll:true});productInput.value='uncommitted';productInput.setSelectionRange(2,6);
+    for(const [index,stage] of ['start','machining',''].entries()) {
+      scrolls.forEach((node,i)=>node.scrollTop=180+i*30);
+      await new Promise(resolve=>setTimeout(resolve,5));
+      scrolls.forEach((node,i)=>node.scrollTop=240+i*30+index);
+      productInput.value='uncommitted-'+index;productInput.setSelectionRange(3,8,'backward');
+      const before=scrolls.map(node=>node.scrollTop);
+      const suffix=stage?'<div data-tube-designer-operation-wait>'+stage+'</div>':'';
+      const patched=patchLibraryDom(productView,productMount,{left:productLeft,right:productRight,overlay:'',suffix});
+      productInput.click();
+      const progress=productMount.querySelector('[data-tube-designer-operation-wait]');
+      results.push(patched && productCanvas===productMount.querySelector('canvas') && productCube===productMount.querySelector('.cube') &&
+        productInput===productMount.querySelector('[data-parameter="code"]') && document.activeElement===productInput &&
+        productInput.value==='uncommitted-'+index && productInput.selectionStart===3 && productInput.selectionEnd===8 && productInput.selectionDirection==='backward' &&
+        scrolls.every((node,i)=>node.scrollTop===before[i]) && (stage?progress?.textContent===stage:!progress));
+    }
+    results.push(productClicks===3);
+    productView.scene.tubeDesigner.members[0].previewGeometryResourceVersion=2;
+    results.push(!patchLibraryDom(productView,productMount,{left:productLeft,right:productRight,overlay:'',suffix:''}));
     return results;
-  },{libraryUrl,stateUrl,expandedPane,collapsedPane});
+  },{expandedPane,collapsedPane});
   assert.ok(result.every(Boolean),JSON.stringify(result));
-  console.log("Part-process/profile/assembly local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
+  console.log("Resource editors and product disassembly progress preserve canvas, controls/listeners, focus, selection and current nested scrolling; changed geometry retains its viewport lifecycle.");
 } finally {await browser.close();}

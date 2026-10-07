@@ -54,8 +54,8 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     )
     item = model.item(
         "probe.0001", profile.display_name,
-        representations={"display": result, "export": result},
+        representations={"result": result},
         properties={"tubeDesigner.profile": profile.properties()},
     )
-    model.output("display.default", "display", [item])
+    model.output("result", "result", [item])
     return model.build()

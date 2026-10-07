@@ -14,7 +14,7 @@ from icax_template_sdk import manufacturing_context, manufacturing_declaration, 
 
 
 TEMPLATE_ID = "single-face-security-window"
-TEMPLATE_VERSION = "3.9.2"
+TEMPLATE_VERSION = "3.9.9"
 DOOR_HINGE_SIDE = "left"
 DOOR_HINGE_COUNT = 2
 
@@ -991,6 +991,8 @@ def display(parameter_values):
 
 def manufacturing(parameter_values):
     """Return manufacturing declarations from the values owned by the host."""
+    if parameter_values.get('foldedPostJoint', 'weld') not in ('weld', 'tabs'):
+        raise ValueError('外框横竖统一管材，立柱仅支持平切贴焊或端部公母插接')
     script = PROFILE_CATALOG_SCRIPT.parent / "product_window_manufacturing.py"
     name = "icax_window_declaration_" + hashlib.sha256(script.read_bytes()).hexdigest()[:16]
     if name not in sys.modules:

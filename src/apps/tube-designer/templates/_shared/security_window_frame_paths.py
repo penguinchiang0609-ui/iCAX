@@ -192,7 +192,8 @@ def _allocate(spans, bends, allowance):
 
 def _target_span_check(path, plan, allowance):
     compensated = any(allowance) if isinstance(allowance, (list, tuple)) else bool(allowance)
-    if compensated:
+    if compensated and not all(fold.get('rootArc', {}).get('model') == 'distributed-root-arc-final-pose'
+                               for fold in plan['forming']):
         return {"status":"not-performed", "method":"rigid-centreline-endpoints",
                 "reason":"K补偿独立计入材料余量，点铰名义目标不代表该余量的精确成形"}
     adapter = _process_adapter

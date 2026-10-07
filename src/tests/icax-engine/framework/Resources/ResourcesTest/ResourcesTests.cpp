@@ -49,6 +49,75 @@ namespace ResourcesTestTypes
 
 using namespace ResourcesTestTypes;
 
+TEST(ResourceRuntimeDiscardTest, ClearsTemporaryHistoryAndKeepsVersionNumbersMonotonic)
+{
+    CResourceLibrary library;
+    const std::string url = "test-runtime-discard";
+    CResourceInfo info;
+    CResourceInfo stored;
+    for (int i = 0; i < 3; ++i)
+        ASSERT_NE(EResourceMutationResult::PreconditionFailed,
+            library.PutVersioned<TextResource>(url, std::make_shared<TextResource>(), info,
+                EResourceVersionCondition::None, 0, &stored));
+    ASSERT_EQ(3u, stored.nVersion);
+    ASSERT_EQ(2u, library.GetVersionStorageStats().nArchivedVersionCount);
+    EXPECT_EQ(EResourceMutationResult::Removed, library.DiscardRuntimeResource(url));
+    EXPECT_TRUE(library.GetManifest(true).empty());
+    EXPECT_TRUE(library.GetVersions(url).empty());
+    EXPECT_EQ(0u, library.GetVersionStorageStats().nArchivedVersionCount);
+    EXPECT_EQ(EResourceMutationResult::NotFound, library.DiscardRuntimeResource(url));
+    ASSERT_EQ(EResourceMutationResult::Created,
+        library.PutVersioned<TextResource>(url, std::make_shared<TextResource>(), info,
+            EResourceVersionCondition::None, 0, &stored));
+    EXPECT_EQ(4u, stored.nVersion);
+}
+
+TEST(ResourceRuntimeDiscardTest, ProtectsPersistentHistoryAndCurrentOrArchivedDependents)
+{
+    CResourceLibrary library;
+    const std::string persistent = "test-discard-persistent", child = "test-discard-child",
+        parent = "test-discard-parent";
+    CResourceInfo info;
+    info.Persistence = EResourcePersistenceMode::Embedded;
+    library.PutVersioned<TextResource>(persistent, std::make_shared<TextResource>(), info);
+    info.Persistence = EResourcePersistenceMode::RuntimeOnly;
+    library.PutVersioned<TextResource>(persistent, std::make_shared<TextResource>(), info);
+    EXPECT_EQ(EResourceMutationResult::PreconditionFailed, library.DiscardRuntimeResource(persistent));
+    EXPECT_EQ((std::vector<uint64_t>{1, 2}), library.GetVersions(persistent));
+    library.PutVersioned<TextResource>(child, std::make_shared<TextResource>(), info);
+    info.Dependencies = {{child, 1}};
+    library.PutVersioned<TextResource>(parent, std::make_shared<TextResource>(), info);
+    EXPECT_EQ(EResourceMutationResult::PreconditionFailed, library.DiscardRuntimeResource(child));
+    info.Dependencies.clear();
+    library.PutVersioned<TextResource>(parent, std::make_shared<TextResource>(), info);
+    EXPECT_EQ(EResourceMutationResult::PreconditionFailed, library.DiscardRuntimeResource(child));
+    EXPECT_EQ(EResourceMutationResult::Removed, library.DiscardRuntimeResource(parent));
+    EXPECT_EQ(EResourceMutationResult::Removed, library.DiscardRuntimeResource(child));
+    EXPECT_EQ((std::vector<uint64_t>{1, 2}), library.GetVersions(persistent));
+    EXPECT_NE(nullptr, library.Get<TextResource>(persistent, 1));
+    EXPECT_NE(nullptr, library.Get<TextResource>(persistent, 2));
+}
+
+TEST(ResourceRuntimeDiscardTest, RemovesArchivedColdPayloadFiles)
+{
+    CResourceLibrary library;
+    const std::string url = "test-cold-discard";
+    auto first = std::make_shared<CFlatBufferResource>();
+    // The built-in flatbuffer history codec stores the resource's raw bytes.
+    flatbuffers::FlatBufferBuilder builder;
+    builder.Finish(builder.CreateString("runtime-only-payload"));
+    *first = CFlatBufferResource::CopyFrom(std::span<const uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    CResourceInfo info;
+    info.nSize = first->Size();
+    library.PutVersioned<CFlatBufferResource>(url, first, info);
+    library.PutVersioned<CFlatBufferResource>(url, first, info);
+    ASSERT_EQ(1u, library.GetVersionStorageStats().nColdVersionCount);
+    const auto directory = library.GetVersionStorageDirectory();
+    EXPECT_EQ(EResourceMutationResult::Removed, library.DiscardRuntimeResource(url));
+    EXPECT_EQ(0u, library.GetVersionStorageStats().nColdVersionCount);
+    EXPECT_TRUE(std::filesystem::is_empty(directory));
+}
+
 namespace
 {
     CResourceScope MakeTestSceneScope()

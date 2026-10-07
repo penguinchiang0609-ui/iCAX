@@ -7,7 +7,7 @@ const json=path=>JSON.parse(readFileSync(new URL(path,import.meta.url),'utf8'));
 const raw=json('../../apps/tube-designer/templates/product/single_face_security_window/template.json');
 const display=json('../../apps/tube-designer/templates/product/single_face_security_window/display.json');
 const tool=json('../../apps/tube-designer/templates/mold/edge-arc-groove/tool.json');
-tool.parameters.find(p=>p.key==='angle').presentation={advanced:true};
+tool.parameters.find(p=>p.key==='leftArc').presentation={advanced:true};
 tool.parameters.find(p=>p.key==='bridge').presentation={visible:false};
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE || 'playwright');
 const browser=await chromium.launch({headless:true,channel:'msedge'});
@@ -39,6 +39,11 @@ try{
         type:({enum:'select',string:'text'}[p.valueType]??p.valueType),groupKey:p.group,
         group:groups.find(g=>g.key===p.group)?.displayName??p.group,
         options:p.choices?.map(c=>({...c,label:catalogText(c.displayName)}))}))};
+    // A small declared product policy exercises the floating lifecycle. The
+    // fixed frame angle is never an editable field or an annotation.
+    for(const role of Object.values(template.extensions.resourceRoles.tools))role.productParameterUIByResource={
+      'system:edge-arc-groove':{displayName:{'zh-CN':'产品边弧设置'},fixedParameters:{angle:90},fields:[
+        {key:'leftArc',level:'advanced'},{key:'bottomCut'},{key:'bottomCutWidth'}]}};
     const parameters={...Object.fromEntries(raw.parameters.map(p=>[p.key,p.defaultValue])),
       accessDoorEnabled:true,frameManufacturingMode:'spatial_v_notch',faceType:'three',
       doorFrameJoinType:'v_groove_90:tool_library',tubeDesignerToolBindings:{}};
@@ -67,16 +72,18 @@ try{
     return !!layer&&panel?.parentElement===layer&&!document.querySelector('.cam-viewport [data-floating-parameter-diagram]')
       &&box.left>=info.left-1&&box.right<=info.right+1&&Math.abs(box.width-360)<1&&Math.abs(box.height-405)<1;
   }),true,'product tool diagram must live in the workbench floating layer');
-  assert.equal(await panel.locator('[data-tool-annotation-key="angle"]').isVisible(),false);
-  const angleDetails=page.locator('.cam-info-pane [data-tool-parameter-key="angle"]').first().locator('xpath=ancestor::details[@data-parameter-advanced][1]');
-  await angleDetails.locator('summary').click();
-  await panel.locator('[data-tool-annotation-key="angle"]').waitFor({state:'visible'});
-  await panel.locator('[data-tool-annotation-key="angle"] .tool-diagram-parameter-badge').click();
+  assert.equal(await panel.locator('[data-tool-annotation-key="angle"]').count(),0);
+  assert.equal(await page.locator('[data-tool-parameter-key="angle"]').count(),0);
+  assert.equal(await panel.locator('[data-tool-annotation-key="leftArc"]').isVisible(),false);
+  const arcDetails=page.locator('.cam-info-pane [data-tool-parameter-key="leftArc"]').first().locator('xpath=ancestor::details[@data-parameter-advanced][1]');
+  await arcDetails.locator('summary').click();
+  await panel.locator('[data-tool-annotation-key="leftArc"]').waitFor({state:'visible'});
+  await panel.locator('[data-tool-annotation-key="leftArc"] .tool-diagram-parameter-badge').click();
   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.tubeDesignerToolField),'doorFrameGrooveTool');
-  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.toolParameterKey),'angle');
+  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.toolParameterKey),'leftArc');
   assert.equal(await page.evaluate(()=>document.activeElement?.closest('details[data-parameter-advanced]')?.open),true);
   assert.equal(await page.locator('[data-tool-parameter-key="bridge"], [data-tool-annotation-key="bridge"]').count(),0);
-  assert.equal(await panel.locator('[data-tool-annotation-key="angle"].is-active').count(),1);
+  assert.equal(await panel.locator('[data-tool-annotation-key="leftArc"].is-active').count(),1);
   const before=await panel.boundingBox(), header=await panel.locator('header').boundingBox();
   await page.mouse.move(header.x+80,header.y+12);await page.mouse.down();
   await page.mouse.move(header.x-220,header.y+92,{steps:8});await page.mouse.up();
@@ -101,7 +108,7 @@ try{
     captureDesignerScrollState({mount},view);
     const field=view.scene.tubeDesigner.templates[0].parameters.find(p=>p.key==='doorFrameGrooveTool');
     const binding=view.scene.tubeDesigner.product.parameters.tubeDesignerToolBindings[field.presentation.resourceRole];
-    binding.parameters.angle=80;
+    binding.parameters.leftArc=true;
     const oldPanel=mount.querySelector('[data-floating-parameter-diagram]');
     floating.refreshFloatingParameterDiagram(mount,view,views.renderDesignerToolDiagramDock);
     restoreDesignerScrollState({mount},view);bindToolParameterDiagrams(mount);
@@ -109,12 +116,12 @@ try{
     return {positions,now:[left.scrollTop,right.scrollTop,diagram.scrollTop],unchanged,
       canvas:canvas===mount.querySelector('canvas'),input:input===document.activeElement,
       selection:[input.selectionStart,input.selectionEnd,input.selectionDirection],
-      updated:oldPanel.querySelector('[data-tool-annotation-key="angle"]').getAttribute('aria-label'),
+      updated:oldPanel.querySelector('[data-tool-annotation-key="leftArc"]').getAttribute('aria-label'),
       location:{...view.tubeDesignerFloatingToolDiagram}};
   });
   assert.deepEqual(result.now,result.positions);assert.equal(result.unchanged,true);
   assert.equal(result.canvas,true);assert.equal(result.input,true);assert.deepEqual(result.selection,[3,8,'backward']);
-  assert.match(result.updated,/80/);
+  assert.match(result.updated,/开启/);
   const persisted=await panel.boundingBox();assert.ok(Math.abs(persisted.x-resized.x)<1 && Math.abs(persisted.y-resized.y)<1);
   assert.ok(Math.abs(persisted.width-resized.width)<1 && Math.abs(persisted.height-resized.height)<1);
   const refreshed=await page.evaluate(async()=>{
@@ -131,7 +138,8 @@ try{
     await new Promise(done=>setTimeout(done,20));left.scrollTop=340;scroller.scrollTop=240;
     captureDesignerScrollState({mount},view);
     const positions=[left.scrollTop,scroller.scrollTop];
-    scroller.innerHTML=views.renderDesignerRightParameterContent(designer,view).scrollContent;
+    const {patchParameterContent}=await import('/src/apps/tube-designer/webpage/libraryDomPatch.mjs');
+    patchParameterContent(mount,scroller,views.renderDesignerRightParameterContent(designer,view).scrollContent);
     floating.refreshFloatingParameterDiagram(mount,view,views.renderDesignerToolDiagramDock);
     restoreDesignerScrollState({mount},view);bindToolParameterDiagrams(mount);
     await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));

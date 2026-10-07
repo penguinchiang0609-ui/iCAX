@@ -22,6 +22,12 @@
       "M33.6 11.2 A16 16 0 1 0 33.6 36.8 Z"
     ]
   },
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    }
+  },
   "parameters": [
     {
       "key": "diameter",

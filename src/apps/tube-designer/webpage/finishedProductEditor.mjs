@@ -4,6 +4,8 @@ import { createFinishedProduct, finishedProductInput, finishedProductShape, fini
 import { libraryProfiles, profileName, profileRef, profileScope, profileSelectionKey, profileSnapshot } from "./profileLibrary.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 
 const text = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const attr = (value) => text(value).replaceAll('"', "&quot;");
@@ -131,6 +133,7 @@ export function bindFinishedProductEditor(mount, context, view) {
   bindings.set(mount, { context, view });
   const ensureDiagram = (card) => {
     const binding = bindings.get(mount), state = editorState(binding.view), product = finishedProductInput(binding.view);
+    if (!hasLicenseFeature(binding.context, binding.view, resourceEditLicenseFeatures)) return;
     if (card.dataset.finishedShape !== product.shapeId) return;
     const id = card.dataset.finishedSpan, span = product.spans[id];
     if (!span || !card.open || typeof binding.context?.sceneProxy?.invoke !== "function") return;

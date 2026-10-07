@@ -270,6 +270,7 @@ TopoDS_Shape iCAX::TubeDesigner::BuildNestingExportCompound(
         const auto _Bounds = ShapeBounds(_Shape);
         if (_Bounds[3] - _Bounds[0] > _Placement.End - _Placement.Start + S_Tolerance)
             throw std::invalid_argument("真实制造零件长度超出了排样占用长度");
+        if (!_Placement.HasTransform) throw std::invalid_argument("排样导出必须提供 TRSF");
         gp_Trsf _Transform;
         if (_Placement.HasTransform)
         {
@@ -285,27 +286,6 @@ TopoDS_Shape iCAX::TubeDesigner::BuildNestingExportCompound(
                 _M[0], _M[1], _M[2], _M[3],
                 _M[4], _M[5], _M[6], _M[7],
                 _M[8], _M[9], _M[10], _M[11]);
-        }
-        else
-        {
-            // Backward compatibility for saved projects created before TRSF was
-            // part of the placement contract.
-            const double _CenterX = (_Bounds[0] + _Bounds[3]) * 0.5;
-            const double _CenterY = (_Bounds[1] + _Bounds[4]) * 0.5;
-            const double _CenterZ = (_Bounds[2] + _Bounds[5]) * 0.5;
-            const double _XDirection = _Placement.Flipped ? -1.0 : 1.0;
-            const double _YDirection = _Placement.Flipped ? -1.0 : 1.0;
-            const double _Cosine = std::cos(_Placement.RotationRadians);
-            const double _Sine = std::sin(_Placement.RotationRadians);
-            const double _M11 = _Cosine * _YDirection;
-            const double _M12 = -_Sine;
-            const double _M21 = _Sine * _YDirection;
-            const double _M22 = _Cosine;
-            _Transform.SetValues(
-                _XDirection, 0, 0,
-                (_Placement.Start + _Placement.End) * 0.5 - _XDirection * _CenterX,
-                0, _M11, _M12, -(_M11 * _CenterY + _M12 * _CenterZ),
-                0, _M21, _M22, -(_M21 * _CenterY + _M22 * _CenterZ));
         }
         BRepBuilderAPI_Transform _Placed(_Shape, _Transform, true);
         if (!_Placed.IsDone() || _Placed.Shape().IsNull()) throw std::runtime_error("无法放置排样零件几何");

@@ -2,12 +2,14 @@
 
 #include "PartListXlsxExporter.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string_view>
 
 namespace
 {
@@ -81,6 +83,31 @@ namespace
         return _Result;
     }
 
+    double WrappedRowHeight(const std::string_view Text_, double ColumnWidth_, double MinimumHeight_)
+    {
+        // Excel column widths use Latin character units. Count each UTF-8
+        // non-ASCII character conservatively as two units, rather than counting
+        // its bytes. Leave room for cell margins and for word-boundary wrapping.
+        const auto _UsableWidth = std::max(1.0, ColumnWidth_ - 2.0);
+        double _LineWidth = 0, _Lines = 0;
+        for (const auto _Byte : Text_)
+        {
+            const auto _Character = static_cast<unsigned char>(_Byte);
+            if (_Character == '\r') continue;
+            if (_Character == '\n')
+            {
+                _Lines += std::max(1.0, std::ceil(_LineWidth / _UsableWidth));
+                _LineWidth = 0;
+            }
+            else if ((_Character & 0xc0) != 0x80)
+                _LineWidth += _Character < 0x80 ? 1.0 : 2.0;
+        }
+        _Lines += std::max(1.0, std::ceil(_LineWidth / _UsableWidth));
+        // The existing text font is 10 pt. A 15 pt line plus 8 pt padding
+        // keeps wrapped text readable; 409 pt is Excel's maximum row height.
+        return std::clamp(15.0 * _Lines + 8.0, MinimumHeight_, 409.0);
+    }
+
     std::string BuildWorksheet(const std::vector<SPartListRow>& Rows_)
     {
         const auto _LastRow = static_cast<std::uint64_t>(Rows_.size()) + 2;
@@ -88,12 +115,18 @@ namespace
         std::ostringstream _Rows;
         _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
             << TextCell("A1", "TubeDesigner 零件清单", 1) << "</row>";
-        _Rows << "<row r=\"2\" ht=\"23\" customHeight=\"1\">";
         const std::array<std::string, 19> _Headers{
             "产品序号", "产品名称", "产品编码", "零件序号", "零件号", "零件名称",
             "管型 / 类别", "规格 / 板件宽×高×厚", "管材长度 (mm)", "数量", "文件名", "相对路径",
             "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料", "供料方式", "加工方式"
         };
+        constexpr std::array<double, 19> _ColumnWidths{
+            10, 24, 18, 10, 18, 18, 18, 25, 12, 12, 24, 38, 14, 14, 14, 14, 14, 14, 24
+        };
+        double _HeaderHeight = 30;
+        for (std::size_t _Index = 0; _Index < _Headers.size(); ++_Index)
+            _HeaderHeight = std::max(_HeaderHeight, WrappedRowHeight(_Headers[_Index], _ColumnWidths[_Index], 30));
+        _Rows << "<row r=\"2\" ht=\"" << _HeaderHeight << "\" customHeight=\"1\">";
         for (std::size_t _Index = 0; _Index < _Headers.size(); ++_Index)
         {
             const std::string _Reference(1, static_cast<char>('A' + _Index));
@@ -133,7 +166,16 @@ namespace
                     : _Row.Process == "separate-fabrication" ? "独立加工" : _Row.Process;
                 const auto _SheetRow = _RowIndex + 3;
                 const auto _RowText = std::to_string(_SheetRow);
-                _Rows << "<row r=\"" << _SheetRow << "\" ht=\"20\" customHeight=\"1\">";
+                const std::array<std::string_view, 19> _TextValues{
+                    "", _Row.ProductName, _Row.ProductCode, "", _Row.PartNumber, _Row.PartName,
+                    _Row.ProfileDisplayName, _Row.ProfileSpecification, "", "", _Row.FileName,
+                    _Row.RelativePath, _Kind, "", "", "", _Row.Material, _Sourcing, _Process
+                };
+                double _Height = 24;
+                for (std::size_t _Column = 0; _Column < _TextValues.size(); ++_Column)
+                    if (_RowIndex == _Offset || _Column > 2)
+                        _Height = std::max(_Height, WrappedRowHeight(_TextValues[_Column], _ColumnWidths[_Column], 24));
+                _Rows << "<row r=\"" << _SheetRow << "\" ht=\"" << _Height << "\" customHeight=\"1\">";
                 if (_RowIndex == _Offset)
                 {
                     _Rows << NumberCell("A" + _RowText, std::to_string(_Row.ProductIndex), 5)
@@ -447,8 +489,11 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
     const auto _LastColumn = WorksheetColumnName(Headers_.size() - 1);
     const auto _LastRow = std::to_string(Rows_.size() + 2);
     std::ostringstream _Rows;
+    double _HeaderHeight = 30;
+    for (const auto& _Header : Headers_)
+        _HeaderHeight = std::max(_HeaderHeight, WrappedRowHeight(_Header, 20, 30));
     _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
-        << TextCell("A1", Title_, 1) << "</row><row r=\"2\" ht=\"30\" customHeight=\"1\">";
+        << TextCell("A1", Title_, 1) << "</row><row r=\"2\" ht=\"" << _HeaderHeight << "\" customHeight=\"1\">";
     for (std::size_t _Column = 0; _Column < Headers_.size(); ++_Column)
         _Rows << TextCell(WorksheetColumnName(_Column) + "2", Headers_[_Column], 2);
     _Rows << "</row>";
@@ -457,7 +502,11 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         const auto& _Row = Rows_[_Index];
         if (_Row.size() != Headers_.size()) throw std::invalid_argument("XLSX table row width is inconsistent");
         const auto _RowNumber = std::to_string(_Index + 3);
-        _Rows << "<row r=\"" << _RowNumber << "\" ht=\"24\" customHeight=\"1\">";
+        double _Height = 24;
+        for (const auto& _Cell : _Row)
+            if (const auto _Text = std::get_if<std::string>(&_Cell))
+                _Height = std::max(_Height, WrappedRowHeight(*_Text, 20, 24));
+        _Rows << "<row r=\"" << _RowNumber << "\" ht=\"" << _Height << "\" customHeight=\"1\">";
         for (std::size_t _Column = 0; _Column < _Row.size(); ++_Column)
         {
             const auto _Reference = WorksheetColumnName(_Column) + _RowNumber;

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../../../licensing/include/LicenseSDOGuard.h"
 
 
 #include <Laser3DCAM/FeatureRecognitionService.h>
@@ -96,7 +97,8 @@ namespace
     class CTestProductContext final : public iCAX::Product::IProductContext
     {
     public:
-        CTestProductContext()
+        explicit CTestProductContext(std::string ProductID_ = "laser-3d-cam-test")
+            : m_ProductID(std::move(ProductID_))
         {
             m_Definition.ProductID = m_ProductID;
             m_Definition.ProductName = "Laser3DCAM Test Product";
@@ -237,7 +239,7 @@ namespace
     class CTestSceneContext final : public iCAX::Project::ISceneContext
     {
     public:
-        CTestSceneContext()
+        explicit CTestSceneContext(std::string ProductID_ = "laser-3d-cam-test")
             : m_ProjectID(iCAX::Data::GenerateNewUUID())
             , m_SceneID(iCAX::Data::GenerateNewUUID())
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
@@ -250,7 +252,7 @@ namespace
             m_Resources.SetScope(
                 iCAX::Resource::MakeSceneResourceScope(
                     "icax-test",
-                    "laser-3d-cam-test",
+                    ProductID_,
                     m_ProjectID,
                     m_SceneID));
             m_pViews = std::make_unique<iCAX::View::CViewSet>(
@@ -635,6 +637,65 @@ namespace
     {
         EXPECT_EQ(1u, iCAX::CAM::GetLaser3DCAMContractVersion());
         iCAX::Services::CServiceRegistrationCatalog::ReplayAll(Provider_);
+    }
+}
+
+TEST(Laser3DCAMLicenseScopeTest, OtherProductsKeepTheirOwnAuthorizationPolicy)
+{
+    CTestApplicationContext application;
+    CTestProductContext product;
+    CTestSceneContext scene;
+    iCAX::Interaction::CInvocation invocation;
+    bool invoked = false;
+    const auto guarded = tube::license::ProtectProductMethod<11901, tube::license::Feature::MachiningToolpath>(
+        [&](const auto&, const auto&, auto*, auto*, auto*) {
+            invoked = true; return iCAX::Interaction::CInvocationResult{};
+        });
+    EXPECT_NO_THROW(guarded(invocation, application, &product, nullptr, &scene));
+    EXPECT_TRUE(invoked);
+}
+
+TEST(Laser3DCAMLicenseScopeTest, RejectsMissingAndCrossProductHostScopesBeforeMutation)
+{
+    CTestApplicationContext application;
+    CTestProductContext otherProduct;
+    CTestSceneContext tubeScene{std::string(tube::license::Product)};
+    CTestProjectContext otherProject;
+    iCAX::Interaction::CInvocation invocation;
+    bool invoked = false;
+    const auto guarded = tube::license::ProtectProductMethod<11902, tube::license::Feature::MachiningToolpath>(
+        [&](const auto&, const auto&, auto*, auto*, auto*) {
+            invoked = true; return iCAX::Interaction::CInvocationResult{};
+        });
+    EXPECT_THROW(guarded(invocation, application, nullptr, nullptr, nullptr), std::runtime_error);
+    EXPECT_THROW(guarded(invocation, application, &otherProduct, nullptr, &tubeScene), std::runtime_error);
+    EXPECT_THROW(guarded(invocation, application, nullptr, &otherProject, &tubeScene), std::runtime_error);
+    auto wrongScope = tubeScene.Resources().GetScope();
+    wrongScope.SceneID = iCAX::Data::GenerateNewUUID();
+    tubeScene.Resources().SetScope(wrongScope);
+    EXPECT_THROW(guarded(invocation, application, nullptr, nullptr, &tubeScene), std::runtime_error);
+    EXPECT_FALSE(invoked);
+}
+
+TEST(Laser3DCAMLicenseScopeTest, TubeDesignerCannotSelectAnotherPolicyThroughRequestPayload)
+{
+    CTestApplicationContext application;
+    CTestProductContext product{std::string(tube::license::Product)};
+    CTestSceneContext scene{std::string(tube::license::Product)};
+    iCAX::Interaction::CInvocation invocation;
+    const std::string payload = R"({"productId":"other-product","features":8191})";
+    invocation.Payload.assign(payload.begin(), payload.end());
+    bool invoked = false;
+    const auto guarded = tube::license::ProtectProductMethod<11903, tube::license::Feature::MachiningToolpath>(
+        [&](const auto&, const auto&, auto*, auto*, auto*) {
+            invoked = true; return iCAX::Interaction::CInvocationResult{};
+        });
+    if constexpr (tube::license::AuthorizationBypass) {
+        EXPECT_NO_THROW(guarded(invocation, application, &product, nullptr, &scene));
+        EXPECT_TRUE(invoked);
+    } else if constexpr (tube::license::trust::PublicKey.size() != 72) {
+        EXPECT_THROW(guarded(invocation, application, &product, nullptr, &scene), std::runtime_error);
+        EXPECT_FALSE(invoked);
     }
 }
 

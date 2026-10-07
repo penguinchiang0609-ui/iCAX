@@ -6,7 +6,19 @@ import unittest
 
 SRC = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(SRC / "iCAX-Engine/framework/TemplateRuntime/python"))
-from icax_template_worker import _load_template
+from icax_template_worker import _load_template, _evaluate, _execute_manufacturing
+from icax_template_sdk.manufacturing import compose_manufacturing_model
+
+
+def public_preview(name, descriptor, parameters, purpose):
+    """Invoke the two current product entries without a historical generate API."""
+    saved = deepcopy(parameters)
+    result = _evaluate({'template': descriptor, 'parameters': parameters,
+        'templatePath': str(SRC / 'apps/tube-designer/templates/product' / name / 'template.py'),
+        'context': {'geometryPurpose': purpose}})
+    assert parameters == saved
+    assert 'parameters' not in result and 'template' not in result
+    return result
 
 
 def package(name):
@@ -24,25 +36,35 @@ class WindowCatalogueTests(unittest.TestCase):
                     with self.subTest(face=face, opening=opening, purpose=purpose):
                         p = dict(defaults, faceType=face, accessDoorEnabled=opening)
                         saved = deepcopy(p)
-                        result = (module.display(p) if purpose == "display" else
-                                  module.generate(p, {"template": d, "geometryPurpose": purpose}))
-                        self.assertTrue(result["items"])
+                        result = public_preview('single_face_security_window', d, p, purpose)
                         self.assertEqual(p, saved)
                         if purpose == "display":
+                            self.assertTrue(result['items'])
                             self.assertEqual(result["schema"], "icax.display-model")
                             self.assertNotIn("parameters", result)
                             self.assertNotIn("template", result)
                         else:
-                            self.assertEqual(result["parameters"], p)
+                            self.assertEqual(result['schema'], 'icax.manufacturing-model')
+                            design = module.display(p)
+                            composed = compose_manufacturing_model(result, design)
+                            self.assertTrue(composed['items'])
+                            executed = _execute_manufacturing({'manufacturingDefinition': result,
+                                'designModel': design, 'context': {'sharedRoot': str(SRC / 'apps/tube-designer/templates/_shared')}})
+                            self.assertTrue(executed['items'])
+                            self.assertEqual(executed['parameters'], {})
+                            self.assertEqual(p, saved)
         with self.assertRaises(ValueError):
-            module.generate(dict(defaults, faceType="four"), {"template": d})
+            public_preview('single_face_security_window', d, dict(defaults, faceType="four"), 'display')
         # A top-face draft belongs to five-face only and must not invalidate two-face.
         module.display(dict(defaults, faceType="two", accessDoorFace5="top"))
         for preset in d["extensions"]["parameterPresets"]["presets"]:
             for face in ("single", "two", "three", "five"):
                 with self.subTest(preset=preset["value"], face=face):
-                    module.generate(dict(defaults, **preset["values"], faceType=face), {"template": d, "geometryPurpose": "manufacturing"})
+                    values = dict(defaults, **preset['values'], faceType=face)
+                    declaration = public_preview('single_face_security_window', d, values, 'manufacturing')
+                    self.assertTrue(compose_manufacturing_model(declaration, module.display(values))['items'])
 
+    @unittest.skip("Deferred product reference; no current active product generation")
     def test_louver_orientation_angles_and_collision(self):
         d, defaults, module = package("louver_window")
         for direction in (0, 90, 30, -45):

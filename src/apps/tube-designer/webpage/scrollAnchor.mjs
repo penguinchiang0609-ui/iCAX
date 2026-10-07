@@ -38,11 +38,6 @@ export function restoreScrollAnchor(scroller, anchor, options = {}) {
   scroller.scrollTop = finiteNumber(anchor.scrollTop);
   let element = findStableElement(scroller, anchor.attribute, anchor.value);
   const shouldRestoreFocus = options.restoreFocus ?? anchor.restoreFocus;
-  if (!element && shouldRestoreFocus && anchor.group) {
-    const group = findStableElement(scroller, "data-tube-designer-parameter-group", anchor.group);
-    element = Array.from(group?.querySelectorAll?.("input,select,textarea,button") ?? [])
-      .find((field) => !field.disabled && field.getClientRects?.().length) ?? group?.querySelector?.("summary");
-  }
   const scrollerTop = topOf(scroller);
   const elementTop = topOf(element);
   if (elementTop != null && scrollerTop != null

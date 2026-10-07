@@ -15,12 +15,10 @@ from ProductManufacturingDeclarationTests import assert_declaration, forbid_proc
 class ProductPureFunctionBoundaryTests(unittest.TestCase):
     def test_manufacturing_products_declare_without_processing_and_execute_only_downstream(self):
         cases = [(name, {}) for name in (
-            "aluminium_window", "decorative_door", "louver_window",
             "minimal_protective_grille", "modular_guardrail",
             "modular_guardrail_cross-straight", "modular_guardrail_diamond-straight",
             "modular_guardrail_glass-straight", "straight_steel_staircase")]
         cases.extend([
-            ("louver_window", {"frameJoint": "miter", "bladeConnection": "slot_insert"}),
             ("minimal_protective_grille", {"frameType": "closed_frame",
                 "frameCornerJoint": "miter_45", "maleCornerType": "square",
                 "installHoleOrientation": "side", "installHoleAutoAvoid": True,
@@ -45,14 +43,6 @@ class ProductPureFunctionBoundaryTests(unittest.TestCase):
                 with self.subTest(product=name, changes=changes):
                     descriptor, defaults, template = package(name)
                     values = {**defaults, **changes}
-                    if name == "aluminium_window":
-                        system = json.loads((Path(template.__file__).parent /
-                            "systems/demonstration.json").read_text(encoding="utf-8"))
-                        system.update(status="verified", manufacturer="UNIT TEST ONLY",
-                                      source="Synthetic boundary regression fixture")
-                        system_path = Path(directory) / "synthetic-series.json"
-                        system_path.write_text(json.dumps(system), encoding="utf-8")
-                        values.update(systemSource="file", systemFile=str(system_path))
                     saved = deepcopy(values)
                     before = len(emitted_booleans)
                     with forbid_processing() as calls:

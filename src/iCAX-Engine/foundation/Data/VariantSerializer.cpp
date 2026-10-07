@@ -2,6 +2,7 @@
 #include "VariantSerializer.h"
 #include <limits>
 #include <locale>
+#include <deque>
 
 using namespace iCAX::Data;
 
@@ -130,20 +131,29 @@ static std::string _GetTypeName(IN const Variant& Value_)
 
 static void _WriteEscaped(std::ostringstream& oss, const std::string& str)
 {
-    for (char c : str)
+    std::size_t begin = 0;
+    for (std::size_t i = 0; i < str.size(); ++i)
     {
-        switch (c)
+        const char* escape = nullptr;
+        switch (str[i])
         {
-        case '\"': oss << "\\\""; break;
-        case '\\': oss << "\\\\"; break;
-        case '\b': oss << "\\b"; break;
-        case '\f': oss << "\\f"; break;
-        case '\n': oss << "\\n"; break;
-        case '\r': oss << "\\r"; break;
-        case '\t': oss << "\\t"; break;
-        default: oss << c; break;
+        case '\"': escape = "\\\""; break;
+        case '\\': escape = "\\\\"; break;
+        case '\b': escape = "\\b"; break;
+        case '\f': escape = "\\f"; break;
+        case '\n': escape = "\\n"; break;
+        case '\r': escape = "\\r"; break;
+        case '\t': escape = "\\t"; break;
+        default: break;
         }
+        if (!escape) continue;
+        if (i != begin)
+            oss.write(str.data() + begin, static_cast<std::streamsize>(i - begin));
+        oss.write(escape, 2);
+        begin = i + 1;
     }
+    if (begin != str.size())
+        oss.write(str.data() + begin, static_cast<std::streamsize>(str.size() - begin));
 }
 
 static void _SkipWhitespace(const std::string& str, size_t& pos)
@@ -153,37 +163,37 @@ static void _SkipWhitespace(const std::string& str, size_t& pos)
 
 static std::string _ReadEscaped(const std::string& str, size_t& pos)
 {
-    std::ostringstream oss;
     if (pos >= str.size()) throw std::runtime_error("Expected string");
     if (str[pos] != '\"') throw std::runtime_error("Expected '\"'");
     ++pos;
-    while (pos < str.size() && str[pos] != '\"')
+    std::string result;
+    while (pos < str.size())
     {
-        if (str[pos] == '\\')
+        const auto end=str.find_first_of("\"\\",pos);
+        if (end==std::string::npos) throw std::runtime_error("Expected closing '\"'");
+        if (end!=pos) result.append(str.data()+pos,end-pos);
+        pos=end;
+        if (str[pos]=='\"')
         {
             ++pos;
-            if (pos >= str.size()) throw std::runtime_error("Invalid escape sequence");
-            switch (str[pos])
-            {
-            case '\"': oss << '\"'; break;
-            case '\\': oss << '\\'; break;
-            case 'b': oss << '\b'; break;
-            case 'f': oss << '\f'; break;
-            case 'n': oss << '\n'; break;
-            case 'r': oss << '\r'; break;
-            case 't': oss << '\t'; break;
-            default: oss << str[pos]; break;
-            }
+            return result;
         }
-        else
+        ++pos;
+        if (pos >= str.size()) throw std::runtime_error("Invalid escape sequence");
+        switch (str[pos])
         {
-            oss << str[pos];
+        case '\"': result.push_back('\"'); break;
+        case '\\': result.push_back('\\'); break;
+        case 'b': result.push_back('\b'); break;
+        case 'f': result.push_back('\f'); break;
+        case 'n': result.push_back('\n'); break;
+        case 'r': result.push_back('\r'); break;
+        case 't': result.push_back('\t'); break;
+        default: result.push_back(str[pos]); break;
         }
         ++pos;
     }
-    if (pos >= str.size() || str[pos] != '\"') throw std::runtime_error("Expected closing '\"'");
-    ++pos;
-    return oss.str();
+    throw std::runtime_error("Expected closing '\"'");
 }
 
 static  std::string _ParseValueString(const std::string& str, size_t& pos)
@@ -460,17 +470,22 @@ static Variant _Parse(const std::string& str, size_t& pos)
             {
                 if (str[pos] != '[') throw std::runtime_error("Expected '['");
                 ++pos;
-                VariantArray arr;
+                // The typed stream has no array length. Avoid repeatedly
+                // deep-copying nested recipes when a vector grows.
+                std::deque<Variant> entries;
                 while (pos < str.size() && str[pos] != ']')
                 {
                     _SkipWhitespace(str, pos);
-                    arr.push_back(_Parse(str, pos));
+                    entries.push_back(_Parse(str, pos));
                     _SkipWhitespace(str, pos);
                     if (str[pos] == ',') ++pos;
                 }
                 if (pos >= str.size() || str[pos] != ']') throw std::runtime_error("Expected ']'");
                 ++pos;
-                result = Variant(arr);
+                VariantArray arr;
+                arr.reserve(entries.size());
+                for (auto& entry : entries) arr.emplace_back(std::move(entry));
+                result = Variant(std::move(arr));
             }
             else if (type == "Object")
             {
@@ -486,13 +501,13 @@ static Variant _Parse(const std::string& str, size_t& pos)
                     ++pos;
                     _SkipWhitespace(str, pos);
                     Variant v = _Parse(str, pos);
-                    obj[k] = v;
+                    obj[k] = std::move(v);
                     _SkipWhitespace(str, pos);
                     if (str[pos] == ',') ++pos;
                 }
                 if (pos >= str.size() || str[pos] != '}') throw std::runtime_error("Expected '}'");
                 ++pos;
-                result = Variant(obj);
+                result = Variant(std::move(obj));
             }
             else if (type == "Bool1" || type == "Bool2" || type == "Bool3" || type == "Bool4" || type == "Bool5" || type == "Bool6")
             {

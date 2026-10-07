@@ -94,13 +94,13 @@ try{
   await idle();await ready();
   await draft.getByRole("button",{name:"编辑形状",exact:true}).click();await idle();
   await popup.locator('[data-tube-designer-punch-field="tool"]').selectOption("circle");await idle();
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();
   await draft.getByRole("button",{name:"编辑阵列",exact:true}).click();await idle();
   const count=popup.locator('[data-tube-designer-punch-array-field="count"]').first();
   await count.fill("7");await count.press("Tab");await idle();
   const spacing=popup.locator('[data-tube-designer-punch-array-field="spacing"]').first();
   await spacing.fill("100");await spacing.press("Tab");await idle();
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();await ready();
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();await ready();
   assert.equal(await page.evaluate(()=>window.fixture.view.tubeDesignerPunchWizard.features.length),0,"The array is initially in the uncommitted new row");
   assert.equal(await page.evaluate(()=>window.fixture.view.tubeDesignerPunchWizard.preview.placedToolCount),9,"Seven pending hole tools and two saved end tools are visible");
   await page.screenshot({path:resolve(artifacts,"01-seven-pending-plus-two-ends.png")});
@@ -132,10 +132,10 @@ try{
   // returned resource replacement and a fresh reopen with both stored rows.
   await draft.getByRole("button",{name:"编辑形状",exact:true}).click();await idle();
   await popup.locator('[data-tube-designer-punch-field="tool"]').selectOption("circle");await idle();
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();
   await draft.getByRole("button",{name:"编辑阵列",exact:true}).click();await idle();
   await count.fill("3");await count.press("Tab");await idle();await spacing.fill("80");await spacing.press("Tab");await idle();
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();
   await draft.getByRole("button",{name:"＋ 添加行",exact:true}).click();await idle();await ready();
   assert.equal(await page.evaluate(()=>window.fixture.view.tubeDesignerPunchWizard.features.length),2);
   assert.equal(await page.locator('.tube-designer-punch-footer [data-cam-action="tube-designer-punch-apply"]').isEnabled(),true,"Completed previews unlock Apply for already added records");

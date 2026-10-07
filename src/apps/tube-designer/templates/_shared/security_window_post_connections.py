@@ -1,4 +1,4 @@
-"""Local connection choices for independent posts under continuous frames."""
+"""Local end joints for frame posts, all using the product's frame section."""
 from copy import deepcopy
 import importlib.util
 import math
@@ -22,10 +22,10 @@ def active_route(parameters):
         return (mode == 'segment_weld' and parameters.get('frameLayout', 'four_sides') == 'four_sides'
                 and parameters.get('assemblyPlanningMode', 'builtin_rules') == 'builtin_rules')
     # Spatial paths consume their two terminal posts as frame spans. Only the
-    # remaining shared posts select this independent section and end joint.
+    # remaining shared posts retain their own end joints.
     # The planner selection is editable only for a single face. Multi-face
-    # windows always use their built-in planner; a retained hidden draft must
-    # not select different post sections in design and manufacturing.
+    # windows always use their built-in planner; an inactive draft must not
+    # select a different route in display and manufacturing.
     return ((mode in ('segment_weld', 'plane_v_notch') and face in ('two', 'three', 'five'))
             or (mode == 'spatial_v_notch' and face in ('two', 'three')))
 
@@ -43,6 +43,16 @@ def process_choices(parameters):
     joint = parameters.get('foldedPostJoint', 'weld') if active_route(parameters) else 'weld'
     if joint not in ('weld', 'insert', 'tabs'):
         raise ValueError('不支持的折角立柱连接方式')
+    binding = parameters.get('tubeDesignerToolBindings', {}).get('outerFrameGroove')
+    reference = binding['ref'] if binding is not None else None
+    edge_arc = (reference == {'scope': 'system', 'id': 'edge-arc-groove'} if reference is not None
+                else parameters.get('outerFrameGrooveTool') == 'system:edge-arc-groove')
+    if (active_route(parameters) and parameters.get('faceType', 'single') != 'single'
+            and parameters.get('frameManufacturingMode') != 'segment_weld' and edge_arc and joint == 'weld'):
+        # A flat post end cannot contact both frozen legs of this root-arc
+        # bend. Match the descriptor's supported existing tab joint; retain
+        # the unavailable weld choice only in the host's parameter draft.
+        joint = 'tabs'
     choices = {key: 0. for key in POST_DEFAULTS if key != 'foldedPostJoint'}
     choices['foldedPostJoint'] = joint
     active = (('foldedPostInsertDepth', 'foldedPostFitGap') if joint == 'insert' else

@@ -650,21 +650,14 @@ def _build_parts(
     miter = parameters.get("frameCornerJoin", "post_butt") == "rail_miter"
 
     post_runtime = _frame_geometry._process_adapter._load('security_window_post_connections')
-    separate_posts = bool(parameters.get('_foldedPostSectionEnabled',
-        post_runtime.active_route(parameters) and parameters.get('foldedPostJoint', 'weld') != 'weld'))
-    folded_post = _profile(parameters, 'foldedPost') if separate_posts else frame
     frame_posts: list[Part] = []
     for vertex_index, point in enumerate(points):
         x_axis = _vertex_profile_axis(faces, vertex_index)
         y_axis = (-x_axis[1], x_axis[0], 0.0)
-        post_profile = (folded_post if separate_posts and (
-            parameters.get('_foldedPostTerminalSectionEnabled',
-                           parameters.get('frameManufacturingMode', 'segment_weld') == 'segment_weld')
-            or closed_perimeter or 0 < vertex_index < len(points) - 1) else frame)
         frame_posts.append(_append_part(
             parts, counters, "outer_frame.vertical", f"外框立柱 {vertex_index + 1}",
             (point[0], point[1], frame.width if miter and parameters.get('_assemblyDesignOnly',False) else 0.0),
-            (point[0], point[1], height-frame.width if miter and parameters.get('_assemblyDesignOnly',False) else height), post_profile, x_axis, y_axis,
+            (point[0], point[1], height-frame.width if miter and parameters.get('_assemblyDesignOnly',False) else height), frame, x_axis, y_axis,
             "outer_frame.vertical", "外框立柱",
         ))
 
@@ -844,14 +837,12 @@ def _build_parts(
                 end=_frame_geometry._machining.allocate_joint(post,top,'end','butt',0.,clearance,_profile_arguments),
                 start_joint=bottom.key,end_joint=top.key)
             parts[parts.index(post)]=allocated
-    if separate_posts and horizontal is not None:
+    if horizontal is not None:
         branches = [{'key': part.key, 'start': part.start, 'end': part.end,
                      'section': _profile_arguments(part)} for part in parts
                     if part.category_key=='main_grid.horizontal']
         by_key = {part.key: part for part in parts}
         for post in frame_posts:
-            if post.profile is not folded_post:
-                continue
             limits = post_runtime.shared_post_horizontal_limits(
                 {'start': post.start, 'end': post.end, 'wallThickness': post.profile.wall,
                  'section': _profile_arguments(post)}, branches, horizontal_reserve,

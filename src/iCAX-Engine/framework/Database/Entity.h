@@ -22,6 +22,7 @@ namespace iCAX
         */
         class CEntity final : public IComponentEventListener, public IEntity, public std::enable_shared_from_this<CEntity>
         {
+            friend class CComponentBase;
         public:
             /*
             * @brief 构造函数
@@ -70,6 +71,11 @@ namespace iCAX
             void TriggerEntityChanged(IN const EntityEventArgs::EventType& nType_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_);
 
         private:
+            bool CanTransferChangedProperties() const;
+            bool HasExternalChangedObservers() const;
+            bool TryTriggerEntityChangedOwned(IN const std::string& Class_,
+                IN PropertySet&& Previous_, IN PropertySet&& New_,
+                IN std::shared_ptr<CComponentBase> pComponent_);
             std::list<std::weak_ptr<IEntityEventListener>> m_Observers;
 
             //!< IComponentEventListener 成员

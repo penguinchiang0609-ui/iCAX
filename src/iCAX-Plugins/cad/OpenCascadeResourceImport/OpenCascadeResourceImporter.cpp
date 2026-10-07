@@ -2,11 +2,14 @@
 #include "OpenCascadeBRepReader.h"
 #include "OpenCascadeTubeCSGConverter.h"
 #include "OpenCascadeTaskExecution.h"
+#include "OpenCascadeCancellation.h"
 #include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <GeomAdaptor_Curve.hxx>
 #include <TopoDS_Compound.hxx>
+#include <chrono>
+#include <iostream>
 
 #include "GeometryData/GeometryData.h"
 #include "GeometryData/BRepPersistence.h"
@@ -948,6 +951,15 @@ namespace
         }
     }
 
+    struct SBRepConversionTiming final
+    {
+        double MeshingMs = 0.0;
+        double MappingMs = 0.0;
+        double EdgesMs = 0.0;
+        double FacesMs = 0.0;
+        double ContainersMs = 0.0;
+    };
+
     bool NeedsSweptSurfaceParameterConversion(const TopoDS_Shape& Shape_)
     {
         for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE);
@@ -976,7 +988,8 @@ namespace
         IN const TopoDS_Shape& Shape_,
         IN const std::string& strDisplayName_,
         IN const std::string& strSourceID_,
-        IN const double dTolerance_)
+        IN const double dTolerance_,
+        SBRepConversionTiming* Timing_ = nullptr)
     {
         using namespace iCAX::GeometryData;
 
@@ -996,11 +1009,20 @@ namespace
             _ExportShape = _Conversion.Shape();
         }
 
+        const auto _Elapsed = [](const auto& Start_) {
+            return std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - Start_).count();
+        };
+        auto _StageStart = std::chrono::steady_clock::now();
         const double _MeshDeflection = std::max(0.01, dTolerance_ * 10.0);
         BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);
         (void)_Mesh;
+        if (Timing_) Timing_->MeshingMs = _Elapsed(_StageStart);
 
+        _StageStart = std::chrono::steady_clock::now();
         const auto _Maps = BuildShapeMaps(_ExportShape);
+        if (Timing_) Timing_->MappingMs = _Elapsed(_StageStart);
+        _StageStart = std::chrono::steady_clock::now();
 
         BRepModel _Model;
         _Model.Metadata.Name = strDisplayName_;
@@ -1055,6 +1077,8 @@ namespace
 
         std::uint64_t _NextWireID = 1;
         std::uint64_t _NextCurve2ID = 1;
+        if (Timing_) Timing_->EdgesMs = _Elapsed(_StageStart);
+        _StageStart = std::chrono::steady_clock::now();
         for (int _Index = 1; _Index <= _Maps.Faces.Extent(); ++_Index)
         {
             const auto _FaceOccurrence = TopoDS::Face(_Maps.Faces(_Index));
@@ -1172,6 +1196,8 @@ namespace
             _Model.Faces.push_back(std::move(_FaceRecord));
         }
 
+        if (Timing_) Timing_->FacesMs = _Elapsed(_StageStart);
+        _StageStart = std::chrono::steady_clock::now();
         for (int _Index = 1; _Index <= _Maps.Shells.Extent(); ++_Index)
         {
             const auto _Shell = _Maps.Shells(_Index);
@@ -1282,6 +1308,7 @@ namespace
         }
 
         AddRootReferences(_ExportShape, _Maps, _Model);
+        if (Timing_) Timing_->ContainersMs = _Elapsed(_StageStart);
         return _Model;
     }
 
@@ -1749,19 +1776,55 @@ std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascade
         if (_Input.Shape.IsNull()) throw std::invalid_argument("BRep conversion input is null: " + _Input.SourceID);
     const auto _Concurrency = detail::GeometryConcurrency(MaximumConcurrency_);
     std::vector<iCAX::GeometryData::BRepModel> _Results(Inputs_.size());
-    for (std::size_t _Begin = 0; _Begin < Inputs_.size(); _Begin += _Concurrency)
+    const bool _Profile = GetEnvironmentVariableA("ICAX_PROFILE_BREP_CONVERSION", nullptr, 0) > 0;
+    const auto _BatchStart = std::chrono::steady_clock::now();
+    double _CopyMs = 0.0;
+    SBRepConversionTiming _StageTotals;
+    std::vector<std::size_t> _UniqueInputs;
+    std::vector<std::size_t> _PrototypeByInput;
+    _PrototypeByInput.reserve(Inputs_.size());
+    for (std::size_t _Index = 0; _Index < Inputs_.size(); ++_Index)
     {
-        const auto _Count = std::min(_Concurrency, Inputs_.size() - _Begin);
+        const auto _Existing = std::find_if(_UniqueInputs.begin(), _UniqueInputs.end(),
+            [&](std::size_t Prototype_) {
+                return Inputs_[_Index].Shape.IsEqual(Inputs_[Prototype_].Shape);
+            });
+        const auto _Prototype = _Existing == _UniqueInputs.end() ? _Index : *_Existing;
+        if (_Prototype == _Index) _UniqueInputs.push_back(_Index);
+        _PrototypeByInput.push_back(_Prototype);
+    }
+    std::size_t _InputFaces = 0;
+    std::size_t _InputMeshedFaces = 0;
+    if (_Profile) for (const auto _Index : _UniqueInputs)
+    {
+        for (TopExp_Explorer _Face(Inputs_[_Index].Shape, TopAbs_FACE); _Face.More(); _Face.Next())
+        {
+            ++_InputFaces;
+            TopLoc_Location _Location;
+            if (!BRep_Tool::Triangulation(TopoDS::Face(_Face.Current()), _Location).IsNull())
+                ++_InputMeshedFaces;
+        }
+    }
+    for (std::size_t _Begin = 0; _Begin < _UniqueInputs.size(); _Begin += _Concurrency)
+    {
+        const auto _Count = std::min(_Concurrency, _UniqueInputs.size() - _Begin);
+        const auto _CopyStart = std::chrono::steady_clock::now();
         std::vector<TopoDS_Shape> _PrivateShapes;
         _PrivateShapes.reserve(_Count);
         // OCCT meshing writes triangulations back onto TShapes. Copy geometry
         // and topology on the caller thread; never mesh shared prototypes.
         for (std::size_t _Index = 0; _Index < _Count; ++_Index)
-            _PrivateShapes.push_back(BRepBuilderAPI_Copy(Inputs_[_Begin + _Index].Shape, true, false).Shape());
+            _PrivateShapes.push_back(BRepBuilderAPI_Copy(
+                Inputs_[_UniqueInputs[_Begin + _Index]].Shape, true, false).Shape());
+        if (_Profile) _CopyMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - _CopyStart).count();
+        std::vector<SBRepConversionTiming> _Timings(_Profile ? _Count : 0);
         const auto _Convert = [&](std::size_t Index_) {
-            const auto& _Input = Inputs_[_Begin + Index_];
-            _Results[_Begin + Index_] = ConvertToBRepModel(
-                _PrivateShapes[Index_], _Input.DisplayName, _Input.SourceID, dTolerance_);
+            const auto _InputIndex = _UniqueInputs[_Begin + Index_];
+            const auto& _Input = Inputs_[_InputIndex];
+            _Results[_InputIndex] = ConvertToBRepModel(
+                _PrivateShapes[Index_], _Input.DisplayName, _Input.SourceID, dTolerance_,
+                _Profile ? &_Timings[Index_] : nullptr);
         };
         detail::SGeometryTaskBatch _Batch;
         _Batch.Tasks.reserve(_Count - 1);
@@ -1769,6 +1832,57 @@ std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascade
             _Batch.Tasks.push_back(iCAX::Tasks::Run([&, _Index] { _Convert(_Index); }, detail::GeometryTaskScheduler()));
         _Convert(0);
         _Batch.Complete();
+        if (_Profile) for (const auto& _Timing : _Timings)
+        {
+            _StageTotals.MeshingMs += _Timing.MeshingMs;
+            _StageTotals.MappingMs += _Timing.MappingMs;
+            _StageTotals.EdgesMs += _Timing.EdgesMs;
+            _StageTotals.FacesMs += _Timing.FacesMs;
+            _StageTotals.ContainersMs += _Timing.ContainersMs;
+        }
+    }
+    const auto _ConversionDone = std::chrono::steady_clock::now();
+    const auto _Retag = [](iCAX::GeometryData::BRepModel& Model_, const SBRepConversionInput& Input_) {
+        Model_.Metadata.Name = Input_.DisplayName;
+        Model_.Metadata.SourceId = Input_.SourceID;
+        const auto _Rows = [&](auto& Rows_) {
+            for (auto& _Row : Rows_) _Row.Metadata.SourceId = Input_.SourceID;
+        };
+        _Rows(Model_.Curves2); _Rows(Model_.Curves3); _Rows(Model_.Surfaces3);
+        _Rows(Model_.Triangulations3); _Rows(Model_.Vertices); _Rows(Model_.Edges);
+        _Rows(Model_.Wires); _Rows(Model_.Faces); _Rows(Model_.Shells);
+        _Rows(Model_.Solids); _Rows(Model_.CompSolids); _Rows(Model_.Compounds);
+    };
+    for (std::size_t _Index = 0; _Index < Inputs_.size(); ++_Index)
+    {
+        const auto _Prototype = _PrototypeByInput[_Index];
+        if (_Prototype == _Index) continue;
+        _Results[_Index] = _Results[_Prototype];
+        _Retag(_Results[_Index], Inputs_[_Index]);
+    }
+    if (_Profile)
+    {
+        std::size_t _TriangleCount = 0;
+        for (const auto _Index : _UniqueInputs)
+            for (const auto& _Face : _Results[_Index].Triangulations3)
+                _TriangleCount += _Face.Geometry.Triangles.size();
+        const auto _Ms = [](const auto& From_, const auto& To_) {
+            return std::chrono::duration<double, std::milli>(To_ - From_).count();
+        };
+        std::cerr << "[BRep conversion] items=" << Inputs_.size()
+            << " unique=" << _UniqueInputs.size()
+            << " input_meshed_faces=" << _InputMeshedFaces << '/' << _InputFaces
+            << " concurrency=" << _Concurrency
+            << " triangles=" << _TriangleCount
+            << " wall_ms=" << _Ms(_BatchStart, std::chrono::steady_clock::now())
+            << " convert_wall_ms=" << _Ms(_BatchStart, _ConversionDone)
+            << " copy_ms=" << _CopyMs
+            << " mesh_cpu_ms=" << _StageTotals.MeshingMs
+            << " map_cpu_ms=" << _StageTotals.MappingMs
+            << " edges_cpu_ms=" << _StageTotals.EdgesMs
+            << " faces_cpu_ms=" << _StageTotals.FacesMs
+            << " containers_cpu_ms=" << _StageTotals.ContainersMs
+            << '\n';
     }
     return _Results;
 }
@@ -1777,6 +1891,8 @@ std::vector<iCAX::GeometryData::CTriangleMeshResource>
 iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
     const std::vector<SBRepConversionInput>& Inputs_, double dTolerance_, std::size_t MaximumConcurrency_)
 {
+    using namespace iCAX::OpenCascade;
+    COpenCascadeCancellationScope::ThrowIfCancellationRequested();
     for (const auto& _Input : Inputs_)
         if (_Input.Shape.IsNull()) throw std::invalid_argument("Display mesh conversion input is null: " + _Input.SourceID);
     if (Inputs_.empty()) return {};
@@ -1825,6 +1941,7 @@ iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
     BRepMesh_IncrementalMesh _Mesher(
         _Compound, _MeshDeflection, false, 0.5, _Concurrency > 1);
     (void)_Mesher;
+    COpenCascadeCancellationScope::ThrowIfCancellationRequested();
     for (auto& _Prototype : _Prototypes)
         _Prototype.Mesh = CollectTriangleMeshResource(
             _Prototype.PrivateCanonical, {}, {});
@@ -1847,4 +1964,44 @@ iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
         }
     }
     return _Results;
+}
+
+std::vector<iCAX::GeometryData::Polyline3> iCAX::OpenCascade::ConvertOpenCascadeShapeToPreviewWireframe(
+    const TopoDS_Shape& Shape_)
+{
+    COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+    if (Shape_.IsNull()) throw std::invalid_argument("Wireframe input is null");
+    ShapeMap _Edges;
+    TopExp::MapShapes(Shape_, TopAbs_EDGE, _Edges);
+    if (_Edges.Extent() > 50000) throw std::invalid_argument("模型边线过多，无法生成轻量预览");
+    std::vector<iCAX::GeometryData::Polyline3> _Result;
+    _Result.reserve(_Edges.Extent());
+    for (int _Index = 1; _Index <= _Edges.Extent(); ++_Index)
+    {
+        COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+        const auto _Edge = TopoDS::Edge(_Edges.FindKey(_Index));
+        if (BRep_Tool::Degenerated(_Edge)) continue;
+        BRepAdaptor_Curve _Curve(_Edge);
+        const auto _First = _Curve.FirstParameter(), _Last = _Curve.LastParameter();
+        if (!std::isfinite(_First) || !std::isfinite(_Last))
+            throw std::invalid_argument("模型边线范围无效");
+        // Lines need only endpoints. Twelve segments preserve round-hole
+        // outlines without converting any face to triangles.
+        int _Segments = 16;
+        if (_Curve.GetType() == GeomAbs_Line) _Segments = 1;
+        else if (_Curve.GetType() == GeomAbs_Circle || _Curve.GetType() == GeomAbs_Ellipse)
+            _Segments = static_cast<int>(std::clamp(std::ceil(std::abs(_Last - _First) / (std::acos(-1.0) / 6.0)), 2.0, 24.0));
+        iCAX::GeometryData::Polyline3 _Polyline;
+        _Polyline.Points.reserve(_Segments + 1);
+        for (int _Sample = 0; _Sample <= _Segments; ++_Sample)
+        {
+            const auto _Point = _Curve.Value(_First + (_Last - _First) * _Sample / _Segments);
+            if (!std::isfinite(_Point.X()) || !std::isfinite(_Point.Y()) || !std::isfinite(_Point.Z()))
+                throw std::invalid_argument("模型边线坐标无效");
+            _Polyline.Points.push_back(ToPoint3(_Point));
+        }
+        _Result.push_back(std::move(_Polyline));
+    }
+    if (_Result.empty()) throw std::invalid_argument("模型没有可显示的边线");
+    return _Result;
 }

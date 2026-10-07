@@ -53,6 +53,12 @@ namespace iCAX::ExtrusionRecognition
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN const SExtrusionDirectionOptions& Options_ = {}) const override;
 
+        // Align only an axis already established by Recognize's evidence.
+        SExtrusionDirectionResult AlignCandidate(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SExtrusionDirectionResult& Evidence_,
+            IN std::size_t CandidateIndex_) const;
+
         SSectionWiresResult ExtractSectionWires(
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN const SSectionWireOptions& Options_ = {}) const override;

@@ -2,13 +2,22 @@
 
 #include "OpenCascadeNeutralModelEvaluator.h"
 #include "OpenCascadeTaskExecution.h"
+#include "OpenCascadeCancellation.h"
+#include <TemplateRuntime/StandardJsonCodec.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <deque>
+#include <cstdio>
 #include <exception>
 #include <functional>
+#include <iterator>
 #include <limits>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -657,40 +666,7 @@ namespace
             _Stream >> std::ws;
             if (_Stream.peek() != std::char_traits<char>::eof())
                 throw std::invalid_argument(_Path + " contains trailing data after the BRep shape");
-            if (!BRepCheck_Analyzer(_Shape).IsValid())
-                throw std::invalid_argument(_Path + " contains invalid BRep topology");
-
-            std::size_t _SolidCount = 0;
-            const std::function<void(const TopoDS_Shape&, unsigned int)> _ValidateSolidTree =
-                [&](const TopoDS_Shape& Shape_, unsigned int Depth_) {
-                    if (Depth_ > 64)
-                        throw std::invalid_argument(_Path + " exceeds the maximum compound nesting depth");
-                    if (Shape_.ShapeType() == TopAbs_SOLID)
-                    {
-                        GProp_GProps _Mass;
-                        BRepGProp::VolumeProperties(Shape_, _Mass);
-                        if (!std::isfinite(_Mass.Mass()) || _Mass.Mass() <= 0.0)
-                            throw std::invalid_argument(_Path + " requires finite positive-volume solids");
-                        ++_SolidCount;
-                        return;
-                    }
-                    if (Shape_.ShapeType() != TopAbs_COMPOUND && Shape_.ShapeType() != TopAbs_COMPSOLID)
-                        throw std::invalid_argument(_Path + " only accepts solids or compounds of solids, not loose faces, edges or shells");
-                    const auto _PreviousCount = _SolidCount;
-                    for (TopoDS_Iterator _Child(Shape_); _Child.More(); _Child.Next())
-                        _ValidateSolidTree(_Child.Value(), Depth_ + 1);
-                    if (_SolidCount == _PreviousCount)
-                        throw std::invalid_argument(_Path + " contains an empty compound");
-                };
-            _ValidateSolidTree(_Shape, 0);
-            Bnd_Box _Bounds;
-            BRepBndLib::Add(_Shape, _Bounds, false);
-            if (_Bounds.IsVoid() || _Bounds.IsOpen())
-                throw std::invalid_argument(_Path + " requires finite non-empty bounds");
-            std::array<double, 6> _Extents;
-            _Bounds.Get(_Extents[0], _Extents[1], _Extents[2], _Extents[3], _Extents[4], _Extents[5]);
-            if (!std::all_of(_Extents.begin(), _Extents.end(), [](double Value_) { return std::isfinite(Value_); }))
-                throw std::invalid_argument(_Path + " requires finite non-empty bounds");
+            iCAX::OpenCascade::ValidateSolidResourceShape(_Shape, _Path);
             return _Shape;
         }
         catch (const Standard_Failure& Failure_)
@@ -700,7 +676,7 @@ namespace
         }
     }
 
-    TopoDS_Shape MakeTransform(const SGeometryNode& Node_, const TopoDS_Shape& Input_)
+    gp_Trsf RigidNodeTransform(const SGeometryNode& Node_)
     {
         const auto _Path = std::string("geometry.") + Node_.Key + ".placement";
         const auto& _Placement = RequireObject(
@@ -729,9 +705,14 @@ namespace
         // removes round-off only; no scale/shear/mirror is silently accepted.
         gp_Trsf _Transform;
         _Transform.SetDisplacement(gp_Ax3(), gp_Ax3(_Origin, gp_Dir(_Z), gp_Dir(_X)));
+        return _Transform;
+    }
+
+    TopoDS_Shape MakeTransform(const SGeometryNode& Node_, const TopoDS_Shape& Input_)
+    {
         // Moved returns a separate location/orientation wrapper over the same
         // TShape. Do not deep-copy the shared profile extrusion per instance.
-        return Input_.Moved(TopLoc_Location(_Transform), true);
+        return Input_.Moved(TopLoc_Location(RigidNodeTransform(Node_)), true);
     }
 
     std::vector<std::string> BooleanInputs(const SGeometryNode& Node_)
@@ -773,7 +754,9 @@ namespace
     TopoDS_Shape BooleanShape(
         const SGeometryNode& Node_,
         const std::function<const TopoDS_Shape&(const std::string&)>& Resolve_,
-        bool UseBoundingBoxFilter_)
+        bool UseBoundingBoxFilter_,
+        bool SuppressUnusedHistory_,
+        bool UseOrientedBoundingBoxes_)
     {
         const auto _Path = std::string("geometry.") + Node_.Key;
         const auto _Operation = RequireString(Node_.Arguments, "operation", _Path);
@@ -809,11 +792,13 @@ namespace
                 _Builder.SetNonDestructive(true);
                 _Builder.SetRunParallel(false);
                 _Builder.SetFuzzyValue(1.e-6);
+                if (SuppressUnusedHistory_) _Builder.SetToFillHistory(false);
+                if (UseOrientedBoundingBoxes_) _Builder.SetUseOBB(true);
                 NCollection_List<TopoDS_Shape> _Arguments;
                 _Arguments.Append(_Result);
                 _Builder.SetArguments(_Arguments);
                 _Builder.SetTools(_Tools);
-                _Builder.Build();
+                iCAX::OpenCascade::COpenCascadeCancellationScope::Build(_Builder);
                 if (!_Builder.IsDone()) throw std::runtime_error(_Path + " subtraction failed");
                 _Result = _Builder.Shape();
                 if (_Result.IsNull()) throw std::runtime_error(_Path + " produced an empty shape");
@@ -843,13 +828,15 @@ namespace
                 // for cut/fuse/common. Default per-shape tolerances can leave
                 // sliver solids at successive miter/elliptic intersections.
                 Builder_.SetFuzzyValue(1.e-6);
+                if (SuppressUnusedHistory_) Builder_.SetToFillHistory(false);
+                if (UseOrientedBoundingBoxes_) Builder_.SetUseOBB(true);
                 NCollection_List<TopoDS_Shape> _Arguments;
                 _Arguments.Append(_Result);
                 NCollection_List<TopoDS_Shape> _Tools;
                 _Tools.Append(_Tool);
                 Builder_.SetArguments(_Arguments);
                 Builder_.SetTools(_Tools);
-                Builder_.Build();
+                iCAX::OpenCascade::COpenCascadeCancellationScope::Build(Builder_);
             };
             if (_Operation == "subtract")
             {
@@ -894,6 +881,242 @@ namespace
         }
         return _Result;
     }
+
+    ObjectMap RigidPlacementArguments(const gp_Trsf& Transform_)
+    {
+        const auto _Value = [&](int Row_, int Column_) {
+            const auto _Coordinate = Transform_.Value(Row_, Column_);
+            return _Coordinate == 0.0 ? 0.0 : _Coordinate;
+        };
+        return ObjectMap{{"placement",ObjectMap{
+            {"origin",VariantArray{_Value(1,4),_Value(2,4),_Value(3,4)}},
+            {"xAxis",VariantArray{_Value(1,1),_Value(2,1),_Value(3,1)}},
+            {"yAxis",VariantArray{_Value(1,2),_Value(2,2),_Value(3,2)}},
+        {"zAxis",VariantArray{_Value(1,3),_Value(2,3),_Value(3,3)}}}}};
+    }
+
+    bool IsExactIdentityTransform(const gp_Trsf& Transform_)
+    {
+        // gp_Trsf can retain its translation/compound form after multiplying
+        // exact inverse frames. Require every matrix coefficient to equal the
+        // identity; never round a nearly-identity geometric placement.
+        for (int _Row = 1; _Row <= 3; ++_Row)
+            for (int _Column = 1; _Column <= 4; ++_Column)
+                if (Transform_.Value(_Row, _Column) != (_Row == _Column ? 1.0 : 0.0)) return false;
+        return true;
+    }
+
+    bool IsPlainRigidTransform(const SGeometryNode& Node_)
+    {
+        if (Node_.Operator != EGeometryOperator::Transform || Node_.Arguments.size() != 1
+            || !Node_.Arguments.contains("placement")) return false;
+        const auto& _Placement = RequireObject(Node_.Arguments.at("placement"), "geometry."+Node_.Key+".placement");
+        return std::all_of(_Placement.begin(), _Placement.end(), [](const auto& Field_) {
+            return Field_.first == "origin" || Field_.first == "xAxis" || Field_.first == "yAxis" || Field_.first == "zAxis";
+        });
+    }
+
+    // Factoring proper rigid transforms is an exact geometric identity, not a
+    // size-based cache. The complete local contour/curve data, extrusion vector,
+    // operation arguments and relative placements remain in each prototype key.
+    // Authored nodes/recipes stay unchanged; selected results retain their keys.
+    iCAX::TemplateRuntime::SNeutralModel RigidPrototypeGraph(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_,
+        const std::vector<std::string>& Roots_,std::size_t& Reused_)
+    {
+        using iCAX::TemplateRuntime::CStandardJsonCodec;
+        iCAX::TemplateRuntime::SNeutralModel _Model;
+        std::unordered_map<std::string,const SGeometryNode*> _Sources;
+        for(const auto& _Node:Model_.Geometry)
+            if(!_Sources.emplace(_Node.Key,&_Node).second)
+                throw std::invalid_argument("duplicate neutral model geometry key: "+_Node.Key);
+        struct SLocal final { std::string Key;gp_Trsf Placement; };
+        std::unordered_map<std::string,SLocal> _Resolved;
+        std::unordered_set<std::string> _Resolving;
+        std::map<std::string,std::string> _Identities;
+        const bool _ProfileBooleanNodes = GetEnvironmentVariableA("ICAX_PROFILE_NEUTRAL_BOOLEAN_NODES", nullptr, 0) > 0;
+        std::size_t _NextKey=0;
+        const auto _Add=[&](EGeometryOperator Operator_,std::vector<std::string> Inputs_,ObjectMap Arguments_) {
+            VariantArray _Inputs;
+            for(const auto& _Input:Inputs_)_Inputs.emplace_back(_Input);
+            ObjectMap _IdentityDocument;
+            _IdentityDocument.emplace("operator",static_cast<unsigned int>(Operator_));
+            _IdentityDocument.emplace("inputs",std::move(_Inputs));
+            _IdentityDocument.emplace("arguments",std::move(Arguments_));
+            const auto _Identity=CStandardJsonCodec::Serialize(_IdentityDocument);
+            if(const auto _Found=_Identities.find(_Identity);_Found!=_Identities.end()) {
+                ++Reused_;return _Found->second;
+            }
+            std::string _Key;
+            do {_Key="runtime.prototype."+std::to_string(_NextKey++);}while(_Sources.contains(_Key));
+            _Model.Geometry.push_back({_Key,Operator_,std::move(Inputs_),
+                std::move(std::get<ObjectMap>(_IdentityDocument.at("arguments").m_Value))});
+            _Identities.emplace(_Identity,_Key);
+            return _Key;
+        };
+        const auto _Place=[&](const SLocal& Local_,const gp_Trsf& ToFrame_) {
+            const auto _Transform=ToFrame_*Local_.Placement;
+            if(IsExactIdentityTransform(_Transform))return Local_.Key;
+            return _Add(EGeometryOperator::Transform,{Local_.Key},RigidPlacementArguments(_Transform));
+        };
+        const std::function<SLocal(const std::string&)> _Resolve=[&](const std::string& Key_)->SLocal {
+            if(const auto _Found=_Resolved.find(Key_);_Found!=_Resolved.end())return _Found->second;
+            const auto _Found=_Sources.find(Key_);
+            if(_Found==_Sources.end())throw std::invalid_argument("neutral model references missing geometry: "+Key_);
+            if(!_Resolving.emplace(Key_).second)throw std::invalid_argument("neutral model geometry dependency cycle: "+Key_);
+            const auto& _Node=*_Found->second;
+            const auto _Path="geometry."+_Node.Key;
+            auto _Arguments=_Node.Arguments;
+            SLocal _Local;
+            switch(_Node.Operator) {
+            case EGeometryOperator::Profile2D: {
+                const auto _Plane=Placement(_Arguments,_Path);
+                const gp_Dir _Normal(gp_Vec(_Plane.XAxis).Crossed(gp_Vec(_Plane.YAxis)));
+                _Local.Placement.SetDisplacement(gp_Ax3(),gp_Ax3(_Plane.Origin,_Normal,_Plane.XAxis));
+                auto _Placement=RequireObject(Require(_Arguments,"placement",_Path),_Path+".placement");
+                _Placement["origin"]=VariantArray{0.,0.,0.};
+                _Placement["xAxis"]=VariantArray{1.,0.,0.};
+                _Placement["yAxis"]=VariantArray{0.,1.,0.};
+                _Arguments["placement"]=std::move(_Placement);
+                _Local.Key=_Add(_Node.Operator,{},std::move(_Arguments));
+                break;
+            }
+            case EGeometryOperator::Resource:
+                if(!_Node.Inputs.empty())throw std::invalid_argument(_Path+" resource must not have inputs");
+                _Local.Key=_Add(_Node.Operator,{},std::move(_Arguments));
+                break;
+            case EGeometryOperator::Extrude: {
+                if(_Node.Inputs.size()!=1)throw std::invalid_argument(_Path+" extrude requires exactly one input");
+                const auto _Profile=_Resolve(_Node.Inputs.front());
+                auto _Vector=Vector3(Require(_Arguments,"vector",_Path),_Path+".vector");
+                _Vector.Transform(_Profile.Placement.Inverted());
+                _Arguments["vector"]=VariantArray{_Vector.X()==0.?0.:_Vector.X(),
+                    _Vector.Y()==0.?0.:_Vector.Y(),_Vector.Z()==0.?0.:_Vector.Z()};
+                _Local.Key=_Add(_Node.Operator,{_Profile.Key},std::move(_Arguments));
+                _Local.Placement=_Profile.Placement;
+                break;
+            }
+            case EGeometryOperator::Transform: {
+                if(_Node.Inputs.size()!=1)throw std::invalid_argument(_Path+" transform requires exactly one input");
+                _Local=_Resolve(_Node.Inputs.front());
+                const auto _Placement=RigidNodeTransform(_Node)*_Local.Placement;
+                if(IsPlainRigidTransform(_Node))_Local.Placement=_Placement;
+                else {
+                    // An accepted but unrecognized argument is an execution
+                    // boundary. Retain it and the complete transform node;
+                    // factor only the already known input pose into its frame.
+                    auto& _CompletePlacement=std::get<ObjectMap>(_Arguments.at("placement").m_Value);
+                    const auto _KnownPlacement=RigidPlacementArguments(_Placement);
+                    for(const auto& [_Name,_Value]:std::get<ObjectMap>(_KnownPlacement.at("placement").m_Value))
+                        _CompletePlacement[_Name]=_Value;
+                    _Local.Key=_Add(_Node.Operator,{_Local.Key},std::move(_Arguments));
+                    _Local.Placement=gp_Trsf();
+                }
+                break;
+            }
+            case EGeometryOperator::Boolean: {
+                const auto _Inputs=BooleanInputs(_Node);
+                const auto _Target=_Resolve(_Inputs.front());
+                const auto _ToFrame=_Target.Placement.Inverted();
+                std::vector<std::string> _LocalInputs{_Target.Key};
+                VariantArray _Tools;
+                for(auto _Input=_Inputs.begin()+1;_Input!=_Inputs.end();++_Input) {
+                    const auto _Tool=_Place(_Resolve(*_Input),_ToFrame);
+                    _LocalInputs.push_back(_Tool);_Tools.emplace_back(_Tool);
+                }
+                _Arguments["target"]=_Target.Key;_Arguments["tools"]=std::move(_Tools);
+                if(const auto _Witness=Find(_Arguments,"keepConnectedTo")) {
+                    auto _Point=Point3(*_Witness,_Path+".keepConnectedTo");_Point.Transform(_ToFrame);
+                    _Arguments["keepConnectedTo"]=VariantArray{_Point.X(),_Point.Y(),_Point.Z()};
+                }
+                _Local.Key=_Add(_Node.Operator,std::move(_LocalInputs),std::move(_Arguments));
+                if (_ProfileBooleanNodes)
+                    std::fprintf(stderr,"Disassembly/neutral-boolean-source key=%s prototype=%s operation=%s\n",
+                        _Node.Key.c_str(),_Local.Key.c_str(),RequireString(_Node.Arguments,"operation",_Path).c_str());
+                _Local.Placement=_Target.Placement;
+                break;
+            }
+            case EGeometryOperator::Compound: {
+                if(_Node.Inputs.empty())throw std::invalid_argument(_Path+" compound requires inputs");
+                _Local.Placement=_Resolve(_Node.Inputs.front()).Placement;
+                const auto _ToFrame=_Local.Placement.Inverted();
+                std::vector<std::string> _Inputs;
+                for(const auto& _Key:_Node.Inputs)_Inputs.push_back(_Place(_Resolve(_Key),_ToFrame));
+                _Local.Key=_Add(_Node.Operator,std::move(_Inputs),std::move(_Arguments));
+                break;
+            }
+            default:
+                throw std::invalid_argument(_Path+" uses an operator not implemented by the OpenCascade adapter");
+            }
+            _Resolving.erase(Key_);_Resolved.emplace(Key_,_Local);
+            return _Local;
+        };
+        std::unordered_set<std::string> _AddedRoots;
+        for(const auto& _Root:Roots_)if(_AddedRoots.emplace(_Root).second) {
+            const auto _Local=_Resolve(_Root);
+            _Model.Geometry.push_back({_Root,EGeometryOperator::Transform,{_Local.Key},RigidPlacementArguments(_Local.Placement)});
+        }
+        return _Model;
+    }
+}
+
+namespace {
+void ValidateSolidShape(
+    const TopoDS_Shape& Shape_, const std::string& Context_, bool FullValidation_)
+{
+    if (Shape_.IsNull()) throw std::invalid_argument(Context_ + " requires a non-empty solid BRep");
+    if (FullValidation_ && !BRepCheck_Analyzer(Shape_).IsValid())
+        throw std::invalid_argument(Context_ + " contains invalid BRep topology");
+
+    std::size_t _SolidCount = 0;
+    const std::function<void(const TopoDS_Shape&, unsigned int)> _ValidateSolidTree =
+        [&](const TopoDS_Shape& Shape_, unsigned int Depth_) {
+            if (Depth_ > 64)
+                throw std::invalid_argument(Context_ + " exceeds the maximum compound nesting depth");
+            if (Shape_.ShapeType() == TopAbs_SOLID)
+            {
+                if (!FullValidation_) {
+                    for (TopExp_Explorer _Shell(Shape_, TopAbs_SHELL); _Shell.More(); _Shell.Next())
+                        if (!BRep_Tool::IsClosed(_Shell.Current()))
+                            throw std::invalid_argument(Context_ + " requires closed solid shells");
+                }
+                GProp_GProps _Mass;
+                BRepGProp::VolumeProperties(Shape_, _Mass);
+                if (!std::isfinite(_Mass.Mass()) || _Mass.Mass() <= 0.0)
+                    throw std::invalid_argument(Context_ + " requires finite positive-volume solids");
+                ++_SolidCount;
+                return;
+            }
+            if (Shape_.ShapeType() != TopAbs_COMPOUND && Shape_.ShapeType() != TopAbs_COMPSOLID)
+                throw std::invalid_argument(Context_ + " only accepts solids or compounds of solids, not loose faces, edges or shells");
+            const auto _PreviousCount = _SolidCount;
+            for (TopoDS_Iterator _Child(Shape_); _Child.More(); _Child.Next())
+                _ValidateSolidTree(_Child.Value(), Depth_ + 1);
+            if (_SolidCount == _PreviousCount)
+                throw std::invalid_argument(Context_ + " contains an empty compound");
+        };
+    _ValidateSolidTree(Shape_, 0);
+    Bnd_Box _Bounds;
+    BRepBndLib::Add(Shape_, _Bounds, false);
+    if (_Bounds.IsVoid() || _Bounds.IsOpen())
+        throw std::invalid_argument(Context_ + " requires finite non-empty bounds");
+    std::array<double, 6> _Extents;
+    _Bounds.Get(_Extents[0], _Extents[1], _Extents[2], _Extents[3], _Extents[4], _Extents[5]);
+    if (!std::all_of(_Extents.begin(), _Extents.end(), [](double Value_) { return std::isfinite(Value_); }))
+        throw std::invalid_argument(Context_ + " requires finite non-empty bounds");
+}
+}
+
+void iCAX::OpenCascade::ValidateSolidResourceShape(
+    const TopoDS_Shape& Shape_, const std::string& Context_)
+{
+    ValidateSolidShape(Shape_, Context_, true);
+}
+
+void iCAX::OpenCascade::ValidateSolidPreviewShape(
+    const TopoDS_Shape& Shape_, const std::string& Context_)
+{
+    ValidateSolidShape(Shape_, Context_, false);
 }
 
 const TopoDS_Shape& iCAX::OpenCascade::SNeutralModelEvaluation::At(
@@ -926,10 +1149,90 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
     const std::vector<std::string>& GeometryKeys_,
     const SNeutralModelEvaluationOptions& Options_)
 {
+    SNeutralModel _ExecutionGraph;
+    const SNeutralModel* _Graph=&Model_;
+    std::size_t _RigidReuse=0;
+    if(Options_.ReuseRigidPrototypes) {
+        _ExecutionGraph=RigidPrototypeGraph(Model_,GeometryKeys_,_RigidReuse);
+        _Graph=&_ExecutionGraph;
+    }
     std::unordered_map<std::string, const SGeometryNode*> _Nodes;
-    for (const auto& _Node : Model_.Geometry)
+    for (const auto& _Node : _Graph->Geometry)
         if (!_Nodes.emplace(_Node.Key, &_Node).second)
             throw std::invalid_argument("duplicate neutral model geometry key: " + _Node.Key);
+
+    // A - B - C is exactly A - (B union C). Collapse only unobserved,
+    // single-consumer subtraction intermediates without selection arguments.
+    // In particular, keepConnectedTo is an observable per-step material
+    // selection, so it always remains a boundary. This changes neither the
+    // authored graph nor the frozen operation recipe returned by the host.
+    std::unordered_set<std::string> _SelectedRoots(GeometryKeys_.begin(), GeometryKeys_.end());
+    std::unordered_set<std::string> _Reachable;
+    std::unordered_map<std::string, std::size_t> _Consumers;
+    const std::function<void(const std::string&)> _Collect = [&](const std::string& Key_) {
+        if (!_Reachable.emplace(Key_).second) return;
+        const auto _Found = _Nodes.find(Key_);
+        if (_Found == _Nodes.end()) throw std::invalid_argument("neutral model references missing geometry: " + Key_);
+        const auto& _Node = *_Found->second;
+        auto _Dependencies = _Node.Operator == EGeometryOperator::Boolean ? BooleanInputs(_Node) : _Node.Inputs;
+        if (_Node.Operator == EGeometryOperator::Profile2D || _Node.Operator == EGeometryOperator::Resource)
+            _Dependencies.clear();
+        std::unordered_set<std::string> _Unique;
+        for (const auto& _Key : _Dependencies) if (_Unique.emplace(_Key).second) {
+            ++_Consumers[_Key];
+            _Collect(_Key);
+        }
+    };
+    if (Options_.CombineUnobservedSubtractions || Options_.IntersectMatchingExtrusions
+        || Options_.ExpandSubtractionToolUnions)
+        for (const auto& _Root : GeometryKeys_) _Collect(_Root);
+    const auto _SimpleBoolean = [&](const SGeometryNode& Node_, const char* Operation_) {
+        if (Node_.Operator != EGeometryOperator::Boolean
+            || RequireString(Node_.Arguments, "operation", "geometry." + Node_.Key) != Operation_) return false;
+        return std::all_of(Node_.Arguments.begin(), Node_.Arguments.end(), [](const auto& Field_) {
+            return Field_.first == "operation" || Field_.first == "target" || Field_.first == "tools";
+        });
+    };
+    const auto _SimpleSubtraction = [&](const SGeometryNode& Node_) { return _SimpleBoolean(Node_, "subtract"); };
+    const auto _Unobserved = [&](const std::string& Key_) {
+        const auto _Found = _Consumers.find(Key_);
+        return !_SelectedRoots.contains(Key_) && _Found != _Consumers.end() && _Found->second == 1;
+    };
+    std::deque<SGeometryNode> _CombinedNodes;
+    std::size_t _CombinedSubtractions = 0;
+    std::size_t _PlanarIntersections = 0, _ExpandedToolUnions = 0, _NextExecutionKey = 0;
+    const auto _AddExecutionNode = [&](EGeometryOperator Operator_, std::vector<std::string> Inputs_, ObjectMap Arguments_) {
+        std::string _Key;
+        do { _Key = "runtime.exact-operation." + std::to_string(_NextExecutionKey++); } while (_Nodes.contains(_Key));
+        _CombinedNodes.push_back({_Key, Operator_, std::move(Inputs_), std::move(Arguments_)});
+        _Nodes.emplace(_Key, &_CombinedNodes.back());
+        return _Key;
+    };
+
+    struct SUnionOperand final { std::string Key; gp_Trsf Placement; };
+    std::unordered_set<std::string> _ExpandingUnions;
+    const std::function<bool(const std::string&, const gp_Trsf&, std::vector<SUnionOperand>&)> _ExpandUnion =
+        [&](const std::string& Key_, const gp_Trsf& Placement_, std::vector<SUnionOperand>& Operands_) -> bool {
+        const auto _Found = _Nodes.find(Key_);
+        if (_Found == _Nodes.end()) throw std::invalid_argument("neutral model references missing geometry: " + Key_);
+        if (!_ExpandingUnions.emplace(Key_).second)
+            throw std::invalid_argument("neutral model geometry dependency cycle at: " + Key_);
+        const auto& _Node = *_Found->second;
+        bool _Expanded = false;
+        if (_Unobserved(Key_) && _SimpleBoolean(_Node, "union")) {
+            for (const auto& _Child : BooleanInputs(_Node)) (void)_ExpandUnion(_Child, Placement_, Operands_);
+            ++_ExpandedToolUnions;
+            _Expanded = true;
+        } else if (_Unobserved(Key_) && _Node.Inputs.size() == 1 && IsPlainRigidTransform(_Node)) {
+            std::vector<SUnionOperand> _Children;
+            _Expanded = _ExpandUnion(_Node.Inputs.front(), Placement_ * RigidNodeTransform(_Node), _Children);
+            if (_Expanded) Operands_.insert(Operands_.end(),
+                std::make_move_iterator(_Children.begin()), std::make_move_iterator(_Children.end()));
+        }
+        if (!_Expanded) Operands_.push_back({Key_, Placement_});
+        _ExpandingUnions.erase(Key_);
+        return _Expanded;
+    };
 
     // Plan the selected subgraph before launching work. In particular, Boolean
     // arguments may override Inputs; unused declarations must not be evaluated.
@@ -950,7 +1253,102 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
             throw std::invalid_argument("neutral model references missing geometry: " + strKey_);
         if (!_Visiting.emplace(strKey_).second)
             throw std::invalid_argument("neutral model geometry dependency cycle: " + strKey_);
-        const auto& _Node = *_NodeIterator->second;
+        const auto* _EffectiveNode = _NodeIterator->second;
+        if (Options_.IntersectMatchingExtrusions && _SimpleBoolean(*_EffectiveNode, "intersect")) {
+            const auto _Inputs = BooleanInputs(*_EffectiveNode);
+            if (_Inputs.size() == 2 && _Unobserved(_Inputs[0]) && _Unobserved(_Inputs[1])) {
+                const auto _A = _Nodes.find(_Inputs[0]), _B = _Nodes.find(_Inputs[1]);
+                if (_A != _Nodes.end() && _B != _Nodes.end()
+                    && _A->second->Operator == EGeometryOperator::Extrude && _B->second->Operator == EGeometryOperator::Extrude
+                    && _A->second->Inputs.size() == 1 && _B->second->Inputs.size() == 1
+                    && _A->second->Arguments == _B->second->Arguments
+                    && std::all_of(_A->second->Arguments.begin(), _A->second->Arguments.end(), [](const auto& Field_) {
+                        return Field_.first == "vector" || Field_.first == "extendStart" || Field_.first == "extendEnd";
+                    })) {
+                    const auto* _ExtrudeA = _A->second;
+                    const auto _ProfileA = _Nodes.find(_ExtrudeA->Inputs.front()), _ProfileB = _Nodes.find(_B->second->Inputs.front());
+                    if (_ProfileA != _Nodes.end() && _ProfileB != _Nodes.end()
+                        && _ProfileA->second->Operator == EGeometryOperator::Profile2D
+                        && _ProfileB->second->Operator == EGeometryOperator::Profile2D
+                        && std::all_of(_ProfileA->second->Arguments.begin(), _ProfileA->second->Arguments.end(), [](const auto& Field_) {
+                            return Field_.first == "placement" || Field_.first == "contours";
+                        })
+                        && std::all_of(_ProfileB->second->Arguments.begin(), _ProfileB->second->Arguments.end(), [](const auto& Field_) {
+                            return Field_.first == "placement" || Field_.first == "contours";
+                        })) {
+                        const auto& _PlaneA = Require(_ProfileA->second->Arguments, "placement", "geometry." + _ProfileA->first);
+                        const auto& _PlaneB = Require(_ProfileB->second->Arguments, "placement", "geometry." + _ProfileB->first);
+                        const auto _Plane = Placement(_ProfileA->second->Arguments, "geometry." + _ProfileA->first);
+                        const auto _Vector = Vector3(Require(_ExtrudeA->Arguments,"vector","geometry."+_ExtrudeA->Key),"geometry."+_ExtrudeA->Key+".vector");
+                        const auto& _PlacementFields=RequireObject(_PlaneA,"geometry."+_ProfileA->first+".placement");
+                        // The common planar frame and non-tangential vector
+                        // give every solid point a unique section coordinate:
+                        // E(A,v) intersect E(B,v) = E(A intersect B,v).
+                        if (_PlaneA == _PlaneB
+                            && std::all_of(_PlacementFields.begin(), _PlacementFields.end(), [](const auto& Field_) {
+                                return Field_.first == "origin" || Field_.first == "xAxis" || Field_.first == "yAxis";
+                            })
+                            && std::abs(_Vector.Dot(gp_Vec(_Plane.XAxis).Crossed(gp_Vec(_Plane.YAxis)))) > kTolerance) {
+                            const auto _SectionKey = _AddExecutionNode(EGeometryOperator::Boolean,
+                                {_ProfileA->first, _ProfileB->first}, ObjectMap{{"operation", std::string("intersect")}});
+                            _CombinedNodes.push_back({strKey_, EGeometryOperator::Extrude, {_SectionKey}, _ExtrudeA->Arguments});
+                            _EffectiveNode = &_CombinedNodes.back();
+                            ++_PlanarIntersections;
+                        }
+                    }
+                }
+            }
+        }
+        if (Options_.CombineUnobservedSubtractions && _SimpleSubtraction(*_EffectiveNode)) {
+            auto _CombinedInputs = BooleanInputs(*_EffectiveNode);
+            std::unordered_set<std::string> _Chain{strKey_};
+            while (true) {
+                const auto& _Target = _CombinedInputs.front();
+                if (_SelectedRoots.contains(_Target) || _Consumers.at(_Target) != 1) break;
+                const auto _Previous = _Nodes.find(_Target);
+                if (_Previous == _Nodes.end() || !_SimpleSubtraction(*_Previous->second)) break;
+                if (!_Chain.emplace(_Target).second)
+                    throw std::invalid_argument("neutral model geometry dependency cycle at: " + _Target);
+                auto _PreviousInputs = BooleanInputs(*_Previous->second);
+                _PreviousInputs.insert(_PreviousInputs.end(), _CombinedInputs.begin() + 1, _CombinedInputs.end());
+                _CombinedInputs = std::move(_PreviousInputs);
+                ++_CombinedSubtractions;
+            }
+            if (_CombinedInputs != BooleanInputs(*_EffectiveNode)) {
+                _CombinedNodes.push_back(*_EffectiveNode);
+                auto& _Combined = _CombinedNodes.back();
+                _Combined.Inputs = _CombinedInputs;
+                _Combined.Arguments["target"] = _CombinedInputs.front();
+                VariantArray _Tools;
+                for (auto _Tool = _CombinedInputs.begin() + 1; _Tool != _CombinedInputs.end(); ++_Tool) _Tools.emplace_back(*_Tool);
+                _Combined.Arguments["tools"] = std::move(_Tools);
+                _EffectiveNode = &_Combined;
+            }
+        }
+        if (Options_.ExpandSubtractionToolUnions && _SimpleSubtraction(*_EffectiveNode)) {
+            const auto _OriginalInputs = BooleanInputs(*_EffectiveNode);
+            std::vector<std::string> _ExpandedInputs{_OriginalInputs.front()};
+            bool _Expanded = false;
+            for (auto _Tool = _OriginalInputs.begin() + 1; _Tool != _OriginalInputs.end(); ++_Tool) {
+                std::vector<SUnionOperand> _Operands;
+                const auto _DidExpand = _ExpandUnion(*_Tool, gp_Trsf(), _Operands);
+                _Expanded = _Expanded || _DidExpand;
+                for (auto& _Operand : _Operands)
+                    _ExpandedInputs.push_back(IsExactIdentityTransform(_Operand.Placement) ? _Operand.Key
+                        : _AddExecutionNode(EGeometryOperator::Transform, {_Operand.Key}, RigidPlacementArguments(_Operand.Placement)));
+            }
+            if (_Expanded) {
+                _CombinedNodes.push_back(*_EffectiveNode);
+                auto& _Combined = _CombinedNodes.back();
+                _Combined.Inputs = _ExpandedInputs;
+                _Combined.Arguments["target"] = _ExpandedInputs.front();
+                VariantArray _Tools;
+                for (auto _Tool = _ExpandedInputs.begin() + 1; _Tool != _ExpandedInputs.end(); ++_Tool) _Tools.emplace_back(*_Tool);
+                _Combined.Arguments["tools"] = std::move(_Tools);
+                _EffectiveNode = &_Combined;
+            }
+        }
+        const auto& _Node = *_EffectiveNode;
         auto _Inputs = _Node.Operator == EGeometryOperator::Boolean ? BooleanInputs(_Node) : _Node.Inputs;
         if (_Node.Operator == EGeometryOperator::Profile2D || _Node.Operator == EGeometryOperator::Resource)
             _Inputs.clear(); // Their builders validate their own input contract.
@@ -965,9 +1363,18 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
     for (const auto& _GeometryKey : GeometryKeys_) (void)_Plan(_GeometryKey);
 
     SNeutralModelEvaluation _Result;
+    const bool _Profile = GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) > 0;
+    const bool _ProfileBooleanNodes = GetEnvironmentVariableA("ICAX_PROFILE_NEUTRAL_BOOLEAN_NODES", nullptr, 0) > 0;
+    const auto _Started = std::chrono::steady_clock::now();
+    constexpr auto _OperatorCount = static_cast<std::size_t>(EGeometryOperator::Resource) + 1;
+    std::array<std::atomic<unsigned long long>, _OperatorCount> _BuildMicroseconds{};
+    std::array<std::atomic<std::size_t>, _OperatorCount> _BuildCounts{};
+    unsigned long long _CopyMicroseconds = 0;
     const auto _Concurrency = detail::GeometryConcurrency(Options_.MaximumConcurrency);
     const auto _Build = [&](const SGeometryNode& _Node,
         const std::function<const TopoDS_Shape&(const std::string&)>& _Evaluate) {
+        COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+        const auto _BuildStarted = std::chrono::steady_clock::now();
         TopoDS_Shape _Shape;
         switch (_Node.Operator)
         {
@@ -983,7 +1390,8 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
             _Shape = MakeExtrude(_Node, _Evaluate(_Node.Inputs.front()));
             break;
         case EGeometryOperator::Boolean:
-            _Shape = BooleanShape(_Node, _Evaluate, Options_.UseBoundingBoxFilter);
+            _Shape = BooleanShape(_Node, _Evaluate, Options_.UseBoundingBoxFilter,
+                Options_.SuppressUnusedBooleanHistory, Options_.UseOrientedBoundingBoxes);
             break;
         case EGeometryOperator::Transform:
             if (_Node.Inputs.size() != 1)
@@ -1005,64 +1413,151 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
             throw std::invalid_argument("geometry." + _Node.Key + " uses an operator not implemented by the OpenCascade adapter");
         }
         if (_Shape.IsNull()) throw std::runtime_error("geometry." + _Node.Key + " evaluated to a null shape");
+        if (_ProfileBooleanNodes && _Node.Operator == EGeometryOperator::Boolean)
+            std::fprintf(stderr,"Disassembly/neutral-boolean-node key=%s operation=%s inputs=%zu elapsed_ms=%.6f\n",
+                _Node.Key.c_str(),RequireString(_Node.Arguments,"operation","geometry."+_Node.Key).c_str(),
+                BooleanInputs(_Node).size(),std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-_BuildStarted).count());
+        if (_Profile) {
+            const auto _Index = static_cast<std::size_t>(_Node.Operator);
+            if (_Index < _BuildMicroseconds.size()) {
+                _BuildMicroseconds[_Index].fetch_add(static_cast<unsigned long long>(
+                    std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - _BuildStarted).count()),
+                    std::memory_order_relaxed);
+                _BuildCounts[_Index].fetch_add(1, std::memory_order_relaxed);
+            }
+        }
         return _Shape;
     };
+    // The levels above validate the graph; they are not execution barriers.
+    // Publish each completed node immediately and release its own dependants.
+    std::vector<const SPlannedNode*> _PlannedNodes;
+    std::unordered_map<std::string, std::size_t> _NodeIndices;
     for (const auto& _Level : _Levels)
-    {
-        for (std::size_t _Begin = 0; _Begin < _Level.size(); _Begin += _Concurrency)
+        for (const auto& _Planned : _Level)
         {
-            const auto _Count = std::min(_Concurrency, _Level.size() - _Begin);
-            std::vector<std::map<std::string, TopoDS_Shape>> _Inputs(_Count);
-            std::vector<TopoDS_Shape> _Shapes(_Count);
-            std::vector<std::exception_ptr> _Errors(_Count);
-            // Copy on the caller thread before workers start: OCCT caches and
-            // topology flags must not be lazily changed through a shared TShape.
-            // Transform/Compound remain cheap, shared instances as before.
-            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+            _NodeIndices.emplace(_Planned.Node->Key, _PlannedNodes.size());
+            _PlannedNodes.push_back(&_Planned);
+        }
+    const auto _NodeCount = _PlannedNodes.size();
+    std::vector<std::size_t> _Pending(_NodeCount);
+    std::vector<std::vector<std::size_t>> _Dependants(_NodeCount);
+    std::deque<std::size_t> _Ready, _InlineReady;
+    const auto _Enqueue = [&](std::size_t Index_) {
+        const auto _Operator = _PlannedNodes[Index_]->Node->Operator;
+        (_Operator == EGeometryOperator::Transform || _Operator == EGeometryOperator::Compound
+            ? _InlineReady : _Ready).push_back(Index_);
+    };
+    for (std::size_t _Index = 0; _Index < _NodeCount; ++_Index)
+    {
+        std::unordered_set<std::string> _UniqueInputs;
+        for (const auto& _Key : _PlannedNodes[_Index]->Inputs)
+            if (_UniqueInputs.emplace(_Key).second)
             {
-                const auto& _Planned = _Level[_Begin + _Index];
-                for (const auto& _Key : _Planned.Inputs)
-                {
-                    if (_Inputs[_Index].contains(_Key)) continue;
-                    const auto& _Shape = _Result.At(_Key);
-                    const bool _Isolate = _Count > 1 &&
-                        (_Planned.Node->Operator == EGeometryOperator::Boolean
-                            || _Planned.Node->Operator == EGeometryOperator::Extrude);
-                    _Inputs[_Index].emplace(_Key, _Isolate
-                        ? BRepBuilderAPI_Copy(_Shape, true, false).Shape() : _Shape);
-                }
+                ++_Pending[_Index];
+                _Dependants[_NodeIndices.at(_Key)].push_back(_Index);
             }
-            const auto _Run = [&](std::size_t Index_) {
+        if (_Pending[_Index] == 0) _Enqueue(_Index);
+    }
+    std::size_t _Published = 0, _InFlight = 0;
+    const auto _Publish = [&](std::size_t Index_, TopoDS_Shape Shape_) {
+        const auto& _Key = _PlannedNodes[Index_]->Node->Key;
+        const auto _Entry = _Result.Geometry.emplace(_Key, std::move(Shape_));
+        ++_Published;
+        for (const auto _Dependant : _Dependants[Index_])
+            if (--_Pending[_Dependant] == 0) _Enqueue(_Dependant);
+        if (Options_.OnSelectedRootReady && _SelectedRoots.contains(_Key))
+            Options_.OnSelectedRootReady(_Key, _Entry.first->second);
+    };
+    std::vector<TopoDS_Shape> _Shapes(_NodeCount);
+    std::vector<std::exception_ptr> _Errors(_NodeCount);
+    std::vector<std::size_t> _TaskIndices(_NodeCount), _Completions, _Finished;
+    _Completions.reserve(_NodeCount);
+    _Finished.reserve(_NodeCount);
+    std::mutex _CompletionMutex;
+    std::condition_variable _CompletionReady;
+    // Declared after all worker state: exception unwinding must join every task
+    // before its captures (including the completion queue) can be destroyed.
+    SGeometryTaskBatch _Tasks;
+    _Tasks.Tasks.reserve(_NodeCount);
+    while (_Published < _NodeCount)
+    {
+        COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+        {
+            const std::lock_guard _Lock(_CompletionMutex);
+            _Finished.swap(_Completions);
+        }
+        for (const auto _Index : _Finished)
+        {
+            _Tasks.Tasks[_TaskIndices[_Index]].Result();
+            --_InFlight;
+            if (_Errors[_Index]) std::rethrow_exception(_Errors[_Index]);
+            _Publish(_Index, std::move(_Shapes[_Index]));
+        }
+        _Finished.clear();
+        if (!_InlineReady.empty())
+        {
+            const auto _Index = _InlineReady.front();
+            _InlineReady.pop_front();
+            // Only the coordinator touches shared TShapes. Workers use private
+            // copies, so even Compound's topology flag updates are isolated.
+            _Publish(_Index, _Build(*_PlannedNodes[_Index]->Node,
+                [&](const std::string& Key_) -> const TopoDS_Shape& { return _Result.At(Key_); }));
+            continue;
+        }
+        if (!_Ready.empty() && _InFlight < _Concurrency)
+        {
+            const auto _Index = _Ready.front();
+            _Ready.pop_front();
+            if (_Concurrency == 1 || (_InFlight == 0 && _Ready.empty()))
+            {
+                // A lone ready node cannot overlap other work. Retain cheap
+                // serial execution and no-op builders' shared-shape identity.
+                _Publish(_Index, _Build(*_PlannedNodes[_Index]->Node,
+                    [&](const std::string& Key_) -> const TopoDS_Shape& { return _Result.At(Key_); }));
+                continue;
+            }
+            std::map<std::string, TopoDS_Shape> _Inputs;
+            const auto& _Planned = *_PlannedNodes[_Index];
+            const auto _CopyStarted = std::chrono::steady_clock::now();
+            for (const auto& _Key : _Planned.Inputs)
+                if (!_Inputs.contains(_Key))
+                    _Inputs.emplace(_Key, BRepBuilderAPI_Copy(_Result.At(_Key), true, false).Shape());
+            if (_Profile) _CopyMicroseconds += static_cast<unsigned long long>(
+                std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - _CopyStarted).count());
+            _TaskIndices[_Index] = _Tasks.Tasks.size();
+            _Tasks.Tasks.push_back(iCAX::Tasks::Run([&, _Index, _Inputs = std::move(_Inputs),
+                _CancellationCheck = COpenCascadeCancellationScope::Capture()] {
                 try
                 {
-                    _Shapes[Index_] = _Build(*_Level[_Begin + Index_].Node,
-                        [&](const std::string& Key_) -> const TopoDS_Shape& {
-                            return _Inputs[Index_].at(Key_);
-                        });
+                    COpenCascadeCancellationScope _Cancellation(_CancellationCheck);
+                    COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+                    _Shapes[_Index] = _Build(*_PlannedNodes[_Index]->Node,
+                        [&](const std::string& Key_) -> const TopoDS_Shape& { return _Inputs.at(Key_); });
                 }
-                catch (...) { _Errors[Index_] = std::current_exception(); }
-            };
-            const auto _IsSharedInstance = [&](std::size_t Index_) {
-                const auto _Operator = _Level[_Begin + Index_].Node->Operator;
-                return _Operator == EGeometryOperator::Transform || _Operator == EGeometryOperator::Compound;
-            };
-            // Compound assembly may update a child's topology flags. Keep these
-            // cheap shared-instance operations serial, outside the worker phase.
-            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
-                if (_IsSharedInstance(_Index)) _Run(_Index);
-            {
-                SGeometryTaskBatch _Batch;
-                _Batch.Tasks.reserve(_Count - 1);
-                for (std::size_t _Index = 1; _Index < _Count; ++_Index)
-                    if (!_IsSharedInstance(_Index)) _Batch.Tasks.push_back(iCAX::Tasks::Run(
-                        [&, _Index] { _Run(_Index); }, GeometryTaskScheduler()));
-                if (!_IsSharedInstance(0)) _Run(0);
-                _Batch.Complete();
-            }
-            for (const auto& _Error : _Errors) if (_Error) std::rethrow_exception(_Error);
-            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
-                _Result.Geometry.emplace(_Level[_Begin + _Index].Node->Key, std::move(_Shapes[_Index]));
+                catch (...) { _Errors[_Index] = std::current_exception(); }
+                {
+                    const std::lock_guard _Lock(_CompletionMutex);
+                    _Completions.push_back(_Index); // Both queue buffers are preallocated.
+                }
+                _CompletionReady.notify_one();
+            }, GeometryTaskScheduler()));
+            ++_InFlight;
+            continue;
         }
+        if (_Published == _NodeCount) break;
+        if (_InFlight == 0) throw std::logic_error("neutral model scheduler has no ready work");
+        std::unique_lock _Lock(_CompletionMutex);
+        _CompletionReady.wait(_Lock, [&] { return !_Completions.empty(); });
+    }
+    if (_Profile) {
+        std::fprintf(stderr, "Disassembly/neutral-evaluator nodes=%zu combined=%zu rigidReused=%zu planarIntersections=%zu expandedToolUnions=%zu copy=%.3f total=%.3f ms",
+            _NodeCount, _CombinedSubtractions, _RigidReuse, _PlanarIntersections, _ExpandedToolUnions, static_cast<double>(_CopyMicroseconds) / 1000,
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _Started).count());
+        for (std::size_t _Index = 0; _Index < _BuildCounts.size(); ++_Index)
+            std::fprintf(stderr, " op%zu=%zu/%.3f", _Index, _BuildCounts[_Index].load(),
+                static_cast<double>(_BuildMicroseconds[_Index].load()) / 1000);
+        std::fprintf(stderr, "\n");
     }
     return _Result;
 }

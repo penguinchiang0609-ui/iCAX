@@ -91,12 +91,13 @@ const diagramView = {
     id: "v-notch-sharp", displayName: "V 槽", kind: "programmatic", target: "part", category: "槽口", version: "1.0.0",
     parameters: [{ key: "angle", displayName: "V 槽夹角", defaultValue: 90 }],
     illustration: { viewBox: "0 0 48 48", paths: ["M6 9 H42", "M6 9 L24 38 L42 9"] },
-    parameterDiagram: { viewBox: "0 0 240 160", paths: ["M24 28 H216", "M24 28 L120 124 L216 28"], labels: [{ x: 120, y: 94, text: "夹角", parameter: "angle", unit: "°" }] },
+    parameterDiagram: { schemaVersion: 2, viewBox: "0 0 240 160", paths: ["M24 28 H216", "M24 28 L120 124 L216 28"],
+      annotations: [{ parameter: "angle", kind: "linear", from: [24, 28], to: [216, 28], axis: "x", side: "top" }] },
   }],
 };
 const diagramHtml = renderToolLibraryViewportOverlay({}, diagramView);
 assert.match(diagramHtml, /tool-parameter-svg/);
-assert.match(diagramHtml, /夹角 90°/);
+assert.match(diagramHtml, /90/);
 assert.doesNotMatch(renderToolLibraryRightPane({}, diagramView), /data-tool-parameter-diagram/);
 diagramView.tubeDesignerSystemPunchTools[0].parameterDiagram.variants = [
   { visibleWhen: { op: "eq", parameter: "angle", value: 45 }, labels: [{ x: 20, y: 20, text: "wrong-variant" }] },
@@ -303,6 +304,7 @@ assert.match(evaluatedProfileDiagram, /cx="7" cy="-3"/);
 const liveTool = { id: "live-hole", displayName: "联动孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] };
 const liveView = {
   activeAreaId: "tools",
+  tubeDesignerLicense: { featureSchemaVersion: 1, capabilities: { "product.design": true } },
   tubeDesignerSystemPunchTools: [liveTool],
   tubeDesignerSystemProfiles: [profileForTool],
   tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::live-hole", profileDrafts: { "system:round": { width: 44, wallThickness: 2 } }, showProfileDiagram: true },
@@ -323,11 +325,13 @@ const liveContext = { sceneProxy: {
         parameterDiagram: { schemaVersion: 1, annotations: [{ parameter: "width", kind: "linear", axis: "x", side: "top", from: [-13, 18], to: [31, 18] }] },
       } };
     }
-    if (method === "TubeDesigner.PreviewPunchWizard") return {
+    if (method === "TubeDesigner.CheckPunchToolApplicability") return {
+      schema: "icax.punch-tool-applicability", schemaVersion: 1, toolId: "live-hole", applicable: true, reason: "", preview: {
       baseGeometry: { url: "resource:live-blank", version: 1 },
       baseMaterial: { url: "resource:live-blank-material", version: 1 },
       toolMaterial: { url: "resource:live-tool-material", version: 1 },
       toolPreviews: [{ target: "feature", key: "library-preview", geometry: { url: "resource:live-tool", version: 1 } }],
+      },
     };
     throw new Error(`unexpected method: ${method}`);
   },

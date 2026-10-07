@@ -39,6 +39,8 @@ export { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 export { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 export { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 export { escapeAttr, escapeText } from "../UI/html.mjs";
+export { createWindowStateMemory, installWindowStateMemory, describeWindowElement,
+  describeControlElement, controlValue } from "./Forms/index.mjs";
 export {
   RenderFlags,
   RenderLayers,

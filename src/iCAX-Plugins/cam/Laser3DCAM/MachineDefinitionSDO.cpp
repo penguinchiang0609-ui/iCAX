@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "MachineDefinitionSDOImplement.h"
@@ -15,12 +16,12 @@ namespace
         CMachineDefinitionSDO()
             : CSDO("MachineDefinition")
         {
-            ExposeMethod("Import", &iCAX::CAM::SDO::HandleImportMachineDefinition);
-            ExposeMethod("List", &iCAX::CAM::SDO::HandleListMachineDefinitions);
-            ExposeMethod("GetSupportedFormats", &iCAX::CAM::SDO::HandleGetSupportedMachineDefinitionFormats);
-            ExposeMethod("SetEnabled", &iCAX::CAM::SDO::HandleSetMachineDefinitionEnabled);
-            ExposeMethod("SetDefault", &iCAX::CAM::SDO::HandleSetDefaultMachineDefinition);
-            ExposeMethod("Delete", &iCAX::CAM::SDO::HandleDeleteMachineDefinition);
+            ExposeMethod("Import", tube::license::ProtectProductMethod<11011, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleImportMachineDefinition));
+            ExposeMethod("List", tube::license::ProtectProductMethod<11012, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleListMachineDefinitions));
+            ExposeMethod("GetSupportedFormats", tube::license::ProtectProductMethod<11013, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleGetSupportedMachineDefinitionFormats));
+            ExposeMethod("SetEnabled", tube::license::ProtectProductMethod<11014, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineDefinitionEnabled));
+            ExposeMethod("SetDefault", tube::license::ProtectProductMethod<11015, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetDefaultMachineDefinition));
+            ExposeMethod("Delete", tube::license::ProtectProductMethod<11016, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleDeleteMachineDefinition));
         }
     };
 

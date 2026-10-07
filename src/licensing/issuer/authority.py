@@ -1,7 +1,7 @@
 """Offline signing primitives. Never include this directory in the client package.
 
-The CLI intentionally does not offer production issuance until enrollment
-attestation validation is implemented. Signing primitives are tested separately.
+The CLI prepares keys; the production issuance workflow validates enrollment
+attestation before calling these primitives.
 """
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ import struct
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
+from feature_catalog import CERTIFICATE_FORMAT, validate_mask
 
-MAGIC = b"TDLIC001"
+MAGIC = CERTIFICATE_FORMAT.encode("ascii")
 PRODUCT = "icax.tube-designer"
 P256_PUBLIC_MAGIC = 0x31534345
 
@@ -78,8 +79,9 @@ def encode_body(*, issuer_id: str, license_id: str, request_id: str, customer_id
     values = (kind, features, min_major, max_major, issued_at, not_before, expires_at, strategy)
     if any(type(value) is not int for value in values):
         raise ValueError("Protocol numbers must be integers, not booleans or floats")
-    if strategy not in (1, 2) or kind not in (1, 2) or not 0 < features <= 15:
-        raise ValueError("Invalid strategy, kind or features")
+    if strategy not in (1, 2) or kind not in (1, 2):
+        raise ValueError("Invalid strategy or kind")
+    validate_mask(features)
     if not 0 <= min_major <= max_major <= 0xffffffff or not 0 < issued_at <= 0xffffffffffffffff:
         raise ValueError("Invalid version range or issue date")
     if kind == 1 and (not_before != 0 or expires_at != 0):
@@ -91,15 +93,15 @@ def encode_body(*, issuer_id: str, license_id: str, request_id: str, customer_id
     body += struct.pack(">IIIIIQQQ", strategy, kind, features, min_major, max_major,
                         issued_at, not_before, expires_at)
     body += struct.pack(">I", len(device_public_key)) + device_public_key
-    if trial_nv_public:
-        if (kind != 2 or strategy != 1 or len(trial_nv_public) != 14
+    if kind == 2:
+        if (strategy != 1 or not isinstance(trial_nv_public, bytes) or len(trial_nv_public) != 14
             or type(trial_initial_counter) is not int or not 0 < trial_initial_counter <= 0xffffffffffffffff
             or type(trial_quantum_seconds) is not int or trial_quantum_seconds != 3600):
             raise ValueError("Invalid NV trial binding")
-        body = b"TDLIC002" + body[8:] + struct.pack(">I", len(trial_nv_public)) + trial_nv_public
+        body += struct.pack(">I", len(trial_nv_public)) + trial_nv_public
         body += struct.pack(">QI", trial_initial_counter, trial_quantum_seconds)
-    elif trial_initial_counter or trial_quantum_seconds:
-        raise ValueError("Incomplete trial binding")
+    elif trial_nv_public or trial_initial_counter or trial_quantum_seconds:
+        raise ValueError("Permanent license cannot contain a trial binding")
     return body
 
 
@@ -107,7 +109,7 @@ def sign_body(key: ec.EllipticCurvePrivateKey, body: bytes) -> bytes:
     """Low-level primitive, NOT an enrollment approval or public issuance endpoint."""
     if not isinstance(key.curve, ec.SECP256R1):
         raise ValueError("Expected P-256 signing key")
-    if body[:8] not in (MAGIC, b"TDLIC002") or len(body) > 8192 - 64:
+    if body[:8] != MAGIC or len(body) > 8192 - 64:
         raise ValueError("Invalid certificate body")
     signature = key.sign(body, ec.ECDSA(hashes.SHA256()))
     r, s = utils.decode_dss_signature(signature)
@@ -124,7 +126,7 @@ def verify_signature(public_key: bytes, certificate: bytes) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Offline issuer key preparation; production issuance is not yet enabled")
+    parser = argparse.ArgumentParser(description="Offline issuer key preparation; issue hardware-bound licenses with issuer_gui.py")
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init-key", help="Run ONLY on your isolated signing computer")
     init.add_argument("key", type=Path)

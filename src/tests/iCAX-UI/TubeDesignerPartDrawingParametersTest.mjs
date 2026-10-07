@@ -29,7 +29,7 @@ test("nested eq/ne/all/any conditions honor stored false and zero values and sch
     { key: "count", defaultValue: 0, valueType: "integer" },
     { key: "detail", defaultValue: 12, visibleWhen: { op: "all", conditions: [
       { op: "eq", parameter: "kind", value: "v" },
-      { any: [{ op: "eq", key: "enabled", value: true }, { all: [{ op: "eq", key: "count", value: 0 }, { op: "ne", key: "enabled", value: true }] }] },
+      { any: [{ op: "eq", parameter: "enabled", value: true }, { all: [{ op: "eq", parameter: "count", value: 0 }, { op: "ne", parameter: "enabled", value: true }] }] },
     ] } },
   ] };
   assert.ok(keys(parameterFields(action, schema, {})).includes("detail"));
@@ -45,7 +45,8 @@ test("number inputs preserve limits, integer steps, units and dedicated action/e
   assert.match(markup, /data-cam-change-action="tube-designer-drawing-field-change"/);
   assert.match(markup, /data-tube-designer-punch-end="start"/);
   assert.match(markup, /data-tube-designer-punch-parameter="length"/);
-  assert.match(markup, /<small>mm<\/small>/);
+  assert.match(markup, /<span>长度（mm）<\/span>/);
+  assert.ok(!markup.includes('<small>'));
   assert.match(fieldControl(action, "size", "尺寸", NaN, { constraints: { minimum: 0.1, maximum: 20, step: 0.01 } }), /step="0.01" min="0.1" max="20" value=""/);
 });
 
@@ -67,5 +68,5 @@ test("fixed and unavailable tools produce read-only notes without editable geome
   assert.equal(parameterFields(action, null, {}), "");
   assert.match(parameterFields(action, null, { toolRef: { id: "gone" } }), /节点只读/);
   const fixed = parameterFields(action, { kind: "fixed", parameters: [{ key: "diameter", defaultValue: 5 }] }, {});
-  assert.match(fixed, /定式刀具/); assert.ok(!fixed.includes("<input"));
+  assert.match(fixed, /定式工艺/); assert.ok(!fixed.includes("<input"));
 });

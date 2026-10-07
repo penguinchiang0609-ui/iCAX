@@ -26,9 +26,9 @@ def _load(name):
     return sys.modules[identity]
 
 
-def _builder(document):
+def _builder(document, *, owns_expanded=False):
     model = NeutralModel(template_id='assembly-manufacturing', template_version='2', package_digest='', parameters={})
-    model._document = deepcopy(expand_resource_model(document))
+    model._document = document if owns_expanded else expand_resource_model(document)
     model._geometry_keys = {node['key'] for node in model._document['geometry']}
     model._item_keys = {item['key'] for item in model._document['items']}
     model._relationship_keys = {item['key'] for item in model._document.get('relationships', [])}
@@ -441,8 +441,10 @@ def _execute_assembly_planners(definition, context):
                 if binding['scope'] == 'design' for key in binding['itemKeys']}
     if any(consumed.intersection(process['definition']['targets'].values()) for process in fixed):
         raise ValueError('one input cannot be both an existing local target and a generated-set design source')
-    known = deepcopy(definition)
-    known['items'] = [item for item in known['items'] if item['key'] not in consumed]
+    # This private input only edits the retained hierarchy. Resources and calls
+    # remain read-only; the recursive executor owns its mutation boundary.
+    known = dict(definition)
+    known['items'] = [deepcopy(item) for item in definition['items'] if item['key'] not in consumed]
     for item in known['items']:
         item['children'] = [key for key in item.get('children', []) if key not in consumed]
     known['roots'] = [key for key in known['roots'] if key not in consumed]
@@ -481,6 +483,10 @@ def _execute_assembly_planners(definition, context):
         if not set(sources) <= consumed:
             raise ValueError('generated manufacturing set has an unknown original design source')
         generated = expand_resource_model(execute_manufacturing(planned['definition'], context))
+        if call['processInput']['geometry'].get('mergeIdenticalParts', False):
+            # Only the native executor has the completed end/tool/CSG recipes.
+            # It groups real manufacturing objects after validating every stock.
+            generated.setdefault('extensions', {})['tubeDesigner.identicalManufacturingPartsVersion'] = 1
         actual = [item['key'] for item in generated['items'] if item.get('representations', {}).get('result')]
         if not actual:
             raise ValueError('registered assembly planner produced an empty manufacturing set')
@@ -496,7 +502,7 @@ def _execute_assembly_planners(definition, context):
             record = {'processKey': process['key'], 'outputKey': role, 'key': output['key'],
                       'kind': 'manufacturing-set', 'itemKeys': actual, 'sourceItemKeys': deepcopy(sources)}
             records.append(record)
-            output_sets[(process['key'], role)] = {**deepcopy(record), 'model': deepcopy(generated),
+            output_sets[(process['key'], role)] = {**deepcopy(record), 'model': generated,
                 'sourceMappings': [{'itemKey': key, 'sources': [{'itemKey': source} for source in sorted(source_map.get(key, set(sources)))]}
                                    for key in actual]}
             if (process['key'], role) not in consumed_outputs:
@@ -514,24 +520,24 @@ def _execute_assembly_planners(definition, context):
                 raise ValueError('a manufactured object cannot merge design members from different product groups')
             for source in referenced:
                 replacement.setdefault(source, []).append(key)
-            items[key] = deepcopy(item)
+            items[key] = item
         for node in generated['geometry']:
             if node['key'] in geometry and geometry[node['key']] != node:
                 raise ValueError('generated manufacturing geometry resource conflicts with another output')
             if node['key'] not in geometry:
-                geometry[node['key']] = deepcopy(node)
+                geometry[node['key']] = node
         for name, value in generated.get('extensions', {}).items():
             if name in {'tubeDesigner.manufacturingPartCount', 'tubeDesigner.manufacturingInputVersion'}:
                 continue
             extensions = base.setdefault('extensions', {})
             if name not in extensions:
-                extensions[name] = deepcopy(value)
+                extensions[name] = value
             elif name == 'tubeDesigner.assemblyStagePlan':
                 extensions[name] = _load('assembly_process_stages').merge_stage_plans(extensions[name], value)
             elif name == 'tubeDesigner.assemblyMaterialPlan':
                 extensions[name] = _load('assembly_process_stages').merge_material_plans(extensions[name], value)
             elif isinstance(value, list) and isinstance(extensions[name], list):
-                extensions[name].extend(deepcopy(value))
+                extensions[name].extend(value)
             elif extensions[name] != value:
                 raise ValueError('independent assembly outputs have conflicting execution metadata: ' + name)
     def replaced(keys):
@@ -570,9 +576,11 @@ def _execute_assembly_planners(definition, context):
     extensions.update({'tubeDesigner.manufacturingPartCount': len(visible),
                        'tubeDesigner.manufacturingInputVersion': definition['schemaVersion'],
                        'tubeDesigner.assemblyOutputSets': records})
-    model = _builder(base)
+    # Every generated entry is a private owned executor result, and all planner
+    # snapshots have already been consumed. Transfer them into the final builder.
+    model = _builder(base, owns_expanded=True)
     _part_list(model)
-    return to_resource_model(model.build())
+    return to_resource_model(model._document)
 
 
 def _declared_tube_extent(document, item):
@@ -748,10 +756,10 @@ def execute_manufacturing(definition, context=None, design_model=None):
         _materialize_product_source_mappings(result, combined, design_model)
         result.setdefault('extensions', {})['tubeDesigner.manufacturingInputVersion'] = 4
         return result
+    if any('outputs' in process['definition'] for process in definition['processes']):
+        return _execute_assembly_planners(definition, context or {})
     definition = deepcopy(definition)
     context = deepcopy(context or {})
-    if any('outputs' in process['definition'] for process in definition['processes']):
-        return _execute_assembly_planners(definition, context)
     _components(definition, context)
     runtime = _load('assembly_geometry_process_runtime')
     has_paths = any('manufacturingInput' in item for item in definition['items'])
@@ -788,7 +796,7 @@ def execute_manufacturing(definition, context=None, design_model=None):
             extra_document = expand_resource_model(execute_manufacturing(known, context))
             extra_items = extra_document['items']
         allocated = _load('assembly_material_allocation').allocate_window_manufacturing(path_definition, context)
-        model = _builder(allocated['model'])
+        model = _builder(allocated['model'], owns_expanded=True)
         if allocated.get('stagePlan'):
             model._document.setdefault('extensions', {})['tubeDesigner.assemblyStagePlan'] = deepcopy(allocated['stagePlan'])
         if allocated.get('assemblySource'):
@@ -946,7 +954,9 @@ def execute_manufacturing(definition, context=None, design_model=None):
     for key in definition['roots']:
         collect(key)
     model._document['outputs'][0]['items'] = visible
-    document = model.build()
+    # This builder is local to the invocation. Publishing resources makes the
+    # independently owned result, so no intermediate whole-model copy is needed.
+    document = model._document
     document['template'] = deepcopy(context.get('template', document['template']))
     extensions = document.setdefault('extensions', {})
     extensions['tubeDesigner.geometryPurpose'] = 'manufacturing'

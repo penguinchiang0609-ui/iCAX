@@ -36,15 +36,7 @@ if ($MachineDefinitionPath -and (Test-Path -LiteralPath $MachineDefinitionPath))
 
 function Resolve-DefaultApplicationPath {
     $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-    $central = Join-Path $root "x64\Debug\Application.exe"
-    if (Test-Path -LiteralPath $central) {
-        return $central
-    }
-    $projectOutput = Join-Path $root "iCAX-Application\Application\x64\Debug\Application.exe"
-    if (Test-Path -LiteralPath $projectOutput) {
-        return $projectOutput
-    }
-    return Join-Path $root "iCAX-Engine\x64\Debug\Application.exe"
+    return Join-Path $root "x64\Debug\TubeDesigner.exe"
 }
 
 function New-DefaultProjectPath {
@@ -231,7 +223,7 @@ function Assert-ApplicationRuntimeDependencies {
 
     $appDir = Split-Path $ApplicationPath
     $requiredFiles = @(
-        "Application.exe",
+        "TubeDesigner.exe",
         "UIContainer.dll",
         "CefUIContainer.dll",
         "libcef.dll"
@@ -406,7 +398,7 @@ try {
   let createProjectResult = null;
   if ($openProjectLiteral) {
     createProjectResult = await window.__icaxAppShell.openProject($projectPathLiteral, $productIdLiteral);
-    await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation").catch((error) => {
+    await waitUntil(() => window.__icaxWorkbench, "Laser3DCAM automation").catch((error) => {
       const appState = window.__icaxAppShell?.getState?.() ?? null;
       throw new Error(error.message + "; AppShell=" + JSON.stringify(appState));
     });
@@ -416,7 +408,7 @@ try {
       projectName: $projectNameLiteral,
       projectPath: $projectPathLiteral
     });
-    await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation").catch((error) => {
+    await waitUntil(() => window.__icaxWorkbench, "Laser3DCAM automation").catch((error) => {
       const appState = window.__icaxAppShell?.getState?.() ?? null;
       throw new Error(error.message + "; AppShell=" + JSON.stringify(appState));
     });
@@ -426,11 +418,11 @@ try {
   let defaultMachineViewport = null;
   if ($checkDefaultMachineLiteral) {
     defaultMachineResult = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getState?.();
+      const state = window.__icaxWorkbench?.getState?.();
       return Number(state?.machineDefinitionCount ?? 0) > 0 && Number(state?.machineInstanceCount ?? 0) > 0 ? state : null;
     }, "default machine definition and instance");
     if ($requireRenderableLiteral && !$importMachineLiteral) {
-      defaultMachineViewport = await window.__icaxLaser3DCAM.waitForRenderableViewport({
+      defaultMachineViewport = await window.__icaxWorkbench.waitForRenderableViewport({
         timeoutMs: $timeoutMs,
         includeObjects: true
       });
@@ -439,9 +431,9 @@ try {
 
   let importMachineResult = null;
   if ($importMachineLiteral) {
-    importMachineResult = await window.__icaxLaser3DCAM.importMachineDefinition($machinePathLiteral);
+    importMachineResult = await window.__icaxWorkbench.importMachineDefinition($machinePathLiteral);
     if ($requireRenderableLiteral) {
-      importMachineResult.viewport = await window.__icaxLaser3DCAM.waitForRenderableViewport({
+      importMachineResult.viewport = await window.__icaxWorkbench.waitForRenderableViewport({
         timeoutMs: $timeoutMs,
         includeObjects: true
       });
@@ -451,7 +443,7 @@ try {
 
   let importWorkpieceResult = null;
   if ($importWorkpieceLiteral) {
-    importWorkpieceResult = await window.__icaxLaser3DCAM.importWorkpiece($workpiecePathLiteral);
+    importWorkpieceResult = await window.__icaxWorkbench.importWorkpiece($workpiecePathLiteral);
     await delay(500);
   }
 
@@ -460,13 +452,13 @@ try {
     if (typeof window.__icaxAppShell?.selectRibbonTab !== "function") {
       throw new Error("AppShell ribbon-tab automation is unavailable.");
     }
-    if (typeof window.__icaxLaser3DCAM?.getTubeDesignerProfileLibraryState !== "function") {
+    if (typeof window.__icaxWorkbench?.getTubeDesignerProfileLibraryState !== "function") {
       throw new Error("TubeDesigner profile-library automation is unavailable.");
     }
     await window.__icaxAppShell.selectRibbonTab("profiles");
     try {
       await waitUntil(() => {
-        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        const state = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
         const cards = Array.from(document.querySelectorAll(".tube-profile-library-card"));
         return state.activeAreaId === "profiles" && !state.pending && !state.progress
           && state.profiles.length > 0 && cards.length === state.profiles.length
@@ -474,7 +466,7 @@ try {
           ? state : null;
       }, "enabled TubeDesigner profile library");
     } catch (error) {
-      const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+      const state = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
       throw new Error(error.message + "; state=" + JSON.stringify(state)
         + "; progressBackdrops=" + document.querySelectorAll(".cam-progress-backdrop").length
         + "; disabledCards=" + document.querySelectorAll(".tube-profile-library-card:disabled").length);
@@ -613,7 +605,7 @@ try {
       };
     };
 
-    const initialState = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+    const initialState = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
     const systemGroup = document.querySelector('[data-tube-profile-library-group="system"]');
     const userGroup = document.querySelector('[data-tube-profile-library-group="user"]');
     const libraryGroups = {
@@ -795,7 +787,7 @@ try {
             ? candidate : null;
         }, "enabled profile card " + profile.name);
       } catch (error) {
-        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        const state = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
         throw new Error(error.message + "; state=" + JSON.stringify(state)
           + "; cardExists=" + Boolean(document.querySelector(selector))
           + "; cardDisabled=" + Boolean(document.querySelector(selector)?.disabled)
@@ -812,8 +804,8 @@ try {
       let previewWaitCoversViewport = false;
       let previewWaitRect = null;
       while (performance.now() < deadline) {
-        current = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
-        viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: true, includeObjects: true });
+        current = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
+        viewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: true, includeObjects: true });
         const statusElement = document.querySelector("[data-tube-profile-preview-status] small");
         const progressElement = document.querySelector("[data-tube-profile-preview-progress]");
         const previewWait = document.querySelector("[data-tube-profile-preview-wait]");
@@ -942,7 +934,7 @@ try {
       const card = document.querySelector(selector);
       card?.click();
       await waitUntil(() => {
-        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        const state = window.__icaxWorkbench.getTubeDesignerProfileLibraryState();
         const status = document.querySelector("[data-tube-profile-preview-status] small")?.textContent?.trim() ?? "";
         return state.selectedProfileKey === screenshotProfile.selectionKey && !state.requestKey
           && state.appliedView?.entityIds?.length === 1
@@ -1064,28 +1056,28 @@ try {
     };
 
     const initialRibbonDom = captureDesignerDom();
-    const batchAddOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+    const batchAddOperation = await window.__icaxWorkbench.executeAreaAction(
       "tube-designer-batch-add",
       { dataset: { tubeDesignerBatchPath: "D:\\orders\\security-windows.xlsx" } }
     );
-    const batchAddState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const batchAddState = window.__icaxWorkbench.getTubeDesignerState();
     const batchAddDom = captureDesignerDom();
 
-    const initialDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const openCancelledAdd = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const initialDesignerState = window.__icaxWorkbench.getTubeDesignerState();
+    const openCancelledAdd = await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
     const addDialogDom = captureDesignerDom();
-    const stateBeforeCancel = window.__icaxLaser3DCAM.getTubeDesignerState();
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-cancel-add");
+    const stateBeforeCancel = window.__icaxWorkbench.getTubeDesignerState();
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-cancel-add");
     const cancelledAddDom = captureDesignerDom();
-    const stateAfterCancel = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const stateAfterCancel = window.__icaxWorkbench.getTubeDesignerState();
     if (!openCancelledAdd?.handled || addDialogDom.addDialogCount !== 1 || addDialogDom.templateCardCount < 3 ||
         stateBeforeCancel.instances.length !== initialDesignerState.instances.length ||
         stateAfterCancel.instances.length !== initialDesignerState.instances.length || cancelledAddDom.addDialogCount !== 0) {
       throw new Error("TubeDesigner add/cancel contract failed: " + JSON.stringify({ addDialogDom, cancelledAddDom, initialDesignerState, stateBeforeCancel, stateAfterCancel }));
     }
 
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
-    const generatePromise = window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
+    const generatePromise = window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-add");
     const generateBusyDom = await waitUntil(() => {
       const current = captureDesignerDom();
       return current.operationProgressCount === 1 && current.operationProgressTitle === "正在生成产品预览"
@@ -1093,9 +1085,9 @@ try {
     }, "TubeDesigner centered generation progress");
     const generateOperation = await generatePromise;
     const generateCompletedDom = captureDesignerDom();
-    const designerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const designerState = window.__icaxWorkbench.getTubeDesignerState();
     const dom = captureDesignerDom();
-    const viewport = window.__icaxLaser3DCAM.getViewportDebugState({
+    const viewport = window.__icaxWorkbench.getViewportDebugState({
       samplePixels: true,
       includeObjects: true
     });
@@ -1127,7 +1119,7 @@ try {
         .map((group) => group.dataset.tubeDesignerParameterGroup),
       scrollTop: parameterViewportBeforeRegenerate.scrollTop,
     };
-    const regenerateOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-update");
+    const regenerateOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-update");
     const parameterViewportAfterRegenerate = document.querySelector(".tube-designer-parameter-sections");
     const parameterPanelStateAfterRegenerate = {
       expandedGroups: Array.from(document.querySelectorAll("[data-tube-designer-parameter-group][open]"))
@@ -1135,9 +1127,9 @@ try {
       scrollTop: parameterViewportAfterRegenerate?.scrollTop ?? -1,
       focusedParameter: document.activeElement?.dataset?.tubeDesignerParameter ?? "",
     };
-    const regeneratedDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const regeneratedDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const regeneratedDom = captureDesignerDom();
-    const regeneratedViewport = window.__icaxLaser3DCAM.getViewportDebugState({
+    const regeneratedViewport = window.__icaxWorkbench.getViewportDebugState({
       samplePixels: true,
       includeObjects: true
     });
@@ -1145,21 +1137,21 @@ try {
       throw new Error("TubeDesigner regeneration event chain failed: " + JSON.stringify({ regenerateOperation, regeneratedDom }));
     }
     await window.__icaxAppShell.executeRibbonCommand("edit.undo");
-    const undoDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const undoDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const undoDom = captureDesignerDom();
     const undoResult = {
       partCount: undoDom.partCount,
-      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+      viewport: window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
     await window.__icaxAppShell.executeRibbonCommand("edit.redo");
-    const redoDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const redoDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const redoDom = captureDesignerDom();
     const redoResult = {
       partCount: redoDom.partCount,
-      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+      viewport: window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
     const firstProductId = designerState.product.entityId;
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
     const compatibilityTemplateCardCount = document.querySelectorAll(
       ".tube-designer-template-card[data-tube-designer-template-id='security-window-1'], "
       + ".tube-designer-template-card[data-tube-designer-template-id='security-window-2'], "
@@ -1168,9 +1160,9 @@ try {
     if (compatibilityTemplateCardCount !== 0) {
       throw new Error("TubeDesigner removed compatibility templates are still visible.");
     }
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-cancel-add");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-cancel-add");
 
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
     const accessDoorFrameLayout = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='frameLayout']");
     if (!accessDoorFrameLayout) throw new Error("TubeDesigner frame-layout option is missing.");
     accessDoorFrameLayout.value = "four_sides";
@@ -1230,9 +1222,9 @@ try {
           }
         : null;
     }, "TubeDesigner access-door parameter form");
-    const accessDoorPreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
-    const accessDoorDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const accessDoorViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const accessDoorPreviewOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-add");
+    const accessDoorDesignerState = window.__icaxWorkbench.getTubeDesignerState();
+    const accessDoorViewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
     const accessDoorInspectorDom = captureDesignerDom();
     const accessDoorProductId = accessDoorDesignerState.product.entityId;
     const secondProductId = accessDoorProductId;
@@ -1240,12 +1232,12 @@ try {
     const expectedDisassembledPartCount = regeneratedDesignerState.members.length
       + accessDoorDesignerState.members.length;
 
-    const activateFirstOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+    const activateFirstOperation = await window.__icaxWorkbench.executeAreaAction(
       "tube-designer-select-instance",
       { dataset: { tubeDesignerInstanceId: firstProductId } }
     );
-    const firstActivatedState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const firstActivatedViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const firstActivatedState = window.__icaxWorkbench.getTubeDesignerState();
+    const firstActivatedViewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
     const firstActivationNoticeDom = await waitUntil(() => {
       const current = captureDesignerDom();
       return current.notice.startsWith("已切换到 ") ? current : null;
@@ -1254,17 +1246,17 @@ try {
       const current = captureDesignerDom();
       return current.notice === "" ? current : null;
     }, "TubeDesigner activation notice dismissal");
-    const activateSecondOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+    const activateSecondOperation = await window.__icaxWorkbench.executeAreaAction(
       "tube-designer-select-instance",
       { dataset: { tubeDesignerInstanceId: secondProductId } }
     );
-    const secondActivatedState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const secondActivatedViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const secondActivatedState = window.__icaxWorkbench.getTubeDesignerState();
+    const secondActivatedViewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
 
-    const disassembleOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-disassemble");
+    const disassembleOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-open-disassemble");
     const disassemblySelectionDom = captureDesignerDom();
-    const disassembleConfirmOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-disassemble");
-    const disassembledDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const disassembleConfirmOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-disassemble");
+    const disassembledDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const breakdownDom = await waitUntil(() => {
       const current = captureDesignerDom();
       return current.productGroupCount === expectedDisassemblyProductCount
@@ -1299,7 +1291,7 @@ try {
         && current.partInspectionEntityCount === 1
         && current.partInspectionDimensionCount > 0 ? current : null;
     }, "TubeDesigner isolated part inspection viewport");
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-part-inspection");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-close-part-inspection");
     const closedPartInspectionDom = captureDesignerDom();
     const partialSelectionCheckbox = Array.from(
       document.querySelectorAll("[data-tube-designer-part-row] input[data-cam-action='tube-designer-toggle-part']"))[0];
@@ -1321,7 +1313,7 @@ try {
     let exportCompletedDom = null;
     let duplicateExportResult = null;
     if ($checkTubeDesignerStepExportLiteral) {
-      const exportPromise = window.__icaxLaser3DCAM.executeAreaAction(
+      const exportPromise = window.__icaxWorkbench.executeAreaAction(
         "tube-designer-export-selected",
         { dataset: { tubeDesignerExportDirectory: $tubeDesignerExportDirectoryLiteral } }
       );
@@ -1330,43 +1322,43 @@ try {
         return current.breakdownDialogBusy === "true" && current.exportProgressCount === 1
           && current.exportButtonDisabled ? current : null;
       }, "TubeDesigner export waiting state");
-      duplicateExportResult = await window.__icaxLaser3DCAM.executeAreaAction(
+      duplicateExportResult = await window.__icaxWorkbench.executeAreaAction(
         "tube-designer-export-selected",
         { dataset: { tubeDesignerExportDirectory: $tubeDesignerExportDirectoryLiteral } }
       );
-      await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-breakdown");
+      await window.__icaxWorkbench.executeAreaAction("tube-designer-close-breakdown");
       exportLockedDom = captureDesignerDom();
       exportResult = await exportPromise;
       if (!exportResult?.handled) throw new Error("TubeDesigner STEP export event chain failed: " + JSON.stringify(exportResult));
       exportCompletedDom = captureDesignerDom();
     }
     await window.__icaxAppShell.executeRibbonCommand("edit.undo");
-    const undoDisassemblyDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const undoDisassemblyDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const undoDisassemblyResult = {
       dom: captureDesignerDom(),
-      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+      viewport: window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
     await window.__icaxAppShell.executeRibbonCommand("edit.redo");
-    const redoDisassemblyDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const redoDisassemblyDesignerState = window.__icaxWorkbench.getTubeDesignerState();
     const redoDisassemblyResult = {
       dom: captureDesignerDom(),
-      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+      viewport: window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
-    const reopenBreakdownOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-breakdown");
+    const reopenBreakdownOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-open-breakdown");
     const finalBreakdownDom = await waitUntil(() => {
       const current = captureDesignerDom();
       return current.breakdownDialogCount === 1
         && current.productGroupCount === expectedDisassemblyProductCount ? current : null;
     }, "TubeDesigner reopened grouped manufacturing list");
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-breakdown");
-    const finalAccessDoorActivation = await window.__icaxLaser3DCAM.executeAreaAction(
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-close-breakdown");
+    const finalAccessDoorActivation = await window.__icaxWorkbench.executeAreaAction(
       "tube-designer-select-instance",
       { dataset: { tubeDesignerInstanceId: accessDoorProductId } }
     );
-    const finalAccessDoorState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const finalAccessDoorViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const finalAccessDoorState = window.__icaxWorkbench.getTubeDesignerState();
+    const finalAccessDoorViewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
     const generateMultiFaceTemplate = async (templateId, expectedMemberCount) => {
-      await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+      await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
       const card = document.querySelector(
         ".tube-designer-template-card[data-tube-designer-template-id='" + templateId + "']");
       if (!card || card.disabled) throw new Error("TubeDesigner template " + templateId + " is unavailable.");
@@ -1376,9 +1368,9 @@ try {
           && document.querySelector("[data-tube-designer-add-form] [data-tube-designer-parameter='frontWidth']"),
         "TubeDesigner " + templateId + " parameter form",
       );
-      const operation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
-      const state = window.__icaxLaser3DCAM.getTubeDesignerState();
-      const viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+      const operation = await window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-add");
+      const state = window.__icaxWorkbench.getTubeDesignerState();
+      const viewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
       if (!operation?.handled || state.product?.templateId !== templateId
           || state.members?.length !== expectedMemberCount
           || viewport.visibleObjectCount !== expectedMemberCount) {
@@ -1389,7 +1381,7 @@ try {
     const twoFaceTemplateResult = await generateMultiFaceTemplate("two-face-security-window", 28);
     const threeFaceTemplateResult = await generateMultiFaceTemplate("three-face-security-window", 39);
     const fiveFaceTemplateResult = await generateMultiFaceTemplate("five-face-security-window", 63);
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    await window.__icaxWorkbench.executeAreaAction("tube-designer-open-add");
     const stairTemplateCard = document.querySelector(
       ".tube-designer-template-card[data-tube-designer-template-id='straight-stair-railing']");
     if (!stairTemplateCard || stairTemplateCard.disabled) {
@@ -1403,9 +1395,9 @@ try {
       "TubeDesigner stair industry parameter form",
     );
     const stairIndustryGroupCount = document.querySelectorAll(".tube-designer-template-industry").length;
-    const stairTemplateOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
-    const stairTemplateState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const stairTemplateViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const stairTemplateOperation = await window.__icaxWorkbench.executeAreaAction("tube-designer-confirm-add");
+    const stairTemplateState = window.__icaxWorkbench.getTubeDesignerState();
+    const stairTemplateViewport = window.__icaxWorkbench.getViewportDebugState({ samplePixels: false, includeObjects: true });
     const stairTemplateResult = {
       operation: stairTemplateOperation,
       state: stairTemplateState,
@@ -1488,7 +1480,7 @@ try {
 
   const tubeMainDomState = $checkTubeCSGWorkflowLiteral
     ? await waitUntil(() => {
-        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
         return state
           && state.mainWorkspaceCount === 1
           && state.workpieceCardCount > 0
@@ -1525,7 +1517,7 @@ try {
       searchInput.value = query;
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       return await waitUntil(() => {
-        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
         return state?.workpieceSearchValue === query
           && state.visibleWorkpieceCardCount === expectedVisible
           ? state
@@ -1544,12 +1536,12 @@ try {
     tubeWorkpieceSearchResult = { byName, byProcess, excludedProcess, booleanOr, invalidFilter, cleared };
     document.querySelector("[data-cam-action='tube-select-filtered-workpieces']")?.click();
     const selectedAll = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.selectedWorkpieceCardCount === 1 ? state : null;
     }, "selected filtered TubeOne workpieces");
     document.querySelector("[data-cam-action='tube-invert-filtered-workpieces']")?.click();
     const inverted = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.selectedWorkpieceCardCount === 0 ? state : null;
     }, "inverted filtered TubeOne workpieces");
     tubeFilteredSelectionResult = { selectedAll, inverted };
@@ -1559,12 +1551,12 @@ try {
     }
     toolbarTooltipTarget.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
     const shownTooltip = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.visibleToolbarTooltipCount === 1 && state.toolbarTooltipText ? state : null;
     }, "TubeOne toolbar bubble tooltip");
     toolbarTooltipTarget.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
     const hiddenTooltip = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.visibleToolbarTooltipCount === 0 ? state : null;
     }, "hidden TubeOne toolbar bubble tooltip");
     tubeToolbarTooltipResult = { shownTooltip, hiddenTooltip };
@@ -1607,7 +1599,7 @@ try {
     };
     document.querySelector("[data-cam-action='tube-bottom-tab'][data-tube-bottom-tab='stock']")?.click();
     const stock = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.activeBottomTab === "stock"
         && state.stockBottomPanelCount === 1
         && state.nestingBottomPanelCount === 0
@@ -1616,7 +1608,7 @@ try {
     }, "TubeOne stock bottom tab");
     document.querySelector("[data-cam-action='tube-bottom-tab'][data-tube-bottom-tab='nesting']")?.click();
     const nesting = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
       return state?.activeBottomTab === "nesting"
         && state.nestingBottomPanelCount === 1
         && state.stockBottomPanelCount === 0
@@ -1628,13 +1620,13 @@ try {
 
   let recognizeCADIntentResult = null;
   if ($recognizeCADIntentLiteral) {
-    recognizeCADIntentResult = await window.__icaxLaser3DCAM.recognizeCADIntent();
+    recognizeCADIntentResult = await window.__icaxWorkbench.recognizeCADIntent();
     await delay(300);
   }
   const tubePreviewResults = [];
   let tubeParameterEditResult = null;
   if ($checkTubeCSGWorkflowLiteral) {
-    const tubeGeometry = window.__icaxLaser3DCAM?.getState?.()?.tubeGeometry ?? {};
+    const tubeGeometry = window.__icaxWorkbench?.getState?.()?.tubeGeometry ?? {};
     const intentNodes = (tubeGeometry.solidNodes ?? []).concat(tubeGeometry.sectionPrimitives ?? []);
     const editableTool = (tubeGeometry.solidNodes ?? []).find((node) =>
       node.materialRole
@@ -1642,12 +1634,12 @@ try {
         && node.previewAvailable
         && (node.parameters ?? []).some((item) => item.editable !== false));
     const parameterNodeId = editableTool?.id
-      ?? window.__icaxLaser3DCAM?.getState?.()?.selectedCADIntentNodeId
+      ?? window.__icaxWorkbench?.getState?.()?.selectedCADIntentNodeId
       ?? "";
     const previewNodes = intentNodes
       .filter((node) => node.previewAvailable);
     for (const node of previewNodes) {
-      const selection = await window.__icaxLaser3DCAM.selectCADIntentNode(node.id);
+      const selection = await window.__icaxWorkbench.selectCADIntentNode(node.id);
       tubePreviewResults.push({
         nodeId: node.id,
         selectedNodeId: selection.tubeDom.selectedNodeId,
@@ -1657,8 +1649,8 @@ try {
       });
     }
     if (parameterNodeId) {
-      await window.__icaxLaser3DCAM.selectCADIntentNode(parameterNodeId);
-      const initialGeometry = window.__icaxLaser3DCAM.getState().tubeGeometry ?? {};
+      await window.__icaxWorkbench.selectCADIntentNode(parameterNodeId);
+      const initialGeometry = window.__icaxWorkbench.getState().tubeGeometry ?? {};
       const initialNode = (initialGeometry.solidNodes ?? [])
         .concat(initialGeometry.sectionPrimitives ?? [])
         .find((node) => node.id === parameterNodeId);
@@ -1668,17 +1660,17 @@ try {
       if (parameter) {
         const originalValue = Number(parameter.value);
         const changedValue = originalValue + (String(parameter.name).toLowerCase().includes("scale") ? 0.1 : 1);
-        const livePreview = await window.__icaxLaser3DCAM.previewCADIntentParameter(
+        const livePreview = await window.__icaxWorkbench.previewCADIntentParameter(
           parameterNodeId,
           parameter.name,
           changedValue
         );
-        const changed = await window.__icaxLaser3DCAM.setCADIntentParameter(
+        const changed = await window.__icaxWorkbench.setCADIntentParameter(
           parameterNodeId,
           parameter.name,
           changedValue
         );
-        const reverted = await window.__icaxLaser3DCAM.setCADIntentParameter(
+        const reverted = await window.__icaxWorkbench.setCADIntentParameter(
           parameterNodeId,
           parameter.name,
           originalValue
@@ -1689,7 +1681,7 @@ try {
   }
   const tubeCADIntentDomState = $checkTubeCSGWorkflowLiteral
     ? await waitUntil(() => {
-        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        const state = window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null;
         return state
           && state.editorWorkspaceCount === 1
           && state.manufacturingTreeCount === 1
@@ -1698,35 +1690,35 @@ try {
           ? state
           : null;
       }, "TubeOne three-dimensional part editor")
-    : (window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null);
+    : (window.__icaxWorkbench?.getTubeCADIntentDomState?.() ?? null);
 
   let machineEnableResult = null;
   if ($checkMachineEnableWorkflowLiteral) {
     const before = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getState?.();
+      const state = window.__icaxWorkbench?.getState?.();
       return state?.machineInstances?.length ? state : null;
     }, "machine instance for enable workflow");
     const machineId = before.machineInstances[0].id;
-    await window.__icaxLaser3DCAM.setMachineInstanceEnabled(machineId, false);
+    await window.__icaxWorkbench.setMachineInstanceEnabled(machineId, false);
     await delay(200);
-    const afterDisable = window.__icaxLaser3DCAM.getState();
-    await window.__icaxLaser3DCAM.setMachineInstanceEnabled(machineId, true);
+    const afterDisable = window.__icaxWorkbench.getState();
+    await window.__icaxWorkbench.setMachineInstanceEnabled(machineId, true);
     await delay(200);
-    const afterEnable = window.__icaxLaser3DCAM.getState();
+    const afterEnable = window.__icaxWorkbench.getState();
     machineEnableResult = { machineId, before, afterDisable, afterEnable };
   }
 
   let machineRenameResult = null;
   if ($checkMachineRenameWorkflowLiteral) {
     const before = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getState?.();
+      const state = window.__icaxWorkbench?.getState?.();
       return state?.machineInstances?.length ? state : null;
     }, "machine instance for rename workflow");
     const machineId = before.machineInstances[0].id;
     const targetName = "UI Smoke Renamed Machine";
-    await window.__icaxLaser3DCAM.setMachineInstanceName(machineId, targetName);
+    await window.__icaxWorkbench.setMachineInstanceName(machineId, targetName);
     const afterRename = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getState?.();
+      const state = window.__icaxWorkbench?.getState?.();
       return state?.machineInstances?.some((item) => item?.id === machineId && item?.name === targetName) ? state : null;
     }, "renamed machine instance");
     machineRenameResult = { machineId, targetName, before, afterRename };
@@ -1735,33 +1727,33 @@ try {
   let machineSelectionResult = null;
   if ($checkMachineSelectionWorkflowLiteral) {
     const viewportWithObjects = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: true });
+      const state = window.__icaxWorkbench?.getViewportDebugState?.({ samplePixels: true, includeObjects: true });
       const object = state?.objects?.find((item) =>
         item?.visible && Number(item?.renderClass) === 4 && typeof item?.objectId === "string" && item.objectId.length > 0);
       return object ? { state, object } : null;
     }, "machine render object for selection");
-    machineSelectionResult = await window.__icaxLaser3DCAM.pickMachineObject({
+    machineSelectionResult = await window.__icaxWorkbench.pickMachineObject({
       objectId: viewportWithObjects.object.objectId,
       kind: "machine.visual",
       label: "smoke machine object"
     });
     machineSelectionResult.expectedObjectId = viewportWithObjects.object.objectId;
     machineSelectionResult.domAfterPick = await waitUntil(() => {
-      const dom = window.__icaxLaser3DCAM?.getMachineDomState?.();
+      const dom = window.__icaxWorkbench?.getMachineDomState?.();
       return dom?.hasAppearanceEditor && dom?.hasCollisionToggle && dom?.selectedTreeRows > 0 ? dom : null;
     }, "machine property editor after selection");
-    machineSelectionResult.appearance = await window.__icaxLaser3DCAM.setMachineElementAppearance({
+    machineSelectionResult.appearance = await window.__icaxWorkbench.setMachineElementAppearance({
       entityId: viewportWithObjects.object.objectId,
       colorHex: "#cc6633",
       showCollision: true
     });
     machineSelectionResult.collider = await waitUntil(() => {
-      const state = window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: true });
+      const state = window.__icaxWorkbench?.getViewportDebugState?.({ samplePixels: true, includeObjects: true });
       return Number(state?.visibleColliderObjectCount ?? 0) > 0 && Number(state?.colliderShapeCount ?? 0) > 0
         ? state
         : null;
     }, "machine ColliderPDO wire objects");
-    machineSelectionResult.standardView = await window.__icaxLaser3DCAM.setStandardView("top-front-right");
+    machineSelectionResult.standardView = await window.__icaxWorkbench.setStandardView("top-front-right");
   }
 
   let workbenchResizeResult = null;
@@ -1808,13 +1800,13 @@ try {
     workbenchResizeResult = { beforeLeft, afterLeft, beforeRight, afterRight };
   }
 
-  const viewport = defaultMachineViewport ?? window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: $checkMachineSelectionWorkflowLiteral }) ?? null;
+  const viewport = defaultMachineViewport ?? window.__icaxWorkbench?.getViewportDebugState?.({ samplePixels: true, includeObjects: $checkMachineSelectionWorkflowLiteral }) ?? null;
   return {
     href: location.href,
     title: document.title,
     app: window.__icaxAppShell?.getState?.() ?? null,
-    productDiagnosticsReady: Boolean(window.__icaxLaser3DCAM),
-    product: window.__icaxLaser3DCAM?.getState?.() ?? null,
+    productDiagnosticsReady: Boolean(window.__icaxWorkbench),
+    product: window.__icaxWorkbench?.getState?.() ?? null,
     createProjectResult,
     defaultMachineResult,
     importMachineResult,
@@ -1834,7 +1826,7 @@ try {
     machineEnableResult,
     machineRenameResult,
     machineSelectionResult,
-    machineDomState: window.__icaxLaser3DCAM?.getMachineDomState?.() ?? null,
+    machineDomState: window.__icaxWorkbench?.getMachineDomState?.() ?? null,
     workbenchResizeResult,
     viewport,
     bodyText: (document.body?.innerText ?? "").slice(0, 1200)
@@ -2402,7 +2394,7 @@ try {
             if ([int]$state.tubeMainDomState.addWorkpieceButtonCount -lt 1 -or [int]$state.tubeMainDomState.deleteWorkpieceButtonCount -ne 1) {
                 throw "Tube workpiece add/delete toolbar is incomplete."
             }
-            if ([int]$state.tubeMainDomState.legacyWorkpieceRibbonCommandCount -ne 0) {
+            if ([int]$state.tubeMainDomState.obsoleteWorkpieceRibbonCommandCount -ne 0) {
                 throw "Tube workpiece add/delete actions are still duplicated in the ribbon."
             }
             if ([int]$state.tubeMainDomState.mainPropertyPaneCount -ne 1 `

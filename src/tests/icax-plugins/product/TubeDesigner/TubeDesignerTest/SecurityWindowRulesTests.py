@@ -49,6 +49,13 @@ def graph(document):
 
 
 def side_origin(document, prefix, side):
+    logical = [item for item in document['items']
+               if item['key'] == prefix + side + '.0001'
+               and 'assemblyFrame.member' in item['properties']]
+    if logical:
+        if len(logical) != 1:
+            raise AssertionError('Expected one logical frame side')
+        return logical[0]['properties']['assemblyFrame.member']['start']
     candidates = [node for node in document["geometry"]
                   if node["operator"] == "transform" and node["key"].startswith(prefix)
                   and (f".display.{side}.solid" in node["key"]
@@ -94,9 +101,9 @@ class SecurityWindowRulesTests(unittest.TestCase):
                          "packageDigest": "five-face-bottom-handedness"},
             "geometryPurpose": "display",
         })
-        placement = next(node["arguments"]["placement"] for node in document["geometry"]
-                         if node["key"].startswith("access_door.fixed_frame.left.")
-                         and node["key"].endswith(".surface.display"))
+        placement = next(item['properties']['assemblyFrame.member']['sectionFrame']
+                         for item in document['items']
+                         if item['key'] == 'access_door.fixed_frame.left.0001')
         x_axis, y_axis, z_axis = (placement[axis] for axis in ("xAxis", "yAxis", "zAxis"))
         cross = [x_axis[1] * y_axis[2] - x_axis[2] * y_axis[1],
                  x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
@@ -137,19 +144,22 @@ class SecurityWindowRulesTests(unittest.TestCase):
                                      document["parameters"]["doorVerticalMaximumCenterSpacing"])
                     self.assertEqual(6, document["extensions"][REVIEW]["leafVerticalCount"])
 
-    def test_display_and_manufacturing_preserve_review_parts_and_inputs(self):
+    def test_display_and_manufacturing_keep_common_design_review_and_separate_parts(self):
         for name in NAMES:
             with self.subTest(template=name):
                 display, manufacturing = build(name), build(name, "manufacturing")
                 self.assertEqual(display["parameters"], manufacturing["parameters"])
-                self.assertEqual(display["extensions"][REVIEW], manufacturing["extensions"][REVIEW])
-                self.assertEqual(display["diagnostics"], manufacturing["diagnostics"])
-                self.assertEqual(display["tables"], manufacturing["tables"])
-                self.assertEqual(display["relationships"], manufacturing["relationships"])
-                strip_geometry = lambda document: [{key: value for key, value in item.items()
-                                                    if key != "representations"}
-                                                   for item in document["items"]]
-                self.assertEqual(strip_geometry(display), strip_geometry(manufacturing))
+                for key, value in display['extensions'][REVIEW].items():
+                    self.assertEqual(value, manufacturing['extensions'][REVIEW][key], key)
+                design_keys = {item['key'] for item in display['items']}
+                mapped = {member['itemKey'] for item in manufacturing['items']
+                          for member in item['properties']['manufacturing.sourceMembers']}
+                self.assertEqual(design_keys, mapped)
+                self.assertTrue(all('assemblyFrame.member' in item['properties']
+                                    and not any(key.startswith('manufacturing.') for key in item['properties'])
+                                    for item in display['items']))
+                self.assertTrue(all('assemblyFrame.member' not in item['properties']
+                                    for item in manufacturing['items']))
                 self.assertFalse(any(node["operator"] == "boolean" for node in display["geometry"]))
                 self.assertTrue(any(node["operator"] == "boolean" for node in manufacturing["geometry"]))
 
@@ -190,7 +200,7 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 positions = []
                 for item in document["items"]:
                     if item["key"].startswith("access_door.leaf.vertical."):
-                        origin = nodes[item["representations"]["result"]]["arguments"]["placement"]["origin"]
+                        origin = item['properties']['assemblyFrame.member']['start']
                         positions.append(sum((origin[i] - left[i]) * axis[i] for i in range(3)))
                 positions.sort()
                 self.assertEqual(document["extensions"][REVIEW]["leafVerticalCount"], len(positions))
@@ -254,7 +264,13 @@ class SecurityWindowRulesTests(unittest.TestCase):
                         if preset["value"] == defaults["tubeSpecificationPreset"]:
                             self.assertEqual(defaults[key], value, f"{name}: {key}")
                 self.assertNotIn("mainHorizontalConnection", definitions)
-                self.assertNotIn("visibleWhen", definitions["horizontalBranchReserve"])
+                legacy_condition = {"op": "eq", "parameter": "assemblyPlanningMode",
+                                    "value": "legacy_processed"}
+                self.assertEqual(legacy_condition,
+                                 definitions["horizontalBranchReserve"]["visibleWhen"])
+                vertical_condition = definitions["verticalBranchReserve"]["visibleWhen"]
+                self.assertEqual("all", vertical_condition["op"])
+                self.assertIn(legacy_condition, vertical_condition["conditions"])
                 if name.startswith("single"):
                     self.assertEqual("four_sides", defaults["frameLayout"])
                     self.assertTrue(all(defaults[key] == "miter_45" for key in
@@ -268,7 +284,7 @@ class SecurityWindowRulesTests(unittest.TestCase):
     def test_review_distinguishes_open_boundaries_and_only_active_fabrication_processes(self):
         for name in NAMES:
             with self.subTest(template=name):
-                document = build(name)
+                document = build(name, 'manufacturing')
                 review = document["extensions"][REVIEW]
                 self.assertEqual(2, review["reviewVersion"])
                 self.assertFalse(review["vGrooveTrialRequired"])
@@ -278,19 +294,20 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 self.assertEqual(not name.startswith("single"), "SW_PROJECTION_REVIEW" in codes)
                 self.assertNotIn("SW_V_GROOVE_TRIAL", codes)
                 if not name.startswith("single"):
-                    miter = build(name, frameCornerJoin="rail_miter")
+                    miter = build(name, 'manufacturing', frameCornerJoin="rail_miter")
                     self.assertTrue(miter["extensions"][REVIEW]["displayHasUncutMiterStock"])
                     self.assertEqual("rail_miter", miter["extensions"][REVIEW]["outerFrameConnection"])
         single = NAMES[0]
-        hidden = build(single, accessDoorEnabled=False, frameLayout="left_right",
-                       frameJoinType="unused", doorFrameJoinType="unused",
-                       doorLeafFrameJoinType="unused")
+        hidden = build(single, 'manufacturing', accessDoorEnabled=False, frameLayout="left_right",
+                       frameJoinType="v_groove_90:tool_library",
+                       doorFrameJoinType="v_groove_90:tool_library",
+                       doorLeafFrameJoinType="v_groove_90:tool_library")
         self.assertFalse(hidden["extensions"][REVIEW]["vGrooveTrialRequired"])
         self.assertFalse(hidden["extensions"][REVIEW]["displayHasUncutMiterStock"])
         self.assertIn("SW_OPEN_BOUNDARY", {d["code"] for d in hidden["diagnostics"]})
         for key in ("frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"):
             with self.subTest(join=key):
-                active = build(single, **{key: "v_groove_90:tool_library"},
+                active = build(single, 'manufacturing', **{key: "v_groove_90:tool_library"},
                                **({'frameManufacturingMode':'plane_v_notch'} if key=='frameJoinType' else {}))
                 self.assertTrue(active["extensions"][REVIEW]["vGrooveTrialRequired"])
                 self.assertIn("SW_V_GROOVE_TRIAL", {d["code"] for d in active["diagnostics"]})
@@ -302,6 +319,8 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 corners = (None,) if name.startswith("single") else ("post_butt", "rail_miter")
                 for corner in corners:
                     values = {**preset["values"], "tubeSpecificationPreset": preset["value"]}
+                    # A valid insertion avoids neighbouring corner-bar collisions.
+                    values.update(horizontalBranchReserve=2.0, verticalBranchReserve=2.0)
                     if corner is not None:
                         values["frameCornerJoin"] = corner
                     for purpose in ("display", "manufacturing"):

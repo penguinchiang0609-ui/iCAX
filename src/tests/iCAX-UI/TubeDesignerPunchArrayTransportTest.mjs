@@ -4,7 +4,8 @@ import { handlePartsAreaAction } from "../../apps/tube-designer/webpage/partsAre
 import { handleNestingPunchPartAction } from "../../apps/tube-designer/webpage/nestingPunchPart.mjs";
 
 const part={entityId:"array-transport",length:1000,independentNesting:true,profile:{kind:"rect",width:40,depth:20},properties:{"manufacturing.partKind":"tube"}};
-const feature=()=>normalizePunchFeature({id:"grouped",recordKind:"tool",type:"circle",diameter:10,station:100,reference:"center",layoutDatum:"base",
+const tool={id:"circle",version:"1.0",parameters:[{key:"diameter",valueType:"number",defaultValue:10}],defaultParameters:{diameter:10}};
+const feature=()=>normalizePunchFeature({id:"grouped",recordKind:"tool",type:"circle",toolRef:{id:"circle",version:"1.0"},diameter:10,station:100,reference:"center",layoutDatum:"base",
   arrayGroups:[{id:"x",type:"linear",axis:"X",count:2,spacing:50},{id:"y",type:"linear",axis:"Y",count:2,spacing:20}],arraySkips:[{x:1,y:1}]});
 function cleanTransport(row) {
   for(const key of ["layoutSummary","layoutError","arrayGroupsSummary","arrayGroupsError","arrayInstances","arraySkipText"])
@@ -16,7 +17,7 @@ function cleanTransport(row) {
   assert.equal(row.station,100);assert.equal(row.reference,"center");
 }
 const s=createPunchWizardState(part),view={pending:false,tubeDesignerPunchWizard:s,scene:{tubeDesigner:{nestingGroups:[{parts:[part]}]}}};
-s.catalogueStatus="ready";s.features=[feature()];s.draft={...feature(),id:"draft-grouped"};
+s.catalogueStatus="ready";s.tools=[tool];s.features=[feature()];s.draft={...feature(),id:"draft-grouped"};
 const original=structuredClone(s.features[0]);
 cleanTransport(getPunchWizardPayload(view).features[0]);
 assert.deepEqual(s.features[0],original,"Serialization must not mutate the editable recipe.");
@@ -48,20 +49,20 @@ await handlePartsAreaAction(context,view,"tube-designer-punch-array-group-add",{
 assert.equal(requests.at(-1).payload.features.length,1);assert.equal(requests.at(-1).payload.features[0].arrayCandidateCount,8);
 assert.equal(requests.at(-1).payload.features[0].arrayTransforms.length,6);
 assert.equal(requests.at(-1).payload.features[0].station,100);assert.equal(s.history.length,0);
-await handlePartsAreaAction(context,view,"tube-designer-punch-parameters-cancel",{},ops);
-assert.deepEqual(s.features[0],original);assert.equal(s.history.length,0);
+await handlePartsAreaAction(context,view,"tube-designer-punch-parameters-close",{},ops);
+assert.equal(s.features[0].arrayGroups.length,3);assert.equal(s.history.length,1);assert.equal(s.parameterEditor,null);
 
 const profile={id:"round",name:"圆管",defaultParameters:{},previewProfile:{kind:"round",width:40,depth:40,diameter:40,contours:[{kind:"circle",radius:20},{kind:"circle",radius:18}]}};
 const createView={pending:false,tubeDesignerSystemProfiles:[profile],tubeDesignerNestingSelectedPartIds:[]};
 await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-open",{},ops);
 const create=createView.tubeDesignerPunchWizard;
-create.catalogueStatus="ready";create.features=[feature()];
+create.catalogueStatus="ready";create.tools=[tool];create.features=[feature()];
 await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-parameters-open",{dataset:{tubeDesignerPunchIndex:"0",tubeDesignerPunchEditorMode:"arrays"}},ops);
 assert.equal(create.parameterEditor.mode,"arrays");
 await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-array-group-field",{value:"30",dataset:{tubeDesignerPunchIndex:"0",tubeDesignerPunchArrayGroup:"y",tubeDesignerPunchArrayField:"spacing"}},ops);
 assert.equal(requests.at(-1).payload.length,1000);assert.equal(requests.at(-1).payload.profileRef.id,"round");
 assert.deepEqual(requests.at(-1).payload.features[0].arrayTransforms.map(m=>[m[3],m[7]]),[[0,0],[50,0],[0,30]]);
-await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-parameters-apply",{},ops);
+await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-parameters-close",{},ops);
 assert.equal(create.parameterEditor,null);assert.equal(create.history.length,1);
 await handleNestingPunchPartAction(context,createView,"tube-designer-nesting-punch-create-undo",{},ops);
 assert.equal(create.features[0].arrayGroups[1].spacing,20);
@@ -75,4 +76,49 @@ for(const [name,value] of [["name","元数据独立"],["material","Q235B"],["qua
   assert.equal(createView.tubeDesignerNestingPunchPartDraft[name],value);
 }
 assert.equal(create.history.length,metadataHistory+3,"All metadata edits remain independently undoable.");
-console.log("Punch array transport passed: saved and draft payload hygiene, reload, both production dispatchers, transaction cancel/undo, and controlled preview.");
+// Both production dispatchers also accept the direct spreadsheet controls,
+// without requiring a parameter dialog or an array transaction first.
+for(const [current,dispatch,prefix] of [
+  [view,handlePartsAreaAction,'tube-designer-punch-'],
+  [createView,handleNestingPunchPartAction,'tube-designer-nesting-punch-create-']
+]) {
+  const state=current.tubeDesignerPunchWizard;
+  state.features=[feature()];
+  const before=structuredClone(state.features[0]),history=state.history.length;
+  assert.equal(state.parameterEditor,null);
+  await dispatch(context,current,prefix+'array-group-field',{value:'33',dataset:{tubeDesignerPunchIndex:'0',tubeDesignerPunchArrayGroup:'y',tubeDesignerPunchArrayField:'spacing',punchSheetArrayField:''}},ops);
+  assert.equal(state.features[0].arrayGroups.find(g=>g.id==='y').spacing,33);
+  assert.equal(state.history.length,history+1,'A direct cell edit remains independently undoable');
+  assert.ok(requests.at(-1).payload.features[0].arrayTransforms.some(m=>m[7]===33),'Direct array edits still pass through the original solver and scene preview method');
+  await dispatch(context,current,prefix+'undo',{},ops);
+  assert.deepEqual(state.features[0],before);
+  const arrayMode=value=>dispatch(context,current,prefix+'array-mode-change',{value,dataset:{tubeDesignerPunchIndex:'0',punchSheetArrayField:''}},ops);
+  const enabledPayload=getPunchWizardPayload(current).features[0];
+  await arrayMode('none');
+  const disabledGroup=state.features[0].arrayGroups.find(g=>g.id==='y');
+  assert.equal(disabledGroup.enabled,false);
+  assert.equal(disabledGroup.type,'linear','Dimensions use the existing disabled recipe, never a new native array type');
+  assert.equal(disabledGroup.count,2);assert.equal(disabledGroup.spacing,20);
+  const disabledRequest=requests.at(-1).payload.features[0];
+  assert.equal(disabledRequest.arrayCandidateCount,1);
+  assert.deepEqual(disabledRequest.arrayTransforms.map(m=>[m[3],m[7]]),[[0,0]],'No array keeps just the seed tool');
+  assert.deepEqual(disabledRequest.arraySkips,before.arraySkips,'Skip selectors and dormant values are retained');
+  assert.ok(disabledRequest.arrayGroups.every(g=>g.type!=='none'));
+  await arrayMode('one');
+  assert.deepEqual(requests.at(-1).payload.features[0].arrayTransforms.map(m=>[m[3],m[7]]),[[0,0],[50,0]],'One dimension uses exactly one parameter line');
+  await arrayMode('two');
+  assert.deepEqual(state.features[0],{...before,arrayGroups:before.arrayGroups.map(group=>({...group,enabled:true}))},'Choosing two dimensions restores both unchanged parameter lines');
+  assert.deepEqual(requests.at(-1).payload.features[0].arrayTransforms,enabledPayload.arrayTransforms);
+  await dispatch(context,current,prefix+'undo',{},ops);
+  assert.equal(state.features[0].arrayGroups.find(g=>g.id==='y').enabled,false);
+  await dispatch(context,current,prefix+'undo',{},ops);
+  assert.ok(state.features[0].arrayGroups.every(g=>g.enabled===false));
+  await dispatch(context,current,prefix+'undo',{},ops);
+  assert.deepEqual(state.features[0],before,'Each dimension change remains independently undoable');
+  const requestsBefore=requests.length,recipe=getPunchWizardPayload(current);
+  await dispatch(context,current,prefix+'columns-toggle',{dataset:{punchColumnGroup:'pose'}},ops);
+  assert.equal(state.sheetColumns.pose,false);
+  assert.equal(requests.length,requestsBefore,'Expanding or collapsing columns does not calculate geometry');
+  assert.deepEqual(getPunchWizardPayload(current),recipe,'Column presentation never enters native recipe data');
+}
+console.log("Punch array transport passed: saved and draft payload hygiene, reload, both production dispatchers, close commit/undo, and controlled preview.");

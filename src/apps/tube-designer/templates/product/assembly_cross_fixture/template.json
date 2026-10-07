@@ -2,37 +2,534 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "assembly-cross-fixture",
-  "version": "1.0.0",
-  "displayName": {"zh-CN": "十字贯穿原管验证件"},
+  "version": "1.0.1",
+  "displayName": {
+    "zh-CN": "十字贯穿原管验证件"
+  },
   "description": "仅供原生测试：两根连续原管的真实中段 X 节点，工艺由独立装配模板选择。",
   "extensions": {
-    "catalog": {"listed": false, "categoryPath": ["验证用框架"], "groupOrder": 990, "templateOrder": 20},
-    "productIdentity": {"codeParameter": "productCode"},
-    "resourceRoles": {"profiles": {
-      "host": {"parameter": "hostProfileType"},
-      "through": {"parameter": "throughProfileType"}
-    }}
+    "catalog": {
+      "listed": false,
+      "categoryPath": [
+        "验证用框架"
+      ],
+      "groupOrder": 990,
+      "templateOrder": 20
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "resourceRoles": {
+      "profiles": {
+        "host": {
+          "parameter": "hostProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "hostWidth",
+              "depth": "hostDepth",
+              "wallThickness": "hostWallThickness",
+              "cornerRadius": "hostCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "hostWidth",
+            "hostDepth",
+            "hostWallThickness",
+            "hostCornerRadius",
+            "hostInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        },
+        "through": {
+          "parameter": "throughProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "throughWidth",
+              "depth": "throughDepth",
+              "wallThickness": "throughWallThickness",
+              "cornerRadius": "throughCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "throughWidth",
+            "throughDepth",
+            "throughWallThickness",
+            "throughCornerRadius",
+            "throughInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "size": {},
+        "host": {
+          "memberStableKeyPrefixes": [
+            "cross.host."
+          ]
+        },
+        "through": {
+          "memberStableKeyPrefixes": [
+            "cross.through."
+          ]
+        }
+      },
+      "profileRoles": {
+        "host": {
+          "parameters": [
+            "hostProfileType",
+            "hostWidth",
+            "hostDepth",
+            "hostWallThickness",
+            "hostCornerRadius",
+            "hostInnerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "cross.host."
+          ]
+        },
+        "through": {
+          "parameters": [
+            "throughProfileType",
+            "throughWidth",
+            "throughDepth",
+            "throughWallThickness",
+            "throughCornerRadius",
+            "throughInnerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "cross.through."
+          ]
+        }
+      },
+      "sceneBindings": {
+        "hostLength": {
+          "memberStableKeyPrefixes": [
+            "cross.host."
+          ]
+        },
+        "throughLength": {
+          "memberStableKeyPrefixes": [
+            "cross.through."
+          ]
+        }
+      }
+    },
+    "productControls": [],
+    "structureEditors": [],
+    "addDialog": {
+      "structureParameters": [
+        "hostLength",
+        "throughLength"
+      ],
+      "parameterGroups": [
+        {
+          "key": "cross-lengths",
+          "displayName": {
+            "zh-CN": "验证原管长度"
+          },
+          "parameters": [
+            "hostLength",
+            "throughLength"
+          ]
+        }
+      ]
+    },
+    "parameterLayout": {
+      "sections": [
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "产品规格"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "size"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "用料"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "host",
+            "through"
+          ]
+        }
+      ]
+    },
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "tubeDesignerToolBindings"
+      ],
+      "creationOnly": []
+    },
+    "sceneSpecificationAnnotations": {
+      "annotations": [
+        {
+          "parameter": "hostLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 100
+        },
+        {
+          "parameter": "throughLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            80
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 101
+        }
+      ],
+      "schemaVersion": 1
+    }
   },
   "groups": [
-    {"key": "size", "displayName": {"zh-CN": "原管长度"}},
-    {"key": "host", "displayName": {"zh-CN": "主管"}},
-    {"key": "through", "displayName": {"zh-CN": "贯穿管"}}
+    {
+      "key": "size",
+      "displayName": {
+        "zh-CN": "原管长度"
+      }
+    },
+    {
+      "key": "host",
+      "displayName": {
+        "zh-CN": "主管"
+      }
+    },
+    {
+      "key": "through",
+      "displayName": {
+        "zh-CN": "贯穿管"
+      }
+    }
   ],
   "parameters": [
-    {"key": "productCode", "displayName": {"zh-CN": "编号"}, "valueType": "string", "defaultValue": "X-FIXTURE-001", "group": "size"},
-    {"key": "hostLength", "displayName": {"zh-CN": "主管长度"}, "valueType": "number", "defaultValue": 400, "group": "size", "unit": "mm", "quantity": "length", "constraints": {"minimum": 100, "maximum": 2000}},
-    {"key": "throughLength", "displayName": {"zh-CN": "贯穿管长度"}, "valueType": "number", "defaultValue": 400, "group": "size", "unit": "mm", "quantity": "length", "constraints": {"minimum": 100, "maximum": 2000}},
-    {"key": "hostProfileType", "displayName": {"zh-CN": "主管管型"}, "valueType": "enum", "defaultValue": "rect", "group": "host", "choices": [{"value": "rect", "displayName": {"zh-CN": "矩形管"}}], "presentation": {"profileConstraints": {"sectionKinds": ["rect"]}}},
-    {"key": "hostWidth", "displayName": {"zh-CN": "主管宽"}, "valueType": "number", "defaultValue": 80, "group": "host", "unit": "mm", "quantity": "length", "constraints": {"minimum": 20, "maximum": 200}},
-    {"key": "hostDepth", "displayName": {"zh-CN": "主管高"}, "valueType": "number", "defaultValue": 40, "group": "host", "unit": "mm", "quantity": "length", "constraints": {"minimum": 20, "maximum": 200}},
-    {"key": "hostWallThickness", "displayName": {"zh-CN": "主管壁厚"}, "valueType": "number", "defaultValue": 3, "group": "host", "unit": "mm", "quantity": "length", "constraints": {"minimum": 1, "maximum": 10}},
-    {"key": "hostCornerRadius", "displayName": {"zh-CN": "主管外圆角"}, "valueType": "number", "defaultValue": 3, "group": "host", "unit": "mm", "quantity": "length", "constraints": {"minimum": 0, "maximum": 20}},
-    {"key": "hostInnerRadius", "displayName": {"zh-CN": "主管内圆角"}, "valueType": "number", "defaultValue": 1, "group": "host", "unit": "mm", "quantity": "length", "constraints": {"minimum": 0, "maximum": 20}},
-    {"key": "throughProfileType", "displayName": {"zh-CN": "贯穿管管型"}, "valueType": "enum", "defaultValue": "rect", "group": "through", "choices": [{"value": "rect", "displayName": {"zh-CN": "矩形管"}}], "presentation": {"profileConstraints": {"sectionKinds": ["rect"]}}},
-    {"key": "throughWidth", "displayName": {"zh-CN": "贯穿管宽"}, "valueType": "number", "defaultValue": 30, "group": "through", "unit": "mm", "quantity": "length", "constraints": {"minimum": 10, "maximum": 100}},
-    {"key": "throughDepth", "displayName": {"zh-CN": "贯穿管深"}, "valueType": "number", "defaultValue": 30, "group": "through", "unit": "mm", "quantity": "length", "constraints": {"minimum": 10, "maximum": 100}},
-    {"key": "throughWallThickness", "displayName": {"zh-CN": "贯穿管壁厚"}, "valueType": "number", "defaultValue": 2, "group": "through", "unit": "mm", "quantity": "length", "constraints": {"minimum": 1, "maximum": 10}},
-    {"key": "throughCornerRadius", "displayName": {"zh-CN": "贯穿管外圆角"}, "valueType": "number", "defaultValue": 2, "group": "through", "unit": "mm", "quantity": "length", "constraints": {"minimum": 0, "maximum": 20}},
-    {"key": "throughInnerRadius", "displayName": {"zh-CN": "贯穿管内圆角"}, "valueType": "number", "defaultValue": 1, "group": "through", "unit": "mm", "quantity": "length", "constraints": {"minimum": 0, "maximum": 20}}
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "编号"
+      },
+      "valueType": "string",
+      "defaultValue": "X-FIXTURE-001",
+      "group": "size"
+    },
+    {
+      "key": "hostLength",
+      "displayName": {
+        "zh-CN": "主管长度"
+      },
+      "valueType": "number",
+      "defaultValue": 400,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "throughLength",
+      "displayName": {
+        "zh-CN": "贯穿管长度"
+      },
+      "valueType": "number",
+      "defaultValue": 400,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "hostProfileType",
+      "displayName": {
+        "zh-CN": "主管管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "host",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        }
+      ],
+      "presentation": {
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "editor": "profile-library",
+        "resourceRole": "host",
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "hostWidth",
+      "displayName": {
+        "zh-CN": "主管宽"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "host",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 200
+      }
+    },
+    {
+      "key": "hostDepth",
+      "displayName": {
+        "zh-CN": "主管高"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "host",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 200
+      }
+    },
+    {
+      "key": "hostWallThickness",
+      "displayName": {
+        "zh-CN": "主管壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "host",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10
+      }
+    },
+    {
+      "key": "hostCornerRadius",
+      "displayName": {
+        "zh-CN": "主管外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "host",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "hostInnerRadius",
+      "displayName": {
+        "zh-CN": "主管内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "host",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "throughProfileType",
+      "displayName": {
+        "zh-CN": "贯穿管管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "through",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        }
+      ],
+      "presentation": {
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "editor": "profile-library",
+        "resourceRole": "through",
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "throughWidth",
+      "displayName": {
+        "zh-CN": "贯穿管宽"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "through",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "throughDepth",
+      "displayName": {
+        "zh-CN": "贯穿管深"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "through",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "throughWallThickness",
+      "displayName": {
+        "zh-CN": "贯穿管壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "through",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10
+      }
+    },
+    {
+      "key": "throughCornerRadius",
+      "displayName": {
+        "zh-CN": "贯穿管外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "through",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "throughInnerRadius",
+      "displayName": {
+        "zh-CN": "贯穿管内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "through",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 20
+      }
+    }
   ]
 }

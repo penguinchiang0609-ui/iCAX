@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Entity.h"
+#include "Repository.h"
 #include "IRepository.h"
 #include "IMetaRegistry.h"
 #include "ModifyFilter.h"
@@ -219,11 +220,31 @@ void iCAX::Database::CEntity::RemoveObserver(IN std::shared_ptr<IEntityEventList
 //!< 前触发
 void iCAX::Database::CEntity::TriggerEntityChanging(IN const EntityEventArgs::EventType& nType_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_)
 {
-    const EntityEventArgs _Args{ nType_, GetID(), strClassName_, Previous_, New_, pComponent_, shared_from_this() };
+    std::optional<EntityEventArgs> _Args;
+    const auto _GetArgs = [&]() -> const EntityEventArgs& {
+        if (!_Args)
+        {
+            _Args.emplace();
+            _Args->nType = nType_;
+            _Args->EntityID = GetID();
+            _Args->strClassName = strClassName_;
+            _Args->PreviousProperties = Previous_;
+            _Args->NewProperties = New_;
+            _Args->pComponent = pComponent_;
+            _Args->pEntity = shared_from_this();
+        }
+        return *_Args;
+    };
     auto _pCoreListener = std::dynamic_pointer_cast<IEntityEventListener>(GetRepository());
-    if (_pCoreListener)
+    const auto _Repository = std::dynamic_pointer_cast<CRepository>(GetRepository());
+    if (_Repository && (_Repository->IsOperationBatchActive() || _Repository->IsRepositoryEventSuppressed()))
     {
-        _pCoreListener->OnEntityChanging(this, _Args);
+        // The repository intentionally ignores changing notifications during
+        // a batch. Avoid materializing property snapshots just to discard them.
+    }
+    else if (_pCoreListener)
+    {
+        _pCoreListener->OnEntityChanging(this, _GetArgs());
     }
 
     // 遍历观察者列表
@@ -240,7 +261,7 @@ void iCAX::Database::CEntity::TriggerEntityChanging(IN const EntityEventArgs::Ev
 
             try
             {
-                _Observer->OnEntityChanging(this, _Args);
+                _Observer->OnEntityChanging(this, _GetArgs());
             }
             catch (...)
             {
@@ -259,11 +280,36 @@ void iCAX::Database::CEntity::TriggerEntityChanging(IN const EntityEventArgs::Ev
 //!< 后触发
 void iCAX::Database::CEntity::TriggerEntityChanged(IN const EntityEventArgs::EventType& nType_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_)
 {
-    const EntityEventArgs _Args{ nType_, GetID(), strClassName_, Previous_, New_, pComponent_, shared_from_this() };
+    std::optional<EntityEventArgs> _Args;
+    const auto _GetArgs = [&]() -> const EntityEventArgs& {
+        if (!_Args)
+        {
+            _Args.emplace();
+            _Args->nType = nType_;
+            _Args->EntityID = GetID();
+            _Args->strClassName = strClassName_;
+            _Args->PreviousProperties = Previous_;
+            _Args->NewProperties = New_;
+            _Args->pComponent = pComponent_;
+            _Args->pEntity = shared_from_this();
+        }
+        return *_Args;
+    };
     auto _pCoreListener = std::dynamic_pointer_cast<IEntityEventListener>(GetRepository());
-    if (_pCoreListener)
+    const auto _Repository = std::dynamic_pointer_cast<CRepository>(GetRepository());
+    if (_Repository && _Repository->IsRepositoryEventSuppressed())
     {
-        _pCoreListener->OnEntityChanged(this, _Args);
+    }
+    else if (_Repository && _Repository->IsOperationBatchActive())
+    {
+        // Internal batch propagation borrows values synchronously. The
+        // repository still records independent owning event/fact snapshots.
+        _Repository->TriggerRepositoryChanged(static_cast<RepositoryEventArgs::EventType>(nType_),
+            GetID(), strClassName_, Previous_, New_, pComponent_, shared_from_this());
+    }
+    else if (_pCoreListener)
+    {
+        _pCoreListener->OnEntityChanged(this, _GetArgs());
     }
 
     // 遍历观察者列表
@@ -280,7 +326,7 @@ void iCAX::Database::CEntity::TriggerEntityChanged(IN const EntityEventArgs::Eve
 
             try
             {
-                _Observer->OnEntityChanged(this, _Args);
+                _Observer->OnEntityChanged(this, _GetArgs());
             }
             catch (...)
             {
@@ -294,6 +340,69 @@ void iCAX::Database::CEntity::TriggerEntityChanged(IN const EntityEventArgs::Eve
             _Ite = m_Observers.erase(_Ite);
         }
     }
+}
+
+bool iCAX::Database::CEntity::CanTransferChangedProperties() const
+{
+    const auto repository = std::dynamic_pointer_cast<CRepository>(GetRepository());
+    return repository && repository->IsOperationBatchActive()
+        && !repository->IsRepositoryEventSuppressed();
+}
+
+bool iCAX::Database::CEntity::HasExternalChangedObservers() const
+{
+    const auto core = std::dynamic_pointer_cast<IEntityEventListener>(GetRepository());
+    return std::any_of(m_Observers.begin(), m_Observers.end(), [&](const auto& weak) {
+        const auto observer = weak.lock();
+        return observer && observer != core;
+    });
+}
+
+bool iCAX::Database::CEntity::TryTriggerEntityChangedOwned(IN const std::string& Class_,
+    IN PropertySet&& Previous_, IN PropertySet&& New_,
+    IN std::shared_ptr<CComponentBase> pComponent_)
+{
+    const auto repository = std::dynamic_pointer_cast<CRepository>(GetRepository());
+    if (!repository || !repository->IsOperationBatchActive()
+        || repository->IsRepositoryEventSuppressed()) return false;
+    const auto core = std::dynamic_pointer_cast<IEntityEventListener>(repository);
+    std::optional<EntityEventArgs> args;
+    if (HasExternalChangedObservers())
+    {
+        args.emplace();
+        args->nType = EntityEventArgs::kModifyComponent;
+        args->EntityID = GetID();
+        args->strClassName = Class_;
+        args->PreviousProperties = Previous_;
+        args->NewProperties = New_;
+        args->pComponent = pComponent_;
+        args->pEntity = shared_from_this();
+    }
+    repository->RecordOwnedComponentModification(GetID(), Class_,
+        std::move(Previous_), std::move(New_), pComponent_, shared_from_this());
+    // No borrowed references into the repository's event vector survive this
+    // call: an observer may append more facts and force that vector to grow.
+    for (auto it = m_Observers.begin(); it != m_Observers.end(); )
+    {
+        if (auto observer = it->lock())
+        {
+            if (observer != core)
+            {
+                try
+                {
+                    observer->OnEntityChanged(this, args.value());
+                }
+                catch (...)
+                {
+                    // Notification-only failures cannot undo committed data.
+                }
+            }
+            ++it;
+        }
+        else
+            it = m_Observers.erase(it);
+    }
+    return true;
 }
 
 //!< 属性修改前事件

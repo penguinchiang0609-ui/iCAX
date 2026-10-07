@@ -2,17 +2,11 @@
 // generated geometry stays frozen until explicit regeneration. Undo/redo is
 // owned by the host project's native history.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { resolve, sep } from "node:path";
-import { catalogText } from "../../apps/tube-designer/webpage/productCatalog.mjs";
+import { importBrowserAsset, readBrowserAsset, serveBrowserAsset } from './browserPackageRuntime.mjs';
+const { catalogText } = await importBrowserAsset('apps/tube-designer/webpage/productCatalog.mjs');
 
-const raw = JSON.parse(readFileSync(new URL(
-  "../../apps/tube-designer/templates/product/single_face_security_window/template.json", import.meta.url,
-)));
-const display = JSON.parse(readFileSync(new URL(
-  "../../apps/tube-designer/templates/product/single_face_security_window/display.json", import.meta.url,
-)));
+const raw = JSON.parse(readBrowserAsset('apps/tube-designer/templates/product/single_face_security_window/template.json'));
+const display = JSON.parse(readBrowserAsset('apps/tube-designer/templates/product/single_face_security_window/display.json'));
 const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
 const template = {
   ...raw,
@@ -41,18 +35,7 @@ const browser = await chromium.launch({
 
 try {
   const page = await browser.newPage();
-  const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
-  await page.route("http://tube-designer.test/**", async (route) => {
-    const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
-    if (pathname === "/") {
-      return route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" });
-    }
-    const path = resolve(sourceRoot, pathname.replace(/^\/src\//, ""));
-    if (!pathname.startsWith("/src/")
-        || !path.startsWith(sourceRoot.replace(/[\\\/]$/, "") + sep)
-        || !/\.m?js$/.test(path)) return route.abort();
-    return route.fulfill({ contentType: "text/javascript", body: readFileSync(path, "utf8") });
-  });
+  await page.route("http://tube-designer.test/**", serveBrowserAsset);
   await page.goto("http://tube-designer.test/");
 
   const result = await page.evaluate(async (templateDescriptor) => {
@@ -106,12 +89,7 @@ try {
         .map(([key, item]) => [key, canonical(item)]));
     };
     const equal = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
-    const manufacturingGroups = new Set(templateDescriptor.extensions.parameterLayout.sections
-      .filter((section) => ["materials", "process"].includes(section.key))
-      .flatMap((section) => section.groups));
-    const manufacturingKeys = new Set(templateDescriptor.parameters
-      .filter((parameter) => manufacturingGroups.has(parameter.groupKey))
-      .map((parameter) => parameter.key));
+    const manufacturingKeys = new Set(templateDescriptor.extensions.parameterDependencies.manufacturingOnly);
     const geometryValues = (parameters) => Object.fromEntries(Object.entries(parameters)
       .filter(([key]) => !manufacturingKeys.has(key)
         && !["tubeDesignerProfileOverrides", "tubeDesignerToolBindings"].includes(key)));
@@ -381,8 +359,9 @@ try {
       label: annotationCalls.at(-1)
         .find((item) => item.parameter === "horizontalMaximumCenterSpacing")?.label,
     };
-    for (let index = 0; index < 10 && pendingParameterUpdates.length < 1; index += 1)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let index = 0; index < 100 && pendingParameterUpdates.length < 1; index += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    if (!pendingParameterUpdates.length) throw new Error("EC request did not start after browser paint");
     pendingParameterUpdates.shift().complete();
     await firstQueuedChange;
     const afterStaleResponse = {
@@ -391,8 +370,9 @@ try {
       label: annotationCalls.at(-1)
         .find((item) => item.parameter === "horizontalMaximumCenterSpacing")?.label,
     };
-    for (let index = 0; index < 10 && pendingParameterUpdates.length < 1; index += 1)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let index = 0; index < 100 && pendingParameterUpdates.length < 1; index += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    if (!pendingParameterUpdates.length) throw new Error("EC request did not start after browser paint");
     pendingParameterUpdates.shift().complete();
     await secondQueuedChange;
     deferParameterUpdates = false;
@@ -446,7 +426,7 @@ try {
     };
   }, template);
 
-  assert.deepEqual(result.rightSectionTitles, ["材料", "工艺"]);
+  assert.deepEqual(result.rightSectionTitles, ["用料", "装配"]);
   assert.equal(result.editorOpened.editing, true);
   assert.deepEqual(result.annotationFocusCalls, ["horizontalMaximumCenterSpacing"]);
   assert.equal(result.callsAfterEditorOpen, 1,
@@ -462,7 +442,7 @@ try {
   assert.equal(result.metadataChanged.modelDirty, false,
     "product metadata EC edits must not expire the three-dimensional model");
   assert.equal(result.metadataChanged.partsDirty, true);
-  assert.equal(result.metadataChanged.status, "实例模型已是最新");
+  assert.equal(result.metadataChanged.status, "");
   assert.match(result.metadataChanged.partsDock, /零件清单已过期，是否重新生成/);
   assert.match(result.metadataChanged.partsDock, /tube-designer-disassemble-active-product/);
 
@@ -493,7 +473,7 @@ try {
   assert.equal(result.reverted.dirty, false);
   assert.equal(result.reverted.annotation.pending, false);
   assert.equal(result.reverted.annotation.color, 0x27c27a);
-  assert.equal(result.reverted.status, "实例模型已是最新");
+  assert.equal(result.reverted.status, "");
 
   for (const [key, value] of Object.entries(result.values)) {
     assert.equal(result.beforeSwitch[key], value, `${key} must persist before instance switching`);

@@ -583,31 +583,21 @@ try {
     library.disposeAssemblyLibraryViewports(view);
     return result;
   }, templates);
-  const productModeResult = await page.evaluate(async (templates) => {
+  const independentResourceResult = await page.evaluate(async (templates) => {
     const library = await import("/src/apps/tube-designer/webpage/assemblyLibrary.mjs");
     const view = { tubeDesignerAssemblyTemplates: templates,
       scene: { tubeDesigner: { activeProductId: "product-1", generationRun: { entityId: "run-1" } } },
-      tubeDesignerAssemblyLibrary: { selectedId: "bend", workMode: "example", workModeUserSelected: true } };
+      tubeDesignerAssemblyLibrary: { selectedId: "bend" } };
     let nativeCalls = 0;
-    const context = { sceneProxy: { invoke() { nativeCalls += 1; throw new Error("切换模式不应提交工艺"); } } };
-    const render = () => { document.body.innerHTML = library.renderAssemblyLibraryRightPane(context, view); };
-    render();
-    const productButton = document.querySelector('[data-tube-assembly-mode="product"]');
-    const labeledAsMode = productButton?.textContent.trim() === "产品节点"
-      && productButton?.getAttribute("data-cam-action") === "tube-designer-assembly-work-mode"
-      && productButton?.title.includes("仅切换工作方式");
-    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-work-mode",
-      productButton, { renderProject: render });
-    const inProductMode = view.tubeDesignerAssemblyLibrary.workMode === "product"
-      && document.querySelector('[data-tube-assembly-mode="product"]')?.getAttribute("aria-pressed") === "true"
-      && document.body.textContent.includes("请在左侧选择连接节点")
-      && library.renderAssemblyLibraryLeftPane(context, view).includes("当前产品连接")
-      && !document.querySelector('[data-cam-action="tube-designer-binding-apply"]');
-    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-work-mode",
-      document.querySelector('[data-tube-assembly-mode="example"]'), { renderProject: render });
-    return { labeledAsMode, inProductMode, backToExample: view.tubeDesignerAssemblyLibrary.workMode === "example"
-      && document.querySelector('[data-tube-assembly-mode="example"]')?.getAttribute("aria-pressed") === "true",
-      nativeCalls };
+    const context = { sceneProxy: { invoke() { nativeCalls++; throw Error("资源库不应请求产品节点"); } } };
+    document.body.innerHTML = library.renderAssemblyLibraryRightPane(context, view);
+    const noModeEntry = !document.querySelector('[data-cam-action="tube-designer-assembly-work-mode"]');
+    const hasIndependentEditor = !!document.querySelector('[data-finished-product-editor]');
+    const left = library.renderAssemblyLibraryLeftPane(context, view);
+    const hasCatalogue = left.includes('data-tube-assembly-id="wrap-a-over-b"') && !left.includes('当前产品连接');
+    const deletedAction = await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-work-mode",
+      { dataset: { tubeAssemblyMode: "product" } }, { renderProject() {} });
+    return { noModeEntry, hasIndependentEditor, hasCatalogue, deletedActionUnhandled: !deletedAction.handled, nativeCalls };
   }, templates);
   const conditionalResult = await page.evaluate(async (templates) => {
     const library = await import("/src/apps/tube-designer/webpage/assemblyLibrary.mjs");
@@ -792,8 +782,8 @@ try {
   }
   assert.equal(refreshResult.sceneClicks, 2, "刷新模板不得替换画布节点或丢失原有监听器");
   assert.equal(refreshResult.viewportCount, 1, "刷新模板应复用原三维视口");
-  assert.deepEqual(productModeResult, { labeledAsMode: true, inProductMode: true, backToExample: true, nativeCalls: 0 },
-    "产品节点仅切换工作方式，不能在按钮点击时提交加工");
+  assert.deepEqual(independentResourceResult, { noModeEntry: true, hasIndependentEditor: true, hasCatalogue: true, deletedActionUnhandled: true, nativeCalls: 0 },
+    "已生成产品不应切换装配资源库，产品节点模式与入口均已删除");
   assert.equal(conditionalResult.appearedWithoutReplacement, true, "条件字段出现时必须保留其他输入节点、焦点与两侧滚动");
   assert.equal(conditionalResult.removed, true, "关闭上级选项后应移除不适用字段");
   assert.equal(conditionalResult.focusNotMovedToOtherField, true, "字段移除时不得把焦点误给其他字段");

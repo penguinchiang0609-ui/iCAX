@@ -15,6 +15,7 @@ namespace iCAX
     namespace Database
     {
         class IMetaRegistry;
+        inline constexpr const char* kInitialComponentsProperty = "__icax.initialComponents";
 
         /*
         * @brief Repository 中的一条原子操作。
@@ -79,12 +80,15 @@ namespace iCAX
             * @param [in] Args_ Repository 事件参数。
             */
             void RecordRepositoryEvent(IN const RepositoryEventArgs& Args_);
+            void RecordRepositoryEvent(IN const RepositoryEventRecord& Record_);
 
             /*
             * @brief 追加一条操作。
             * @param [in] Operation_ 待追加操作；空操作会被忽略。
             */
             void AppendOperation(IN const CRepositoryOperation& Operation_);
+            void AppendOperation(CRepositoryOperation&& Operation_);
+            void ReserveOperations(std::size_t Count_);
 
             /*
             * @brief 追加另一个批次中的全部操作。
@@ -97,6 +101,7 @@ namespace iCAX
             * @return 当前已收集的有序操作批次。
             */
             COperationBatch Build() const;
+            COperationBatch Take();
 
         private:
             COperationBatch m_Batch;
@@ -126,6 +131,10 @@ namespace iCAX
         * @return 仅包含 Transactional 值字段和结构性操作的批次。
         */
         COperationBatch _DATABASE_EXP FilterTransactionalOperationBatch(IN const COperationBatch& Batch_, IN const IMetaRegistry& Meta_);
+        // Exclusive batches can discard excluded fields in place and transfer
+        // the retained owning snapshots into the completed undo step.
+        COperationBatch _DATABASE_EXP FilterTransactionalOperationBatch(
+            IN COperationBatch&& Batch_, IN const IMetaRegistry& Meta_);
 
         /*
         * @brief 过滤出可写入快速保存日志的操作。

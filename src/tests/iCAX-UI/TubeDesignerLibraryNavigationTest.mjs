@@ -3,8 +3,19 @@ import { readFileSync } from "node:fs";
 import { getRibbonDefinition, ribbonDefinition, sketchRibbonGroups } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 import { handleDesignerRibbonCommand } from "../../apps/tube-designer/webpage/designerActions.mjs";
 
+assert.deepEqual(ribbonDefinition.tabs.map((tab) => [tab.id, tab.title]), [
+  ["view", "产品"], ["nesting", "下料"], ["resources", "资源库"], ["about", "关于"],
+]);
+assert.ok(!ribbonDefinition.tabs.some((tab) => tab.id === "sketch"), "草图继续使用资源编辑的上下文入口");
+assert.equal(ribbonDefinition.tabs.some((tab) => tab.id === "machining"), false);
+assert.ok(ribbonDefinition.tabs.find((tab) => tab.id === "about").groups
+  .flatMap((group) => group.commands).some((command) => command.id === "licensing.status"));
+
 const resources = ribbonDefinition.tabs.find((tab) => tab.id === "resources");
 assert.equal(resources.title, "资源库");
+const productAssemblyEntry = ribbonDefinition.tabs.find((tab) => tab.id === "view")?.groups
+  .flatMap((group) => group.commands).find((command) => command.id === "designer.open-assembly-process");
+assert.equal(productAssemblyEntry, undefined, "产品页只显示产品选项，装配对象入口保留在资源库");
 const resourceCommands = resources.groups.flatMap((group) => group.commands);
 assert.deepEqual(resourceCommands.slice(0, 4).map((command) => [command.id, command.title]), [
   ["resources.products", "产品"], ["resources.profiles", "管型"], ["resources.tools", "单件工艺"], ["resources.assemblies", "装配"],
@@ -23,7 +34,7 @@ assert.equal(activeResourceCommands.find((command) => command.id === "resources.
 assert.equal(activeResourceCommands.filter((command) => command.active).length, 1);
 assert.deepEqual(
   getRibbonDefinition({ resourceArea: "assemblies" }).tabs.find((tab) => tab.id === "resources").groups.map((group) => group.title),
-  ["资源类型"],
+  ["资源类型", "装配操作"],
   "装配模板不重复提供单件工艺绘制命令",
 );
 assert.deepEqual(
@@ -115,4 +126,16 @@ await handleDesignerRibbonCommand(
 );
 assert.equal(assemblyView.tubeDesignerResourceLibraryArea, "assemblies");
 assert.equal(getRibbonDefinition({ resourceArea: "assemblies" }).tabs.find((tab) => tab.id === "resources").groups[0].commands.find((command) => command.id === "resources.assemblies").active, true);
+const expertAssemblyView = { pending: false, tubeDesignerAssemblyLibrary: {
+  selectedId: "bend",
+} };
+await handleDesignerRibbonCommand(
+  { actions: { selectRibbonTab: async () => {} } },
+  expertAssemblyView,
+  "resources.assemblies",
+  { renderProject() {} },
+);
+assert.equal(expertAssemblyView.tubeDesignerResourceLibraryArea, "assemblies");
+assert.equal(Object.hasOwn(expertAssemblyView.tubeDesignerAssemblyLibrary, "workMode"), false);
+assert.equal(expertAssemblyView.tubeDesignerAssemblyLibrary.selectedId, "", "缺少对应模板时清除无效的专家选择");
 console.log("TubeDesignerLibraryNavigationTest: passed");

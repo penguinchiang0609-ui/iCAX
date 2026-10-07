@@ -38,6 +38,23 @@ namespace
         throw std::invalid_argument("standard JSON contains an unsupported value");
     }
 
+    json::value ToJson(const Variant& Value_);
+
+    json::value ToJson(const ObjectMap& Value_)
+    {
+        json::object _Result;
+        for (const auto& [_Key, _Value] : Value_) _Result.emplace(_Key, ToJson(_Value));
+        return _Result;
+    }
+
+    json::value ToJson(const VariantArray& Value_)
+    {
+        json::array _Result;
+        _Result.reserve(Value_.size());
+        for (const auto& _Value : Value_) _Result.emplace_back(ToJson(_Value));
+        return _Result;
+    }
+
     json::value ToJson(const Variant& Value_)
     {
         return std::visit([](const auto& Item_) -> json::value {
@@ -69,16 +86,11 @@ namespace
             else if constexpr (std::is_same_v<TValue, std::string>) return json::string(Item_);
             else if constexpr (std::is_same_v<TValue, ObjectMap>)
             {
-                json::object _Result;
-                for (const auto& [_Key, _Value] : Item_) _Result.emplace(_Key, ToJson(_Value));
-                return _Result;
+                return ToJson(Item_);
             }
             else if constexpr (std::is_same_v<TValue, VariantArray>)
             {
-                json::array _Result;
-                _Result.reserve(Item_.size());
-                for (const auto& _Value : Item_) _Result.emplace_back(ToJson(_Value));
-                return _Result;
+                return ToJson(Item_);
             }
             else
             {
@@ -103,6 +115,18 @@ iCAX::Data::Variant iCAX::TemplateRuntime::CStandardJsonCodec::Parse(
 
 std::string iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(
     const iCAX::Data::Variant& Value_)
+{
+    return json::serialize(ToJson(Value_));
+}
+
+std::string iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(
+    const iCAX::Data::ObjectMap& Value_)
+{
+    return json::serialize(ToJson(Value_));
+}
+
+std::string iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(
+    const iCAX::Data::VariantArray& Value_)
 {
     return json::serialize(ToJson(Value_));
 }

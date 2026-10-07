@@ -65,7 +65,7 @@ const tree = resolveProductSpecificationAnnotationTree(designer({
   faceType: "single",
   accessDoorEnabled: true,
 }), {});
-assert.equal(tree.label, "规格标注");
+assert.equal(tree.label, "尺寸规格");
 assert.equal(tree.state, "all");
 assert.ok(tree.children.some((item) => item.key === "overall" && item.label === "尺寸参数"));
 assert.ok(tree.children.some((item) => item.key === "main_grid" && item.label === "主格栅"));
@@ -80,6 +80,7 @@ const withoutDoor = resolveProductSpecificationAnnotations(designer({
 }), {});
 assert.ok(!withoutDoor.some((item) => item.parameter === "doorClearWidth"));
 assert.ok(!withoutDoor.some((item) => item.parameter === "doorGap"));
+assert.ok(!withoutDoor.some((item) => item.parameter === "doorHardwareClearance"));
 
 const pending = resolveProductSpecificationAnnotations(designer({
   faceType: "single",

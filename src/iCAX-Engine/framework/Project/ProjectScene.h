@@ -157,6 +157,8 @@ namespace iCAX
             CProject& Project();
             const CProject& Project() const;
 
+            bool IsStopRequested() const noexcept override;
+
             /*
             * @brief 获取 Scene ID。
             */

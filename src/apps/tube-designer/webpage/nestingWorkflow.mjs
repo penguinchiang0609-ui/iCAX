@@ -6,6 +6,7 @@ import { getNestingParameters, getNestingStockInputs } from "./nestingSettings.m
 const MAX_PARTS = 1_000_000;
 const MAX_PRIORITY = 1_000_000;
 const EPSILON = 0.011; // Native lengths are conservatively quantized to 0.01 mm.
+const pendingPlanLoads = new WeakMap();
 
 function selectedParts(view) {
   const parts = listNestingParts(view.scene?.tubeDesigner ?? {});
@@ -18,40 +19,13 @@ function partName(part) {
   return String(part?.name || part?.partNumber || part?.entityId || "零件");
 }
 
-function serializeLockedPlan(plan) {
-  const placements = Array.isArray(plan?.placements) ? plan.placements.map((placement) => ({
-    partId: String(placement.partId ?? ""),
-    instanceId: String(placement.instanceId ?? ""),
-    start: Number(placement.start),
-    end: Number(placement.end),
-    length: Number(placement.length ?? (Number(placement.end) - Number(placement.start))),
-    gapBefore: Number(placement.gapBefore ?? 0),
-    nestedWithPrevious: Boolean(placement.nestedWithPrevious),
-    variantId: String(placement.variantId ?? "default"),
-    reversed: Boolean(placement.reversed),
-    rotationRadians: Number(placement.rotationRadians ?? 0),
-    ...(Array.isArray(placement.trsf) && placement.trsf.length === 16
-      ? { trsf: placement.trsf.map(Number) } : {}),
-  })) : [];
-  return {
-    id: String(plan?.id ?? ""),
-    stockTypeId: String(plan?.stockTypeId ?? ""),
-    profileKey: String(plan?.profileKey ?? ""),
-    stockLength: Number(plan?.stockLength),
-    usedLength: Number(plan?.usedLength),
-    remainingLength: Number(plan?.remainingLength),
-    partLength: Number(plan?.partLength ?? placements.reduce((sum, placement) => sum + placement.length, 0)),
-    utilization: Number(plan?.utilization ?? 0),
-    placements,
-  };
-}
-
 function lockedPlansForRequest(view, context) {
   const result = view?.tubeDesignerNestingResult;
   const locked = new Set((view?.tubeDesignerLockedNestingPlanIds ?? []).map(String));
   if (!result || !locked.size
     || result.inputSignature !== getNestingInputSignature(view, context)) return [];
-  return (result.plans ?? []).filter((plan) => locked.has(String(plan.id))).map(serializeLockedPlan);
+  return (result.plans ?? []).filter((plan) => locked.has(String(plan.id)))
+    .map((plan) => String(plan.id));
 }
 
 export function buildNestingRequest(view, context = null) {
@@ -100,7 +74,8 @@ export function buildNestingRequest(view, context = null) {
     parts: demands,
     stocks: usedStocks,
     parameters: getNestingParameters(view, context),
-    lockedPlans: lockedPlansForRequest(view, context),
+    lockedPlanIds: lockedPlansForRequest(view, context),
+    resultRevision: view.tubeDesignerNestingResult?.revision ?? "",
   };
 }
 
@@ -132,7 +107,7 @@ export function isNestingResultStale(view, context = null) {
     || result.inputSignature !== getNestingInputSignature(view, context)));
 }
 
-export function restoreSavedNestingTask(view, context = null) {
+export async function restoreSavedNestingTask(view, context = null) {
   const task = view.scene?.tubeDesigner?.nestingTask;
   if (!task?.revision) {
     if (view.tubeDesignerRestoredTaskRevision) {
@@ -156,14 +131,20 @@ export function restoreSavedNestingTask(view, context = null) {
     view.notice = "下料任务包含已修改的实例，请重新选择零件并排样。";
     return;
   }
-  if (!task.result?.plans || !task.request?.parts) return;
+  if (!task.result || !task.request?.parts
+    || (!task.result.ready && !Array.isArray(task.result.plans))) return;
   try {
-    validateResult(task.result, task.request, view);
+    const result = task.result.ready
+      ? await readNestingCatalog(context, task.result) : task.result;
+    if (!result) return;
+    if (!task.result.ready) validateResult(result, task.request, view);
+    if (view.scene?.tubeDesigner?.nestingTask?.revision !== task.revision) return;
     const signature = getNestingInputSignature(view, context);
-    view.tubeDesignerNestingResult = decorateResult(task.result, view, signature, task.request);
-    view.tubeDesignerActiveNestingPlanId = task.result.plans[0]?.id ?? "";
-    view.tubeDesignerSelectedNestingPlanIds = task.result.plans.map(plan => String(plan.id));
-    view.tubeDesignerLockedNestingPlanIds = (task.request.lockedPlans ?? []).map(plan => String(plan.id));
+    view.tubeDesignerNestingResult = decorateResult(result, view, signature, task.request);
+    view.tubeDesignerActiveNestingPlanId = result.plans[0]?.id ?? "";
+    view.tubeDesignerSelectedNestingPlanIds = result.plans.map(plan => String(plan.id));
+    view.tubeDesignerLockedNestingPlanIds = task.request.lockedPlanIds
+      ?? (task.request.lockedPlans ?? []).map(plan => String(plan.id));
     const comparable = (request) => JSON.stringify({
       parts: request.parts.map(p => [p.partEntityId, p.profileKey, p.quantity, p.priority ?? 0]).sort(),
       stocks: request.stocks.map(s => [s.id, s.profileKey, s.length, s.quantity]).sort(),
@@ -171,9 +152,79 @@ export function restoreSavedNestingTask(view, context = null) {
     });
     view.tubeDesignerNestingLastRunFailed = comparable(buildNestingRequest(view, context)) !== comparable(task.request);
     if (view.tubeDesignerNestingLastRunFailed) view.notice = "母材或间距已变化，已保存结果仅供查看，请重新排样。";
+    if (task.result.ready && result.plans.length)
+      await loadNestingPlan(context, view, result.plans[0].id);
   } catch (error) {
+    if (!view.tubeDesignerNestingResult
+      && view.tubeDesignerRestoredTaskRevision === task.revision)
+      view.tubeDesignerRestoredTaskRevision = "";
     view.tubeDesignerNestingLastRunFailed = true;
     view.notice = `已保存的排样结果无法恢复，请重新排样：${error.message}`;
+  }
+}
+
+async function readNestingCatalog(context, summary) {
+  if (!summary?.ready || !summary.revision) throw new Error("排样完成通知没有结果编号。");
+  const catalog = await context.sceneProxy.invoke("TubeDesigner.ReadNestingResult",
+    { revision: summary.revision }, { timeoutMs: 30000 });
+  if (catalog.revision !== summary.revision || !Array.isArray(catalog.rows)
+    || !Array.isArray(catalog.profileKeys) || !Array.isArray(catalog.stockTypeIds))
+    throw new Error("排样结果列表与当前计算不一致。");
+  const ids = new Set();
+  const plans = catalog.rows.map((row) => {
+    if (!Array.isArray(row) || row.length !== 9) throw new Error("排样结果列表格式无效。");
+    const [id, profileIndex, stockIndex, stockLength, usedLength, remainingLength,
+      partLength, partCount, utilization] = row;
+    if (typeof id !== "string" || !id || ids.has(id)
+      || !Number.isSafeInteger(profileIndex) || !Number.isSafeInteger(stockIndex)
+      || typeof catalog.profileKeys[profileIndex] !== "string"
+      || typeof catalog.stockTypeIds[stockIndex] !== "string"
+      || ![stockLength, usedLength, remainingLength, partLength, utilization]
+        .every(value => Number.isFinite(value))
+      || stockLength <= 0 || usedLength < 0 || remainingLength < 0
+      || usedLength > stockLength + EPSILON
+      || Math.abs(stockLength - usedLength - remainingLength) > EPSILON
+      || !Number.isSafeInteger(partCount) || partCount <= 0) {
+      throw new Error("排样结果列表格式无效。");
+    }
+    ids.add(id);
+    return { id, profileKey: catalog.profileKeys[profileIndex],
+      stockTypeId: catalog.stockTypeIds[stockIndex], stockLength, usedLength,
+      remainingLength, partLength, partCount, utilization, placements: [] };
+  });
+  if (plans.length !== Number(summary.planCount)) throw new Error("排样母材数量与汇总不一致。");
+  const placed = Number(summary.metrics?.placedPartCount);
+  if (Number.isFinite(placed) && plans.reduce((sum, plan) => sum + plan.partCount, 0) !== placed)
+    throw new Error("排样零件数量与汇总不一致。");
+  return { ...summary, plans };
+}
+
+export async function loadNestingPlan(context, view, id) {
+  const result = view.tubeDesignerNestingResult;
+  const plan = result?.plans?.find((item) => String(item.id) === String(id));
+  if (!plan || plan.detailsLoaded) return plan ?? null;
+  const pending = pendingPlanLoads.get(view);
+  if (pending?.result === result && pending.id === String(id)) return pending.promise;
+  const promise = (async () => {
+    const detail = await context.sceneProxy.invoke("TubeDesigner.ReadNestingResult",
+      { revision: result.revision, planId: String(id) }, { timeoutMs: 30000 });
+    if (view.tubeDesignerNestingResult !== result || String(detail?.id) !== String(id)) return null;
+    if (!Array.isArray(detail.placements) || detail.placements.length !== Number(plan.partCount))
+      throw new Error("母材切割顺序不完整。");
+    const parts = new Map(listNestingParts(view.scene?.tubeDesigner ?? {})
+      .map((part) => [String(part.entityId), part]));
+    plan.placements = detail.placements.map((placement) => ({
+      ...placement, length: placement.end - placement.start,
+      partName: partName(parts.get(placement.partId)),
+      partNumber: parts.get(placement.partId)?.partNumber ?? "",
+    }));
+    plan.detailsLoaded = true;
+    return plan;
+  })();
+  pendingPlanLoads.set(view, { result, id: String(id), promise });
+  try { return await promise; }
+  finally {
+    if (pendingPlanLoads.get(view)?.promise === promise) pendingPlanLoads.delete(view);
   }
 }
 
@@ -257,7 +308,8 @@ function decorateResult(result, view, inputSignature, solveRequest) {
       return {
         ...plan, name: `${profile}-${ordinal}`, profile,
         profileData: profiles.get(plan.profileKey)?.parts[0]?.profile ?? {},
-        status: "已排样", partCount: plan.placements.length,
+        status: "已排样", partCount: plan.partCount ?? plan.placements.length,
+        detailsLoaded: !result.ready || plan.placements.length > 0,
         utilization: Number.isFinite(Number(plan.utilization)) ? Number(plan.utilization) : 0,
         placements: plan.placements.map((placement) => ({
           ...placement, length: placement.end - placement.start,
@@ -273,6 +325,8 @@ export async function handleNestingRibbonCommand(context, view, commandId, ops) 
   if (commandId !== "nesting.start") return false;
   if (view.pending || view.tubeDesignerNestingOperation || view.tubeDesignerNestingSettingsSaving) return true;
   let operation = null;
+  let provisionalResult = null;
+  const previousResult = view.tubeDesignerNestingResult;
   try {
     const request = buildNestingRequest(view, context);
     const inputSignature = getNestingInputSignature(view, context);
@@ -286,30 +340,41 @@ export async function handleNestingRibbonCommand(context, view, commandId, ops) 
     ops.renderProject(context, view);
     // Give the busy overlay a frame before requesting the native calculation.
     await new Promise((resolve) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(resolve) : resolve());
-    const response = await context.sceneProxy.invoke("TubeDesigner.Nest", request, { timeoutMs: 180000 });
+    const notice = await context.sceneProxy.invoke("TubeDesigner.Nest", request, { timeoutMs: 180000 });
     if (inputSignature !== getNestingInputSignature(view, context)) {
       throw new Error("计算期间零件或设置已变化，请重新开始排样。");
     }
-    validateResult(response, request, view);
+    const response = notice?.ready ? await readNestingCatalog(context, notice) : notice;
+    if (!notice?.ready) validateResult(response, request, view);
+    if (inputSignature !== getNestingInputSignature(view, context))
+      throw new Error("计算期间零件或设置已变化，请重新开始排样。");
     if (!view.tubeDesignerNestingResult && view.layout
       && (!view.layout.bottomHeight || view.layout.bottomHeight === 142)) {
       view.layout.bottomHeight = 220;
     }
-    view.tubeDesignerNestingResult = decorateResult(response, view, inputSignature, request);
+    provisionalResult = decorateResult(response, view, inputSignature, request);
+    view.tubeDesignerNestingResult = provisionalResult;
+    if (response.plans.length && notice?.ready)
+      await loadNestingPlan(context, view, response.plans[0].id);
+    if (inputSignature !== getNestingInputSignature(view, context))
+      throw new Error("读取结果期间零件或设置已变化，请重新开始排样。");
     view.tubeDesignerNestingLastRunFailed = false;
     view.tubeDesignerActiveNestingPlanId = response.plans[0]?.id ?? "";
     view.tubeDesignerSelectedNestingPlanIds = response.plans.map((plan) => String(plan.id));
-    view.tubeDesignerLockedNestingPlanIds = request.lockedPlans.map((plan) => String(plan.id));
+    view.tubeDesignerLockedNestingPlanIds = request.lockedPlanIds;
     view.tubeDesignerNestingSelectionKind = response.plans.length ? "plan" : "part";
     view.tubeDesignerActiveNestingPartId = "";
     view.tubeDesignerActiveNestingPlacementId = "";
     view.tubeDesignerPartViewportKey = "";
     const missing = response.unplaced.reduce((sum, row) => sum + row.quantity, 0);
-    const placed = response.plans.reduce((sum, plan) => sum + plan.placements.length, 0);
-    const lockedCount = request.lockedPlans.length;
+    const placed = Number(response.metrics?.placedPartCount)
+      || response.plans.reduce((sum, plan) => sum + plan.partCount, 0);
+    const lockedCount = request.lockedPlanIds.length;
     view.notice = `排样完成：${response.plans.length} 根母材，已排 ${placed} 件${missing ? `，未排 ${missing} 件，请查看下方未排原因` : "，全部排入"}${lockedCount ? `；已保留 ${lockedCount} 根锁定结果` : ""}。`;
     ops.appendProjectLog?.(context, missing ? "warning" : "info", view.notice);
   } catch (error) {
+    if (provisionalResult && view.tubeDesignerNestingResult === provisionalResult)
+      view.tubeDesignerNestingResult = previousResult;
     view.error = `排样失败：${error?.message ?? String(error)}`;
     view.tubeDesignerNestingLastRunFailed = true;
     ops.appendProjectLog?.(context, "error", view.error);

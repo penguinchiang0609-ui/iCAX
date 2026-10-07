@@ -5,15 +5,17 @@ import {
   renderProfileLibraryViewportOverlay, handleProfileLibraryAction, resolveSelectedProfileSketchSource,
 } from "../../apps/tube-designer/webpage/profileLibrary.mjs";
 import { refreshDesignerUserData, handleDesignerAreaAction, handleDesignerRibbonCommand } from "../../apps/tube-designer/webpage/designerActions.mjs";
+import {productToolParameterUI} from "../../apps/tube-designer/webpage/productResourceBindings.mjs";
+import { licenseStatus } from "../../apps/tube-designer/webpage/licensing.mjs";
 import {
   applyReusablePresetValues,
   getReusablePresetValues,
-  renderDesignerAddParameterContent,
+  renderDesignerRightParameterContent,
 } from "../../apps/tube-designer/webpage/designerViews.mjs";
 
 const completed = [];
 async function test(name, run) { await run(); completed.push(name); }
-const circle = { kind: "profile-package", profileForm:"parametric", name: "截面", specification: "Φ40 × 2", width: 40, depth: 40,
+const circle = { schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "profile-package", sectionKind: "round", profileForm:"parametric", name: "截面", specification: "Φ40 × 2", width: 40, depth: 40,
   contours: [{ kind: "circle", radius: 20 }, { kind: "circle", radius: 18 }], parameters: { width: 40 },
   parameterDefinitions: [{ key: "width", valueType: "number", displayName: "外径", defaultValue: 40 }],
   parameterDiagram: { schemaVersion: 1, annotations: [{ parameter: "width", kind: "linear", from: ["-width/2", 0], to: ["width/2", 0], axis: "x", side: "top" }] } };
@@ -33,6 +35,8 @@ function harness() {
   };
   const context = { actions: { log() {} }, productProxy: { async invoke(method, payload) { calls.push({ method, payload }); return {}; } },
     sceneProxy: { resources: { get() {} }, async invoke(method, payload) { calls.push({ method, payload }); return { geometryResourceId: "resource://profile", geometryResourceVersion: 1 }; } } };
+  licenseStatus(context, view);
+  view.tubeDesignerLicense = { featureSchemaVersion: 1, capabilities: { "product.design": true } };
   const ops = { renderProject() {}, showNotice() {} };
   const act = (suffix, target = {}) => handleProfileLibraryAction(context, view, `tube-designer-profile-library-${suffix}`, target, ops);
   return { view, context, ops, calls, snapshots, visible, selected, act };
@@ -204,7 +208,9 @@ await test("switching during viewport resource hydration cannot reveal the old p
 
 function productHarness() {
   const h = harness();
-  const descriptor = { id: "rail-a", available: true, name: "护栏", parameters: [{ key: "frameProfileType", displayName: "边框截面", type: "select", valueType: "enum", defaultValue: "round", options: [{ value: "round", label: "圆管" }] }] };
+  const descriptor = { id: "rail-a", available: true, name: "护栏", parameters: [{ key: "frameProfileType", displayName: "边框截面", type: "select", valueType: "enum", defaultValue: "round", options: [{ value: "round", label: "圆管" }], presentation: { editor: "profile-library", resourceRole: "frame", profileConstraints: { sectionKinds: ["round"], hollow: true } } }] };
+  descriptor.parameters.push({key:"frameWidth",displayName:"产品外径",type:"number",valueType:"number",defaultValue:40,unit:"mm"});
+  descriptor.extensions={resourceRoles:{profiles:{frame:{parameter:"frameProfileType",defaultResourcesBySectionKind:{round:"system:round"},parameterBindingsBySectionKind:{round:{width:"frameWidth"}},parameterLabelsBySectionKind:{round:{width:{"zh-CN":"外径"}}},managedParameters:["frameWidth"]}}}};
   h.view.scene = { tubeDesigner: { templates: [descriptor] } };
   h.view.tubeDesignerAddTemplateId = descriptor.id;
   h.view.tubeDesignerAddDraft = {};
@@ -215,27 +221,93 @@ function productHarness() {
   return h;
 }
 
-await test("products only offer their own template packages and prevent copying them into my profiles", async () => {
+function renderHarnessProductProfiles(designer, view) {
+  const template=designer.templates[0];
+  template.groups=[{key:'materials',displayName:'用料'}];
+  template.parameters.forEach(field=>{field.groupKey='materials';});
+  template.extensions.parameterLayout={sections:[{key:'materials',groups:['materials']}]};
+  template.extensions.parameterDependencies={manufacturingOnly:[...template.parameters.map(field=>field.key),'tubeDesignerProfileOverrides','tubeDesignerToolBindings'],creationOnly:[]};
+  return renderDesignerRightParameterContent({...designer,product:{entityId:'test-product',templateId:template.id,parameters:view.tubeDesignerAddDraft}},view).scrollContent;
+}
+
+await test("profile choices reject unsupported kinds and never use resource kind as section kind", async () => {
   const { view, productAct } = productHarness();
-  await productAct("profile-selection-change", { value: "template:rail-a:shared" });
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.templateId, "rail-a");
-  let html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
-  assert.match(html, /<optgroup label="模板自带">/);
-  assert.match(html, /value="template:rail-a:shared" selected/);
-  assert.doesNotMatch(html, /template:rail-b:shared|保存为我的管型/);
-  await productAct("open-profile-dialog");
-  assert.equal(view.tubeDesignerProfileDialog, undefined);
-  await productAct("profile-selection-change", { value: "template:rail-b:shared" });
-  assert.match(view.error, /不属于当前模板/);
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.templateId, "rail-a");
-  await productAct("profile-selection-change", { value: "builtin:round" });
-  assert.deepEqual(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides, {});
+  const before = structuredClone(view.tubeDesignerAddDraft);
+  await productAct("profile-selection-change", { value: "builtin:oval" });
+  assert.match(view.error, /只能/);
+  assert.deepEqual(view.tubeDesignerAddDraft, before);
+  for (const [id, patch] of [["wrong", { sectionKind: "oval" }], ["missing", { sectionKind: undefined }],
+    ["bad-count", { contourCount: 1 }], ["bad-hollow", { hollow: false }]]) {
+    view.tubeDesignerSystemProfiles.push({ ...packaged, id, previewProfile: { ...circle, ...patch } });
+    const html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
+    assert.doesNotMatch(html, new RegExp(`value="system:${id}"`));
+    await productAct("profile-selection-change", { value: `system:${id}` });
+    assert.match(view.error, /约束/);
+    assert.deepEqual(view.tubeDesignerAddDraft, before);
+  }
+  delete view.scene.tubeDesigner.templates[0].parameters[0].presentation.profileConstraints;
+  await productAct("profile-selection-change", { value: "system:round" });
+  assert.match(view.error, /约束/);
+  assert.deepEqual(view.tubeDesignerAddDraft, before);
 });
 
-await test("product profile roles expose and evaluate the complete system profile library", async () => {
+await test("evaluated profile constraints are checked before replacing a valid draft", async () => {
+  const { view, context, productAct } = productHarness();
+  await productAct("profile-selection-change", { value: "system:round" });
+  const before = structuredClone(view.tubeDesignerAddDraft);
+  context.productProxy.invoke = async () => ({ profile: { ...circle, sectionKind: "oval" } });
+  await handleDesignerAreaAction(context, view, "tube-designer-profile-parameter-change", {
+    dataset: { tubeDesignerProfileMode: "add", tubeDesignerProfilePrefix: "frame", tubeDesignerProfileParameter: "width" }, value: "48",
+  }, { renderProject() {}, showNotice() {} });
+  assert.match(view.error, /不适用/);
+  assert.deepEqual(view.tubeDesignerAddDraft, before);
+});
+
+await test("products route external contour management to the profile library", async () => {
+  const {view,context,ops}=productHarness();let calls=0;
+  context.productProxy.bridge={openFileDialog:async()=>{calls++;return "C:/section.dxf";}};
+  const before=structuredClone(view.tubeDesignerAddDraft);
+  for(const allowed of [false,true]){
+    view.scene.tubeDesigner.templates[0].parameters[0].presentation.allowExternalDxf=allowed;
+    await handleDesignerAreaAction(context,view,"tube-designer-import-profile-dxf",{dataset:{tubeDesignerProfileMode:"add",tubeDesignerProfilePrefix:"frame"}},ops);
+    assert.match(view.error,/只能/);assert.equal(calls,0);assert.deepEqual(view.tubeDesignerAddDraft,before);
+  }
+});
+
+await test("a delayed package evaluation cannot overwrite a newer library selection", async () => {
+  const {view,context,productAct}=productHarness();
+  const role=view.scene.tubeDesigner.templates[0].extensions.resourceRoles.profiles.frame;
+  role.defaultParametersByResource={"system:round":{width:48}};
+  let finish;context.productProxy.invoke=async()=>new Promise(resolve=>{finish=resolve;});
+  const pending=productAct("profile-selection-change",{value:"system:round"});await Promise.resolve();
+  await productAct("profile-selection-change",{value:"user:mine"});
+  finish({profile:circle});await pending;
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileScope,"user");
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.savedProfileId,"mine");
+  assert.equal(view.tubeDesignerAddDraft.frameWidth,40);
+});
+
+await test("product selectors only offer system and my profiles and reject template sources", async () => {
+  const {view,productAct}=productHarness();
+  await productAct("profile-selection-change",{value:"system:round"});
+  const before=structuredClone(view.tubeDesignerAddDraft);
+  const html=renderHarnessProductProfiles(view.scene.tubeDesigner,view);
+  assert.match(html,/<optgroup label="系统内置">/);assert.match(html,/<optgroup label="我的">/);
+  assert.doesNotMatch(html,/模板自带|template:|builtin:|保存为我的管型/);
+  for(const value of ["template:rail-a:shared","template:rail-b:shared","builtin:round"]){
+    await productAct("profile-selection-change",{value});assert.match(view.error,/只能/);
+    assert.deepEqual(view.tubeDesignerAddDraft,before);
+  }
+});
+
+await test("product profile roles expose and evaluate their declared section kinds", async () => {
   const { view, context, calls, productAct } = productHarness();
+  const field = view.scene.tubeDesigner.templates[0].parameters[0];
+  field.presentation.profileConstraints.sectionKinds.push("oval");
+  field.options.push({ value: "oval", label: "椭圆管" });
+  view.scene.tubeDesigner.templates[0].extensions.resourceRoles.profiles.frame.parameterBindingsBySectionKind.oval={width:"frameWidth"};
+  view.scene.tubeDesigner.templates[0].extensions.resourceRoles.profiles.frame.parameterLabelsBySectionKind.oval={width:{"zh-CN":"宽度"}};
   view.scene.tubeDesigner.templates[0].parameters.push(
-    { key: "frameWidth", displayName: "模板截面宽度", type: "number", valueType: "number", defaultValue: 40 },
     { key: "frameDepth", displayName: "模板截面深度", type: "number", valueType: "number", defaultValue: 40 },
     { key: "frameWallThickness", displayName: "模板壁厚", type: "number", valueType: "number", defaultValue: 2 },
   );
@@ -246,8 +318,8 @@ await test("product profile roles expose and evaluate the complete system profil
     descriptor: { ...packaged.descriptor, id: "oval" },
     previewProfile: { ...circle, name: "系统椭圆管", profileScope: "system", profileDefinitionId: "oval" },
   });
-  let html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
-  assert.match(html, /<optgroup label="管型库 · 系统内置">/);
+  let html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
+  assert.match(html, /<optgroup label="系统内置">/);
   assert.match(html, /value="system:round"/);
   assert.match(html, /value="system:oval"/);
 
@@ -255,9 +327,10 @@ await test("product profile roles expose and evaluate the complete system profil
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileScope, "system");
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileDefinitionId, "oval");
   assert.equal(calls.length, 0, "catalogue preview snapshot should avoid an unnecessary reevaluation");
-  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
-  assert.doesNotMatch(html, /data-tube-designer-parameter="frameWidth"|data-tube-designer-parameter="frameDepth"|data-tube-designer-parameter="frameWallThickness"/,
-    "the selected profile owns its dimensions; the product's legacy shape fields must not be duplicated");
+  html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
+  assert.equal((html.match(/data-tube-designer-parameter="frameWidth"/g)??[]).length,1,
+    "only the declared product width appears once in the selected profile editor");
+  assert.doesNotMatch(html,/data-tube-designer-profile-parameter="width"/);
 
   context.productProxy.invoke = async (method, payload) => {
     calls.push({ method, payload });
@@ -268,9 +341,25 @@ await test("product profile roles expose and evaluate the complete system profil
   }, { renderProject() {}, showNotice() {} });
   assert.deepEqual(calls[0].payload, { profileRef: { scope: "system", id: "oval" }, parameters: { width: 52 } });
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 52);
-  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
   assert.match(html, /value="system:oval" selected/);
-  assert.match(html, /管型参数示意图/);
+  assert.doesNotMatch(html,/data-product-profile-diagram-open|tube-designer-profile-diagram-disclosure|data-parameter-diagram-owner/);
+  assert.match(html, /<strong>截面尺寸（mm）<\/strong>/);
+  assert.match(html, /<span>外径<\/span><input/);
+});
+
+await test("my profiles use the same scoped selection key in product fields and resource defaults", async () => {
+  const { view, context, productAct } = productHarness();
+  view.scene.tubeDesigner.templates[0].extensions = { resourceRoles: { profiles: {
+    frame: { parameter: "frameProfileType", defaultParametersByResource: { "user:mine": { width: 46 } } },
+  } } };
+  context.productProxy.invoke = async (_method, payload) => ({ profile: { ...circle, parameters: payload.parameters } });
+  await productAct("profile-selection-change", { value: "user:mine" });
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.savedProfileId, "mine");
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 46);
+  const html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
+  assert.match(html, /value="user:mine" selected/);
+  assert.doesNotMatch(html, /value="saved:/);
 });
 
 await test("template resource defaults initialise a referenced profile without duplicating its fields", async () => {
@@ -304,6 +393,7 @@ await test("product tool roles select constrained library tools and persist role
     presentation: {
       editor: "tool-library", resourceRole: "cornerGroove",
       targets: ["part"], categories: ["slot"],
+      productOptions:[{value:"system:v-notch-sharp",displayName:"V槽"}],
     },
   };
   view.scene.tubeDesigner.templates[0] = {
@@ -320,6 +410,9 @@ await test("product tool roles select constrained library tools and persist role
         tools: { cornerGroove: {
           parameter: field.key, targetProfileRole: "frame",
           defaultParametersByResource: { "system:v-notch-sharp": { angle: 88 } },
+          productParameterUIByResource:{"system:v-notch-sharp":{
+            fields:[{key:"angle"},{key:"maleFemale"},{key:"maleFemaleSize"}],fixedParameters:{},
+          }},
         } },
       },
     },
@@ -343,7 +436,7 @@ await test("product tool roles select constrained library tools and persist role
     },
     { id: "circle", version: "1", displayName: "圆孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] },
   ];
-  let html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  let html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
   assert.match(html, /value="system:v-notch-sharp"/);
   assert.doesNotMatch(html, /value="system:circle"/);
 
@@ -356,54 +449,41 @@ await test("product tool roles select constrained library tools and persist role
   assert.equal(binding.parameters.angle, 88, "template role defaults initialise the selected resource");
   assert.equal(binding.snapshot.targetProfileRole, "frame");
   assert.equal(view.tubeDesignerAddDraft.cornerGrooveTool, "system:v-notch-sharp");
-  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
-  assert.match(html, /工艺参数/);
-  assert.match(html, /槽口参数示意图/);
+  html = renderHarnessProductProfiles(view.scene.tubeDesigner, view);
+  assert.match(html, /转角样式/);
+  const ui=productToolParameterUI(view.scene.tubeDesigner.templates[0],field,binding,view.tubeDesignerSystemPunchTools[0]);
+  assert.deepEqual(ui.definitions.map(field=>field.key),["angle","maleFemale","maleFemaleSize"]);
+  assert.equal(ui.values.angle,88);
   assert.doesNotMatch(html, /实测壁厚/);
 
-  view.tubeDesignerAddDraft.tubeDesignerProfileOverrides = { frame: { parameters: { wallThickness: 2 } } };
-  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
-    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemale" },
-    checked: true,
-  }, ops);
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.maleFemaleSize, 2,
-    "enabling公母 visibly adopts the selected管型 wall thickness");
-  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
-    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemaleSize" },
-    value: "3",
-  }, ops);
-  for (const checked of [false, true]) await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
-    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemale" },
-    checked,
-  }, ops);
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.maleFemaleSize, 3,
-    "re-enabling公母 preserves a positive manual size");
-
-  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
-    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "angle" },
-    value: "72",
-  }, ops);
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.angle, 72);
+  const before=structuredClone(view.tubeDesignerAddDraft);
+  for(const [key,value] of [["maleFemale",true],["maleFemaleSize","3"],["angle","72"]]){
+    await handleDesignerAreaAction(context,view,"tube-designer-product-tool-parameter-change",{
+      dataset:{tubeDesignerToolMode:"add",tubeDesignerToolField:field.key,tubeDesignerToolRole:"cornerGroove",tubeDesignerToolParameter:key},value,checked:value===true,
+    },ops);
+    assert.deepEqual(view.tubeDesignerAddDraft,before,"a resource parameter event cannot bypass the product-owned style controls");
+  }
   const preset = getReusablePresetValues(view.scene.tubeDesigner.templates[0], view.tubeDesignerAddDraft);
-  assert.equal(preset.tubeDesignerToolBindings.cornerGroove.parameters.angle, 72);
+  assert.equal(preset.tubeDesignerToolBindings.cornerGroove.parameters.angle, 88);
   const restored = applyReusablePresetValues(view.scene.tubeDesigner.templates[0], {}, preset);
   assert.equal(restored.tubeDesignerToolBindings.cornerGroove.ref.id, "v-notch-sharp");
 });
 
-await test("template parameter reevaluation retains scoped frozen provenance", async () => {
-  const { view, context, calls, productAct } = productHarness();
-  await productAct("profile-selection-change", { value: "template:rail-a:shared" });
-  context.productProxy.invoke = async (method, payload) => {
-    calls.push({ method, payload });
-    return { profile: { ...circle, parameters: payload.parameters, profileScope: "template", templateId: "rail-a", profileDefinitionId: "shared" } };
-  };
-  await handleDesignerAreaAction(context, view, "tube-designer-profile-parameter-change", {
-    dataset: { tubeDesignerProfileMode: "add", tubeDesignerProfilePrefix: "frame", tubeDesignerProfileParameter: "width" }, value: "48",
-  }, { renderProject() {}, showNotice() {} });
-  assert.deepEqual(calls[0].payload, { profileRef: { scope: "template", templateId: "rail-a", id: "shared" }, parameters: { width: 48 } });
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileScope, "template");
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 48);
-  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.savedProfileId, undefined);
+await test("my parameter reevaluation retains ownership and edits only declared product parameters", async () => {
+  const {view,context,calls,productAct}=productHarness();
+  await productAct("profile-selection-change",{value:"user:mine"});
+  context.productProxy.invoke=async(method,payload)=>{calls.push({method,payload});return {profile:{...circle,parameters:payload.parameters}};};
+  await handleDesignerAreaAction(context,view,"tube-designer-profile-parameter-change",{
+    dataset:{tubeDesignerProfileMode:"add",tubeDesignerProfilePrefix:"frame",tubeDesignerProfileParameter:"width"},value:"48",
+  },{renderProject(){},showNotice(){}});
+  assert.deepEqual(calls[0].payload,{profileRef:{scope:"user",id:"mine"},parameters:{width:48}});
+  const profile=view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame;
+  assert.equal(profile.profileScope,"user");assert.equal(profile.savedProfileId,"mine");
+  assert.equal(view.tubeDesignerAddDraft.frameWidth,48);
+  await handleDesignerAreaAction(context,view,"tube-designer-profile-parameter-change",{
+    dataset:{tubeDesignerProfileMode:"add",tubeDesignerProfilePrefix:"frame",tubeDesignerProfileParameter:"innerOffsetX"},value:"1",
+  },{renderProject(){},showNotice(){}});
+  assert.equal(calls.length,1,"undeclared management parameters cannot mutate a product");
 });
 
 await test("parameter edits regenerate only the model and retain camera and pane positions", async () => {

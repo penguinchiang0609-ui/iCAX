@@ -466,6 +466,22 @@ iCAX::Frontend::CUIContainerInstance iCAX::Frontend::CUIContainerFactory::Create
     return CUIContainerInstance(_pContainer, _Registration.pDestroyFunction);
 }
 
+void iCAX::Frontend::CUIContainerFactory::ShutdownRuntime(IN const CUIContainerConfig& Config_)
+{
+    const auto _Type = _ToLower(_Trim(Config_.ContainerType));
+    if (_Type.empty() || !_IsRegistered(_Type))
+    {
+        return;
+    }
+    // Copy the callback before invoking it: shutdown may join UI threads and
+    // must run outside the registry mutex and the Windows loader lock.
+    const auto _Registration = _RequireRegistration(_Type);
+    if (_Registration.pShutdownRuntimeFunction)
+    {
+        _Registration.pShutdownRuntimeFunction();
+    }
+}
+
 iCAX::Frontend::CUIContainerRegistrar::CUIContainerRegistrar(IN const CUIContainerRegistration& Registration_)
 {
     if (!CUIContainerFactory::Register(Registration_))

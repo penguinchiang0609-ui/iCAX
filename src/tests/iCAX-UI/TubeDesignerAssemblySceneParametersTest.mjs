@@ -5,8 +5,6 @@ import {
   ensureAssemblyLibraryPreview, handleAssemblyLibraryAction, renderAssemblyLibraryRightPane,
 } from "../../apps/tube-designer/webpage/assemblyLibrary.mjs";
 import { createFinishedProduct, finishedProductInput, finishedProductKey, finishedProductShape } from "../../apps/tube-designer/webpage/finishedProductModel.mjs";
-import { productAssemblyConnectionIdentity } from "../../apps/tube-designer/webpage/productAssemblyConnections.mjs";
-import { productAssemblyBindingIdentity } from "../../apps/tube-designer/webpage/productAssemblyBindings.mjs";
 import { renderFinishedProductEditor } from "../../apps/tube-designer/webpage/finishedProductEditor.mjs";
 
 const load = (id) => JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/assembly/${id}/assembly.json`, import.meta.url), "utf8"));
@@ -23,7 +21,7 @@ const userProfiles = [{ id: "my-ellipse", name: "我的椭圆管", profileForm: 
   ] } }];
 const view = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: [miter, bend],
   tubeDesignerSystemProfiles: profiles, tubeDesignerUserData: { profiles: userProfiles },
-  tubeDesignerAssemblyLibrary: { selectedId: miter.id, workMode: "example", workModeUserSelected: true,
+  tubeDesignerAssemblyLibrary: { selectedId: miter.id,
     parameterDrafts: { [miter.id]: { fitGap: 2 } },
     processDrafts: { [miter.id]: { custom: { draft: { amount: 3 } } } } } };
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -107,7 +105,7 @@ await handleAssemblyLibraryAction(context, view, "tube-designer-finished-reset",
 assert.deepEqual(finishedProductInput(view), productBefore);
 
 const sparseView = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: [miter], tubeDesignerSystemProfiles: profiles,
-  tubeDesignerAssemblyLibrary: { selectedId: miter.id, workMode: "example", workModeUserSelected: true } };
+  tubeDesignerAssemblyLibrary: { selectedId: miter.id } };
 const sparseBefore = structuredClone(finishedProductInput(sparseView));
 await handleAssemblyLibraryAction(context, sparseView, "tube-designer-finished-profile-parameter-change",
   { ...target("armA", { finishedProfileParameter: "width" }), value: "73" }, ops);
@@ -116,7 +114,7 @@ assert.deepEqual(finishedProductInput(sparseView), { ...sparseBefore, spans: { .
 "单个截面参数编辑保留完整独立成品，而非冻结或生成模板覆盖值");
 
 const coaxView = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: [tabSlot, sleeve], tubeDesignerSystemProfiles: profiles,
-  tubeDesignerAssemblyLibrary: { selectedId: tabSlot.id, workMode: "example", workModeUserSelected: true } };
+  tubeDesignerAssemblyLibrary: { selectedId: tabSlot.id } };
 const coaxProduct = finishedProductInput(coaxView, "straight");
 coaxView.tubeDesignerFinishedProduct.selectedShapeId = "straight";
 coaxProduct.spans.first.length = 330;
@@ -132,7 +130,7 @@ assert.deepEqual(finishedProductInput(coaxView), coaxBefore);
 
 const tTemplates = [load("t-contact-fit"), load("end-side-tab-slot"), load("t-profile-insert")];
 const sharedT = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: tTemplates,
-  tubeDesignerAssemblyLibrary: { selectedId: tTemplates[0].id, workMode: "example", workModeUserSelected: true } };
+  tubeDesignerAssemblyLibrary: { selectedId: tTemplates[0].id } };
 const tProduct = finishedProductInput(sharedT, "t");
 sharedT.tubeDesignerFinishedProduct.selectedShapeId = "t";
 tProduct.spans.main.length = 475; tProduct.spans.branch.length = 235;
@@ -156,43 +154,23 @@ for (const entry of readdirSync(allRoot, { withFileTypes: true }).filter((item) 
   assert.equal(finishedProductShape(sample.shapeId).spans.length, Object.keys(current.exampleInput.roles).length);
 }
 
-const productView = { tubeDesignerAssemblyTemplates: [miter],
-  tubeDesignerAssemblyLibrary: { selectedId: miter.id, workMode: "product", workModeUserSelected: true },
-  scene: { tubeDesigner: { activeProductId: "product", generationRun: { entityId: "run" } } } };
-assert.ok(!renderAssemblyLibraryRightPane(context, productView).includes("data-finished-product-editor"),
-"已生成产品节点使用其真实成品输入");
 const actualT = tTemplates[2];
 const productT = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: [actualT],
-  tubeDesignerAssemblyLibrary: { selectedId: actualT.id, workMode: "product", workModeUserSelected: true,
-    selectedProductConnectionProductKey: "product-t/run-t", selectedProductConnectionKey: "node-t",
-    selectedProductTemplateConnectionKey: "node-t", selectedProductTemplateId: actualT.id },
-  scene: { tubeDesigner: { activeProductId: "product-t", generationRun: { entityId: "run-t" } } },
-  tubeDesignerAssemblyProductConnections: { key: "product-t/run-t/false/false", status: "ready",
-    result: { productEntityId: "product-t", generationRunId: "run-t", modelOutdated: false,
-      connections: [{ key: "node-t", properties: { topology: "T" }, participants: [
-        { memberEntityId: "host-t" }, { memberEntityId: "branch-t" },
-      ], nodeGeometry: { nodeGeometryStatus: "verified", axisAngleDeg: 75 } }] } },
-  tubeDesignerProductAssemblyBindings: { key: "product-t/run-t/false/", productKey: "product-t/run-t",
-    status: "ready", result: { members: [], bindings: [], capabilities: { anchorKinds: [], templates: [] },
-      connections: [] }, drafts: {}, mutation: null, notice: "" } };
-productT.tubeDesignerAssemblyProductConnections.key = productAssemblyConnectionIdentity(productT).key;
-productT.tubeDesignerProductAssemblyBindings.key = productAssemblyBindingIdentity(productT).key;
-productT.tubeDesignerProductAssemblyBindings.result.connections = productT.tubeDesignerAssemblyProductConnections.result.connections;
-assert.equal(assemblyParameterValues(productT, actualT).intersectionAngle, 75,
-  "产品节点角度必须读取已核验的成品几何");
-assert.match(renderAssemblyLibraryRightPane(context, productT), /成品节点轴夹角：75°/);
-assert.doesNotMatch(renderAssemblyLibraryRightPane(context, productT), /data-tube-assembly-parameter="intersectionAngle"/);
-await handleAssemblyLibraryAction(context, productT, "tube-designer-assembly-parameter-change",
-  { dataset: { tubeAssemblyId: actualT.id, tubeAssemblyParameter: "intersectionAngle" }, value: "90" }, ops);
-assert.equal(assemblyParameterValues(productT, actualT).intersectionAngle, 75,
-  "伪造工艺编辑事件不能覆盖已提交成品的轴夹角");
-delete productT.tubeDesignerAssemblyProductConnections.result.connections[0].nodeGeometry.axisAngleDeg;
-assert.equal(assemblyParameterValues(productT, actualT).intersectionAngle, null,
-  "成品轴夹角未核验时不能默默回退为工艺模板默认值");
-const unverifiedCalls = [];
-await handleAssemblyLibraryAction({ sceneProxy: { invoke(method, payload) {
-  unverifiedCalls.push({ method, payload }); return Promise.resolve({});
-} } }, productT, "tube-designer-binding-preview", {}, ops);
-assert.deepEqual(unverifiedCalls, [], "未核验成品几何不能发起产品加工预览");
-assert.match(productT.tubeDesignerProductAssemblyBindings.drafts[actualT.id].previewError, /轴夹角未核验/);
+  tubeDesignerAssemblyLibrary: { selectedId: actualT.id },
+  scene: { tubeDesigner: { activeProductId: "product-t", generationRun: { entityId: "run-t" },
+    product: { parameters: { intersectionAngle: 75 } } } } };
+const committedProduct = structuredClone(productT.scene.tubeDesigner);
+const exampleT = finishedProductInput(productT, "t");
+exampleT.parameters.intersectionAngle = 70;
+assert.equal(assemblyParameterValues(productT, actualT).intersectionAngle, 70,
+  "当前产品不能覆盖资源库独立示例的成品角度");
+const productHtml = renderAssemblyLibraryRightPane(context, productT);
+assert.match(productHtml, /data-finished-product-editor/);
+assert.doesNotMatch(productHtml, /成品节点轴夹角|tube-designer-binding-|tube-designer-assembly-work-mode/);
+await handleAssemblyLibraryAction(context, productT, "tube-designer-finished-parameter-change",
+  { dataset: { finishedShape: "t", finishedParameter: "intersectionAngle" }, value: "85" }, ops);
+assert.equal(assemblyParameterValues(productT, actualT).intersectionAngle, 85,
+  "有当前产品时仍通过独立成品编辑器修改工艺示例角度");
+assert.deepEqual(productT.scene.tubeDesigner, committedProduct,
+  "资源库示例编辑不得改变已提交产品");
 console.log("assembly scene parameters passed: independent product editor, immutable complete inputs and process drafts");

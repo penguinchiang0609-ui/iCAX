@@ -20,6 +20,7 @@ namespace iCAX
         class CRepositoryTransaction;
         class CRepositoryUndoRedoHistory;
         class IMetaRegistry;
+        namespace detail { struct CChangeSetKeys; }
 
         /*
         * @brief 仓储实现
@@ -30,6 +31,7 @@ namespace iCAX
             friend class CEntityView;
             friend class CEntityWhereEvaluator;
             friend class CRepositoryTransaction;
+            friend class CEntity;
 
         public:
             /*
@@ -338,6 +340,9 @@ namespace iCAX
             * @param [in] pEntity_ 关联实体。
             */
             void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const RepositoryEventBatch> pBatch_ = nullptr);
+            void RecordOwnedComponentModification(IN const iCAX::Data::uuid& EntityID_,
+                IN const std::string& Class_, IN PropertySet&& Previous_, IN PropertySet&& New_,
+                IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_);
 
         private:
             /*
@@ -383,13 +388,13 @@ namespace iCAX
             * @brief 将 Repository 事件追加为有序操作。
             * @param [in] Args_ Repository 事件参数。
             */
-            void RecordRepositoryOperation(IN const RepositoryEventArgs& Args_);
+            void RecordRepositoryOperation(IN const RepositoryEventRecord& Args_);
 
             /*
             * @brief 将 Repository 事件追加到当前批量通知明细。
             * @param [in] Args_ Repository 事件参数。
             */
-            void RecordRepositoryBatchEvent(IN const RepositoryEventArgs& Args_);
+            void RecordRepositoryBatchEvent(IN RepositoryEventRecord&& Args_);
 
             /*
             * @brief 应用单个实体事件对版本和派生字段的影响。
@@ -401,7 +406,7 @@ namespace iCAX
             * @brief 应用 ChangeSet 摘要对版本和派生字段的影响。
             * @param [in] ChangeSet_ 批量净变更摘要。
             */
-            void ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_);
+            void ApplyChangeSetEffects(IN const detail::CChangeSetKeys& ChangeSet_);
 
             /*
             * @brief 正向执行一条 Repository 操作。
@@ -416,7 +421,7 @@ namespace iCAX
             *   事务意图必须全部成功；遇到缺失实体、组件或 meta 校验失败会抛异常，
             *   外层事务提交会据此取消内部批处理并回滚已经应用的部分。
             */
-            void ApplyTransactionOperation(IN const CRepositoryOperation& Operation_);
+            void ApplyTransactionOperation(IN CRepositoryOperation& Operation_);
 
             /*
             * @brief 按原顺序正向执行操作批次。
@@ -454,9 +459,9 @@ namespace iCAX
             /*
             * @brief 处理已提交操作批次。
             * @param [in] Batch_ 有序操作批次，是历史和日志的事实来源。
-            * @param [in] Summary_ 净变更摘要，用于判断提交是否有对外可见效果。
             */
-            void HandleCommittedOperationBatch(IN const COperationBatch& Batch_, IN const CChangeSet& Summary_);
+            void HandleCommittedOperationBatch(IN const COperationBatch& Batch_,
+                IN std::shared_ptr<const COperationBatch> pSharedBatch_ = nullptr);
 
             /*
             * @brief 追加快速保存操作日志。

@@ -37,7 +37,7 @@ try {
       const {view,sketch,render}=window.check;
       view.tubeDesignerSketch=sketch.createInitialSketchState();
       view.tubeDesignerSketch.snapEnabled=false;
-      if(entity){const d=view.tubeDesignerSketch.section;d.entities=Array.isArray(entity)?entity:[entity];d.selectedId=d.entities[0].id;d.selectedIds=[d.selectedId];}
+      if(entity){const d=view.tubeDesignerSketch.section;d.entities=Array.isArray(entity)?entity:[entity];d.selectedIds=[d.entities[0].id];}
       render();
     },entity);
   };
@@ -94,13 +94,13 @@ try {
   await command("redo");assert.equal((await state()).section.entities.length,1);
   for(const initiallySelected of [true,false]) {
     await reset(pair);
-    if(!initiallySelected)await page.evaluate(()=>{const d=window.check.view.tubeDesignerSketch.section;d.selectedId="";d.selectedIds=[];window.check.render();});
+    if(!initiallySelected)await page.evaluate(()=>{const d=window.check.view.tubeDesignerSketch.section;d.selectedIds=[];window.check.render();});
     await drag([-8,-3],[8,3]);
     assert.equal((await state()).section.selectedPoints.length,2,"box finds endpoints on both curves");
     await command("join");assert.equal((await state()).section.entities.length,1);
   }
   await reset(pair);
-  await page.evaluate(()=>{const d=window.check.view.tubeDesignerSketch.section;d.selectedId="";d.selectedIds=[];window.check.render();});
+  await page.evaluate(()=>{const d=window.check.view.tubeDesignerSketch.section;d.selectedIds=[];window.check.render();});
   await drag([-50,-5],[50,25]);
   assert.equal((await state()).section.selectedIds.length,2);
   assert.equal((await state()).section.selectedPoints.length,0,"whole-object box selection remains available");

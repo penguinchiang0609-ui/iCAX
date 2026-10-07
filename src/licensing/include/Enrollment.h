@@ -142,18 +142,31 @@ inline Bytes DecryptActivation(std::span<const unsigned char> file, std::string_
     Require(verified.devicePublicKey == AttestationPublicKey(ak.publicArea), "Certificate and activation device differ");
     return certificate;
 }
-template<std::uint32_t Site, Feature Required>
-__forceinline void VerifyTpmAtSite(std::span<const unsigned char> file, std::string_view issuer,
-    std::span<const unsigned char> trustedKey, std::uint32_t major) {
+template<std::uint32_t Site>
+__forceinline void ProveTpmCertificateAtSite(const Certificate& c, Feature required) {
     static_assert(Site != 0);
-    const auto c = VerifyCertificate(file, issuer, trustedKey);
     Require(c.strategy == Strategy::Tpm2, "Dongle adapter not installed");
-    Require(major >= c.minMajor && major <= c.maxMajor && (c.features & static_cast<unsigned>(Required)) != 0, "Operation not licensed");
     tpm::Context ctx; tpm::Object ak(ctx, 0x40000001, tpm::AkTemplate());
     Require(AttestationPublicKey(ak.publicArea) == c.devicePublicKey, "TPM device mismatch");
-    const auto random = RandomChallenge(); const auto challenge = DeviceChallenge(c, Required, random, Site);
+    const auto random = RandomChallenge(); const auto challenge = DeviceChallenge(c, required, random, Site);
     const auto nonce = Hash(challenge); const auto evidence = tpm::Quote(ctx, ak, nonce);
     tpm::VerifyQuote(ak.publicArea, ak.qualifiedName, nonce, evidence);
     if (c.kind == Kind::Trial) EnforceTrial(ctx, ak, c);
+}
+
+template<std::uint32_t Site>
+__forceinline void VerifyTpmFeatureAtSite(std::span<const unsigned char> file, std::string_view issuer,
+    std::span<const unsigned char> trustedKey, std::uint32_t major, Feature required) {
+    static_assert(Site != 0);
+    const auto c = VerifyCertificate(file, issuer, trustedKey);
+    Require(major >= c.minMajor && major <= c.maxMajor, "Version not licensed");
+    Require(HasFeature(c.features, required), "Page or operation not licensed");
+    ProveTpmCertificateAtSite<Site>(c, required);
+}
+template<std::uint32_t Site, Feature Required>
+__forceinline void VerifyTpmAtSite(std::span<const unsigned char> file, std::string_view issuer,
+    std::span<const unsigned char> trustedKey, std::uint32_t major) {
+    static_assert(RequiredFeatures(Required) != 0);
+    VerifyTpmFeatureAtSite<Site>(file, issuer, trustedKey, major, Required);
 }
 }

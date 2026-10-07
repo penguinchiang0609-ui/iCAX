@@ -117,9 +117,9 @@ try {
   const input=async(locator,value)=>{await locator.fill(String(value));await locator.press("Tab");await ready();};
   const choose=async(locator,value)=>{await locator.selectOption(value);await ready();};
   const open=async(mode,index="draft")=>{await page.locator('[data-tube-designer-punch-row="'+index+'"] [data-tube-designer-punch-editor-mode="'+mode+'"]').click();await ready();};
-  const closePopup=async()=>{await popup().locator('[data-cam-action$="parameters-cancel"]').click();await ready();};
+  const closePopup=async()=>{await popup().locator('[data-cam-action$="parameters-close"]').click();await ready();};
   const pfield=name=>popup().locator('[data-tube-designer-punch-field="'+name+'"]');
-  const arrayfield=(name,id="legacy-length")=>popup().locator('[data-tube-designer-punch-array-group="'+id+'"][data-tube-designer-punch-array-field="'+name+'"]');
+  const arrayfield=(name,id="layout-length")=>popup().locator('[data-tube-designer-punch-array-group="'+id+'"][data-tube-designer-punch-array-field="'+name+'"]');
   const screenshot=label=>page.screenshot({path:resolve(artifacts,label+".png")});
   const assertToolsOnly=async expected=>{
     const snapshot=await page.evaluate(()=>window.fixture.snapshot());

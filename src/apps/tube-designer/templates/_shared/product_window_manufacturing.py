@@ -36,6 +36,23 @@ _PROCESS_DEFAULTS = {
     'assemblyClearance': 0.0,
     'horizontalBranchReserve': 0.0,
     'verticalBranchReserve': 0.0,
+    'horizontalEndConnection': 'insert',
+    'verticalEndConnection': 'insert',
+    'outerFrameBendKFactor': 0.0,
+    'outerFrameFoldBridge': 1.0,
+    'outerFrameVGrooveMaleFemale': True,
+    'outerFrameVGrooveBottomStrategy': 'sharp',
+    'outerFrameVGrooveRoundRadius': 2.0,
+    'doorFrameBendKFactor': 0.0,
+    'doorFrameFoldBridge': 1.0,
+    'doorFrameVGrooveMaleFemale': True,
+    'doorFrameVGrooveBottomStrategy': 'sharp',
+    'doorFrameVGrooveRoundRadius': 2.0,
+    'doorLeafFrameBendKFactor': 0.0,
+    'doorLeafFrameFoldBridge': 1.0,
+    'doorLeafFrameVGrooveMaleFemale': True,
+    'doorLeafFrameVGrooveBottomStrategy': 'sharp',
+    'doorLeafFrameVGrooveRoundRadius': 2.0,
 }
 
 
@@ -121,6 +138,33 @@ def _process_resources(parameters, choices, item_keys):
             reference, draft = {'scope': scope, 'id': identifier}, {}
         else:
             reference, draft = deepcopy(binding['ref']), deepcopy(binding.get('parameters', {}))
+        # These are product decisions over this currently selected folded frame.
+        # Preserve the host's tool draft; derive the machining copy only here.
+        prefix = {'outerFrameGroove': 'outerFrame', 'doorFrameGroove': 'doorFrame',
+                  'doorLeafFrameGroove': 'doorLeafFrame'}[role]
+        factor = choices[prefix+'BendKFactor'] if reference == {'scope': 'system', 'id': 'edge-arc-groove'} else 0.
+        if isinstance(factor, bool) or not isinstance(factor, (int, float)) or not math.isfinite(factor) or not 0 <= factor <= 1:
+            raise ValueError('折弯系数 K 须介于 0 和 1 之间')
+        if reference['scope'] == 'system' and reference['id'] in {'v-notch-sharp', 'edge-arc-groove'}:
+            bridge = choices[prefix+'FoldBridge']
+            if isinstance(bridge, bool) or not isinstance(bridge, (int, float)) or not math.isfinite(bridge) or not 0.1 <= bridge <= 10:
+                raise ValueError('折角留底厚度须介于 0.1 和 10 mm 之间')
+            draft.update(bendCompensation=factor > 0., kFactor=float(factor), bottomReference='outer')
+            if reference['id'] == 'v-notch-sharp':
+                if not isinstance(choices[prefix+'VGrooveMaleFemale'], bool):
+                    raise ValueError('V槽公母必须是开关')
+                strategy = choices[prefix+'VGrooveBottomStrategy']
+                if strategy not in {'sharp', 'rounded'}:
+                    raise ValueError('防盗窗 V槽底部方式无效')
+                draft.update(leaveBottom=float(bridge), maleFemale=choices[prefix+'VGrooveMaleFemale'],
+                             maleFemaleSize=0., bottomStrategy=strategy, asymmetric=False, segmentedBend=False)
+                if strategy == 'rounded':
+                    radius = choices[prefix+'VGrooveRoundRadius']
+                    if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not math.isfinite(radius) or radius < 0:
+                        raise ValueError('槽根圆弧半径 R 不能小于 0')
+                    draft['roundRadius'] = float(radius)
+            else:
+                draft['bridge'] = float(bridge)
         resources[role] = {'ref': reference}
         drafts[role] = {reference['id']: draft}
     return resources, drafts
@@ -134,25 +178,54 @@ def build_window_manufacturing(parameters, context, core, design=None):
         design = deepcopy(design)
     choices = {name: deepcopy(parameters.get(name, default)) for name, default in _PROCESS_DEFAULTS.items()}
     item_keys = [item['key'] for item in design['items']]
-    if parameters.get('faceType', 'single') != 'single':
+    external_available = (
+        parameters.get('faceType', 'single') == 'single'
+        and parameters.get('frameLayout', 'four_sides') == 'four_sides'
+        and not parameters.get('accessDoorEnabled', True)
+        and parameters.get('infillPattern', 'grid') in ('horizontal', 'vertical'))
+    if not external_available:
+        # Match the current descriptor's unavailableChoiceFallback. Retain the
+        # host's selection as a draft while this geometry uses built-in rules.
         choices['assemblyPlanningMode'] = 'builtin_rules'
     closed_outer = all(any(key.startswith('outer_frame.' + side + '.') for key in item_keys)
                        for side in ('left', 'right', 'bottom', 'top'))
     if choices['assemblyPlanningMode'] == 'external_templates' or (
             parameters.get('faceType', 'single') == 'single' and not closed_outer):
         choices['frameManufacturingMode'] = 'segment_weld'
+    if (choices['frameManufacturingMode'] == 'spatial_v_notch'
+            and parameters.get('faceType', 'single') in ('single', 'five')):
+        # These faces derive the supported planar route from a retained
+        # spatial draft. Their spatial-only controls are hidden by the product
+        # descriptor, so those drafts cannot change or reject that route.
+        for name in ('outerFrameBendKFactor', 'outerFrameFoldBridge',
+                     'outerFrameVGrooveMaleFemale', 'outerFrameVGrooveBottomStrategy',
+                     'outerFrameVGrooveRoundRadius'):
+            choices[name] = deepcopy(_PROCESS_DEFAULTS[name])
+        choices['frameManufacturingMode'] = 'plane_v_notch'
+        if parameters.get('faceType') == 'five':
+            # The retained spatial choice hides all independent-post controls
+            # on this face. Its supported planar route uses defaults rather
+            # than consuming those inactive drafts.
+            choices.update(deepcopy(_load('security_window_post_connections').POST_DEFAULTS))
     if choices['assemblyPlanningMode']=='external_templates':
         # These local dimensions belong to processing, which this branch has
         # not selected. The host retains their original inactive drafts.
         for name in ('assemblyClearance','horizontalBranchReserve','verticalBranchReserve'):
             choices[name]=0.0
+        for name in ('horizontalEndConnection','verticalEndConnection'):
+            choices[name]='insert'
     else:
         for prefix,name in (('horizontal','horizontalBranchReserve'),('vertical','verticalBranchReserve')):
-            if not any(key.startswith(('main_grid.'+prefix+'.','side_grid.'+prefix+'.',
-                                       'access_door.leaf.'+prefix+'.','cap_grid.'+prefix+'.'))
-                       for key in item_keys):
+            active = any(key.startswith(('main_grid.'+prefix+'.','side_grid.'+prefix+'.',
+                                        'cap_grid.'+prefix+'.')) for key in item_keys)
+            if not active:
+                choices[prefix+'EndConnection']='insert'
+            if not active or choices[prefix+'EndConnection'] != 'insert':
                 choices[name]=0.0
     choices.update(_load('security_window_post_connections').process_choices({**parameters, **choices}))
+    # Material selection is a product decision, never an insertion permission.
+    # The selected connection validates its actual tube/ear/receiver geometry
+    # downstream; tabs do not insert the post's complete outer contour.
     resources_for_process, drafts = _process_resources(parameters, choices, item_keys)
     connections = []
     for relation in design.get('relationships', []):
@@ -165,7 +238,8 @@ def build_window_manufacturing(parameters, context, core, design=None):
     process_input = {
         'schema': 'icax.assembly-process-input', 'schemaVersion': 3,
         'parts': {'members': {'scope': 'design', 'itemKeys': item_keys}},
-        'geometry': {'layout': {'faceType': parameters.get('faceType', 'single'),
+        'geometry': {'mergeIdenticalParts': True,
+                     'layout': {'faceType': parameters.get('faceType', 'single'),
                                 'accessDoorEnabled': bool(parameters.get('accessDoorEnabled', False))}},
     }
     if resources_for_process:

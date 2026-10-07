@@ -1,0 +1,8 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)SecurityWindowFramesBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>LicensingIntegrationBridge</TargetName>
+    <TargetPath>$(OutDir)$(TargetName)$(TargetExt)</TargetPath>
+    <ICAXInspectionBridgeSource>$(MSBuildThisFileDirectory)LicensingIntegrationBridge.cpp</ICAXInspectionBridgeSource>
+  </PropertyGroup>
+</Project>

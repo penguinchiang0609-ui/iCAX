@@ -33,7 +33,7 @@ namespace iCAX
             std::string ComponentClass;
             std::string PropertyName;
             bool bResourceReference = false;
-            // 为空时兼容旧契约，发布资源池当前版本；非空时从同组件字段读取精确版本。
+            // 未指定版本字段时发布资源池当前版本；指定字段时读取同组件的精确资源版本。
             std::string ResourceVersionPropertyName;
 
             auto operator<=>(const SViewProjectionField&) const = default;

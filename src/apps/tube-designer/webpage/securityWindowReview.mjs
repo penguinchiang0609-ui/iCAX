@@ -44,11 +44,10 @@ export function securityWindowOpeningDimensions(values = {}) {
   const height = dimension(values.doorClearHeight, 1000);
   const leafDepth = profileDimension(values, "doorLeafFrame", "depth", 20);
   const fixedWidth = profileDimension(values, "doorFrame", "width", 25);
-  const hardware = dimension(values.doorHardwareClearance, 10);
-  const fixedClearWidth = width == null || width <= 0 || leafDepth == null || hardware == null
-    ? null : width + leafDepth + hardware;
+  const fixedClearWidth = width == null || width <= 0 || leafDepth == null
+    ? null : width + leafDepth;
   return {
-    width, height, leafDepth, fixedWidth, hardware, fixedClearWidth,
+    width, height, leafDepth, fixedWidth, fixedClearWidth,
     outsideWidth: fixedClearWidth == null || fixedWidth == null ? null : fixedClearWidth + 2 * fixedWidth,
     outsideHeight: height == null || height <= 0 || fixedWidth == null ? null : height + 2 * fixedWidth,
   };
@@ -59,7 +58,7 @@ function isVGroove(value) {
 }
 
 function frameJoinName(value) {
-  if (isVGroove(value)) return "V 槽折弯";
+  if (isVGroove(value)) return "连续成形";
   return { miter_45: "45°拼焊", butt_90: "90°直拼" }[value] || "待确认";
 }
 
@@ -72,11 +71,11 @@ function connectionReview(layout, values, enabled, rows, warnings) {
       ? "v_groove_90:tool_library" : values.frameJoinType ?? "miter_45";
     const fixedJoin = values.doorFrameJoinType ?? "miter_45";
     const leafJoin = values.doorLeafFrameJoinType ?? "miter_45";
-    rows.push(row("大框连接", closed ? frameJoinName(outerJoin) : "开边框"));
+    rows.push(row("外框连接", closed ? frameJoinName(outerJoin) : "开边框"));
     if (enabled) rows.push(row("开启框连接", `固定框 ${frameJoinName(fixedJoin)}；窗扇 ${frameJoinName(leafJoin)}`));
     if (!closed) warnings.push("大框未四边闭合，开边需由现场围护补齐并确认固定方式。");
     if ((closed && isVGroove(outerJoin)) || (enabled && (isVGroove(fixedJoin) || isVGroove(leafJoin)))) {
-      warnings.push("已选 V 槽折弯：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
+      warnings.push("已选连续框成形：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
     }
     if ((closed && outerJoin === "miter_45") || (enabled && (fixedJoin === "miter_45" || leafJoin === "miter_45"))) {
       warnings.push(miterPreview);
@@ -86,12 +85,12 @@ function connectionReview(layout, values, enabled, rows, warnings) {
       const fixedJoin = values.doorFrameJoinType ?? "butt_90";
       const leafJoin = values.doorLeafFrameJoinType ?? "butt_90";
       rows.push(row("开启框连接", `固定框 ${frameJoinName(fixedJoin)}；窗扇 ${frameJoinName(leafJoin)}`));
-      if (isVGroove(fixedJoin) || isVGroove(leafJoin)) warnings.push("已选 V 槽折弯：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
+      if (isVGroove(fixedJoin) || isVGroove(leafJoin)) warnings.push("已选连续框成形：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
       if (fixedJoin === "miter_45" || leafJoin === "miter_45") warnings.push(miterPreview);
     }
     if (values.frameManufacturingMode && values.frameManufacturingMode !== "segment_weld") {
-      rows.push(row("外框制造", values.frameManufacturingMode === "spatial_v_notch" ? "空间连续V槽折弯" : "平面V槽折弯"));
-      warnings.push("连续外框须按输出的槽向、折合顺序和原管长度加工；空间自干涉检查不包含设备及工装。");
+      rows.push(row("外框结构", values.frameManufacturingMode === "spatial_v_notch" ? "空间连续框" : "平面连续框"));
+      warnings.push("连续外框须按输出的加工方向、成形顺序和下料长度加工；空间自干涉检查不包含设备及工装。");
     } else {
       rows.push(row("外框转角", { post_butt: "立柱贯通、横梁直拼", rail_miter: "横梁45°拼角" }[values.frameCornerJoin ?? "post_butt"] || "待确认"));
       if (values.frameCornerJoin === "rail_miter") warnings.push(miterPreview);
@@ -137,12 +136,11 @@ export function renderSecurityWindowReview(template, values = {}) {
   if (!enabled) {
     warnings.push("未设置逃生窗：请确认室内可开启的逃生与救援通道，不能仅凭此模板判断满足现场要求。");
   } else {
-    const { width, height, leafDepth, hardware, fixedClearWidth } = securityWindowOpeningDimensions(values);
+    const { width, height, leafDepth, fixedClearWidth } = securityWindowOpeningDimensions(values);
     rows.push(row("逃生窗", "已设置"));
     rows.push(row("目标通行净尺寸", size(width, height)));
     rows.push(row("固定框内净尺寸", size(fixedClearWidth, height)));
-    rows.push(row("开启宽度预留", leafDepth == null || hardware == null
-      ? "待填写有效尺寸" : `窗扇厚度 ${leafDepth} mm + 五金侵入 ${hardware} mm`));
+    rows.push(row("窗扇厚度", leafDepth == null ? "待填写有效尺寸" : `${leafDepth} mm`));
     warnings.push("目标尺寸为设计值，不代表现场可通行或合规结论。");
   }
 

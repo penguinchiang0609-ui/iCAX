@@ -12,8 +12,6 @@
     <ClInclude Include="ProjectFileCodec.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="ProjectFileExport.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="ProjectFileStore.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ProjectMigration.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ProjectMigrationRegistration.h"><Filter>头文件</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>源文件</Filter></ClCompile>
@@ -21,7 +19,5 @@
     <ClCompile Include="ProjectDocument.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ProjectFileCodec.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ProjectFileStore.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ProjectMigration.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ProjectMigrationRegistration.cpp"><Filter>源文件</Filter></ClCompile>
   </ItemGroup>
 </Project>

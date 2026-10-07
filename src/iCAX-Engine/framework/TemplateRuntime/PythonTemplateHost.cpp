@@ -3,6 +3,9 @@
 
 #include <Windows.h>
 
+#include <array>
+#include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
@@ -20,6 +23,57 @@ namespace
 
     constexpr int kPyFileInput = 257;
     constexpr int kPyEvalInput = 258;
+
+    class CPythonInvokeProfile final
+    {
+    public:
+        explicit CPythonInvokeProfile(const iCAX::Data::ObjectMap& Request_)
+            : Enabled(GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) > 0),
+              Started(std::chrono::steady_clock::now()), StageStarted(Started)
+        {
+            if (!Enabled) return;
+            const auto _Operation = Request_.find("operation");
+            if (_Operation != Request_.end() && _Operation->second.Is<std::string>())
+                Operation = _Operation->second.To<std::string>();
+        }
+
+        ~CPythonInvokeProfile()
+        {
+            if (!Enabled) return;
+            FinishStage();
+            std::fprintf(stderr,
+                "Disassembly/python-host operation=%s request=%zu response=%zu prepare=%.3f serialize=%.3f bind=%.3f python=%.3f extract=%.3f parsePrecise=%.3f checks=%.3f total=%.3f ms\n",
+                Operation.c_str(), RequestBytes, ResponseBytes,
+                Milliseconds[0], Milliseconds[1], Milliseconds[2], Milliseconds[3],
+                Milliseconds[4], Milliseconds[5], Milliseconds[6],
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - Started).count());
+        }
+
+        void Stage(std::size_t Stage_)
+        {
+            if (!Enabled) return;
+            FinishStage();
+            CurrentStage = Stage_;
+        }
+
+        std::size_t RequestBytes = 0;
+        std::size_t ResponseBytes = 0;
+
+    private:
+        void FinishStage()
+        {
+            const auto _Now = std::chrono::steady_clock::now();
+            Milliseconds[CurrentStage] += std::chrono::duration<double, std::milli>(_Now - StageStarted).count();
+            StageStarted = _Now;
+        }
+
+        bool Enabled;
+        std::string Operation = "unknown";
+        std::chrono::steady_clock::time_point Started, StageStarted;
+        std::size_t CurrentStage = 0;
+        std::array<double, 7> Milliseconds{};
+    };
 
     template<typename TFunction>
     TFunction ResolvePythonFunction(HMODULE Module_, const char* pName_)
@@ -275,8 +329,9 @@ public:
             throw std::invalid_argument("embedded Python runtime paths cannot be empty");
     }
 
-    ObjectMap Invoke(const ObjectMap& Request_, std::vector<std::string>* ProfileRolesConsumed_)
+    ObjectMap Invoke(ObjectMap Request_, std::vector<std::string>* ProfileRolesConsumed_)
     {
+        CPythonInvokeProfile _Profile(Request_);
         std::scoped_lock _Lock(Mutex);
         EnsureStarted();
         auto& _Runtime = ProcessRuntime();
@@ -288,12 +343,17 @@ public:
             throw std::runtime_error("embedded Python main module is unavailable");
 
         const auto _RequestID = NextRequestID++;
-        auto _Envelope = Request_;
+        auto _Envelope = std::move(Request_);
         _Envelope["requestId"] = static_cast<unsigned long long>(_RequestID);
+        _Profile.Stage(1);
+        const auto _RequestText = CStandardJsonCodec::Serialize(Variant(std::move(_Envelope)));
+        _Profile.RequestBytes = _RequestText.size();
+        _Profile.Stage(2);
         SetPythonString(
             _Runtime.Api, _Globals, "__icax_template_request_json",
-            CStandardJsonCodec::Serialize(Variant(_Envelope)));
+            _RequestText);
 
+        _Profile.Stage(3);
         auto* _ResponseObject = _Runtime.Api.RunStringFlags(
             "__import__('icax_template_embedded').invoke(__icax_template_request_json)",
             kPyEvalInput, _Globals, _Globals, nullptr);
@@ -301,6 +361,7 @@ public:
             throw std::runtime_error("embedded Python template invocation failed: "
                 + ConsumePythonError(_Runtime.Api));
 
+        _Profile.Stage(4);
         PySsize _ResponseSize = 0;
         const auto _ResponseData = _Runtime.Api.UnicodeAsUTF8AndSize(
             _ResponseObject, &_ResponseSize);
@@ -311,12 +372,15 @@ public:
         }
         const std::string _ResponseText(
             _ResponseData, static_cast<std::size_t>(_ResponseSize));
+        _Profile.ResponseBytes = _ResponseText.size();
         _Runtime.Api.DecRef(_ResponseObject);
 
-        const auto _ResponseValue = CStandardJsonCodec::Parse(_ResponseText);
+        _Profile.Stage(5);
+        auto _ResponseValue = CStandardJsonCodec::Parse(_ResponseText);
+        _Profile.Stage(6);
         if (!_ResponseValue.Is<ObjectMap>())
             throw std::runtime_error("embedded Python template returned a non-object response");
-        const auto _Response = _ResponseValue.To<ObjectMap>();
+        auto& _Response = std::get<ObjectMap>(_ResponseValue.m_Value);
         const auto _ID = _Response.find("requestId");
         if (_ID == _Response.end() || ToUInt64(_ID->second) != _RequestID)
             throw std::runtime_error("embedded Python template response requestId does not match");
@@ -329,7 +393,7 @@ public:
             if (const auto _Error = _Response.find("error");
                 _Error != _Response.end() && _Error->second.Is<ObjectMap>())
             {
-                const auto _ErrorObject = _Error->second.To<ObjectMap>();
+                const auto& _ErrorObject = std::get<ObjectMap>(_Error->second.m_Value);
                 if (const auto _Text = _ErrorObject.find("message");
                     _Text != _ErrorObject.end() && _Text->second.Is<std::string>())
                 {
@@ -346,7 +410,7 @@ public:
             const auto _Roles = _Response.find("profileRolesConsumed");
             if (_Roles == _Response.end() || !_Roles->second.Is<iCAX::Data::VariantArray>())
                 throw std::runtime_error("product template response requires profileRolesConsumed array");
-            const auto _Values = _Roles->second.To<iCAX::Data::VariantArray>();
+            const auto& _Values = std::get<iCAX::Data::VariantArray>(_Roles->second.m_Value);
             if (_Values.size() > 64) throw std::runtime_error("product template consumed too many profile roles");
             std::vector<std::string> _Validated;
             std::set<std::string> _Seen;
@@ -360,7 +424,7 @@ public:
             }
             *ProfileRolesConsumed_ = std::move(_Validated);
         }
-        return _Result->second.To<ObjectMap>();
+        return std::move(std::get<ObjectMap>(_Result->second.m_Value));
     }
 
     bool IsRunning() const noexcept
@@ -424,6 +488,12 @@ iCAX::Data::ObjectMap iCAX::TemplateRuntime::CPythonTemplateHost::Invoke(
     const iCAX::Data::ObjectMap& Request_, std::vector<std::string>* ProfileRolesConsumed_)
 {
     return m_pImpl->Invoke(Request_, ProfileRolesConsumed_);
+}
+
+iCAX::Data::ObjectMap iCAX::TemplateRuntime::CPythonTemplateHost::Invoke(
+    iCAX::Data::ObjectMap&& Request_, std::vector<std::string>* ProfileRolesConsumed_)
+{
+    return m_pImpl->Invoke(std::move(Request_), ProfileRolesConsumed_);
 }
 
 bool iCAX::TemplateRuntime::CPythonTemplateHost::IsRunning() const noexcept

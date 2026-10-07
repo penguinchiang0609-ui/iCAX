@@ -1,4 +1,7 @@
 import { MockHostBridge } from "./mockHostBridge.mjs";
+import { installDialogPathMemory } from "./dialogPathMemory.mjs";
+
+export { installDialogPathMemory } from "./dialogPathMemory.mjs";
 
 export async function createBridge(options = {}) {
   const hostBridge = globalThis.icax ?? globalThis.icaxNativeBridge;
@@ -37,5 +40,5 @@ export function validateBridge(bridge, name = "bridge") {
     throw new TypeError(`${name}.pdo.withWrite must be a function when provided`);
   }
 
-  return bridge;
+  return installDialogPathMemory(bridge);
 }

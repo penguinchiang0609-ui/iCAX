@@ -1,9 +1,165 @@
 import unittest
+from contextlib import contextmanager, ExitStack
+from unittest.mock import patch
 from ProfileFamilyTests import runtime, ROOT
 
 CATALOG=ROOT/"src/apps/tube-designer/templates/profile"
 
+
+@contextmanager
+def forbid_forward_evaluation():
+    original_context = runtime._script_context
+    attempts = []
+
+    def forbidden(*args, **kwargs):
+        attempts.append(True)
+        raise AssertionError("Forward geometry evaluation is forbidden during fitting")
+
+    @contextmanager
+    def guarded_script(*args, **kwargs):
+        with original_context(*args, **kwargs) as namespace:
+            namespace["build"] = forbidden
+            yield namespace
+
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(runtime, "_evaluate", side_effect=forbidden))
+        stack.enter_context(patch.object(runtime, "evaluate_section", side_effect=forbidden))
+        stack.enter_context(patch.object(runtime, "_script_context", guarded_script))
+        yield
+    if attempts:
+        raise AssertionError("The inverse path attempted forward geometry evaluation")
+
+
 class Fitting(unittest.TestCase):
+    def test_p_tube_zero_inner_radii_survive_transformed_inverse_rebuild(self):
+        import copy
+        import importlib.util
+        import math
+        spec = importlib.util.spec_from_file_location(
+            "p_tube_rounding_geometry",
+            ROOT / "src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py")
+        g = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(g)
+        package = runtime._system_package(CATALOG / "p-tube", preview=False)
+
+        def evaluate(values):
+            original_values = copy.deepcopy(values)
+            section = runtime._evaluate(package["descriptor"], package["scriptSource"], values,
+                package["packageDigest"], package["sourceFileName"], package["resources"])
+            self.assertEqual(original_values, values)
+            self.assertEqual(original_values, section["parameters"])
+            return section
+
+        for scale in (1, 1.23, 2.17):
+            for mirror in (False, True):
+                values = {**package["defaultParameters"], "width": 40 * scale,
+                    "depth": 40 * scale, "wallThickness": 3 * scale,
+                    "flangeLength": 30 * scale, "flangeThickness": 3 * scale,
+                    "outerRadius": 3 * scale, "mirrorX": mirror}
+                base = g.normalize(evaluate(values), 0.001)
+                for angle in (0, 37, 123):
+                    with self.subTest(scale=scale, mirror=mirror, angle=angle):
+                        original = g.transform(base, math.radians(angle), [123, -45])
+                        with forbid_forward_evaluation():
+                            response = runtime.generate({"action": "recognize-system",
+                                "profileRoot": str(CATALOG), "section": g.to_section(original)}, {})
+                        match = next(item for item in response["results"] if item["profileId"] == "p-tube")
+                        self.assertEqual("matched", match["status"], match)
+                        candidate = match["candidates"][0]
+                        self.assertFalse(candidate["parameters"]["useIndependentInnerRadii"])
+                        rebuilt = evaluate({**package["defaultParameters"], **candidate["parameters"]})
+                        self.assertTrue(all(edge["kind"] == "line"
+                            for edge in rebuilt["contours"][1]["segments"]))
+                        equivalent, error = g.verify(original, g.normalize(rebuilt, 0.001),
+                                                     candidate["transform"], 0.001)
+                        self.assertTrue(equivalent, (candidate, error))
+
+        # A small but real positive inner radius must remain an arc. The
+        # rounding fix must not use the much larger recognition tolerance.
+        values = {**package["defaultParameters"], "outerRadius": 3.0001}
+        section = evaluate(values)
+        arcs = [edge for edge in section["contours"][1]["segments"] if edge["kind"] == "arc"]
+        self.assertEqual(3, len(arcs))
+        for edge in arcs:
+            self.assertAlmostEqual(0.0001, g.arc(edge["start"], edge["middle"], edge["end"])["radius"], places=8)
+
+    def test_inactive_end_radius_drafts_do_not_affect_inverse_geometry(self):
+        import importlib.util
+        import math
+        spec = importlib.util.spec_from_file_location(
+            "inactive_radius_geometry",
+            ROOT / "src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py")
+        g = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(g)
+        for name in ("angle", "channel"):
+            with self.subTest(template=name):
+                package = runtime._system_package(CATALOG / name, preview=False)
+                values = {**package["defaultParameters"], "useHotRolled": False,
+                    "useIndependentFreeEndRadii": True, "freeEndRadius": 1,
+                    "freeEndRadius1": 0.5, "freeEndRadius2": 0.75}
+                raw = runtime._evaluate(package["descriptor"], package["scriptSource"], values,
+                    package["packageDigest"], package["sourceFileName"], package["resources"])
+                original = g.transform(g.normalize(raw, 0.001), math.radians(37), [123, -45])
+                with forbid_forward_evaluation():
+                    response = runtime.generate({"action": "recognize", "package": package,
+                        "section": g.to_section(original)}, {})
+                self.assertTrue(response["matched"], response)
+                candidate = response["results"][0]["candidates"][0]
+                recovered = candidate["parameters"]
+                self.assertFalse(recovered["useHotRolled"])
+                self.assertFalse(recovered["useIndependentFreeEndRadii"])
+                self.assertEqual([0, 0, 0], [recovered[key]
+                    for key in ("freeEndRadius", "freeEndRadius1", "freeEndRadius2")])
+                rebuilt = runtime._evaluate(package["descriptor"], package["scriptSource"],
+                    {**package["defaultParameters"], **recovered}, package["packageDigest"],
+                    package["sourceFileName"], package["resources"])
+                equivalent, error = g.verify(original, g.normalize(rebuilt, 0.001),
+                                             candidate["transform"], 0.001)
+                self.assertTrue(equivalent, (candidate, error))
+
+    def test_angle_sharp_roots_and_larger_inside_radius(self):
+        import importlib.util
+        import math
+        from contextlib import contextmanager
+        from unittest.mock import patch
+        spec=importlib.util.spec_from_file_location('sharp_angle_geometry',ROOT/'src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py')
+        g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
+        package=runtime._system_package(CATALOG/'angle',preview=False)
+        original_context=runtime._script_context
+        def forbidden(*args,**kwargs):
+            raise AssertionError('forward forbidden')
+        @contextmanager
+        def guarded_context(*args,**kwargs):
+            with original_context(*args,**kwargs) as namespace:
+                namespace['build']=forbidden
+                yield namespace
+        for outer,inner,toe in ((0,0,0),(0,6,6),(3,0,0),(2,6,1)):
+            for mirror in (False,True):
+                with self.subTest(outer=outer,inner=inner,toe=toe,mirror=mirror):
+                    values={**package['defaultParameters'],'width':96,'depth':96,
+                        'wallThickness':8,'outerRadius':outer,'useInnerRadius':True,
+                        'innerRadius':inner,'useHotRolled':toe>0,
+                        'freeEndRadius':toe,'mirrorX':mirror}
+                    raw=runtime._evaluate(package['descriptor'],package['scriptSource'],values,
+                        package['packageDigest'],package['sourceFileName'],package['resources'])
+                    original=g.transform(g.normalize(raw,0.001),math.radians(37),[123,-45])
+                    with patch.object(runtime,'_evaluate',side_effect=AssertionError('forward forbidden')), \
+                         patch.object(runtime,'evaluate_section',side_effect=AssertionError('forward forbidden')), \
+                         patch.object(runtime,'_script_context',guarded_context):
+                        # Include catalogue loading in the guarded inverse path.
+                        response=runtime.generate(dict(action='recognize-system',
+                            profileRoot=str(CATALOG),section=g.to_section(original)),{})
+                    self.assertTrue(response['matched'],response)
+                    match=next(r for r in response['results'] if r['profileId']=='angle')
+                    candidate=match['candidates'][0]
+                    self.assertAlmostEqual(outer,candidate['parameters']['outerRadius'])
+                    self.assertAlmostEqual(inner,candidate['parameters']['innerRadius'])
+                    rebuilt=runtime._evaluate(package['descriptor'],package['scriptSource'],
+                        {**package['defaultParameters'],**candidate['parameters']},
+                        package['packageDigest'],package['sourceFileName'],package['resources'])
+                    ok,error=g.verify(original,g.normalize(rebuilt,0.001),candidate['transform'],0.001)
+                    self.assertTrue(ok,(candidate,error))
+
     def test_unsupported_exact_geometry_is_reported_without_forward_calls(self):
         from unittest.mock import patch
         section={"contours":[{"kind":"path","closed":True,"segments":[
@@ -53,7 +209,7 @@ class Fitting(unittest.TestCase):
                                 else:edges.append(e)
                             edges=[g._reverse(e) for e in reversed(edges)]
                             imported.append({**loop,'edges':edges[1:]+edges[:1]})
-                        with patch.object(runtime,'_evaluate',side_effect=AssertionError('forward forbidden')),patch.object(runtime,'evaluate_section',side_effect=AssertionError('forward forbidden')):
+                        with forbid_forward_evaluation():
                             response=runtime.generate(dict(action='recognize',package=package,section=g.to_section(list(reversed(imported)))),{})
                         self.assertTrue(response['matched'],response)
                         candidate=response['results'][0]['candidates'][0]
@@ -98,12 +254,12 @@ class Fitting(unittest.TestCase):
                           transitionRise=22,lipAngle=85)),
             ('bulb-flat',dict(width=23,depth=133,wallThickness=7,bulbRadius1=6,bulbRadius2=3,endRadius=2)),
             ('bulb-flat',dict(width=23,depth=133,wallThickness=7,bulbRadius1=6,bulbRadius2=3,endRadius=2,mirrorX=True)),
-            ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,cornerRadius=5,innerRadius=1)),
-            ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,cornerRadius=5,innerRadius=1,mirrorX=True)),
+            ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,outerRadius=5)),
+            ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,outerRadius=5,mirrorX=True)),
             ('angle',dict(width=50,depth=80,wallThickness=6,outerRadius=9,innerRadius=3,
-                          useInnerRadius=False,useIndependentFreeEndRadii=True,
+                          useHotRolled=True,useInnerRadius=False,useIndependentFreeEndRadii=True,
                           freeEndRadius=0,freeEndRadius1=1,freeEndRadius2=2)),
-            ('channel',dict(width=50,depth=80,wallThickness=2,outerRadius=5,
+            ('channel',dict(width=50,depth=80,wallThickness=2,outerRadius=5,useHotRolled=True,
                             useOuterRadii=False,outerRadius1=5,outerRadius2=5,
                             useInnerRadius=False,innerRadius1=3,innerRadius2=3,
                             useIndependentFreeEndRadii=True,freeEndRadius=0,
@@ -122,12 +278,21 @@ class Fitting(unittest.TestCase):
                 package=runtime._system_package(CATALOG/name,preview=False)
                 raw=runtime._evaluate(package['descriptor'],package['scriptSource'],{**package['defaultParameters'],**values},package['packageDigest'],package['sourceFileName'],package['resources'])
                 for angle in (0,37,123):
-                    section=g.to_section(g.transform(g.normalize(raw,0.001),math.radians(angle),[123,-45]))
-                    with patch.object(runtime,'_evaluate',side_effect=AssertionError('forward forbidden')),patch.object(runtime,'evaluate_section',side_effect=AssertionError('forward forbidden')):
+                    original=g.transform(g.normalize(raw,0.001),math.radians(angle),[123,-45])
+                    section=g.to_section(original)
+                    with forbid_forward_evaluation():
                         response=runtime.generate(dict(action='recognize',package=package,section=section),{})
                     self.assertTrue(response['matched'],response)
                     candidate=response['results'][0]['candidates'][0]
-                    for key,value in values.items():
+                    expected_values=dict(values)
+                    if name=='angle' and candidate['parameters']['mirrorX']!=values.get('mirrorX',False):
+                        # Swapping the legs and toe radii, mirroring and
+                        # rotating describes the same angle-section contour.
+                        expected_values.update(width=values['depth'],depth=values['width'],
+                            freeEndRadius1=values['freeEndRadius2'],
+                            freeEndRadius2=values['freeEndRadius1'])
+                        self.assertEqual('non-unique',candidate['rotationUniqueness'])
+                    for key,value in expected_values.items():
                         # These are retained UI draft values once their
                         # independent advanced overrides are enabled; they
                         # are not recoverable from the resulting contour.
@@ -139,6 +304,11 @@ class Fitting(unittest.TestCase):
                         else:self.assertAlmostEqual(value,actual,places=5)
                     self.assertAlmostEqual(123,candidate['translation'][0],places=5)
                     self.assertAlmostEqual(-45,candidate['translation'][1],places=5)
+                    rebuilt=runtime._evaluate(package['descriptor'],package['scriptSource'],
+                        {**package['defaultParameters'],**candidate['parameters']},
+                        package['packageDigest'],package['sourceFileName'],package['resources'])
+                    equivalent,error=g.verify(original,g.normalize(rebuilt,0.001),candidate['transform'],0.001)
+                    self.assertTrue(equivalent,(candidate,error))
 
     def test_angle_mirror_direct_inverse(self):
         import importlib.util

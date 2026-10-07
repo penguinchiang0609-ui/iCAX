@@ -1,4 +1,4 @@
-import { buildNestingRequest, isNestingResultStale } from "./nestingWorkflow.mjs";
+import { isNestingResultStale } from "./nestingWorkflow.mjs";
 import { groupNestingPlans } from "./nestingGroups.mjs";
 
 export function selectedNestingPlanIds(view, plans = view.tubeDesignerNestingResult?.plans ?? []) {
@@ -52,9 +52,6 @@ export async function handleNestingExportAction(context, view, action, target, o
       : plans.filter((plan) => selected.has(String(plan.id)));
     if (!exporting.length) throw new Error("请勾选需要导出的母材。");
     if (!context.sceneProxy?.invoke) throw new Error("当前项目没有连接导出服务。");
-    // Export must replay the exact request that produced this result. Building a
-    // fresh request here would accidentally include locks toggled after solving.
-    const request = result.solveRequest ?? buildNestingRequest(view, context);
     operation = { kind: "nesting-export", title: "导出排样结果", stage: "选择导出目录" };
     view.tubeDesignerOperation = operation;
     view.pending = true;
@@ -77,7 +74,8 @@ export async function handleNestingExportAction(context, view, action, target, o
     operation.stage = "正在生成排样文件";
     ops.renderProject(context, view);
     const response = await context.sceneProxy.invoke("TubeDesigner.ExportNesting", {
-      targetDirectory, plans: exporting, parameters: request.parameters, request,
+      targetDirectory, revision: result.revision,
+      plans: exporting.map((plan) => String(plan.id)),
     }, { timeoutMs: 300000 });
     if (Number(response?.exportedCount) !== exporting.length || !Array.isArray(response?.exportedFiles)
       || response.exportedFiles.length !== exporting.length || !String(response?.partListFile ?? "").trim()) {

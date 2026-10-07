@@ -134,7 +134,6 @@ export function beginProfileSectionSketch(view, source) {
   state.section = {
     ...createDraft(),
     entities,
-    selectedId: entities[0]?.id ?? "",
     selectedIds: entities[0]?.id ? [entities[0].id] : [],
   };
   fitSectionViewport(state, entities);
@@ -186,7 +185,7 @@ export function renderSketchLeftPane(_context, view) {
   const sectionAnalysis = analyzeSectionDraft(state.section);
 
   const toolSketch = Boolean(view.tubeDesignerToolSketchContext);
-  return `<div class="tube-sketch-preview-panel" data-tube-sketch-preview-panel>
+  return `<div class="tube-sketch-preview-panel" data-tube-sketch-preview-panel data-window-state-controls="[data-cam-change-action=tube-designer-sketch-target-member]">
     <header>
       <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : (toolSketch ? "单件工艺截面预览" : "管型预览")) : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
       <span>${state.mode === SECTION_MODE
@@ -217,7 +216,7 @@ export function renderSectionSketchDialog(context, view) {
   const sidePart = state.mode === SIDE_MODE && state.sideTargetKind === "part";
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
   const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "单件工艺截面草图" : "截面轮廓草图"));
-  return `<dialog class="tube-section-sketch-dialog" aria-label="${title}">
+  return `<dialog class="tube-section-sketch-dialog" aria-label="${title}" data-window-state-controls="${escapeAttr(sketchCreationMemoryControls(view,state))}">
     <header class="tube-section-sketch-title">${title}</header>
     <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
     ${view.error ? `<div role="alert" class="tube-section-sketch-error">${escapeText(view.error)}</div>` : ""}
@@ -284,6 +283,14 @@ export function renderSketchViewportOverlay(_context, view) {
   </div>`;
 }
 
+function sketchCreationMemoryControls(view,state) {
+  const session=normalizeSectionSession(state.sectionSession);
+  const creating=state.mode===SECTION_MODE&&(Boolean(view.tubeDesignerToolSketchContext)
+    || session.kind===SECTION_SESSION_CREATE&&!view.tubeDesignerComponentCSGProfileReturn
+    || Boolean(view.tubeDesignerComponentCSGProfileReturn)&&view.tubeDesignerComponentLibrary?.csgDraft?.mode==="create");
+  return creating?"[data-cam-change-action=tube-designer-sketch-section-name]":"";
+}
+
 export function renderSketchRightPane(_context, view) {
   const state = ensureSketchState(view);
   const draft = currentDraft(view, state);
@@ -298,7 +305,7 @@ export function renderSketchRightPane(_context, view) {
     ? analyzeSectionDraft(state.section)
     : validateSideSketchDraft(draft, member, state.sideReference);
 
-  return `<div class="tube-sketch-property-panel">
+  return `<div class="tube-sketch-property-panel" data-window-state-controls="${escapeAttr(sketchCreationMemoryControls(view,state))}">
     <header>
       <strong>${selectedPoints.length ? `已选择 ${selectedPoints.length} 个点` : selectedIds.length > 1 ? `已选择 ${selectedIds.length} 个图形` : selected ? entityLabel(selected) : "图形属性"}</strong>
       <span>${selectedPoints.length ? "框选或按 Shift/Ctrl 多选节点；两个开放端点可合并" : selected ? "可拖动夹点；框选不同曲线的端点可合并" : selectedIds.length > 1 ? "端点相接的图形可从菜单执行合并" : "局部框选节点；框住完整图形选图形；Shift/Ctrl 多选"}</span>
@@ -1882,7 +1889,7 @@ function pointSegmentDistance(point, start, end) {
 }
 
 function createDraft() {
-  return { entities: [], selectedId: "", selectedIds: [], selectedPoints: [], history: [], future: [], dirty: false, persisted: false };
+  return { entities: [], selectedIds: [], selectedPoints: [], history: [], future: [], dirty: false, persisted: false };
 }
 
 function normalizeDraftSelection(draft) {
@@ -1890,10 +1897,7 @@ function normalizeDraftSelection(draft) {
   const selected = Array.isArray(draft?.selectedIds)
     ? draft.selectedIds.map(String).filter((id, index, values) => available.has(id) && values.indexOf(id) === index)
     : [];
-  const legacy = String(draft?.selectedId ?? "");
-  if (!selected.length && available.has(legacy)) selected.push(legacy);
   draft.selectedIds = selected;
-  draft.selectedId = selected[0] ?? "";
   const entitiesById = new Map((draft?.entities ?? []).map((entity) => [String(entity.id ?? ""), entity]));
   draft.selectedPoints = (Array.isArray(draft?.selectedPoints) ? draft.selectedPoints : [])
     .map((value) => ({ entityId: String(value?.entityId ?? ""), index: Number(value?.index) }))
@@ -2019,7 +2023,6 @@ function currentDraft(view, state = ensureSketchState(view)) {
 function draftFromStoredSketch(sketch) {
   return {
     entities: Array.isArray(sketch?.entities) ? sketch.entities.map(normalizeEntity).filter(Boolean) : [],
-    selectedId: "",
     selectedIds: [],
     selectedPoints: [],
     history: [],
@@ -3024,7 +3027,7 @@ function deduplicateOpenPoints(points) {
 }
 
 function reverseSelected(draft) {
-  const entity = draft.entities.find((item) => item.id === draft.selectedId);
+  const entity = draft.entities.find((item) => item.id === draftSelectionIds(draft)[0]);
   if (!entity) return;
   pushHistory(draft);
   if (entity.kind === "line") {
@@ -3045,7 +3048,7 @@ function reverseSelected(draft) {
 }
 
 function toggleSelectedClosed(draft) {
-  const entity = draft.entities.find((item) => item.id === draft.selectedId);
+  const entity = draft.entities.find((item) => item.id === draftSelectionIds(draft)[0]);
   if (!entity || !Array.isArray(entity.points)) return;
   pushHistory(draft);
   entity.closed = !entity.closed;
@@ -3058,7 +3061,7 @@ function toggleSelectedClosed(draft) {
 }
 
 function updateSelectedProperty(draft, target) {
-  const entity = draft.entities.find((item) => item.id === draft.selectedId);
+  const entity = draft.entities.find((item) => item.id === draftSelectionIds(draft)[0]);
   const key = String(target?.dataset?.sketchField ?? "");
   if (!entity || !key) return;
   if (key === "value") {
@@ -3133,7 +3136,7 @@ function updateEntityNumber(entity, key, value) {
 
 function pushHistory(draft) {
   draft.history ??= [];
-  draft.history.push(JSON.stringify({ entities: draft.entities, selectedId: draft.selectedId, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.history.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
   if (draft.history.length > 50) draft.history.shift();
 }
 
@@ -3141,7 +3144,7 @@ function undoDraft(draft) {
   const snapshot = draft.history?.pop();
   if (!snapshot) return;
   draft.future ??= [];
-  draft.future.push(JSON.stringify({ entities: draft.entities, selectedId: draft.selectedId, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.future.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
   Object.assign(draft, JSON.parse(snapshot), { dirty: true });
   normalizeDraftSelection(draft);
 }
@@ -3150,7 +3153,7 @@ function redoDraft(draft) {
   const snapshot = draft.future?.pop();
   if (!snapshot) return;
   draft.history ??= [];
-  draft.history.push(JSON.stringify({ entities: draft.entities, selectedId: draft.selectedId, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.history.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
   Object.assign(draft, JSON.parse(snapshot), { dirty: true });
   normalizeDraftSelection(draft);
 }
@@ -3170,7 +3173,6 @@ async function importSketchDxf(context, view, ops) {
     const draft = currentDraft(view, state);
     pushHistory(draft);
     draft.entities = entities;
-    draft.selectedId = entities[0]?.id ?? "";
     draft.selectedIds = entities[0]?.id ? [entities[0].id] : [];
     draft.future = [];
     draft.dirty = true;

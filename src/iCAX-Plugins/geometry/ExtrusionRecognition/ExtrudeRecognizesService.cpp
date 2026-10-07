@@ -172,6 +172,7 @@ namespace
         std::unordered_map<std::uint64_t, const iCAX::GeometryData::Surface3*> Surfaces;
         std::unordered_map<std::uint64_t, const Triangulation3*> Triangulations;
         std::unordered_map<std::uint64_t, const Point3*> Vertices;
+        std::unordered_map<std::uint64_t, const iCAX::GeometryData::BRepWire*> Wires;
 
         explicit SGeometryIndex(IN const BRepModel& Geometry_)
         {
@@ -197,6 +198,11 @@ namespace
             for (const auto& _Vertex : Geometry_.Vertices)
             {
                 Vertices.emplace(_Vertex.Id, &_Vertex.Position);
+            }
+            Wires.reserve(Geometry_.Wires.size());
+            for (const auto& _Wire : Geometry_.Wires)
+            {
+                Wires.emplace(_Wire.Id, &_Wire);
             }
         }
     };
@@ -466,6 +472,44 @@ namespace
             _Maximum = std::max(_Maximum, _Projection);
         }
         return std::max(0.0, _Maximum - _Minimum);
+    }
+
+    double TrimmedFaceAxialSpan(
+        IN const iCAX::GeometryData::BRepFace& Face_,
+        IN const SGeometryIndex& Index_,
+        IN const Direction3& Direction_)
+    {
+        if (const auto* _Mesh = FindTriangulation(Index_, Face_.Triangulation3Id);
+            _Mesh && !_Mesh->Vertices.empty())
+        {
+            return FaceAxialSpan(*_Mesh, Direction_);
+        }
+
+        // A supporting spline surface can extend far beyond its trimmed face
+        // (e.g. the shallow embossed lettering on a production bracket). Its
+        // control poles establish a generator direction, not its vote length.
+        // Without a mesh, boundary vertices provide conservative evidence;
+        // a face without either source must not vote using untrimmed poles.
+        const auto _Axis = ToVector(Direction_);
+        double _Minimum = (std::numeric_limits<double>::max)();
+        double _Maximum = (std::numeric_limits<double>::lowest)();
+        for (const auto _WireID : Face_.WireIds)
+        {
+            const auto _Wire = Index_.Wires.find(_WireID);
+            if (_Wire == Index_.Wires.end()) continue;
+            for (const auto& _Coedge : _Wire->second->Coedges)
+            {
+                for (const auto _VertexID : { _Coedge.StartVertexId, _Coedge.EndVertexId })
+                {
+                    const auto* _Point = FindVertex(Index_, _VertexID);
+                    if (!_Point) continue;
+                    const auto _Projection = Dot(ToVector(*_Point), _Axis);
+                    _Minimum = std::min(_Minimum, _Projection);
+                    _Maximum = std::max(_Maximum, _Projection);
+                }
+            }
+        }
+        return _Maximum >= _Minimum ? _Maximum - _Minimum : 0.0;
     }
 
     struct SAlignmentFrame final
@@ -958,10 +1002,8 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
             using T = std::decay_t<decltype(_SurfaceValue)>;
             if constexpr (std::is_same_v<T, iCAX::GeometryData::CylindricalSurface3>)
             {
-                const auto* _Mesh = FindTriangulation(_GeometryIndex, _Face.Triangulation3Id);
-                const auto _Span = _Mesh
-                    ? FaceAxialSpan(*_Mesh, _SurfaceValue.Placement.ZDirection)
-                    : 0.0;
+                const auto _Span = TrimmedFaceAxialSpan(
+                    _Face, _GeometryIndex, _SurfaceValue.Placement.ZDirection);
                 if (_Span > Options_.dMinimumEvidenceLength)
                 {
                     AddDirectionEvidence(
@@ -983,11 +1025,16 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                     _Direction,
                     _Span))
                 {
-                    AddDirectionEvidence(
-                        _Clusters,
-                        _Direction,
-                        _Span * _Span,
-                        Options_.dAngularToleranceRadians);
+                    _Span = std::min(_Span,
+                        TrimmedFaceAxialSpan(_Face, _GeometryIndex, _Direction));
+                    if (_Span > Options_.dMinimumEvidenceLength)
+                    {
+                        AddDirectionEvidence(
+                            _Clusters,
+                            _Direction,
+                            _Span * _Span,
+                            Options_.dAngularToleranceRadians);
+                    }
                 }
                 if (TryAddBSplineGenerators(
                     _SurfaceValue,
@@ -997,11 +1044,16 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                     _Direction,
                     _Span))
                 {
-                    AddDirectionEvidence(
-                        _Clusters,
-                        _Direction,
-                        _Span * _Span,
-                        Options_.dAngularToleranceRadians);
+                    _Span = std::min(_Span,
+                        TrimmedFaceAxialSpan(_Face, _GeometryIndex, _Direction));
+                    if (_Span > Options_.dMinimumEvidenceLength)
+                    {
+                        AddDirectionEvidence(
+                            _Clusters,
+                            _Direction,
+                            _Span * _Span,
+                            Options_.dAngularToleranceRadians);
+                    }
                 }
             }
         }, *_Surface);
@@ -1069,6 +1121,24 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
     }
 
     _Result.Direction = ClusterDirection(_Clusters[_SelectedIndex]);
+    _Result.CandidateDirections.push_back(_Result.Direction);
+    for (const auto& _Cluster : _Clusters)
+    {
+        // Only directions strong enough to make the original vote ambiguous
+        // may compete with it. A weak transverse face can otherwise turn an
+        // unsupported long tube into a short solid blank plus large cutouts.
+        if (_Cluster.dWeight < _PrimaryWeight * Options_.dAmbiguousSecondToFirstRatio)
+            continue;
+        const auto _Direction = ClusterDirection(_Cluster);
+        if (std::none_of(_Result.CandidateDirections.begin(), _Result.CandidateDirections.end(),
+            [&](const auto& Existing_) {
+                return std::abs(Dot(ToVector(Existing_), ToVector(_Direction)))
+                    >= std::cos(Options_.dAngularToleranceRadians);
+            }))
+        {
+            _Result.CandidateDirections.push_back(_Direction);
+        }
+    }
     const auto _SelectedWeight = _Clusters[_SelectedIndex].dWeight;
     const auto _Separation = _PrimaryWeight <= kEpsilon
         ? 0.0
@@ -1087,6 +1157,28 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
         + " unoriented direction clusters");
     _Result.Diagnostics.push_back(
         "BRep was aligned to +X and translated by its bounding-box center");
+    return _Result;
+}
+
+SExtrusionDirectionResult CExtrudeRecognizesService::AlignCandidate(
+    IN const BRepModel& Geometry_,
+    IN const SExtrusionDirectionResult& Evidence_,
+    IN std::size_t CandidateIndex_) const
+{
+    SExtrusionDirectionResult _Result;
+    if (!Evidence_.bSuccess || CandidateIndex_ >= Evidence_.CandidateDirections.size())
+    {
+        _Result.Diagnostics.push_back("Requested extrusion axis has no direction evidence");
+        return _Result;
+    }
+    _Result.Direction = Evidence_.CandidateDirections[CandidateIndex_];
+    const SGeometryIndex _GeometryIndex(Geometry_);
+    const auto _Frame = MakeAlignmentFrame(_Result.Direction, ModelCenter(Geometry_, _GeometryIndex));
+    _Result.TRSF = _Frame.TRSF;
+    _Result.AlignedGeometry = AlignGeometry(Geometry_, _Frame);
+    _Result.bSuccess = true;
+    _Result.Diagnostics.push_back("Aligned geometric extrusion-axis candidate "
+        + std::to_string(CandidateIndex_) + " to +X without changing the direction vote");
     return _Result;
 }
 }

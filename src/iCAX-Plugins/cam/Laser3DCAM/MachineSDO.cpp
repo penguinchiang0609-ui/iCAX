@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "MachineDefinitionSDOImplement.h"
@@ -21,23 +22,23 @@ namespace
         CMachineSDO()
             : CSDO("Machine")
         {
-            ExposeMethod("Instantiate", &iCAX::CAM::SDO::HandleInstantiateMachine);
-            ExposeMethod("List", &iCAX::CAM::SDO::HandleListMachines);
-            ExposeMethod("GetElement", &iCAX::CAM::SDO::HandleGetMachineElement);
-            ExposeMethod("SetElementTransform", &iCAX::CAM::SDO::HandleSetMachineElementTransform);
-            ExposeMethod("SetElementAppearance", &iCAX::CAM::SDO::HandleSetMachineElementAppearance);
-            ExposeMethod("SetJointPosition", &iCAX::CAM::SDO::HandleSetMachineJointPosition);
-            ExposeMethod("SetJointLimits", &iCAX::CAM::SDO::HandleSetMachineJointLimits);
-            ExposeMethod("SetParameters", &iCAX::CAM::SDO::HandleSetMachineParameters);
-            ExposeMethod("SetTCP", &iCAX::CAM::SDO::HandleSetMachineTCP);
-            ExposeMethod("SetToolTCP", &iCAX::CAM::SDO::HandleSetMachineToolTCP);
-            ExposeMethod("SetEnabled", &iCAX::CAM::SDO::HandleSetMachineEnabled);
-            ExposeMethod("SetName", &iCAX::CAM::SDO::HandleSetMachineName);
-            ExposeMethod("Jog", &iCAX::CAM::SDO::HandleJogMachine);
-            ExposeMethod("Home", &iCAX::CAM::SDO::HandleHomeMachine);
-            ExposeMethod("Reset", &iCAX::CAM::SDO::HandleResetMachine);
-            ExposeMethod("CheckLimits", &iCAX::CAM::SDO::HandleCheckMachineLimits);
-            ExposeMethod("CheckReach", &iCAX::CAM::SDO::HandleCheckMachineReach);
+            ExposeMethod("Instantiate", tube::license::ProtectProductMethod<11017, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleInstantiateMachine));
+            ExposeMethod("List", tube::license::ProtectProductMethod<11018, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleListMachines));
+            ExposeMethod("GetElement", tube::license::ProtectProductMethod<11019, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleGetMachineElement));
+            ExposeMethod("SetElementTransform", tube::license::ProtectProductMethod<11020, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineElementTransform));
+            ExposeMethod("SetElementAppearance", tube::license::ProtectProductMethod<11021, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineElementAppearance));
+            ExposeMethod("SetJointPosition", tube::license::ProtectProductMethod<11022, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineJointPosition));
+            ExposeMethod("SetJointLimits", tube::license::ProtectProductMethod<11023, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineJointLimits));
+            ExposeMethod("SetParameters", tube::license::ProtectProductMethod<11024, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineParameters));
+            ExposeMethod("SetTCP", tube::license::ProtectProductMethod<11025, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineTCP));
+            ExposeMethod("SetToolTCP", tube::license::ProtectProductMethod<11026, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineToolTCP));
+            ExposeMethod("SetEnabled", tube::license::ProtectProductMethod<11027, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineEnabled));
+            ExposeMethod("SetName", tube::license::ProtectProductMethod<11028, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetMachineName));
+            ExposeMethod("Jog", tube::license::ProtectProductMethod<11029, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleJogMachine));
+            ExposeMethod("Home", tube::license::ProtectProductMethod<11030, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleHomeMachine));
+            ExposeMethod("Reset", tube::license::ProtectProductMethod<11031, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleResetMachine));
+            ExposeMethod("CheckLimits", tube::license::ProtectProductMethod<11032, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleCheckMachineLimits));
+            ExposeMethod("CheckReach", tube::license::ProtectProductMethod<11033, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleCheckMachineReach));
         }
     };
 

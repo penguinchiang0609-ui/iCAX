@@ -213,6 +213,7 @@ namespace iCAX
             */
             std::vector<uint64_t> GetVersions(
                 IN const CResourceKey& Key_) const;
+            EResourceMutationResult DiscardRuntimeResource(IN const CResourceKey& Key_);
 
             /*
             * @brief 获取直接引用指定资源版本的全部资源版本。

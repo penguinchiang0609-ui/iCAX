@@ -74,6 +74,19 @@ iCAX::Data::Variant::Variant()
 {
 }
 
+iCAX::Data::Variant::Variant(const Variant& Other_) = default;
+
+iCAX::Data::Variant::Variant(Variant&& Other_)
+    noexcept(std::is_nothrow_move_constructible_v<VariantType>) = default;
+
+iCAX::Data::Variant& iCAX::Data::Variant::operator=(const Variant& Other_) = default;
+
+iCAX::Data::Variant& iCAX::Data::Variant::operator=(Variant&& Other_)
+    noexcept(std::is_nothrow_move_assignable_v<VariantType>) = default;
+
+iCAX::Data::Variant::~Variant()
+    noexcept(std::is_nothrow_destructible_v<VariantType>) = default;
+
 //!< 根据路径寻找叶节点值
 std::optional<iCAX::Data::Variant> iCAX::Data::Variant::GetByPath(IN const std::string& strPath_) const
 {

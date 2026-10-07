@@ -1,0 +1,1038 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "stair_route": {
+          "title": {
+            "zh-CN": "路线与总尺寸"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "stair_stringer": {
+          "title": {
+            "zh-CN": "梯梁"
+          },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "stair_tread": {
+          "title": {
+            "zh-CN": "踏步与支架"
+          },
+          "order": 30,
+          "defaultOpen": true
+        },
+        "stair_landing": {
+          "title": {
+            "zh-CN": "平台与支撑柱"
+          },
+          "order": 40,
+          "defaultOpen": true
+        },
+        "stair_handrail": {
+          "title": {
+            "zh-CN": "扶手"
+          },
+          "order": 50,
+          "defaultOpen": true
+        },
+        "stair_post": {
+          "title": {
+            "zh-CN": "护栏立柱"
+          },
+          "order": 60,
+          "defaultOpen": true
+        },
+        "stair_infill": {
+          "title": {
+            "zh-CN": "护栏填充"
+          },
+          "order": 70,
+          "defaultOpen": true
+        },
+        "stair_connection": {
+          "title": {
+            "zh-CN": "连接板与装配"
+          },
+          "order": 80,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "basic": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true,
+          "sectionGroup": "stair_route"
+        },
+        "overall": {
+          "category": "specifications",
+          "order": 20,
+          "defaultOpen": true,
+          "sectionGroup": "stair_route"
+        },
+        "flight": {
+          "category": "specifications",
+          "order": 30,
+          "defaultOpen": true,
+          "sectionGroup": "stair_tread"
+        },
+        "railing": {
+          "category": "specifications",
+          "order": 40,
+          "defaultOpen": true,
+          "sectionGroup": "stair_post"
+        },
+        "preset": {
+          "category": "materials",
+          "order": 50,
+          "defaultOpen": true
+        },
+        "material": {
+          "category": "materials",
+          "order": 60,
+          "defaultOpen": true
+        },
+        "profiles": {
+          "category": "materials",
+          "order": 70,
+          "defaultOpen": true
+        },
+        "process": {
+          "category": "process",
+          "order": 80,
+          "defaultOpen": true,
+          "sectionGroup": "stair_connection"
+        },
+        "structure": {
+          "category": "specifications",
+          "order": 90,
+          "defaultOpen": true,
+          "sectionGroup": "stair_stringer"
+        },
+        "treads": {
+          "category": "specifications",
+          "order": 100,
+          "defaultOpen": true,
+          "sectionGroup": "stair_tread"
+        },
+        "landing": {
+          "category": "specifications",
+          "order": 110,
+          "defaultOpen": true,
+          "sectionGroup": "stair_landing"
+        },
+        "guard": {
+          "category": "specifications",
+          "order": 120,
+          "defaultOpen": true,
+          "sectionGroup": "stair_infill"
+        },
+        "joints": {
+          "category": "process",
+          "order": 130,
+          "defaultOpen": true,
+          "sectionGroup": "stair_connection"
+        }
+      },
+      "fields": {
+        "postEveryRisers": {
+          "order": 10,
+          "category": "specifications",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "maximumPostSpacing": {
+          "order": 20,
+          "category": "specifications",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "productCode": {
+          "order": 30,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "floorHeight": {
+          "order": 40,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stairWidth": {
+          "order": 50,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "totalRiserCount": {
+          "order": 60,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadDepth": {
+          "order": 70,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "railingSide": {
+          "order": 80,
+          "category": "specifications",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "railingHeight": {
+          "order": 90,
+          "category": "specifications",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerProfileType": {
+          "order": 100,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stringerWidth": {
+          "order": 110,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerDepth": {
+          "order": 120,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerCornerRadius": {
+          "order": 130,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerInnerRadius": {
+          "order": 140,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerWallThickness": {
+          "order": 150,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadProfileType": {
+          "order": 160,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "treadWidth": {
+          "order": 170,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadDepthProfile": {
+          "order": 180,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadCornerRadius": {
+          "order": 190,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadWallThickness": {
+          "order": 200,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handrailProfileType": {
+          "order": 210,
+          "category": "materials",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "handrailWidth": {
+          "order": 220,
+          "category": "materials",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handrailDepth": {
+          "order": 230,
+          "category": "materials",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handrailCornerRadius": {
+          "order": 240,
+          "category": "materials",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handrailWallThickness": {
+          "order": 250,
+          "category": "materials",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "postProfileType": {
+          "order": 260,
+          "category": "materials",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "postWidth": {
+          "order": 270,
+          "category": "materials",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "postDepth": {
+          "order": 280,
+          "category": "materials",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "postCornerRadius": {
+          "order": 290,
+          "category": "materials",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "postWallThickness": {
+          "order": 300,
+          "category": "materials",
+          "sectionGroup": "stair_post",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stairRoute": {
+          "order": 310,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "firstFlightRiserCount": {
+          "order": 320,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingLength": {
+          "order": 330,
+          "category": "specifications",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "wellGap": {
+          "order": 340,
+          "category": "specifications",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "turnDirection": {
+          "order": 350,
+          "category": "specifications",
+          "sectionGroup": "stair_route",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stringerSystem": {
+          "order": 360,
+          "category": "specifications",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stringerSpacing": {
+          "order": 370,
+          "category": "specifications",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadSupport": {
+          "order": 380,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "treadType": {
+          "order": 390,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "treadThickness": {
+          "order": 400,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadGap": {
+          "order": 410,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "treadMaterial": {
+          "order": 420,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "landingProfileType": {
+          "order": 440,
+          "category": "materials",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "landingWidth": {
+          "order": 450,
+          "category": "materials",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingDepth": {
+          "order": 460,
+          "category": "materials",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingCornerRadius": {
+          "order": 470,
+          "category": "materials",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingWallThickness": {
+          "order": 480,
+          "category": "materials",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingSupportSpacing": {
+          "order": 490,
+          "category": "specifications",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "landingColumns": {
+          "order": 500,
+          "category": "specifications",
+          "sectionGroup": "stair_landing",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "connectionType": {
+          "order": 510,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "connectionPlateThickness": {
+          "order": 520,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "boltHoleDiameter": {
+          "order": 530,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "boltEdgeDistance": {
+          "order": 540,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "railingInfill": {
+          "order": 550,
+          "category": "specifications",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "horizontalRailCount": {
+          "order": 560,
+          "category": "specifications",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "maximumInfillGap": {
+          "order": 570,
+          "category": "specifications",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "infillProfileType": {
+          "order": 580,
+          "category": "materials",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "infillWidth": {
+          "order": 590,
+          "category": "materials",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "infillDepth": {
+          "order": 600,
+          "category": "materials",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "infillCornerRadius": {
+          "order": 610,
+          "category": "materials",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "infillWallThickness": {
+          "order": 620,
+          "category": "materials",
+          "sectionGroup": "stair_infill",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "stringerConstruction": {
+          "order": 630,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "bracketType": {
+          "order": 640,
+          "category": "specifications",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "bracketThickness": {
+          "order": 650,
+          "category": "materials",
+          "sectionGroup": "stair_tread",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "zigzagThickness": {
+          "order": 660,
+          "category": "materials",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "zigzagDepth": {
+          "order": 670,
+          "category": "specifications",
+          "sectionGroup": "stair_stringer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handrailConnection": {
+          "order": 680,
+          "category": "process",
+          "sectionGroup": "stair_handrail",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsRouteStructure": {
+          "order": 0,
+          "category": "process",
+          "sectionGroup": "stair_route",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsStringerStructure": {
+          "order": 10,
+          "category": "process",
+          "sectionGroup": "stair_stringer",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsTreadSupportStructure": {
+          "order": 20,
+          "category": "process",
+          "sectionGroup": "stair_tread",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsDeckStructure": {
+          "order": 30,
+          "category": "process",
+          "sectionGroup": "stair_tread",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsBracketStructure": {
+          "order": 40,
+          "category": "process",
+          "sectionGroup": "stair_tread",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsGuardStructure": {
+          "order": 50,
+          "category": "process",
+          "sectionGroup": "stair_post",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsInfillStructure": {
+          "order": 60,
+          "category": "process",
+          "sectionGroup": "stair_infill",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsConnectionStructure": {
+          "order": 70,
+          "category": "process",
+          "sectionGroup": "stair_connection",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsHandrailConnection": {
+          "order": 80,
+          "category": "process",
+          "sectionGroup": "stair_handrail",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "stairsRouteStructure": {
+          "order": 0,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "turnDirection": {
+          "order": 10,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsStringerStructure": {
+          "order": 20,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsTreadSupportStructure": {
+          "order": 30,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsDeckStructure": {
+          "order": 40,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsBracketStructure": {
+          "order": 50,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsGuardStructure": {
+          "order": 60,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsInfillStructure": {
+          "order": 70,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "stairsConnectionStructure": {
+          "order": 80,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "product_dimensions": {
+          "title": {
+            "zh-CN": "产品定位尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {
+        "stairWidth": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "梯段净宽"
+          },
+          "order": 10,
+          "editable": true
+        },
+        "floorHeight": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "层高"
+          },
+          "order": 20,
+          "editable": true
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{stairRoute:choice} · 层高 {floorHeight} × 梯宽 {stairWidth} · {totalRiserCount}级 · 踏步 {treadDepth} mm"
+        }
+      }
+    ]
+  }
+}

@@ -266,9 +266,6 @@ TEST(ProductAssemblyConnectionsSDO, EveryFormalProductDiscoversOnlyCurrentDispla
         {"modular-guardrail-glass-straight", {{"sideLength1", 800.0}}},
         {"straight-steel-staircase", {{"totalRiserCount", 4ull},
             {"floorHeight", 680.0}, {"railingSide", std::string("none")}}},
-        {"louver-window", {}},
-        {"decorative-door", {}},
-        {"aluminium-window", {}},
     };
     for (const auto& [templateID, parameters] : cases) {
         SCOPED_TRACE(templateID);
@@ -289,8 +286,7 @@ TEST(ProductAssemblyConnectionsSDO, EveryFormalProductDiscoversOnlyCurrentDispla
             || templateID == "modular-guardrail-cross-straight"
             || templateID == "modular-guardrail-diamond-straight"
             || templateID == "modular-guardrail-glass-straight"
-            || templateID == "straight-steel-staircase"
-            || templateID == "louver-window")
+            || templateID == "straight-steel-staircase")
             EXPECT_FALSE(discovered.at("connections").To<VariantArray>().empty());
         std::set<std::string> memberIDs;
         for (const auto& value : added.at("members").To<VariantArray>())

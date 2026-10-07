@@ -8,7 +8,7 @@
 
 跨项目复用的用户业务数据保存到 `%LOCALAPPDATA%/iCAX/Profiles/local-default/user.db`，而不是塞进应用设置或浏览器缓存。底层 `IUserDataStore` 由 ApplicationContext 私有持有；ApplicationRuntime 根据产品清单中的 `ProductID` 和 `userData.features` 声明创建 `IProductUserDataStore` 并注入 ProductRuntime。产品只能填写 FeatureID、RecordType、Subject 和 RecordID，不能自行选择或伪造其他产品的作用域，也不能写入 manifest 未声明的数据类型。
 
-数据库模式 v2 使用 `product_id + feature_id + record_type + record_id` 作为记录主键，Subject 字段表达主要作用对象，`user_record_links` 表达附加关系；Payload 只承载业务内容。记录包含 schema version、乐观并发 revision、时间和软删除状态。对仍被活动记录引用的用户记录默认采用安全的 restrict 删除策略。旧模式记录升级时保留在 `_legacy` 功能域，不按具体产品进行硬编码解释。
+当前数据库模式使用 `product_id + feature_id + record_type + record_id` 作为记录主键，Subject 字段表达主要作用对象，`user_record_links` 表达附加关系；Payload 只承载业务内容。记录包含 schema version、乐观并发 revision、时间和软删除状态。对仍被活动记录引用的用户记录默认采用安全的 restrict 删除策略。只初始化空数据库或打开当前模式，其他模式明确拒绝。
 
 这个仓库固定表示 `user` 存储范围。设备布局进入设备本地设置，项目状态进入项目文件，临时交互状态只留在会话内存；它们不会因为共享一套字段而混入 `user.db`。默认实现使用系统 WinSQLite，不依赖外部 `sqlite.exe`。浏览器数据单独放在 `%LOCALAPPDATA%/iCAX/Browser`，与业务数据隔离。
 

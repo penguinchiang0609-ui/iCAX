@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "ToolpathSDOImplement.h"
@@ -15,11 +16,11 @@ namespace
         CToolpathSDO()
             : CSDO("Toolpath")
         {
-            ExposeMethod("List", &iCAX::CAM::SDO::HandleListToolpaths);
-            ExposeMethod("RecognizeLoops", &iCAX::CAM::SDO::HandleRecognizeLoops);
-            ExposeMethod("AddSelectionPath", &iCAX::CAM::SDO::HandleAddSelectionPath);
-            ExposeMethod("SetPoseField", &iCAX::CAM::SDO::HandleSetPoseField);
-            ExposeMethod("ClearProgram", &iCAX::CAM::SDO::HandleClearProgram);
+            ExposeMethod("List", tube::license::ProtectProductMethod<11037, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleListToolpaths));
+            ExposeMethod("RecognizeLoops", tube::license::ProtectProductMethod<11038, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleRecognizeLoops));
+            ExposeMethod("AddSelectionPath", tube::license::ProtectProductMethod<11039, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleAddSelectionPath));
+            ExposeMethod("SetPoseField", tube::license::ProtectProductMethod<11040, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetPoseField));
+            ExposeMethod("ClearProgram", tube::license::ProtectProductMethod<11041, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleClearProgram));
         }
     };
 

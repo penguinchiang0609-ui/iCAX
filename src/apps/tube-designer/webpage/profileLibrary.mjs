@@ -1,4 +1,6 @@
 import { renderParameterLevels } from './parameterPresentation.mjs';
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 import { parameterVisible } from './parameterConditions.mjs';
 import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
@@ -9,6 +11,7 @@ import { applyTemplateFieldDisplay, templateDisplayView, fieldDisplayClass, fiel
   } from "./designerViews.mjs";
 import { floatingParameterDiagramHost, libraryDiagramPositionStyle, renderDiagramResizeHandles } from './floatingParameterDiagram.mjs';
 import { patchDomNode } from "./punchDomPatch.mjs";
+import { rememberProductResources, restoreProductUserData } from "./productResourceSession.mjs";
 export { renderProfileSvg } from "./profileSvg.mjs";
 
 
@@ -104,7 +107,8 @@ export function renderProfileLibraryRightPane(_context, view) {
   const draft = view?.tubeDesignerProfileDrafts?.[profileKey] ?? null;
   const values = draft?.parameters ?? profile.defaultParameters ?? {};
   const definitions = allDefinitions.filter((definition) => parameterVisible(definition, values));
-  return `<div class="tube-designer-panel tube-profile-library-editor" data-profile-parameter-scope data-parameter-diagram-owner="profile-library:${escapeAttr(profileKey)}" data-tube-profile-library-editor data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-scope="${escapeAttr(profileScope(profile))}" data-tube-designer-profile-id="${escapeAttr(profile.id)}">
+  return `<div class="tube-designer-panel tube-profile-library-editor" data-profile-parameter-scope data-parameter-diagram-owner="profile-library:${escapeAttr(profileKey)}" data-tube-profile-library-editor data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-scope="${escapeAttr(profileScope(profile))}" data-tube-designer-profile-id="${escapeAttr(profile.id)}"
+    data-window-state-controls="[data-tube-profile-editor-parameter]">
     <div class="tube-profile-library-editor-body">
       ${readOnly
         ? ""
@@ -283,8 +287,7 @@ export async function handleProfileLibraryRibbonCommand(context, view, commandId
 
 export function profileLibraryState(view) {
   const current = String(view.tubeDesignerSelectedProfileId ?? "");
-  const initialScope = current.startsWith("user:")
-    || (view.tubeDesignerUserData?.profiles ?? []).some((profile) => String(profile?.id ?? "") === current) ? "user" : "system";
+  const initialScope = current.startsWith("user:") ? "user" : "system";
   const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, type: "all", search: "", selectedByScope: {}, collapsed: [] };
   if (!["system", "user"].includes(state.scope)) state.scope = "system";
   if (!["all", "parametric", "fixed"].includes(state.type)) state.type = "all";
@@ -341,12 +344,6 @@ export function templateProfilesForProduct(view, templateId) {
 function ensureSelectedProfile(view, profiles) {
   const current = String(view?.tubeDesignerSelectedProfileId ?? "");
   if (profiles.some((item) => profileSelectionKey(item) === current)) return current;
-  const legacy = profiles.find((item) => String(item?.id ?? "") === current);
-  if (legacy) {
-    const normalized = profileSelectionKey(legacy);
-    view.tubeDesignerSelectedProfileId = normalized;
-    return normalized;
-  }
   const next = profiles[0] ? profileSelectionKey(profiles[0]) : "";
   view.tubeDesignerSelectedProfileId = next;
   if (!next) {
@@ -401,7 +398,7 @@ export function profileName(profile) {
 
 export function isParametricProfile(profile) {
   const form=profile?.profileForm ?? profile?.descriptor?.profileForm ?? profile?.previewProfile?.profileForm;
-  if(form!=="parametric" && form!=="fixed")throw new Error("管型缺少有效的形式字段，请先升级迁移数据");
+  if(form!=="parametric" && form!=="fixed")throw new Error("管型缺少有效的形式字段");
   return form==="parametric";
 }
 
@@ -622,17 +619,23 @@ function scheduleProfileLibraryPreview(context, view, profile) {
       scheduleCachedProfilePreview(context, view, profile, key, view.tubeDesignerProfilePreview.response);
       return;
     }
+    // Browsing and cached display remain available. A passive paint must not
+    // attempt protected generation or report an unrequested licensing error.
+    if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
     clearProfilePreviewRequest(view);
     logProfilePreview(context, "info", `开始生成三维管型：${profileName(profile)}`);
-    const operation = Promise.resolve().then(() => invokeSceneProduct(
-      context,
-      "TubeDesigner.GenerateProfilePreview",
-      {
-        profileRef: profileRef(profile),
-        parameters: profilePreviewParameters(view, profile),
-      },
-      { timeoutMs: 30000 },
-    ));
+    const operation = Promise.resolve().then(() => {
+      if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
+      return invokeSceneProduct(
+        context,
+        "TubeDesigner.GenerateProfilePreview",
+        {
+          profileRef: profileRef(profile),
+          parameters: profilePreviewParameters(view, profile),
+        },
+        { timeoutMs: 30000 },
+      );
+    });
     const request = {
       key,
       operation,
@@ -644,6 +647,7 @@ function scheduleProfileLibraryPreview(context, view, profile) {
     view.tubeDesignerProfilePreviewRequest = request;
     const delayedProgress = beginDelayedProfilePreviewProgress(view, profile, request);
     void operation.then(async (response) => {
+      if (!response) return;
       if (view.tubeDesignerProfilePreviewRequest !== request
           || !isCurrentProfilePreview(view, profile, key)) return;
       view.tubeDesignerProfilePreview = { key, response };
@@ -996,15 +1000,18 @@ function localizedText(value, fallback = "参数") {
 
 
 function renderPackageParameter(definition, values, pending) {
-  return renderPackageParameterControl(definition, values, pending).replace('<label', `<label id="tube-profile-field-${escapeAttr(definition.key)}"`);
+  return renderProfileParameterControl(definition, values, pending).replace('<label', `<label id="tube-profile-field-${escapeAttr(definition.key)}"`);
 }
 
-function renderPackageParameterControl(definition, values, pending) {
+export function renderProfileParameterControl(definition, values, pending, {
+  changeAction = 'tube-designer-profile-preview-change', attributes = {},
+} = {}) {
   pending = pending || !parameterEnabled(definition, values);
   const key = String(definition?.key ?? "");
   const label = localizedText(definition?.uiTitle ?? definition?.displayName, key);
   const value = values[key] ?? definition?.defaultValue ?? "";
-  const common = `data-profile-parameter-key="${escapeAttr(key)}" data-tube-profile-editor-parameter="${escapeAttr(key)}" data-tube-profile-value-type="${escapeAttr(definition?.valueType ?? "number")}" data-cam-change-action="tube-designer-profile-preview-change"`;
+  const bindings = Object.entries(attributes).map(([name, value]) => `${escapeAttr(name)}="${escapeAttr(value)}"`).join(' ');
+  const common = `data-profile-parameter-key="${escapeAttr(key)}" data-tube-profile-editor-parameter="${escapeAttr(key)}" data-tube-profile-value-type="${escapeAttr(definition?.valueType ?? "number")}" data-cam-change-action="${escapeAttr(changeAction)}" ${bindings}`;
   if (definition?.valueType === "boolean") {
     return `<label class="tube-designer-field tube-designer-boolean-field${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)}><span>${escapeText(label)}</span><input type="checkbox" ${common} ${value ? "checked" : ""} ${pending ? "disabled" : ""} /></label>`;
   }
@@ -1017,15 +1024,17 @@ function renderPackageParameterControl(definition, values, pending) {
     }).join("")}</select></label>`;
   }
   const type = definition?.valueType === "string" ? "text" : "number";
-  const attributes = [`type="${type}"`, `value="${escapeAttr(value)}"`, common];
-  if (definition?.min != null || definition?.minimum != null) attributes.push(`min="${escapeAttr(definition.min ?? definition.minimum)}"`);
-  if (definition?.max != null || definition?.maximum != null) attributes.push(`max="${escapeAttr(definition.max ?? definition.maximum)}"`);
-  if (type === "number") attributes.push(`step="${escapeAttr(definition?.step ?? (definition?.valueType === "integer" ? 1 : "any"))}"`);
-  if (pending) attributes.push("disabled");
-  return `<label class="tube-designer-field ${type === 'text' ? 'is-string' : 'is-number'}${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)} title="${escapeAttr(localizedText(definition.uiHelp, label))}"><span>${escapeText(label)}</span><input ${attributes.join(" ")} /></label>`;
+  const controlAttributes = [`type="${type}"`, `value="${escapeAttr(value)}"`, common];
+  if (definition?.min != null || definition?.minimum != null) controlAttributes.push(`min="${escapeAttr(definition.min ?? definition.minimum)}"`);
+  if (definition?.max != null || definition?.maximum != null) controlAttributes.push(`max="${escapeAttr(definition.max ?? definition.maximum)}"`);
+  if (type === "number") controlAttributes.push(`step="${escapeAttr(definition?.step ?? (definition?.valueType === "integer" ? 1 : "any"))}"`);
+  if (pending) controlAttributes.push("disabled");
+  return `<label class="tube-designer-field ${type === 'text' ? 'is-string' : 'is-number'}${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)} title="${escapeAttr(localizedText(definition.uiHelp, label))}"><span>${escapeText(label)}</span><input ${controlAttributes.join(" ")} /></label>`;
 }
 
-function renderProfileParameterGroups(profile, definitions, values, pending) {
+export function renderProfileParameterGroups(profile, definitions, values, pending, {
+  renderControl = renderPackageParameter, keyPrefix = 'profile', disclosures = {}, inlineBasicGroups = false,
+} = {}) {
   const descriptor = profile.descriptor ?? {};
   const display = templateDisplayView(descriptor, 'right');
   const fields = applyTemplateFieldDisplay(descriptor, definitions, 'right').map(d => ({ ...d,
@@ -1036,12 +1045,16 @@ function renderProfileParameterGroups(profile, definitions, values, pending) {
     const group = display.groups[key];
     const groupFields = fields.filter(d => d.group === key).sort((a,b)=>(a.order??0)-(b.order??0));
     const explicitAdvancedGroup = key === 'advanced' && !!group;
-    const groupKey = `advanced:profile:${profile.id}:${key}`;
-    const content = `<div class="tube-profile-library-field-grid">${renderParameterLevels(groupFields, d=>renderPackageParameter(d, values, pending), {key:`profile:${profile.id}:${key}`,gridClass:'tube-profile-library-field-grid',flattenAdvanced:explicitAdvancedGroup})}</div>`;
+    const groupKey = `advanced:${keyPrefix}:${profile.id}:${key}`;
+    const content = `<div class="tube-profile-library-field-grid">${renderParameterLevels(groupFields, d=>renderControl(d, values, pending), {key:`${keyPrefix}:${profile.id}:${key}`,open:disclosures[groupKey]===true,gridClass:'tube-profile-library-field-grid',flattenAdvanced:explicitAdvancedGroup})}</div>`;
     const advancedAttributes = explicitAdvancedGroup
       ? ` data-parameter-advanced data-parameter-advanced-key="${escapeAttr(groupKey)}"`
       : '';
-    return group ? `<details id="tube-profile-display-${escapeAttr(key)}" class="tube-profile-library-parameter-group" data-profile-display-group="${escapeAttr(key)}"${advancedAttributes} ${group.defaultOpen === false ? '' : 'open'}><summary>${escapeText(localizedText(group.title,key))}</summary>${content}</details>` : content;
+    const id = `tube-${keyPrefix}-display-${key}`;
+    const open = disclosures[explicitAdvancedGroup ? groupKey : id] ?? group?.defaultOpen !== false;
+    if (group && inlineBasicGroups && !explicitAdvancedGroup)
+      return `<section id="${escapeAttr(id)}" class="tube-profile-library-parameter-group is-inline" data-profile-display-group="${escapeAttr(key)}">${content}</section>`;
+    return group ? `<details id="${escapeAttr(id)}" class="tube-profile-library-parameter-group" data-profile-display-group="${escapeAttr(key)}"${advancedAttributes} ${open ? 'open' : ''}><summary>${escapeText(localizedText(group.title,key))}</summary>${content}</details>` : content;
   }).join('');
 }
 
@@ -1056,7 +1069,7 @@ function renderProfilePackageImportDialog(view) {
   if (!state) return "";
   const fileName = String(state.sourcePath ?? "").split(/[\\/]/).pop() || "管型包";
   return `<div class="tube-designer-modal-backdrop tube-designer-preset-dialog-backdrop" role="presentation">
-    <section class="tube-designer-preset-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-profile-package-import-title">
+    <section class="tube-designer-preset-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-profile-package-import-title" data-window-state-controls=":not(*)">
       <header class="tube-designer-dialog-header">
         <div><strong id="tube-profile-package-import-title">导入程式管型包</strong><span>一个 .ittt 对应一个管型，至少包含 profile.json 和 profile.py</span></div>
         <button class="tube-designer-dialog-close" data-cam-action="tube-designer-profile-package-import-cancel" aria-label="关闭" ${view?.pending ? "disabled" : ""}>×</button>
@@ -1301,8 +1314,10 @@ async function deleteLibraryProfile(context, view, target, ops) {
       revision: Number(profile.revision ?? 0),
     });
     if (!response?.deleted) throw new Error("管型未能删除。" );
+    restoreProductUserData(view);
     view.tubeDesignerUserData.profiles = view.tubeDesignerUserData.profiles
       .filter((item) => String(item?.id ?? "") !== id);
+    rememberProductResources(view, "userData");
     if (view.tubeDesignerProfileDrafts) delete view.tubeDesignerProfileDrafts[profileSelectionKey(profile)];
     view.tubeDesignerProfilePreview = null;
     ensureSelectedProfile(view, visibleLibraryProfiles(view));
@@ -1399,6 +1414,7 @@ async function runProfileTask(context, view, ops, progress, operation) {
 
 
 function upsertProfile(view, profile) {
+  restoreProductUserData(view);
   view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
   const profiles = Array.isArray(view.tubeDesignerUserData.profiles)
     ? view.tubeDesignerUserData.profiles : [];
@@ -1406,6 +1422,7 @@ function upsertProfile(view, profile) {
   if (index >= 0) profiles[index] = profile;
   else profiles.push(profile);
   view.tubeDesignerUserData.profiles = profiles;
+  rememberProductResources(view, "userData");
 }
 
 

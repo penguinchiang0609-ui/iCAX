@@ -4,8 +4,8 @@ import {buildCatalogEntries} from "../../apps/tube-designer/webpage/productCatal
 import {matchesParameterCondition as matches} from "../../apps/tube-designer/webpage/parameterConditions.mjs";
 const read = n => ({...JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/" + n + "/template.json", import.meta.url), "utf8")), available: true});
 const security = read("single_face_security_window");
-const all = [security, read("louver_window")];
-assert.deepEqual(buildCatalogEntries(all).map(t => t.catalogPath), [["窗", "防盗窗"], ["窗", "百叶窗"]]);
+const all = [security];
+assert.deepEqual(buildCatalogEntries(all).map(t => t.catalogPath), [["窗", "防盗窗"]]);
 const defaults = Object.fromEntries(security.parameters.map(p => [p.key, p.defaultValue]));
 function shown(key, faceType) {return matches(security.parameters.find(p => p.key === key).visibleWhen, {...defaults, faceType, accessDoorEnabled: true});}
 for (const face of ["single", "two", "three", "five"]) {
@@ -16,7 +16,8 @@ for (const face of ["single", "two", "three", "five"]) {
   for (const [type, key] of [["two", "accessDoorFace2"], ["three", "accessDoorFace3"], ["five", "accessDoorFace5"]]) assert.equal(shown(key, face), face === type);
 }
 console.log("Window catalogue and face-dependent fields passed.");
-const louver=read("louver_window");
+// Deferred descriptor reference only; it is excluded from the active catalogue.
+const louver=JSON.parse(readFileSync(new URL("../../apps/tube-designer/docs/deferred-products/louver-window/reference/template.json", import.meta.url), "utf8"));
 const lv=Object.fromEntries(louver.parameters.map(p=>[p.key,p.defaultValue]));
 const visible=(key,changes)=>matches(louver.parameters.find(p=>p.key===key).visibleWhen,{...lv,...changes});
 for(const mode of ["pitch","gap","overlap","count"])
@@ -30,4 +31,4 @@ for(const mode of ["face_weld","slot_insert","through_insert"]){
 }
 assert.equal(visible("slotClearance",{middlePostCount:1,supportMode:"through"}),true);
 assert.equal(visible("supportMode",{middlePostCount:1,bladeConnection:"through_insert"}),false);
-console.log("Louver array/connection/support conditions passed.");
+console.log("Deferred louver descriptor conditions passed (reference only).");

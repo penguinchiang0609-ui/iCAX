@@ -77,7 +77,7 @@ try {
     const input=mount.querySelector('[data-tube-designer-punch-field="name"]');
     const second=mount.querySelector('[data-array-group-id="g2"]');
     const scroll=mount.querySelector(".tube-designer-punch-sheet-scroll");
-    input.focus();input.setSelectionRange(1,2);scroll.scrollTop=90;
+    input.focus();input.value="typing";input.setSelectionRange(1,2);scroll.scrollTop=90;
     await new Promise(r=>requestAnimationFrame(r));
     const camera=JSON.stringify(viewport.getCameraState());
     state.features[0].diameter=20;state.revision=2;state.pendingPreviewRecipe=recipe();state.previewPending=true;
@@ -87,14 +87,16 @@ try {
     hold=true;state.preview=preview(2);state.previewRecipe=recipe();state.previewPending=false;ops.renderProject();
     await wait(()=>!!release);
     check(base.visible&&other.visible,"Loading A hid unchanged base/B");
+    // The old geometry response is pending while typing and scrolling continue.
+    input.value="typing later";input.setSelectionRange(2,7,"backward");scroll.scrollTop=120;
     hold=false;release();await wait(()=>!view.pending);
     check(mount.querySelector("[data-tube-designer-punch-viewport]")===host,"Viewport host replaced");
     check(viewport.renderer.domElement===canvas&&mounts===1,"Canvas remounted");
     check(viewport.sceneObjects.get("punch-preview-blank")===base&&viewport.geometryObjects.get("base")===baseGeometry,"Base object/geometry rebuilt");
     check(viewport.sceneObjects.get("punch-preview-tool:side:B")===other&&viewport.geometryObjects.get("tool-B")===otherGeometry,"Other tool object/geometry rebuilt");
     check(viewport.geometryObjects.get("tool-A")!==oldToolGeometry,"Changed tool geometry was not updated");
-    check(document.activeElement===input&&input.selectionStart===1&&input.selectionEnd===2,"Active input/caret changed");
-    check(scroll.scrollTop===90,"Table scroll changed");
+    check(document.activeElement===input&&input.value==="typing later"&&input.selectionStart===2&&input.selectionEnd===7&&input.selectionDirection==="backward","Active draft/caret changed after an old async response");
+    check(scroll.scrollTop===120,"Latest table scroll changed");
     check(JSON.stringify(viewport.getCameraState())===camera,"Camera changed");
     check(reads.filter(([url])=>url==="base").length===1&&reads.filter(([url])=>url==="tool-B").length===1,"Unchanged geometry was fetched again");
     // Validation can stop a request before pendingPreviewRecipe is replaced.

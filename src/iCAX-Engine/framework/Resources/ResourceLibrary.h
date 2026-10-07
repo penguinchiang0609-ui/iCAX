@@ -366,6 +366,10 @@ namespace iCAX
             */
             std::vector<uint64_t> GetVersions(
                 IN const std::string& strSource_) const;
+            // Discard an unreferenced runtime-only preview, including archived
+            // payloads. Persistent versions and other resources' dependencies
+            // are protected. The version high-water mark remains monotonic.
+            EResourceMutationResult DiscardRuntimeResource(IN const std::string& strSource_);
             std::vector<CResourceReference> GetDependents(
                 IN const CResourceReference& Target_) const;
             CResourceReachabilityResult CollectReachable(

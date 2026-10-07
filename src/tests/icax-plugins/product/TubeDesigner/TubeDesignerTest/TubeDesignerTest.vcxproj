@@ -51,8 +51,12 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp" />
+    <ClCompile Include="ProductAssemblyPairGeometryTests.cpp" />
     <ClCompile Include="NestingStandardPartSDOTests.cpp" />
     <ClCompile Include="PunchGeometryTests.cpp" />
+    <ClCompile Include="RecoveredPartDrawingFeaturesTests.cpp" />
+    <ClCompile Include="ImportedPartHoleRecoveryTests.cpp" />
+    <ClCompile Include="ImportedPartBatchRecoveryTests.cpp" />
     <ClCompile Include="BRepCompoundRoundTripTests.cpp" />
     <ClCompile Include="PunchPersistenceSDOTests.cpp">
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>

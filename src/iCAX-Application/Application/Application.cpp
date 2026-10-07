@@ -120,32 +120,9 @@ namespace
         std::filesystem::create_directories(_LogRoot);
 
         const auto _ApplicationSettingsPath = _ProfileRoot / "Application.Setting";
-        const auto _LegacyApplicationSettingsPath = _Current / "Setting" / "Application.Setting";
-        std::error_code _MigrationError;
-        if (!std::filesystem::exists(_ApplicationSettingsPath)
-            && std::filesystem::exists(_LegacyApplicationSettingsPath))
-        {
-            std::filesystem::copy_file(
-                _LegacyApplicationSettingsPath,
-                _ApplicationSettingsPath,
-                std::filesystem::copy_options::skip_existing,
-                _MigrationError);
-        }
-        const auto _LegacyProducts = _Current / "Setting" / "Products";
-        const auto _ProfileProducts = _ProfileRoot / "Products";
-        if (std::filesystem::exists(_LegacyProducts))
-        {
-            std::filesystem::create_directories(_ProfileProducts, _MigrationError);
-            std::filesystem::copy(
-                _LegacyProducts,
-                _ProfileProducts,
-                std::filesystem::copy_options::recursive | std::filesystem::copy_options::skip_existing,
-                _MigrationError);
-        }
-
         _Config.RuntimeConfig.strApplicationSettingsPath = _PathToUTF8(_ApplicationSettingsPath);
         _Config.RuntimeConfig.Descriptor.AppID = "icax";
-        _Config.RuntimeConfig.Descriptor.AppName = "iTubeDesigner";
+        _Config.RuntimeConfig.Descriptor.AppName = "TubeDesigner";
         _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_InstallRoot);
         _Config.RuntimeConfig.Paths.UserConfigDirectory = _PathToUTF8(_ProfileRoot);
         _Config.RuntimeConfig.Paths.UserDataDirectory = _PathToUTF8(_UserDataRoot);

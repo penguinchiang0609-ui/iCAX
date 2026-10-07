@@ -1,8 +1,10 @@
 #include "pch.h"
 #include <TubeDesigner/NestingAdapter.h>
+#include <TubeDesigner/NestingResultAccess.h>
 #include <TubeDesigner/TubeDesignerComponents.h>
 #include <Data/VariantSerializer.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -79,7 +81,7 @@ namespace
 
 TEST(TubeDesignerNesting, ManufacturingKindGuardExcludesPlateAndUnknownItems)
 {
-    EXPECT_TRUE(IsTubeManufacturingPart({}));
+    EXPECT_FALSE(IsTubeManufacturingPart({}));
     EXPECT_TRUE(IsTubeManufacturingPart({ { "manufacturing.partKind", std::string("tube") } }));
     EXPECT_TRUE(IsTubeManufacturingPart({ { "manufacturing.partKind", std::string(" PROFILE ") },
         { "manufacturing.materialCategory", std::string("linear") } }));
@@ -393,19 +395,174 @@ TEST(TubeDesignerNesting, NumericPairProfilesNeverClaimNativeGeometryCertificati
     EXPECT_FALSE(_Proof.at("nativePairBoundsCertified").To<bool>());
 }
 
-TEST(TubeDesignerNesting, ProfileKeyUsesSectionDataAndIgnoresMaterial)
+namespace
 {
-    ObjectMap _Profile{ { "id", std::string("rhs") }, { "kind", std::string("roundedRectangle") },
-        { "width", 22.0 }, { "depth", 22.0 }, { "wallThickness", 1.0 }, { "hollow", true },
-        { "material", std::string("steel") }, { "displayName", std::string("user name") } };
-    const std::string _Key = R"({"depth":22,"hollow":true,"id":"rhs","kind":"roundedRectangle","wallThickness":1,"width":22})";
+    VariantArray SectionPoint(const double X_, const double Y_) { return { X_, Y_ }; }
+
+    ObjectMap RoundedSectionLoop(const double Width_, const double Depth_, const double Radius_, const bool Inner_)
+    {
+        const double _X = Width_ / 2, _Y = Depth_ / 2, _R = Radius_;
+        const double _Diagonal = _R / std::sqrt(2.0);
+        const auto _Line = [](VariantArray Start_, VariantArray End_) {
+            return ObjectMap{{"kind", std::string("line")}, {"start", Start_}, {"end", End_}};
+        };
+        const auto _Arc = [](VariantArray Start_, VariantArray Middle_, VariantArray End_) {
+            return ObjectMap{{"kind", std::string("arc")}, {"start", Start_}, {"middle", Middle_}, {"end", End_}};
+        };
+        return {{"closed", true}, {"inner", Inner_}, {"segments", VariantArray{
+            _Line(SectionPoint(-_X + _R, -_Y), SectionPoint(_X - _R, -_Y)),
+            _Arc(SectionPoint(_X - _R, -_Y), SectionPoint(_X - _R + _Diagonal, -_Y + _R - _Diagonal), SectionPoint(_X, -_Y + _R)),
+            _Line(SectionPoint(_X, -_Y + _R), SectionPoint(_X, _Y - _R)),
+            _Arc(SectionPoint(_X, _Y - _R), SectionPoint(_X - _R + _Diagonal, _Y - _R + _Diagonal), SectionPoint(_X - _R, _Y)),
+            _Line(SectionPoint(_X - _R, _Y), SectionPoint(-_X + _R, _Y)),
+            _Arc(SectionPoint(-_X + _R, _Y), SectionPoint(-_X + _R - _Diagonal, _Y - _R + _Diagonal), SectionPoint(-_X, _Y - _R)),
+            _Line(SectionPoint(-_X, _Y - _R), SectionPoint(-_X, -_Y + _R)),
+            _Arc(SectionPoint(-_X, -_Y + _R), SectionPoint(-_X + _R - _Diagonal, -_Y + _R - _Diagonal), SectionPoint(-_X + _R, -_Y))}}};
+    }
+
+    ObjectMap RoundedSectionProfile(const double Wall_ = 1.0, const double Radius_ = 2.0)
+    {
+        return {{"id", std::string("rhs")}, {"kind", std::string("roundedRectangle")},
+            {"width", 22.0}, {"depth", 18.0}, {"wallThickness", Wall_}, {"cornerRadius", Radius_}, {"hollow", true},
+            {"contours", VariantArray{RoundedSectionLoop(22, 18, Radius_, false),
+                RoundedSectionLoop(22 - 2 * Wall_, 18 - 2 * Wall_, Radius_ - Wall_, true)}}};
+    }
+
+    ObjectMap RetraverseSectionLoop(ObjectMap Loop_, const std::size_t Start_, const bool Reverse_)
+    {
+        auto _Segments = Loop_.at("segments").To<VariantArray>();
+        std::rotate(_Segments.begin(), _Segments.begin() + Start_ % _Segments.size(), _Segments.end());
+        if (Reverse_) {
+            std::reverse(_Segments.begin(), _Segments.end());
+            for (auto& _Value : _Segments) {
+                auto _Edge = _Value.To<ObjectMap>();
+                std::swap(_Edge.at("start"), _Edge.at("end"));
+                _Value = std::move(_Edge);
+            }
+        }
+        Loop_["segments"] = std::move(_Segments);
+        return Loop_;
+    }
+}
+
+TEST(TubeDesignerNesting, ProfileKeyUsesRealSectionAndIgnoresResourceAndTraversal)
+{
+    const auto _Original = RoundedSectionProfile();
+    const auto _Key = BuildNestingSectionIdentity(_Original);
+    ASSERT_FALSE(_Key.empty());
+    // Imported and recognized profiles can omit declarations or label the
+    // same real curves with R=0. Those metadata differences do not change stock.
+    auto _IncompleteDeclarations = _Original;
+    for (const auto* _Field : {"width", "depth", "diameter", "wallThickness", "hollow"})
+        _IncompleteDeclarations.erase(_Field);
+    _IncompleteDeclarations["cornerRadius"] = 0.0;
+    EXPECT_EQ(BuildNestingSectionIdentity(_IncompleteDeclarations), _Key);
+    EXPECT_TRUE(MatchesNestingProfileKey(_Key, _IncompleteDeclarations, "imported-part"));
+    for (const bool _Reverse : {false, true}) for (std::size_t _Start = 0; _Start < 8; ++_Start) {
+        SCOPED_TRACE(_Start);
+        SCOPED_TRACE(_Reverse);
+        auto _Profile = _Original;
+        const auto _Loops = _Original.at("contours").To<VariantArray>();
+        _Profile["contours"] = VariantArray{RetraverseSectionLoop(_Loops[1].To<ObjectMap>(), (_Start + 3) % 8, _Reverse),
+            RetraverseSectionLoop(_Loops[0].To<ObjectMap>(), _Start, _Reverse)};
+        _Profile["id"] = std::string("a-different-profile-resource");
+        _Profile["kind"] = std::string("irregular");
+        _Profile["sectionResource"] = ObjectMap{{"url", std::string("resource://another-section")}, {"version", 9ull}};
+        _Profile["material"] = std::string("aluminium");
+        _Profile["displayName"] = std::string("another user name");
+        _Profile["parameters"] = ObjectMap{{"catalogId", std::string("another-library-entry")}};
+        auto _DeclaredLoops = _Profile.at("contours").To<VariantArray>();
+        for (auto& _Loop : _DeclaredLoops) {
+            auto _Value = _Loop.To<ObjectMap>();
+            _Value["inner"] = !_Value.at("inner").To<bool>();
+            _Loop = std::move(_Value);
+        }
+        _Profile["contours"] = std::move(_DeclaredLoops);
+        EXPECT_EQ(BuildNestingSectionIdentity(_Profile), _Key);
+        EXPECT_TRUE(MatchesNestingProfileKey(_Key, _Profile, "a-different-part"));
+    }
+    ObjectMap _Polygon{{"contours", VariantArray{ObjectMap{{"closed", true}, {"points", VariantArray{
+        SectionPoint(-11, -9), SectionPoint(11, -9), SectionPoint(11, 9), SectionPoint(-11, 9)}}}}}};
+    const auto _PolygonKey = BuildNestingSectionIdentity(_Polygon);
+    auto _Loop = _Polygon.at("contours").To<VariantArray>().front().To<ObjectMap>();
+    auto _Points = _Loop.at("points").To<VariantArray>();
+    std::rotate(_Points.begin(), _Points.begin() + 1, _Points.end()); std::reverse(_Points.begin(), _Points.end());
+    _Loop["points"] = _Points; _Polygon["contours"] = VariantArray{_Loop};
+    EXPECT_EQ(BuildNestingSectionIdentity(_Polygon), _PolygonKey);
+}
+
+TEST(TubeDesignerNesting, SectionIdentityDistinguishesActualWallRadiusInnerContourAndComplementaryArc)
+{
+    const auto _Original = RoundedSectionProfile();
+    const auto _Key = BuildNestingSectionIdentity(_Original);
+    // Both assertions change the true outer/inner closed curves, not just their declarations.
+    EXPECT_NE(BuildNestingSectionIdentity(RoundedSectionProfile(1.5, 2.0)), _Key);
+    EXPECT_NE(BuildNestingSectionIdentity(RoundedSectionProfile(1.0, 3.0)), _Key);
+    auto _DifferentInner = _Original;
+    auto _Loops = _Original.at("contours").To<VariantArray>();
+    _Loops[1] = RoundedSectionLoop(19, 16, 1, true);
+    _DifferentInner["contours"] = _Loops;
+    EXPECT_NE(BuildNestingSectionIdentity(_DifferentInner), _Key);
+    auto _DifferentOuter = _Original;
+    _Loops = _Original.at("contours").To<VariantArray>();
+    _Loops[0] = RoundedSectionLoop(24, 18, 2, false);
+    _DifferentOuter["contours"] = _Loops;
+    EXPECT_NE(BuildNestingSectionIdentity(_DifferentOuter), _Key);
+    const auto _ArcProfile = [](const VariantArray& Middle_) {
+        return ObjectMap{{"contours", VariantArray{ObjectMap{{"closed", true}, {"segments", VariantArray{
+            ObjectMap{{"kind", std::string("arc")}, {"start", SectionPoint(1, 0)}, {"middle", Middle_}, {"end", SectionPoint(0, 1)}},
+            ObjectMap{{"kind", std::string("line")}, {"start", SectionPoint(0, 1)}, {"end", SectionPoint(1, 0)}}}}}}}};
+    };
+    const auto _ShortArc = _ArcProfile(SectionPoint(std::sqrt(0.5), std::sqrt(0.5)));
+    const auto _LongArc = _ArcProfile(SectionPoint(-1, 0));
+    EXPECT_NE(BuildNestingSectionIdentity(_ShortArc), BuildNestingSectionIdentity(_LongArc));
+}
+
+TEST(TubeDesignerNesting, SectionIdentityNeverTrustsClientIdentityOrMissingContours)
+{
+    auto _Profile = RoundedSectionProfile();
+    const auto _Key = BuildNestingSectionIdentity(_Profile);
+    _Profile["sectionIdentity"] = std::string("client-forged-identity");
+    EXPECT_EQ(BuildNestingSectionIdentity(_Profile), _Key);
     EXPECT_TRUE(MatchesNestingProfileKey(_Key, _Profile, "p"));
-    _Profile["material"] = std::string("aluminium");
-    EXPECT_TRUE(MatchesNestingProfileKey(_Key, _Profile, "p"));
-    _Profile["width"] = 25.0;
+    EXPECT_FALSE(MatchesNestingProfileKey("client-forged-identity", _Profile, "p"));
+    EXPECT_FALSE(MatchesNestingProfileKey(_Key + " ", _Profile, "p"));
+    _Profile.erase("contours");
+    EXPECT_THROW(BuildNestingSectionIdentity(_Profile), std::invalid_argument);
     EXPECT_FALSE(MatchesNestingProfileKey(_Key, _Profile, "p"));
-    EXPECT_TRUE(MatchesNestingProfileKey("unknown:p", {}, "p"));
-    EXPECT_FALSE(MatchesNestingProfileKey("unknown:q", {}, "p"));
+    EXPECT_FALSE(MatchesNestingProfileKey("unknown:p", {}, "p"));
+}
+
+TEST(TubeDesignerNesting, SectionIdentityPreservesSplineTrimsPeriodicDataAndEllipseIntervals)
+{
+    const auto _Section = [](const ObjectMap& Edge_) {
+        return ObjectMap{{"contours", VariantArray{ObjectMap{{"closed", true}, {"segments", VariantArray{Edge_}}}}}};
+    };
+    ObjectMap _Bezier{{"kind", std::string("bezier")}, {"controlPoints", VariantArray{
+        SectionPoint(0, 0), SectionPoint(-2, 3), SectionPoint(4, 2), SectionPoint(0, 0)}},
+        {"weights", VariantArray{1.0, 0.5, 0.75, 1.0}}};
+    auto _Reversed = _Bezier;
+    for (const auto* _Field : {"controlPoints", "weights"}) {
+        auto _Values = _Reversed.at(_Field).To<VariantArray>();
+        std::reverse(_Values.begin(), _Values.end()); _Reversed[_Field] = _Values;
+    }
+    EXPECT_EQ(BuildNestingSectionIdentity(_Section(_Bezier)), BuildNestingSectionIdentity(_Section(_Reversed)));
+    // Reversing controls with the same asymmetric trim denotes a different
+    // curve subset; an endpoint-only or unconditional reversal would merge it.
+    _Bezier["startParameter"] = 0.1; _Bezier["endParameter"] = 0.7;
+    _Reversed["startParameter"] = 0.1; _Reversed["endParameter"] = 0.7;
+    EXPECT_NE(BuildNestingSectionIdentity(_Section(_Bezier)), BuildNestingSectionIdentity(_Section(_Reversed)));
+    _Bezier.erase("startParameter"); _Bezier.erase("endParameter");
+    _Reversed.erase("startParameter"); _Reversed.erase("endParameter");
+    _Bezier["kind"] = std::string("bspline"); _Reversed["kind"] = std::string("bspline");
+    _Bezier["periodic"] = true; _Reversed["periodic"] = true;
+    _Bezier["knots"] = VariantArray{0.0, 0.5, 1.0}; _Reversed["knots"] = _Bezier.at("knots");
+    EXPECT_NE(BuildNestingSectionIdentity(_Section(_Bezier)), BuildNestingSectionIdentity(_Section(_Reversed)));
+    ObjectMap _Ellipse{{"kind", std::string("ellipseArc")}, {"center", SectionPoint(0, 0)},
+        {"majorRadius", 5.0}, {"minorRadius", 2.0}, {"startParameter", 0.0}, {"endParameter", 1.0}};
+    const auto _EllipseKey = BuildNestingSectionIdentity(_Section(_Ellipse));
+    _Ellipse["endParameter"] = 1.0 + 2.0 * std::acos(-1.0);
+    EXPECT_NE(BuildNestingSectionIdentity(_Section(_Ellipse)), _EllipseKey);
 }
 
 TEST(TubeDesignerNesting, FiniteStockHasHardPriorityOverCheaperUnlimitedStock)
@@ -557,6 +714,56 @@ TEST(TubeDesignerNesting, SettingsValidateAndRoundTripUnlimitedDefaults)
         ObjectMap{ { "id", std::string("invalid") }, { "length", 6000.0 }, { "quantity", -2 } }
     } } } };
     EXPECT_THROW(NormalizeNestingSettings(_Bad), std::invalid_argument);
+}
+
+TEST(TubeDesignerNesting, LargeResultIsDeliveredAsNoticeCatalogAndSelectedPlan)
+{
+    namespace access = iCAX::TubeDesigner::NestingResultAccess;
+    VariantArray plans;
+    plans.reserve(9499);
+    for (std::size_t index = 0; index < 9499; ++index)
+    {
+        VariantArray placements;
+        for (std::size_t part = 0; part < 5; ++part)
+            placements.emplace_back(ObjectMap{
+                { "partId", std::string("part-") + std::to_string(part) },
+                { "instanceId", std::string("instance-") + std::to_string(index * 5 + part) },
+                { "start", static_cast<double>(part * 100) },
+                { "end", static_cast<double>((part + 1) * 100) },
+                { "gapBefore", 0.0 }, { "reversed", false },
+                { "nestedWithPrevious", false }, { "rotationRadians", 0.0 },
+                { "variantId", std::string("default") }
+            });
+        plans.emplace_back(ObjectMap{
+            { "id", std::string("plan-") + std::to_string(index) },
+            { "profileKey", std::string("profile-") + std::to_string(index % 7) },
+            { "stockTypeId", std::string("stock-") + std::to_string(index % 7) },
+            { "stockLength", 1800.0 }, { "usedLength", 500.0 },
+            { "remainingLength", 1300.0 }, { "partLength", 500.0 },
+            { "utilization", 500.0 / 1800.0 }, { "placements", std::move(placements) }
+        });
+    }
+    const ObjectMap task{
+        { "revision", std::string("large-revision") },
+        { "parts", VariantArray{} },
+        { "request", ObjectMap{ { "lockedPlans", VariantArray{ plans.front() } } } },
+        { "result", ObjectMap{ { "status", std::string("feasible") },
+            { "metrics", ObjectMap{ { "placedPartCount", 47495ull } } },
+            { "unplaced", VariantArray{} }, { "plans", std::move(plans) } } }
+    };
+    const auto summary = access::Summary(task);
+    const auto snapshot = access::TaskSummary(task);
+    const auto catalog = access::Catalog(task, "large-revision");
+    const auto selected = access::Plan(task, "large-revision", "plan-42");
+    EXPECT_FALSE(summary.contains("plans"));
+    EXPECT_FALSE(access::Object(snapshot, "result").contains("plans"));
+    EXPECT_EQ(access::Array(access::Object(snapshot, "request"), "lockedPlans").size(), 1u);
+    EXPECT_EQ(access::Array(catalog, "rows").size(), 9499u);
+    EXPECT_EQ(access::Array(selected, "placements").size(), 5u);
+    EXPECT_LT(iCAX::Data::VariantSerializer::Serialize(iCAX::Data::Variant(summary)).size(), 4096u);
+    EXPECT_LT(iCAX::Data::VariantSerializer::Serialize(iCAX::Data::Variant(catalog)).size(), 16u * 1024u * 1024u);
+    EXPECT_THROW(access::Catalog(task, "old-revision"), std::invalid_argument);
+    EXPECT_THROW(access::Plan(task, "large-revision", "missing"), std::invalid_argument);
 }
 
 TEST(TubeDesignerNesting, ParallelProfileGroupsMatchSerialIncludingPartialInventoryAndOrder)

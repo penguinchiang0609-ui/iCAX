@@ -92,13 +92,33 @@ def _multiply(a,b):
     return [sum(a[4*i+k]*b[4*k+j] for k in range(4)) for i in range(4) for j in range(4)]
 
 
-def corner_reserve(fold):
+def corner_reserves(fold):
+    """Separate incoming/outgoing straight-stock offsets, excluding K amount."""
+    if 'materialCornerReserves' in fold:
+        values = fold['materialCornerReserves']
+        if not isinstance(values, dict) or set(values) != {'incoming', 'outgoing'}:
+            raise ValueError('折弯材料边界必须具有明确的前后直段余量')
+        result = {}
+        for key, value in values.items():
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < -1.e-7):
+                raise ValueError('所选槽根超出外框内部折弯基准，不能保持当前成品中心线')
+            result[key] = max(0., float(value))
+        return result
     frame = fold['frame']
     relative = [fold['hingePoint'][i]-frame['origin'][i] for i in range(3)]
     reserve = -sum(relative[i]*frame['zAxis'][i] for i in range(3))
     if reserve < -1e-7:
         raise ValueError('所选槽根超出外框内部折弯基准，不能保持当前成品中心线')
-    return max(0.,reserve)
+    return {'incoming': max(0., reserve), 'outgoing': max(0., reserve)}
+
+
+def corner_reserve(fold):
+    """A scalar reserve is valid only for a genuinely symmetric material fold."""
+    values = corner_reserves(fold)
+    if abs(values['incoming']-values['outgoing']) > 1.e-7:
+        raise ValueError('边弧折弯具有不同的前后材料边界，必须逐侧分配直段余量')
+    return values['incoming']
 
 
 def bend_allowances(plan):
@@ -114,8 +134,12 @@ def bend_allowances(plan):
         if identifier in amounts or len(selected) != 1:
             raise ValueError('连续框折弯必须有唯一对应的槽口材料要求: '+identifier)
         parameters = selected[0]['requestFeature']['toolParameters']
-        amount = (math.radians(abs(fold['angle']))*parameters['kFactor']*parameters['wallThickness']
-                  if parameters.get('bendCompensation',False) else 0.)
+        expected = (math.radians(abs(fold['angle']))*parameters['kFactor']*parameters['wallThickness']
+                    if parameters.get('bendCompensation',False) else 0.)
+        amount = fold.get('materialLengthAddition', expected)
+        if (isinstance(amount, bool) or not isinstance(amount, (int, float))
+                or not math.isfinite(amount) or abs(amount-expected) > 1.e-7):
+            raise ValueError('折弯材料补偿与实际槽口参数不一致')
         if not math.isfinite(amount) or amount < 0:
             raise ValueError('折弯材料补偿必须是有限非负长度: '+identifier)
         amounts[identifier] = amount

@@ -3,12 +3,35 @@
 #include "EntityView.h"
 #include "MetaRegistry.h"
 #include "RepositoryUndoRedoHistory.h"
+#include "ChangeSetKeys.h"
 #include <chrono>
 #include <cstdio>
+#include <iterator>
 
 
 namespace
 {
+    struct SCompositeInsertProfile final
+    {
+        double Create = 0.0;
+        double Attach = 0.0;
+        double Set = 0.0;
+        double Snapshot = 0.0;
+        double Record = 0.0;
+    };
+    thread_local SCompositeInsertProfile gCompositeInsertProfile;
+
+    const iCAX::Data::VariantArray* InitialComponents(
+        const iCAX::Database::CRepositoryOperation& operation)
+    {
+        const auto found = operation.NewProperties.find(
+            iCAX::Database::kInitialComponentsProperty);
+        if (found == operation.NewProperties.end()) return nullptr;
+        if (!found->second.Is<iCAX::Data::VariantArray>())
+            throw std::runtime_error("Entity snapshot components must be an array");
+        return &std::get<iCAX::Data::VariantArray>(found->second.m_Value);
+    }
+
     bool ShouldAffectVersionAndDerived(
         IN iCAX::Database::IMetaRegistry& Meta_,
         IN const std::string& ComponentClass_,
@@ -47,8 +70,7 @@ namespace
 
     std::vector<std::string> GetInvalidationPropertyNames(
         IN iCAX::Database::IMetaRegistry& Meta_,
-        IN const std::string& strComponentClass_,
-        IN const iCAX::Data::PropertySet& Properties_)
+        IN const std::string& strComponentClass_)
     {
         if (!Meta_.HasTypeByName(strComponentClass_))
         {
@@ -342,6 +364,17 @@ namespace iCAX
                 m_Operations.push_back(std::move(_Operation));
             }
 
+            void CreateEntityWithComponents(
+                IN const iCAX::Data::uuid& EntityID_,
+                IN iCAX::Data::VariantArray&& Components_)
+            {
+                CRepositoryOperation operation;
+                operation.Type = RepositoryEventArgs::kAddEntity;
+                operation.EntityID = EntityID_;
+                operation.NewProperties[kInitialComponentsProperty].m_Value = std::move(Components_);
+                m_Operations.push_back(std::move(operation));
+            }
+
             void DisposeEntity(IN const iCAX::Data::uuid& EntityID_) override
             {
                 CRepositoryOperation _Operation;
@@ -384,6 +417,17 @@ namespace iCAX
                 m_Operations.push_back(std::move(_Operation));
             }
 
+            void ModifyComponentProperties(IN const iCAX::Data::uuid& EntityID_,
+                IN const std::string& Class_, IN iCAX::Data::PropertySet&& Properties_)
+            {
+                CRepositoryOperation operation;
+                operation.Type = RepositoryEventArgs::kModifyComponent;
+                operation.EntityID = EntityID_;
+                operation.ComponentClass = Class_;
+                operation.NewProperties = std::move(Properties_);
+                m_Operations.push_back(std::move(operation));
+            }
+
             void EnableComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_) override
             {
                 CRepositoryOperation _Operation;
@@ -411,14 +455,16 @@ namespace iCAX
                 return m_strName;
             }
 
-            const std::vector<CRepositoryOperation>& GetOperations() const
+            std::deque<CRepositoryOperation>& GetOperations()
             {
                 return m_Operations;
             }
 
         private:
             std::string m_strName;
-            std::vector<CRepositoryOperation> m_Operations;
+            // Transaction intents may contain full immutable manufacturing
+            // recipes. Queue growth must not recopy every previous intent.
+            std::deque<CRepositoryOperation> m_Operations;
         };
 
         class CRepositoryEventSuppressor final
@@ -496,6 +542,40 @@ void iCAX::Database::CRepository::EndLoadBaseline()
     EndOperationBatch();
 }
 
+void iCAX::Database::QueueCreateEntityWithComponents(
+    ITransaction& Transaction_, const iCAX::Data::uuid& EntityID_,
+    iCAX::Data::VariantArray&& Components_)
+{
+    if (auto* concrete = dynamic_cast<CRepositoryTransaction*>(&Transaction_))
+    {
+        concrete->CreateEntityWithComponents(EntityID_, std::move(Components_));
+        return;
+    }
+
+    Transaction_.CreateEntity(EntityID_);
+    for (const auto& item : Components_)
+    {
+        const auto record = item.To<iCAX::Data::ObjectMap>();
+        Transaction_.AttachComponent(EntityID_, record.at("class").To<std::string>(),
+            record.at("properties").To<iCAX::Data::ObjectMap>());
+        if (const auto enabled = record.find("enabled");
+            enabled != record.end() && !enabled->second.To<bool>())
+            Transaction_.DisableComponent(EntityID_, record.at("class").To<std::string>());
+    }
+}
+
+void iCAX::Database::QueueModifyComponentProperties(
+    ITransaction& Transaction_, const iCAX::Data::uuid& EntityID_,
+    const std::string& Class_, iCAX::Data::PropertySet&& Properties_)
+{
+    if (auto* concrete = dynamic_cast<CRepositoryTransaction*>(&Transaction_))
+    {
+        concrete->ModifyComponentProperties(EntityID_, Class_, std::move(Properties_));
+        return;
+    }
+    Transaction_.ModifyComponent(EntityID_, Class_, Properties_);
+}
+
 void iCAX::Database::CRepository::CancelLoadBaseline()
 {
     if (!IsOperationBatchActive() || m_nOperationBatchKind != EOperationBatchKind::LoadBaseline)
@@ -533,7 +613,7 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
     }
 
     auto _pTransaction = std::move(m_pCurrentTransaction);
-    const auto& _Operations = _pTransaction->GetOperations();
+    auto& _Operations = _pTransaction->GetOperations();
     if (_Operations.empty())
     {
         return true;
@@ -543,33 +623,56 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
     {
         const bool _ProfileStage = _pTransaction->GetName() == "Add independent nesting parts"
             && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;
+        const bool _ProfileDisassembly = _pTransaction->GetName() == "Create TubeDesigner manufacturing groups"
+            && GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) != 0;
+        if (_ProfileStage) gCompositeInsertProfile = {};
         const auto _ProfileStart = std::chrono::steady_clock::now();
         double _ApplySeconds = 0.0;
         double _ApplyEntitySeconds = 0.0;
         double _ApplyComponentSeconds = 0.0;
+        std::map<std::string, double> _ComponentSeconds;
         BeginOperationBatchCore(EOperationBatchKind::Transaction, _pTransaction->GetName());
-        for (const auto& _Operation : _Operations)
+        m_pOperationBatchBuilder->ReserveOperations(_Operations.size());
+        m_OperationBatchEventRecords.reserve(_Operations.size() * 3);
+        for (auto& _Operation : _Operations)
         {
             const auto _ApplyStart = std::chrono::steady_clock::now();
             ApplyTransactionOperation(_Operation);
-            if (_ProfileStage)
+            if (_ProfileStage || _ProfileDisassembly)
             {
                 const auto elapsed = std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - _ApplyStart).count();
                 _ApplySeconds += elapsed;
                 if (_Operation.Type == RepositoryEventArgs::kAddEntity) _ApplyEntitySeconds += elapsed;
                 else _ApplyComponentSeconds += elapsed;
+                if (_ProfileDisassembly) _ComponentSeconds[_Operation.ComponentClass] += elapsed;
             }
         }
         const auto _EndStart = std::chrono::steady_clock::now();
         EndOperationBatch();
         if (_ProfileStage)
+        {
             std::fprintf(stderr, "StageNestingParts/repository %zu operations begin %.3f apply %.3f (entities %.3f components %.3f) end %.3f total %.3f s\n",
                 _Operations.size(),
                 std::chrono::duration<double>(_EndStart - _ProfileStart).count() - _ApplySeconds,
                 _ApplySeconds, _ApplyEntitySeconds, _ApplyComponentSeconds,
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - _EndStart).count(),
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
+            std::fprintf(stderr, "StageNestingParts/insert create %.3f attach %.3f set %.3f snapshot %.3f record %.3f s\n",
+                gCompositeInsertProfile.Create, gCompositeInsertProfile.Attach,
+                gCompositeInsertProfile.Set, gCompositeInsertProfile.Snapshot,
+                gCompositeInsertProfile.Record);
+        }
+        if (_ProfileDisassembly)
+        {
+            std::fprintf(stderr, "Disassembly/repository %zu operations apply %.3f end %.3f total %.3f s\n",
+                _Operations.size(), _ApplySeconds,
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - _EndStart).count(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
+            for (const auto& [component, seconds] : _ComponentSeconds)
+                std::fprintf(stderr, "Disassembly/repository/component %s %.3f s\n", component.c_str(), seconds);
+            std::fflush(stderr);
+        }
         return true;
     }
     catch (...)
@@ -1568,17 +1671,18 @@ void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEv
 
     if (IsOperationBatchActive() && nType_ != RepositoryEventArgs::kBatchChanged)
     {
-        RepositoryEventArgs _Args{ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this() };
-        RecordRepositoryBatchEvent(_Args);
-        RecordRepositoryOperation(_Args);
+        // The event record already owns the public notification snapshot.
+        // Record its fact by reference rather than cloning a third temporary
+        // RepositoryEventArgs between the component and these two owners.
+        RecordRepositoryBatchEvent({ nType_, EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_ });
+        RecordRepositoryOperation(m_OperationBatchEventRecords.back());
         return;
     }
 
     if (nType_ != RepositoryEventArgs::kBatchChanged && IsOperationBatchEventType(nType_))
     {
         auto _Batch = MakeOperationBatchFromRepositoryEvent({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this() });
-        auto _Summary = BuildChangeSetFromOperationBatch(_Batch);
-        HandleCommittedOperationBatch(_Batch, _Summary);
+        HandleCommittedOperationBatch(_Batch);
     }
 
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
@@ -1602,6 +1706,23 @@ void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEv
     }
 }
 
+void iCAX::Database::CRepository::RecordOwnedComponentModification(
+    IN const iCAX::Data::uuid& EntityID_, IN const std::string& Class_,
+    IN PropertySet&& Previous_, IN PropertySet&& New_,
+    IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_)
+{
+    RepositoryEventRecord record;
+    record.nType = RepositoryEventArgs::kModifyComponent;
+    record.EntityID = EntityID_;
+    record.strClassName = Class_;
+    record.PreviousProperties = std::move(Previous_);
+    record.NewProperties = std::move(New_);
+    record.pComponent = std::move(pComponent_);
+    record.pEntity = std::move(pEntity_);
+    RecordRepositoryBatchEvent(std::move(record));
+    RecordRepositoryOperation(m_OperationBatchEventRecords.back());
+}
+
 bool iCAX::Database::CRepository::IsOperationBatchActive() const
 {
     return m_pOperationBatchBuilder != nullptr;
@@ -1621,9 +1742,13 @@ void iCAX::Database::CRepository::EndOperationBatch()
 
     const bool _ProfileStage = m_strOperationBatchName == "Add independent nesting parts"
         && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;
+    const bool _ProfileDisassembly = m_strOperationBatchName == "Create TubeDesigner manufacturing groups"
+        && GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) != 0;
     const auto _ProfileStart = std::chrono::steady_clock::now();
     const auto _StageMark = [&](const char* phase) {
         if (_ProfileStage) std::fprintf(stderr, "StageNestingParts/batch-%s %.3f s\n", phase,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
+        if (_ProfileDisassembly) std::fprintf(stderr, "Disassembly/repository/batch-%s %.3f s\n", phase,
             std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
     };
     auto _pBuilder = std::move(m_pOperationBatchBuilder);
@@ -1635,9 +1760,9 @@ void iCAX::Database::CRepository::EndOperationBatch()
 
     // OperationBatch 是事实日志，ChangeSet 是由事实日志派生的净变更摘要。
     // 提交路径必须先冻结 Batch，再派生 Summary，避免撤销/日志丢失真实操作顺序。
-    auto _Batch = _pBuilder->Build();
+    auto _Batch = _pBuilder->Take();
     _StageMark("built");
-    auto _ChangeSet = BuildChangeSetFromOperationBatch(_Batch);
+    auto _ChangeSet = detail::BuildChangeSetKeys(_Batch);
     _StageMark("change-set");
 
     if (_nKind == EOperationBatchKind::LoadBaseline)
@@ -1663,16 +1788,19 @@ void iCAX::Database::CRepository::EndOperationBatch()
         return;
     }
 
+    // Freeze the original complete fact once. Events and an active undo
+    // command can retain this immutable owner while End projects its fields.
+    auto _pCommittedBatch = std::make_shared<const COperationBatch>(std::move(_Batch));
     if (!_ChangeSet.IsEmpty())
     {
         ApplyChangeSetEffects(_ChangeSet);
         _StageMark("effects");
-        HandleCommittedOperationBatch(_Batch, _ChangeSet);
+        HandleCommittedOperationBatch(*_pCommittedBatch, _pCommittedBatch);
         _StageMark("history-and-log");
     }
 
     auto _pBatch = std::make_shared<RepositoryEventBatch>();
-    _pBatch->pOperationBatch = std::make_shared<COperationBatch>(_Batch);
+    _pBatch->pOperationBatch = std::move(_pCommittedBatch);
     _pBatch->Records = std::move(_EventRecords);
 
     TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
@@ -1692,14 +1820,14 @@ void iCAX::Database::CRepository::CancelOperationBatch()
     m_strOperationBatchName.clear();
     m_OperationBatchEventRecords.clear();
 
-    auto _Batch = _pBuilder->Build();
+    auto _Batch = _pBuilder->Take();
     if (!_Batch.IsEmpty())
     {
         RollbackOperationBatchSilently(_Batch);
     }
 }
 
-void iCAX::Database::CRepository::RecordRepositoryOperation(IN const RepositoryEventArgs& Args_)
+void iCAX::Database::CRepository::RecordRepositoryOperation(IN const RepositoryEventRecord& Args_)
 {
     if (!m_pOperationBatchBuilder)
     {
@@ -1713,20 +1841,12 @@ void iCAX::Database::CRepository::RecordRepositoryOperation(IN const RepositoryE
     m_pOperationBatchBuilder->RecordRepositoryEvent(Args_);
 }
 
-void iCAX::Database::CRepository::RecordRepositoryBatchEvent(IN const RepositoryEventArgs& Args_)
+void iCAX::Database::CRepository::RecordRepositoryBatchEvent(IN RepositoryEventRecord&& Args_)
 {
-    m_OperationBatchEventRecords.push_back({
-        Args_.nType,
-        Args_.EntityID,
-        Args_.strClassName,
-        Args_.PreviousProperties,
-        Args_.NewProperties,
-        Args_.pComponent,
-        Args_.pEntity
-    });
+    m_OperationBatchEventRecords.push_back(std::move(Args_));
 }
 
-void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const detail::CChangeSetKeys& ChangeSet_)
 {
     // 版本和派生字段失效只关心最终净结果，不需要保留字段修改顺序。
     // 因此这里使用 ChangeSet，而不是 OperationBatch。
@@ -1735,21 +1855,19 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
     std::set<ComponentVersionKey> _VersionRemoves;
     std::set<PropertyInvalidationKey> _Invalidations;
 
-    for (const auto& _Change : ChangeSet_.AddedComponents)
+    for (const auto& [_Key, _PropertyNames] : ChangeSet_.AddedComponents)
     {
-        const auto& _Key = _Change.Key;
         _VersionResets.emplace(_Key.EntityID, _Key.ComponentClass);
         _VersionBumps.erase({ _Key.EntityID, _Key.ComponentClass });
 
-        for (const auto& _strPropertyName : GetInvalidationPropertyNames(*m_pMetaRegistry, _Key.ComponentClass, _Change.NewProperties))
+        for (const auto& _strPropertyName : GetInvalidationPropertyNames(*m_pMetaRegistry, _Key.ComponentClass))
         {
             _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _strPropertyName);
         }
     }
 
-    for (const auto& _Change : ChangeSet_.ModifiedProperties)
+    for (const auto& _Key : ChangeSet_.ModifiedProperties)
     {
-        const auto& _Key = _Change.Key;
         if (ShouldAffectVersionAndDerived(*m_pMetaRegistry, _Key.ComponentClass, _Key.PropertyName))
         {
             _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _Key.PropertyName);
@@ -1760,19 +1878,17 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
         }
     }
 
-    for (const auto& _Change : ChangeSet_.ModifiedComponentStates)
+    for (const auto& [_Key, _State] : ChangeSet_.ModifiedComponentStates)
     {
-        const auto& _Key = _Change.Key;
         if (!_VersionResets.contains({ _Key.EntityID, _Key.ComponentClass }))
         {
             _VersionBumps.emplace(_Key.EntityID, _Key.ComponentClass);
         }
     }
 
-    for (const auto& _Change : ChangeSet_.RemovedComponents)
+    for (const auto& [_Key, _PropertyNames] : ChangeSet_.RemovedComponents)
     {
-        const auto& _Key = _Change.Key;
-        for (const auto& [_strPropertyName, _] : _Change.PreviousProperties)
+        for (const auto& _strPropertyName : _PropertyNames)
         {
             _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _strPropertyName);
         }
@@ -1787,9 +1903,8 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
         m_pDerivedPropertyManager->Invalidate({ _EntityID, _ComponentClass, _PropertyName });
     }
 
-    for (const auto& _Change : ChangeSet_.RemovedComponents)
+    for (const auto& [_Key, _PropertyNames] : ChangeSet_.RemovedComponents)
     {
-        const auto& _Key = _Change.Key;
         m_pDerivedPropertyManager->RemoveComponent(_Key.EntityID, _Key.ComponentClass);
     }
 
@@ -1807,7 +1922,7 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
     }
 }
 
-void iCAX::Database::CRepository::ApplyTransactionOperation(IN const CRepositoryOperation& Operation_)
+void iCAX::Database::CRepository::ApplyTransactionOperation(IN CRepositoryOperation& Operation_)
 {
     switch (Operation_.Type)
     {
@@ -1815,6 +1930,87 @@ void iCAX::Database::CRepository::ApplyTransactionOperation(IN const CRepository
         if (HasEntity(Operation_.EntityID))
         {
             throw std::runtime_error("Transaction create entity failed: entity already exists");
+        }
+        if (const auto* initial = InitialComponents(Operation_))
+        {
+            const bool profile = m_strOperationBatchName == "Add independent nesting parts"
+                && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;
+            auto checkpoint = std::chrono::steady_clock::now();
+            const auto mark = [&](double& bucket) {
+                if (!profile) return;
+                const auto now = std::chrono::steady_clock::now();
+                bucket += std::chrono::duration<double>(now - checkpoint).count();
+                checkpoint = now;
+            };
+            std::shared_ptr<IEntity> entity;
+            std::vector<RepositoryEventRecord> records;
+            iCAX::Data::VariantArray finalComponents;
+            records.reserve(initial->size() + 1);
+            finalComponents.reserve(initial->size());
+            bool recorded = false;
+            try
+            {
+                {
+                    CRepositoryEventSuppressor suppressor(*this);
+                    std::string error;
+                    RequireRepositoryWrite(CreateEntity(Operation_.EntityID, entity, error),
+                        error, "Transaction create entity failed");
+                    mark(gCompositeInsertProfile.Create);
+                    records.push_back({RepositoryEventArgs::kAddEntity,
+                        Operation_.EntityID, {}, {}, {}, {}, entity});
+                    for (const auto& value : *initial)
+                    {
+                        const auto& input = std::get<iCAX::Data::ObjectMap>(value.m_Value);
+                        const auto componentClass = input.at("class").To<std::string>();
+                        const auto& properties = std::get<iCAX::Data::ObjectMap>(
+                            input.at("properties").m_Value);
+                        std::shared_ptr<CComponentBase> component;
+                        RequireRepositoryWrite(entity->AddComponent(componentClass, component, error),
+                            error, "Transaction attach component failed");
+                        mark(gCompositeInsertProfile.Attach);
+                        if (!properties.empty())
+                            RequireRepositoryWrite(component->InitializeNewComponentProperties(properties, error),
+                                error, "Transaction initialize component failed");
+                        mark(gCompositeInsertProfile.Set);
+                        if (const auto enabled = input.find("enabled");
+                            enabled != input.end())
+                            ApplyComponentEnabledState(*component, enabled->second.To<bool>());
+                        auto finalProperties = component->GetProperties();
+                        mark(gCompositeInsertProfile.Snapshot);
+                        records.push_back({RepositoryEventArgs::kAddComponent,
+                            Operation_.EntityID, componentClass, {}, finalProperties,
+                            component, entity});
+                        iCAX::Data::ObjectMap finalRecord{
+                            {"class", componentClass}, {"properties", finalProperties},
+                            {"enabled", component->IsEnable()}};
+                        iCAX::Data::Variant finalValue;
+                        finalValue.m_Value = std::move(finalRecord);
+                        finalComponents.push_back(std::move(finalValue));
+                        mark(gCompositeInsertProfile.Record);
+                    }
+                }
+                CRepositoryOperation fact;
+                fact.Type = RepositoryEventArgs::kAddEntity;
+                fact.EntityID = Operation_.EntityID;
+                fact.NewProperties[kInitialComponentsProperty].m_Value = std::move(finalComponents);
+                m_pOperationBatchBuilder->AppendOperation(std::move(fact));
+                recorded = true;
+                m_OperationBatchEventRecords.insert(m_OperationBatchEventRecords.end(),
+                    std::make_move_iterator(records.begin()),
+                    std::make_move_iterator(records.end()));
+                mark(gCompositeInsertProfile.Record);
+            }
+            catch (...)
+            {
+                if (!recorded && entity)
+                {
+                    CRepositoryEventSuppressor suppressor(*this);
+                    std::string error;
+                    (void)DeleteEntity(Operation_.EntityID, error);
+                }
+                throw;
+            }
+            break;
         }
         {
             std::shared_ptr<IEntity> _pCreatedEntity;
@@ -1888,7 +2084,8 @@ void iCAX::Database::CRepository::ApplyTransactionOperation(IN const CRepository
         }
 
         std::string _strError;
-        RequireRepositoryWrite(_pComponent->SetProperties(Operation_.NewProperties, _strError), _strError, "Transaction modify component failed");
+        RequireRepositoryWrite(_pComponent->SetPropertiesOwned(
+            std::move(Operation_.NewProperties), _strError), _strError, "Transaction modify component failed");
         break;
     }
     case RepositoryEventArgs::kEnableComponent:
@@ -1927,6 +2124,24 @@ void iCAX::Database::CRepository::ApplyOperationForward(IN const CRepositoryOper
             std::shared_ptr<IEntity> _pCreatedEntity;
             std::string _strError;
             RequireRepositoryWrite(CreateEntity(Operation_.EntityID, _pCreatedEntity, _strError), _strError, "Replay create entity failed");
+            if (const auto* initial = InitialComponents(Operation_))
+            {
+                for (const auto& value : *initial)
+                {
+                    const auto& input = std::get<iCAX::Data::ObjectMap>(value.m_Value);
+                    const auto componentClass = input.at("class").To<std::string>();
+                    const auto& properties = std::get<iCAX::Data::ObjectMap>(
+                        input.at("properties").m_Value);
+                    std::shared_ptr<CComponentBase> component;
+                    RequireRepositoryWrite(_pCreatedEntity->AddComponent(componentClass, component, _strError),
+                        _strError, "Replay attach component failed");
+                    if (!properties.empty())
+                        RequireRepositoryWrite(component->SetProperties(properties, _strError),
+                            _strError, "Replay initialize component failed");
+                    if (const auto enabled = input.find("enabled"); enabled != input.end())
+                        ApplyComponentEnabledState(*component, enabled->second.To<bool>());
+                }
+            }
         }
         break;
     case RepositoryEventArgs::kDeleteEntity:
@@ -2070,7 +2285,8 @@ void iCAX::Database::CRepository::RollbackOperationBatchSilently(IN const COpera
     ApplyOperationBatchBackward(Batch_);
 }
 
-void iCAX::Database::CRepository::HandleCommittedOperationBatch(IN const COperationBatch& Batch_, IN const CChangeSet& Summary_)
+void iCAX::Database::CRepository::HandleCommittedOperationBatch(IN const COperationBatch& Batch_,
+    IN std::shared_ptr<const COperationBatch> pSharedBatch_)
 {
     if (Batch_.IsEmpty()
         || Batch_.Kind == EOperationBatchKind::LoadBaseline
@@ -2082,7 +2298,10 @@ void iCAX::Database::CRepository::HandleCommittedOperationBatch(IN const COperat
         return;
     }
 
-    m_pHistory->HandleCommittedOperationBatch(Batch_);
+    if (pSharedBatch_)
+        m_pHistory->HandleSharedCommittedOperationBatch(std::move(pSharedBatch_));
+    else
+        m_pHistory->HandleCommittedOperationBatch(Batch_);
     AppendOperationLog(Batch_);
 }
 

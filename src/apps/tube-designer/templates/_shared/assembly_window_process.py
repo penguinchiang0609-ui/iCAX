@@ -114,7 +114,13 @@ _CHOICE_FIELDS = {
     'frameManufacturingMode', 'frameJoinType', 'frameCornerJoin', 'frameButtWrapMode',
     'doorFrameJoinType', 'doorFrameButtWrapMode', 'doorLeafFrameJoinType',
     'doorLeafFrameButtWrapMode', 'assemblyClearance', 'horizontalBranchReserve',
-    'verticalBranchReserve',
+    'verticalBranchReserve', 'horizontalEndConnection', 'verticalEndConnection',
+    'outerFrameBendKFactor', 'outerFrameFoldBridge', 'outerFrameVGrooveMaleFemale',
+    'outerFrameVGrooveBottomStrategy', 'outerFrameVGrooveRoundRadius',
+    'doorFrameBendKFactor', 'doorFrameFoldBridge', 'doorFrameVGrooveMaleFemale',
+    'doorFrameVGrooveBottomStrategy', 'doorFrameVGrooveRoundRadius',
+    'doorLeafFrameBendKFactor', 'doorLeafFrameFoldBridge', 'doorLeafFrameVGrooveMaleFemale',
+    'doorLeafFrameVGrooveBottomStrategy', 'doorLeafFrameVGrooveRoundRadius',
 }
 _JOIN_CHOICES = {'miter_45', 'butt_90', 'v_groove_90:tool_library'}
 _WRAP_CHOICES = {'side_wraps_horizontal', 'horizontal_wraps_side'}
@@ -164,7 +170,7 @@ def _restore_design(items, resources, connections):
 
 def plan(call, inputs, resources, context=None):
     """Plan one complete window using the registered v3 process contract."""
-    from icax_template_sdk.manufacturing import is_manufacturing_declaration
+    from icax_template_sdk.manufacturing import is_manufacturing_declaration, validate_assembly_resource_ref
     if is_manufacturing_declaration():
         raise RuntimeError('产品声明阶段禁止调用整体装配工艺规划')
     if call['templateId'] != 'security-window-assembly' or set(inputs) != {'members'}:
@@ -178,7 +184,10 @@ def plan(call, inputs, resources, context=None):
     if local.get('schemaVersion') != 3 or set(local) - {'schema', 'schemaVersion', 'parts', 'geometry', 'resources'}:
         raise ValueError('invalid whole-window assembly process input')
     geometry = local['geometry']
-    if set(geometry) != {'layout', 'connections'} or set(geometry['layout']) != {'faceType', 'accessDoorEnabled'}:
+    if (not {'layout', 'connections'} <= set(geometry)
+            or set(geometry) - {'layout', 'connections', 'mergeIdenticalParts'}
+            or set(geometry['layout']) != {'faceType', 'accessDoorEnabled'}
+            or 'mergeIdenticalParts' in geometry and not isinstance(geometry['mergeIdenticalParts'], bool)):
         raise ValueError('unknown whole-window assembly design facts')
     layout = geometry['layout']
     if layout['faceType'] not in {'single', 'two', 'three', 'five'} or not isinstance(layout['accessDoorEnabled'], bool):
@@ -199,13 +208,14 @@ def plan(call, inputs, resources, context=None):
     for key in ('frameButtWrapMode', 'doorFrameButtWrapMode', 'doorLeafFrameButtWrapMode'):
         if selected[key] not in _WRAP_CHOICES:
             raise ValueError('unsupported window assembly wrap mode: ' + key)
+    for key in ('horizontalEndConnection', 'verticalEndConnection'):
+        if selected[key] not in {'insert', 'weld', 'tabs'}:
+            raise ValueError('unsupported grid end connection: ' + key)
     for key in ('assemblyClearance', 'horizontalBranchReserve', 'verticalBranchReserve'):
         value = selected[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0.:
             raise ValueError('invalid local window assembly dimension: ' + key)
     selected.update(deepcopy(layout))
-    # Forward only the active connection's values; all local choices are explicit.
-    selected.update(post_runtime.process_choices(selected))
     keys = [item['key'] for item in members['items']]
     if len(keys) != len(set(keys)):
         raise ValueError('window assembly design member identities must be independent')
@@ -227,14 +237,17 @@ def plan(call, inputs, resources, context=None):
         if not isinstance(slot, dict) or set(slot) != {'ref'}:
             raise ValueError('invalid selected window assembly resource slot')
         reference = slot['ref']
-        if (not isinstance(reference, dict) or set(reference) != {'scope', 'id'}
-                or reference['scope'] not in {'system', 'user'} or not isinstance(reference['id'], str) or not reference['id']):
+        validate_assembly_resource_ref(reference)
+        if reference['scope'] not in {'system', 'user'}:
             raise ValueError('invalid selected window assembly tool reference')
         role_drafts = drafts[role]
         if not isinstance(role_drafts, dict) or set(role_drafts) != {reference['id']} or not isinstance(role_drafts[reference['id']], dict):
             raise ValueError('window assembly requires the explicitly selected resource draft')
         bindings[role] = {'ref': deepcopy(reference), 'parameters': deepcopy(role_drafts[reference['id']])}
     selected['tubeDesignerToolBindings'] = bindings
+    # Determine applicability from the actual frozen selected resource, then
+    # forward only the active joint's values to geometry.
+    selected.update(post_runtime.process_choices(selected))
     for relation in geometry['connections']:
         if (not isinstance(relation, dict) or set(relation) != {'key', 'kind', 'items', 'properties'}
                 or not set(relation['items']) <= set(keys)
@@ -280,6 +293,9 @@ def _compile_route(parameters, design):
     def add_object(key, label, spans, closed=False, tool_role=None):
         first = spans[0][0]
         if tool_role:
+            if any(original_profiles[original]['contours'] != original_profiles[first]['contours']
+                   for original, _, _ in spans):
+                raise ValueError('连续折弯的一根原管不能使用不同管材；请统一该路径的成品管材或选择分段拼接')
             _load('security_window_frame_geometry')._validate_bending_section(_profile(original_profiles[first]))
             if (tool_role=='outerFrameGroove' and parameters.get('faceType','single')!='single'
                     and parameters.get('frameManufacturingMode')=='spatial_v_notch'
@@ -339,13 +355,12 @@ def _compile_route(parameters, design):
         templates = {'v-notch-sharp': 'node-v-notch-integrated', 'edge-arc-groove': 'node-edge-arc-integrated',
             'embedded-arc-notch': 'node-embedded-arc-integrated', 'segmented-bend': 'segmented-bend',
             'flexible-slit-bend': 'flexible-slit-bend-integrated'}
-        corners = []
         for index in range(len(segments)-1):
             incoming, outgoing = segments[index:index+2]
             a, b = incoming['sectionFrame']['zAxis'], outgoing['sectionFrame']['zAxis']
             cosine = max(-1., min(1., dot(a, b)))
             if abs(cosine-1.) < 1.e-7: continue
-            vertex = incoming['to']; corners.append(vertex)
+            vertex = incoming['to']
             processes.append(_call(key+'.fold.'+vertex, templates.get(reference['id'], 'node-v-notch-integrated'),
                 {'stock': {'scope': 'manufacturing', 'itemKey': key, 'state': 'initial'}},
                 {'anchor': {'kind': 'path-corner', 'vertexKey': vertex,
@@ -353,7 +368,7 @@ def _compile_route(parameters, design):
                  'angle': math.degrees(math.acos(cosine)), 'axisDirection': unit(cross(a, b))},
                 resources={'node-slot': {'ref': reference}}, drafts={'node-slot': {reference['id']: draft}},
                 targets={'stock': key}))
-        input_data['formingOrder'] = list(reversed(corners))
+        # Shop order is chosen after resolving the actual cutters and hinges.
     face = parameters.get('faceType', 'single')
     mode = parameters.get('frameManufacturingMode', 'segment_weld')
     post_runtime = _load('security_window_post_connections')
@@ -463,7 +478,7 @@ def _compile_route(parameters, design):
             {'stock': {'scope': 'manufacturing', 'itemKey': key, 'state': 'initial'},
              'mate': {'scope': 'display', 'itemKey': mate}},
             {'mode': mode, 'anchor': {'kind': 'member-end', 'end': end, 'point': deepcopy(point)}},
-            {'insertionDepth': depth, 'clearance': float(parameters.get('assemblyClearance', 0.))}, targets={'stock': key}))
+            {'insertionDepth': depth, 'clearance': float(parameters.get('assemblyClearance', 0.)) if mode=='insert' else 0.}, targets={'stock': key}))
     def material_boundary(key, original, end, mate, mode, extent_policy=None):
         # These are design references. The downstream end function determines
         # the material endpoint; no length, reserve or cutting plane is solved here.
@@ -486,6 +501,9 @@ def _compile_route(parameters, design):
     if segment_post_insertion:
         posts = sorted(key for key in members if key.startswith('outer_frame.vertical.')) if face != 'single' else [
             key for key in members if key.startswith(('outer_frame.left.', 'outer_frame.right.'))]
+        # Every structurally independent post receives the selected end joint.
+        # A post using the frame's material still needs the same machining;
+        # its material-choice marker cannot make an active joint disappear.
         values = post_runtime.insertion_parameters(parameters)
         for post in posts:
             for end in ('start', 'end'):
@@ -594,6 +612,7 @@ def _compile_route(parameters, design):
             elif join=='miter_45': end_call(key,end,mate,'miter')
             elif horizontal == (wrap=='side_wraps_horizontal'): end_call(key,end,mate,'butt')
             else: material_boundary(key,key,end,mate,'wrap')
+    closed_endpoint_pairs = set()
     for key in members:
         if key in frame_keys: continue
         axis = unit(sub(members[key]['end'],members[key]['start']))
@@ -610,14 +629,44 @@ def _compile_route(parameters, design):
                 if distance<=max(profiles[other]['width'],profiles[other]['depth'])/2+1.e-6: candidates.append((distance,other))
             if candidates:
                 _, mate=min(candidates)
-                if key.startswith('access_door.leaf.horizontal.') or mate.startswith('access_door.fixed_frame.'):
+                is_grid = key.startswith(('main_grid.', 'side_grid.', 'cap_grid.'))
+                category = source[key]['properties'].get('manufacturing.categoryKey', '')
+                horizontal = category.endswith('horizontal')
+                if is_grid:
+                    selected = parameters['horizontalEndConnection' if horizontal else 'verticalEndConnection']
+                    if selected == 'tabs':
+                        values = {'joint':'tabs', 'insertionDepth':12. if horizontal else 8.,
+                                  'tabWidth':8. if horizontal else 6.,
+                                  'clearance':float(parameters.get('assemblyClearance',0.))}
+                        # Declare enough real raw material independently of the
+                        # frozen display end. The end tool alone retains its ears.
+                        material_boundary(key,key,end,mate,'wrap')
+                        processes.append(_call(key+'.grid-tab-end.'+end, 'tube-post-end',
+                            {'stock':{'scope':'manufacturing','itemKey':key,'state':'initial'},
+                             'mate':{'scope':'display','itemKey':mate}},
+                            {'anchor':{'kind':'member-end','end':end,'point':deepcopy(point)}},
+                            values,targets={'stock':key}))
+                        target=owners[mate]
+                        processes.append(_call(target+'.grid-tab-aperture.'+key+'.'+end, 'tube-post-aperture',
+                            {'stock':{'scope':'manufacturing','itemKey':target,'state':'initial'},
+                             'branch':{'scope':'display','itemKey':key}},
+                            {'node':deepcopy(point),'branchEnd':end,'sharedCorner':False,'receiverSource':mate},
+                            values,targets={'stock':target}))
+                        closed_endpoint_pairs.add(frozenset((key,mate)))
+                        continue
+                    mode_,depth=('butt',0.) if selected=='weld' else (
+                        'insert',parameters.get('horizontalBranchReserve' if horizontal else 'verticalBranchReserve',0.))
+                    if selected=='weld': closed_endpoint_pairs.add(frozenset((key,mate)))
+                elif key.startswith('access_door.leaf.horizontal.') or mate.startswith('access_door.fixed_frame.'):
                     mode_,depth='butt',0.
+                    closed_endpoint_pairs.add(frozenset((key,mate)))
                 elif key.startswith('access_door.leaf.vertical.'):
-                    mode_,depth='insert',('mid-section' if face=='single' else parameters.get('verticalBranchReserve',0.))
+                    # The leaf owns this connection. A main-grid end choice
+                    # cannot change its independently designed insertion.
+                    mode_,depth='insert','mid-section'
                 else:
                     # The cap grid's vertical members lie in a horizontal face;
                     # insertion allowance follows the member role, not world Z.
-                    category = source[key]['properties'].get('manufacturing.categoryKey', '')
                     reserve = 'horizontalBranchReserve' if category.endswith('horizontal') else 'verticalBranchReserve'
                     mode_,depth='insert',parameters.get(reserve,0.)
                 end_call(key,end,mate,mode_,depth)
@@ -625,6 +674,7 @@ def _compile_route(parameters, design):
     keys=list(members)
     for index,a in enumerate(keys):
         for b in keys[index+1:]:
+            if frozenset((a,b)) in closed_endpoint_pairs: continue
             if a in frame_keys and b in frame_keys: continue
             if a.startswith('access_door.leaf.') != b.startswith('access_door.leaf.'): continue
             ma,mb=members[a],members[b]; u,v=unit(sub(ma['end'],ma['start'])),unit(sub(mb['end'],mb['start']))

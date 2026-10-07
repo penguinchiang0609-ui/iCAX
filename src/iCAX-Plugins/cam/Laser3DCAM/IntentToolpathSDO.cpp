@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDOSupport.h"
 #include "SelectionComponents.h"
 #include "ToolpathSDOImplement.h"
@@ -114,8 +115,8 @@ class CIntentToolpathSDO final : public iCAX::Interaction::CSDO
 public:
     CIntentToolpathSDO() : CSDO("IntentToolpath")
     {
-        ExposeMethod("List", &iCAX::CAM::SDO::HandleListIntentToolpaths);
-        ExposeMethod("CreateFromSelection", &iCAX::CAM::SDO::HandleCreateIntentFromSelection);
+        ExposeMethod("List", tube::license::ProtectProductMethod<11007, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleListIntentToolpaths));
+        ExposeMethod("CreateFromSelection", tube::license::ProtectProductMethod<11008, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleCreateIntentFromSelection));
     }
 };
 static_assert(iCAX::Interaction::IsStatelessSDOType<CIntentToolpathSDO>);

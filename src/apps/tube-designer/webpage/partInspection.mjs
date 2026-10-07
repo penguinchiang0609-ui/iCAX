@@ -1,4 +1,11 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
+import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
+import { attachPartInspectionWindow, disposePartInspectionWindow } from "./partInspectionWindow.mjs";
+import { partDimensionCategories as dimensionCategories, annotatedPartElementIds as annotatedElementIds,
+  renderPartDimensionVisibilityIcon as renderVisibilityIcon, visiblePartDimensionAnnotations,
+  nearestPartDimensionElement, partDimensionVisibilityState, partDimensionElementVisible,
+  setPartDimensionMasterVisibility, setPartDimensionCategoryVisibility,
+  setPartDimensionElementVisibility } from "./partDimensionAnnotations.mjs";
 
 export const PART_INSPECTION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 
@@ -9,25 +16,20 @@ export function scheduleDesignerPartInspectionHydration(context, designer, view)
     ? String(view.tubeDesignerInspectedPartId ?? "")
     : "";
   const part = inspectedPartId ? findPart(designer, inspectedPartId, view) : null;
+  if (part) attachPartInspectionWindow(context, view);
+  else disposePartInspectionWindow(context);
   view.viewport?.setContinuousRendering?.(!part && !view.tubeDesignerAddDialogOpen);
   queueMicrotask(() => {
     void hydrateInspection(context, part);
   });
 }
 
-export function toggleDesignerAutomaticDimensions(context) {
+export function disposeDesignerPartInspection(context, { preserveWindow = false } = {}) {
+  if (!preserveWindow) disposePartInspectionWindow(context);
   const controller = getController(context);
-  if (!controller) return false;
-  controller.automaticDimensionsVisible = !controller.automaticDimensionsVisible;
-  controller.viewport.setDimensionAnnotations(
-    controller.automaticDimensionsVisible ? controller.dimensionReport?.annotations ?? [] : [],
-  );
-  const viewportState = controller.viewport.getDebugState();
-  controller.host.dataset.tubeInspectionDimensionCount = String(
-    viewportState.dimensionAnnotationCount ?? 0,
-  );
-  renderAutomaticDimensionState(controller);
-  return true;
+  if (!controller) return;
+  controllers.delete(context.mount);
+  disposeInspection(controller);
 }
 
 export function fitDesignerInspectedPart(context) {
@@ -69,7 +71,7 @@ export function buildAutomaticDimensionReport(part) {
     if (valid) {
       const origin = axes.reduce((point, direction, index) => add(point, scale(direction, -dimensions[index] / 2)), center);
       for (let index = 0; index < 3; index += 1) {
-        annotations.push({ start: origin, end: add(origin, scale(axes[index], dimensions[index])),
+        annotations.push({ id: `overall:${index}`, category: "overall", elementIds: [], start: origin, end: add(origin, scale(axes[index], dimensions[index])),
           offset: scale(axes[index === 0 ? 1 : 0], -Math.max(12, dimensions[1] * 0.13)),
           label: `${["长边", "短边", measurement.partKind === "glass" ? "玻璃厚度" : "板厚"][index]} ${formatMillimeters(dimensions[index])} mm`, color: "#ffc43d" });
       }
@@ -116,7 +118,7 @@ export function buildAutomaticDimensionReport(part) {
     .map((feature, index) => normalizeHoleFeature(feature, index, start, axis, referenceLength))
     .filter(Boolean)
     .sort((left, right) => left.station - right.station)
-    .map((hole, index) => ({ ...hole, index: index + 1 }));
+    .map((hole, index) => ({ ...hole, index: index + 1, elementId: `hole:${index + 1}` }));
   const pitches = holes.slice(1).map((hole, index) => {
     const previous = holes[index];
     return {
@@ -153,7 +155,7 @@ async function hydrateInspection(context, part) {
   const host = mount.querySelector?.("[data-tube-designer-part-inspection-viewport]") ?? null;
   const previous = controllers.get(mount);
   if (!host || !part) {
-    previous?.viewport.dispose();
+    disposeInspection(previous);
     controllers.delete(mount);
     return;
   }
@@ -165,12 +167,17 @@ async function hydrateInspection(context, part) {
   const partKey = `${String(part.entityId)}@${resourceId}@${resourceVersion}`
     + `@${manufacturingResourceId}@${manufacturingResourceVersion}`;
   if (previous?.host === host && previous.partKey === partKey) return;
-  previous?.viewport.dispose();
+  disposeInspection(previous);
 
   const controller = {
     host,
     partKey,
     automaticDimensionsVisible: true,
+    treeCollapsed: false,
+    hiddenCategories: new Set(),
+    hiddenElementIds: new Set(),
+    shownElementIds: new Set(),
+    selectedElementId: "",
     dimensionReport: null,
     viewport: null,
   };
@@ -180,10 +187,12 @@ async function hydrateInspection(context, part) {
     constrainOrbit: false,
     showProjectionToggle: true,
     pickingEnabled: false,
+    blankDoubleClickFitEnabled: true,
     antialias: true,
     pixelRatioCap: 2,
   });
   controller.viewport.mount(host);
+  attachInspectionControls(controller);
   host.dataset.tubeInspectionReady = "false";
   host.dataset.tubeInspectionEntityCount = "0";
   host.dataset.tubeInspectionDimensionCount = "0";
@@ -246,9 +255,7 @@ async function hydrateInspection(context, part) {
     controller.dimensionReport = buildAutomaticDimensionReport({
       geometryMeasurement,
     });
-    controller.viewport.setDimensionAnnotations(
-      controller.automaticDimensionsVisible ? controller.dimensionReport.annotations : [],
-    );
+    updateInspectionAnnotations(controller);
     applyHorizontalPartPresentation(controller);
     controller.viewport.fitViewToViewport(1.16);
     const viewportState = controller.viewport.getDebugState();
@@ -257,17 +264,13 @@ async function hydrateInspection(context, part) {
     host.dataset.tubeInspectionMeasurementMs = String(
       Math.max(0, Math.round(performance.now() - measurementStartedAt)),
     );
-    if (controller.dimensionReport.hasLinearReference && dimensionCount < 1) {
+    if (controller.dimensionReport.hasLinearReference
+        && visibleInspectionAnnotations(controller).length > 0 && dimensionCount < 1) {
       throw new Error("自动尺寸已经生成，但未能进入三维复尺场景。");
     }
     renderAutomaticDimensionState(controller);
     if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
-    setInspectionStatus(
-      controller,
-      controller.dimensionReport.partKind === "accessory" ? "已读取配件真实外包尺寸；配件不生成管材标尺。"
-        : `已显示 ${dimensionCount} 条自动标尺，识别到 ${controller.dimensionReport.holes.length} 个孔 / 开口。`,
-      false,
-    );
+    setInspectionStatus(controller, "", false);
   } catch (error) {
     if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
     setInspectionStatus(controller, error?.message ?? String(error), true);
@@ -290,7 +293,8 @@ function applyHorizontalPartPresentation(controller) {
 }
 
 function findPart(designer, partId, view = {}) {
-  const groups = view?.tubeDesignerBreakdownMode === "nesting-export"
+  const groups = view?.activeAreaId === "nesting"
+    && view?.tubeDesignerBreakdownMode === "nesting-export"
     && Array.isArray(designer?.nestingGroups)
     ? designer.nestingGroups
     : (designer?.manufacturingGroups ?? []);
@@ -304,51 +308,237 @@ function findPart(designer, partId, view = {}) {
 function renderAutomaticDimensionState(controller) {
   const dialog = controller.host.closest(".tube-designer-part-inspection-dialog");
   if (!dialog) return;
-  const toggle = dialog.querySelector("[data-cam-action='tube-designer-toggle-automatic-dimensions']");
-  if (toggle) {
-    toggle.setAttribute("aria-pressed", controller.automaticDimensionsVisible ? "true" : "false");
-    toggle.textContent = controller.automaticDimensionsVisible ? "隐藏标尺" : "显示标尺";
+  const tree = dialog.querySelector("[data-tube-inspection-dimension-tree]");
+  const collapse = tree?.querySelector("[data-tube-inspection-tree-collapse]");
+  if (tree && collapse) {
+    tree.classList.toggle("is-collapsed", controller.treeCollapsed);
+    collapse.classList.toggle("is-collapsed", controller.treeCollapsed);
+    collapse.setAttribute("aria-expanded", String(!controller.treeCollapsed));
+    const label = controller.treeCollapsed ? "展开标尺" : "收起标尺到左侧";
+    collapse.setAttribute("aria-label", label);
+    collapse.title = label;
+    collapse.querySelector("[data-tube-inspection-tree-collapse-icon]").textContent = controller.treeCollapsed ? "›" : "‹";
+    collapse.querySelector("[data-tube-inspection-tree-collapse-label]").hidden = !controller.treeCollapsed;
   }
+  const master = dialog.querySelector("[data-tube-inspection-all-dimensions]");
+  if (master) {
+    const visibility = partDimensionVisibilityState(controller);
+    master.checked = visibility.total ? visibility.checked : controller.automaticDimensionsVisible;
+    master.indeterminate = visibility.mixed;
+  }
+  const count = dialog.querySelector("[data-tube-inspection-visible-count]");
+  if (count) count.textContent = controller.dimensionReport
+    ? `已显示 ${controller.host.dataset.tubeInspectionDimensionCount ?? "0"} 项` : "正在载入";
   const result = dialog.querySelector("[data-tube-designer-automatic-dimensions]");
   if (!result) return;
   const report = controller.dimensionReport;
-  if (!report) {
-    result.innerHTML = `<div class="tube-designer-dimension-empty">正在从最终零件几何提取尺寸…</div>`;
-    return;
+  if (!report) return;
+  if (controller.renderedDimensionReport !== report) {
+    controller.renderedDimensionReport = report;
+    const categories = dialog.querySelector("[data-tube-inspection-dimension-categories]");
+    if (categories) categories.innerHTML = dimensionCategories.map(([key, label]) => {
+      const total = report.annotations.filter((annotation) => annotation.category === key).length;
+      return total ? `<label><input type="checkbox" data-tube-inspection-dimension-category="${key}" checked /><span>${label}</span><small>${total}</small></label>` : "";
+    }).join("");
+    if (report.partKind === "accessory") {
+      result.innerHTML = `<div class="tube-designer-inspection-summary"><div>${[["width", "宽 X"], ["depth", "深 Y"], ["height", "高 Z"]].map(([key, label]) => `<span>${label} <strong>${formatMillimeters(report.bounds[key])} mm</strong></span>`).join("")}</div></div>`;
+    } else {
+      result.innerHTML = `
+        <div class="tube-designer-inspection-summary">
+          <div><span>${report.plate ? "长边" : "总长"} <strong>${formatMillimeters(report.length)} mm</strong></span><span>孔 / 开口 <strong>${report.holes.length} 个</strong></span></div>
+          <p>${escapeText(report.profile)}${report.plate ? "" : " mm"}</p>
+        </div>
+        ${report.holes.length ? `<div class="tube-designer-inspection-element-list"><table aria-label="孔和开口">
+          <thead><tr><th scope="col" aria-label="显示标注"><button type="button" class="tube-designer-inspection-eye" data-tube-inspection-elements-visibility aria-pressed="true" aria-label="隐藏全部孔和开口标注" title="隐藏全部孔和开口标注">${renderVisibilityIcon(true, true)}</button></th><th scope="col">孔 / 开口</th><th scope="col">尺寸</th></tr></thead><tbody>
+          ${report.holes.map((hole) => {
+            const label = `${hole.kind === "side-opening" ? "单侧开口" : "孔"} ${hole.index}`;
+            const hasAnnotations = report.annotations.some((annotation) => annotation.elementIds.includes(hole.elementId));
+            return `<tr data-tube-inspection-element-row="${hole.elementId}">
+              <td>${hasAnnotations ? `<button type="button" class="tube-designer-inspection-eye" data-tube-inspection-element-visibility="${hole.elementId}" aria-pressed="true" aria-label="隐藏${label}标注">${renderVisibilityIcon(true)}</button>` : ""}</td>
+              <td colspan="2"><button type="button" data-tube-inspection-select-element="${hole.elementId}" aria-pressed="false"><strong>${label}</strong><span>${escapeText(hole.sizeLabel)}</span></button></td>
+            </tr>`;
+          }).join("")}</tbody></table></div>
+          <section class="tube-designer-inspection-element-detail" data-tube-inspection-element-detail hidden>
+            <strong data-tube-inspection-detail-title></strong>
+            <dl>${["center", "edge", "face-center", "face-edge"].map((key) => `<div><dt>${{center:"中心距端",edge:"开口边距端","face-center":"中心距侧边","face-edge":"开口距侧边"}[key]}</dt><dd data-tube-inspection-detail="${key}"></dd></div>`).join("")}</dl>
+          </section>` : ""}
+      `;
+    }
   }
-  if (report.partKind === "accessory") {
-    result.innerHTML = `<div class="tube-designer-dimension-overview">${[["width", "宽 X"], ["depth", "深 Y"], ["height", "高 Z"]].map(([key, label]) => `<span><small>${label}</small><strong>${formatMillimeters(report.bounds[key])} mm</strong></span>`).join("")}<span><small>数据来源</small><strong>最终几何</strong></span></div><div class="tube-designer-dimension-empty">配件按完整模型复尺，不生成管材总长或孔距标尺。</div>`;
-    return;
+  for (const input of dialog.querySelectorAll("[data-tube-inspection-dimension-category]")) {
+    const visibility = partDimensionVisibilityState(controller, input.dataset.tubeInspectionDimensionCategory);
+    input.checked = visibility.checked; input.indeterminate = visibility.mixed;
   }
-  result.innerHTML = `
-    <div class="tube-designer-dimension-overview">
-      <span><small>${report.plate ? "长边" : "总长"}</small><strong>${formatMillimeters(report.length)} mm</strong></span>
-      <span><small>规格</small><strong>${escapeText(report.profile)}</strong></span>
-      <span><small>孔 / 开口</small><strong>${report.holes.length} 个</strong></span>
-      <span><small>数据来源</small><strong>最终几何</strong></span>
-    </div>
-    ${report.holes.length ? `
-      <div class="tube-designer-dimension-list">
-        ${report.holes.map((hole) => `
-          <article>
-            <strong>${hole.kind === "side-opening" ? "单侧开口" : "孔"} ${hole.index} · ${escapeText(hole.sizeLabel)}</strong>
-            <span>中心距首端 ${formatMillimeters(hole.station)} · 距末端 ${formatMillimeters(Math.max(0, report.length - hole.station))}</span>
-            <span>开口边距首端 ${formatMillimeters(hole.startEdgeDistance)} · 距末端 ${formatMillimeters(hole.endEdgeDistance)}</span>
-            <span>面宽方向中心距边 ${formatMillimeters(hole.centerToFaceEdgeNegative)} / ${formatMillimeters(hole.centerToFaceEdgePositive)}</span>
-            <span>面宽方向开口边净距 ${formatMillimeters(hole.faceEdgeClearanceNegative)} / ${formatMillimeters(hole.faceEdgeClearancePositive)}</span>
-          </article>`).join("")}
-        ${report.pitches.map((pitch) => `
-          <article class="tube-designer-dimension-pitch">
-            <strong>开口 ${pitch.from} — 开口 ${pitch.to}</strong>
-            <span>中心距 ${formatMillimeters(pitch.centerDistance)} · 最近开口边净距 ${formatMillimeters(pitch.edgeClearance)}</span>
-          </article>`).join("")}
-      </div>`
-      : `<div class="tube-designer-dimension-empty">${report.plate ? "长边、短边与厚度取自当前实体，不作为管材处理。" : "当前最终几何中未识别到孔或开口；总长与截面仍取自当前实体。"}</div>`}
-  `;
+  const bulk = dialog.querySelector("[data-tube-inspection-elements-visibility]");
+  if (bulk) {
+    const ids = annotatedElementIds(report);
+    const visibleCount = ids.filter((id) => partDimensionElementVisible(controller, id)).length;
+    const allVisible = ids.length > 0 && visibleCount === ids.length;
+    const mixed = visibleCount > 0 && !allVisible;
+    bulk.disabled = !ids.length;
+    bulk.setAttribute("aria-pressed", mixed ? "mixed" : String(allVisible));
+    const label = `${allVisible ? "隐藏" : "显示"}全部孔和开口标注`;
+    bulk.setAttribute("aria-label", label);
+    bulk.title = mixed ? `${label}（部分显示）` : label;
+    bulk.querySelector("[data-tube-inspection-eye-slash]").toggleAttribute("hidden", visibleCount > 0);
+    bulk.querySelector("[data-tube-inspection-eye-mixed]").toggleAttribute("hidden", !mixed);
+  }
+  for (const row of dialog.querySelectorAll("[data-tube-inspection-element-row]")) {
+    const id = row.dataset.tubeInspectionElementRow;
+    const selected = id === controller.selectedElementId;
+    const visible = partDimensionElementVisible(controller, id);
+    row.classList.toggle("is-selected", selected);
+    row.classList.toggle("is-hidden", !visible);
+    row.querySelector("[data-tube-inspection-select-element]")?.setAttribute("aria-pressed", String(selected));
+    const eye = row.querySelector("[data-tube-inspection-element-visibility]");
+    if (eye) {
+      eye.setAttribute("aria-pressed", String(visible));
+      eye.setAttribute("aria-label", `${visible ? "隐藏" : "显示"}${row.querySelector("strong").textContent}标注`);
+      eye.querySelector("[data-tube-inspection-eye-slash]").toggleAttribute("hidden", visible);
+    }
+  }
+  const selected = report.holes.find((hole) => hole.elementId === controller.selectedElementId);
+  const detail = dialog.querySelector("[data-tube-inspection-element-detail]");
+  if (!detail) return;
+  detail.hidden = !selected;
+  if (!selected) return;
+  detail.querySelector("[data-tube-inspection-detail-title]").textContent = `${selected.kind === "side-opening" ? "单侧开口" : "孔"} ${selected.index} · ${selected.sizeLabel}`;
+  const pairs = {
+    center: [selected.station, Math.max(0, report.length - selected.station)],
+    edge: [selected.startEdgeDistance, selected.endEdgeDistance],
+    "face-center": [selected.centerToFaceEdgeNegative, selected.centerToFaceEdgePositive],
+    "face-edge": [selected.faceEdgeClearanceNegative, selected.faceEdgeClearancePositive],
+  };
+  for (const [key, values] of Object.entries(pairs)) {
+    detail.querySelector(`[data-tube-inspection-detail="${key}"]`).textContent = `${values.map(formatMillimeters).join(" / ")} mm`;
+  }
+}
+
+function visibleInspectionAnnotations(controller) {
+  return visiblePartDimensionAnnotations(controller);
+}
+
+function updateInspectionAnnotations(controller) {
+  const annotations = visibleInspectionAnnotations(controller);
+  controller.viewport.setDimensionAnnotations(annotations.map((annotation) =>
+    annotation.elementIds.includes(controller.selectedElementId)
+      ? { ...annotation, color: 0xffed89 } : annotation));
+  const selected = controller.dimensionReport?.holes.find((hole) => hole.elementId === controller.selectedElementId);
+  const showSelection = selected && annotations.some(annotation => annotation.elementIds.includes(selected.elementId));
+  const points = showSelection && controller.dimensionReport.axis && selected.halfSpanAlong > 0
+    ? [-1, 1].map((sign) => add(selected.center, scale(controller.dimensionReport.axis, sign * selected.halfSpanAlong)))
+    : showSelection ? [selected.center] : [];
+  controller.viewport.setMeasurementPoints(points.map(([x, y, z]) => ({ x, y, z })));
+  controller.host.dataset.tubeInspectionDimensionCount = String(controller.viewport.getDebugState().dimensionAnnotationCount ?? 0);
+  controller.host.dataset.tubeInspectionVisibleAnnotationIds = JSON.stringify(annotations.map((annotation) => annotation.id));
+  controller.host.dataset.tubeInspectionSelectedElement = controller.selectedElementId;
+}
+
+function attachInspectionControls(controller) {
+  const dialog = controller.host.closest(".tube-designer-part-inspection-dialog");
+  controller.dialog = dialog;
+  controller.host.insertAdjacentHTML("beforeend", renderViewCube());
+  controller.cubeView = { viewport: controller.viewport };
+  attachViewCube(controller.cubeView, controller.host);
+  controller.onClick = (event) => {
+    const cube = event.target?.closest?.('[data-cam-viewcube] [data-cam-action="view-standard"]');
+    if (cube && controller.host.contains(cube)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      controller.viewport.setStandardView(String(cube.dataset.camView ?? "iso"));
+      return;
+    }
+    const collapse = event.target?.closest?.("[data-tube-inspection-tree-collapse]");
+    if (collapse) {
+      event.preventDefault();
+      event.stopPropagation();
+      controller.treeCollapsed = !controller.treeCollapsed;
+      renderAutomaticDimensionState(controller);
+      return;
+    }
+    const bulk = event.target?.closest?.("[data-tube-inspection-elements-visibility]");
+    if (bulk) {
+      event.preventDefault();
+      event.stopPropagation();
+      const ids = annotatedElementIds(controller.dimensionReport);
+      const hide = ids.length > 0 && ids.every((id) => partDimensionElementVisible(controller, id));
+      for (const id of ids) {
+        setPartDimensionElementVisibility(controller, id, !hide);
+      }
+      updateInspectionAnnotations(controller);
+      renderAutomaticDimensionState(controller);
+      return;
+    }
+    const eye = event.target?.closest?.("[data-tube-inspection-element-visibility]");
+    const select = event.target?.closest?.("[data-tube-inspection-select-element]");
+    if (!eye && !select) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (eye) {
+      const id = eye.dataset.tubeInspectionElementVisibility;
+      setPartDimensionElementVisibility(controller, id, !partDimensionElementVisible(controller, id));
+    } else {
+      controller.selectedElementId = select.dataset.tubeInspectionSelectElement;
+      setPartDimensionElementVisibility(controller, controller.selectedElementId, true);
+    }
+    updateInspectionAnnotations(controller);
+    renderAutomaticDimensionState(controller);
+  };
+  controller.onChange = (event) => {
+    const input = event.target;
+    if (input.hasAttribute?.("data-tube-inspection-all-dimensions")) {
+      setPartDimensionMasterVisibility(controller, input.checked);
+    } else if (input.hasAttribute?.("data-tube-inspection-dimension-category")) {
+      const key = input.dataset.tubeInspectionDimensionCategory;
+      setPartDimensionCategoryVisibility(controller, key, input.checked);
+    } else return;
+    event.stopPropagation();
+    updateInspectionAnnotations(controller);
+    renderAutomaticDimensionState(controller);
+  };
+  controller.onPointerDown = (event) => {
+    controller.scenePointerStart = event.button === 0 && event.target === controller.viewport.renderer.domElement
+      ? { x: event.clientX, y: event.clientY } : null;
+  };
+  controller.onPointerUp = (event) => {
+    const start = controller.scenePointerStart;
+    controller.scenePointerStart = null;
+    if (!start || event.target !== controller.viewport.renderer.domElement
+        || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+    const nearest = nearestPartDimensionElement(controller.dimensionReport, controller.viewport, event);
+    if (!nearest) return;
+    controller.selectedElementId = nearest.elementId;
+    setPartDimensionElementVisibility(controller, nearest.elementId, true);
+    updateInspectionAnnotations(controller);
+    renderAutomaticDimensionState(controller);
+    const row = dialog.querySelector(`[data-tube-inspection-element-row="${nearest.elementId}"]`);
+    const list = row?.closest(".tube-designer-inspection-element-list");
+    if (row && list) {
+      const headerHeight = list.querySelector("thead")?.offsetHeight ?? 0;
+      const top = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+      if (top < list.scrollTop + headerHeight) list.scrollTop = Math.max(0, top - headerHeight);
+      else if (top + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + row.offsetHeight - list.clientHeight;
+    }
+  };
+  dialog.addEventListener("click", controller.onClick, true);
+  dialog.addEventListener("change", controller.onChange);
+  controller.host.addEventListener("pointerdown", controller.onPointerDown);
+  controller.host.addEventListener("pointerup", controller.onPointerUp);
+}
+
+function disposeInspection(controller) {
+  if (!controller) return;
+  controller.dialog?.removeEventListener("click", controller.onClick, true);
+  controller.dialog?.removeEventListener("change", controller.onChange);
+  controller.host?.removeEventListener("pointerdown", controller.onPointerDown);
+  controller.host?.removeEventListener("pointerup", controller.onPointerUp);
+  stopViewCubeAnimation(controller.cubeView);
+  controller.viewport.dispose();
 }
 
 function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, profileSpan, holes }) {
   const annotations = [{
+    id: "overall:0", category: "overall", elementIds: [],
     start,
     end,
     offset: scale(offsetDirection, profileSpan * 5.1),
@@ -365,7 +555,7 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
   const last = holes[holes.length - 1];
   appendAnnotation(
     annotations, start, first.center, centerOffset,
-    `首端距 ${formatMillimeters(first.station)}`, 0x73d4ca,
+    `首端距 ${formatMillimeters(first.station)}`, 0x73d4ca, "end-distance", [first.elementId],
   );
   for (let index = 1; index < holes.length; index += 1) {
     const previous = holes[index - 1];
@@ -373,6 +563,7 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
     appendAnnotation(
       annotations, previous.center, hole.center, centerOffset,
       `中心距 ${formatMillimeters(hole.station - previous.station)}`, 0x73d4ca,
+      "center-distance", [previous.elementId, hole.elementId],
     );
     appendAnnotation(
       annotations,
@@ -381,11 +572,12 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
       gapOffset,
       `净距 ${formatMillimeters(hole.station - previous.station - previous.halfSpanAlong - hole.halfSpanAlong)} mm`,
       0xf09a6c,
+      "clearance", [previous.elementId, hole.elementId],
     );
   }
   appendAnnotation(
     annotations, last.center, end, centerOffset,
-    `末端距 ${formatMillimeters(length - last.station)}`, 0x73d4ca,
+    `末端距 ${formatMillimeters(length - last.station)}`, 0x73d4ca, "end-distance", [last.elementId],
   );
 
   for (const hole of holes) {
@@ -396,6 +588,7 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
       sizeOffset,
       `开${hole.index} ${hole.sizeLabel}`,
       0x8fe0a9,
+      "opening-size", [hole.elementId],
     );
     if (hole.faceTangent && hole.centerToFaceEdge > 0) {
       appendAnnotation(
@@ -405,15 +598,16 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
         edgeOffset,
         `开${hole.index} 距边 ${formatMillimeters(hole.centerToFaceEdgeNegative)} / ${formatMillimeters(hole.centerToFaceEdgePositive)}`,
         0xb8a4ff,
+        "face-distance", [hole.elementId],
       );
     }
   }
   return annotations;
 }
 
-function appendAnnotation(collection, start, end, offset, label, color) {
+function appendAnnotation(collection, start, end, offset, label, color, category, elementIds) {
   if (!start || !end || distance(start, end) <= 0.01) return;
-  collection.push({ start, end, offset, label, color });
+  collection.push({ id: `${category}:${collection.length}`, category, elementIds, start, end, offset, label, color });
 }
 
 function normalizeHoleFeature(feature, index, start, axis, referenceLength) {
@@ -456,6 +650,7 @@ function normalizeHoleFeature(feature, index, start, axis, referenceLength) {
   const halfSpanAlong = spanAlong / 2;
   return {
     index: index + 1,
+    elementId: `hole:${index + 1}`,
     kind: String(feature.kind ?? "through-opening"),
     station: Math.max(0, station),
     center,
@@ -546,6 +741,7 @@ function setInspectionStatus(controller, message, isError) {
     ?.querySelector("[data-tube-designer-inspection-status]");
   if (!status) return;
   status.textContent = message;
+  status.hidden = !message;
   status.classList.toggle("error", Boolean(isError));
 }
 

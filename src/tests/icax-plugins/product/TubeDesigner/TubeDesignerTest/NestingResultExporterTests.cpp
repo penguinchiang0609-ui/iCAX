@@ -60,6 +60,16 @@ namespace
         return { std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
     }
 
+    double RowHeight(const std::string& Workbook_, std::size_t Row_)
+    {
+        const auto _Row = Workbook_.find("<row r=\"" + std::to_string(Row_) + "\"");
+        if (_Row == std::string::npos) throw std::runtime_error("Workbook row is missing");
+        const auto _Start = Workbook_.find("ht=\"", _Row);
+        if (_Start == std::string::npos || _Start > Workbook_.find('>', _Row))
+            throw std::runtime_error("Workbook row does not have an explicit height");
+        return std::stod(Workbook_.substr(_Start + 4));
+    }
+
     TopoDS_Shape RealTube()
     {
         const auto _Outer = BRepPrimAPI_MakeBox(gp_Pnt(-500, -10, -5), 1000, 20, 10).Shape();
@@ -86,10 +96,22 @@ namespace
         return { { "actual-part", "真实带孔管 & <编号>", "P-001", RealTube() } };
     }
 
+    SNestingExportPlacement Placement(const std::string& ID_, const double Start_,
+        const double End_, const bool Flipped_ = false, const double Gap_ = 0,
+        const bool Nested_ = false)
+    {
+        SNestingExportPlacement _Placement{ID_, Start_, End_, Flipped_, Gap_, Nested_};
+        const double _Direction = Flipped_ ? -1.0 : 1.0;
+        _Placement.Transform = {_Direction,0,0,(Start_+End_)*0.5,
+            0,_Direction,0,0, 0,0,1,0, 0,0,0,1};
+        _Placement.HasTransform = true;
+        return _Placement;
+    }
+
     SNestingExportPlan Plan()
     {
         return { "plan-one", "矩形管 20 × 10 × 2", 6000, 2003, 3997,
-            { { "actual-part", 0, 1000, false }, { "actual-part", 1003, 2003, true } }, "母材 5" };
+            { Placement("actual-part", 0, 1000), Placement("actual-part", 1003, 2003, true, 3.0) }, "母材 5" };
     }
 
     std::array<double, 6> Bounds(const TopoDS_Shape& Shape_)
@@ -216,8 +238,8 @@ TEST(TubeDesignerNestingExport, PlacesValidatedMiterEnvelopesWithNegativeGap)
     _Plan.RemainingLength = 0.0;
     _Plan.PartLength = 220.0;
     _Plan.Placements = {
-        { "miter", 0.0, 120.0, false, 0.0, false, 0.0, "forward-0" },
-        { "miter", 110.0, 230.0, false, -10.0, true, 0.0, "forward-0" }
+        Placement("miter", 0.0, 120.0),
+        Placement("miter", 110.0, 230.0, false, -10.0, true)
     };
     const auto _Shape = BuildNestingExportCompound(_Plan, _Parts, 0.0);
     const auto _Bounds = Bounds(_Shape);
@@ -231,6 +253,9 @@ TEST(TubeDesignerNestingExport, RejectsInvalidReferencedPartsLengthsAndGapBefore
     const auto _Root = TestRoot();
     const auto _Parts = Parts();
     auto _Plan = Plan();
+    _Plan.Placements[0].HasTransform = false;
+    EXPECT_THROW(BuildNestingExportCompound(_Plan, _Parts, 3), std::invalid_argument);
+    _Plan = Plan();
     _Plan.Placements[0].PartID = "not-in-source";
     EXPECT_THROW(ExportNestingResults(_Root, { _Plan }, _Parts, 3), std::invalid_argument);
     EXPECT_TRUE(std::filesystem::is_empty(_Root));
@@ -377,6 +402,31 @@ TEST(TubeDesignerNestingExport, ExcelImportWorkbookEmbedsColumnDefinition)
     EXPECT_EQ(_ReadDefinition.TemplateID, "security-window");
     ASSERT_EQ(_ReadDefinition.Columns.size(), 1u);
     EXPECT_EQ(_ReadDefinition.Columns.front().Key, "faceType");
+}
+
+TEST(TubeDesignerNestingExport, ExcelVisibilityComesFromTheDescriptorForExportAndImport)
+{
+    const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(R"json({
+            "schema":"icax.template-descriptor", "schemaVersion":1,
+            "id":"test.visibility", "version":"1.0.0", "displayName":"可见性测试",
+            "parameters":[
+                {"key":"internalResource","displayName":"内部资源","valueType":"string","defaultValue":"system:fixture","presentation":{"visible":false}},
+                {"key":"enableExtra","displayName":"附加选项","valueType":"boolean","defaultValue":false},
+                {"key":"extraWidth","displayName":"条件尺寸","valueType":"number","defaultValue":30,"visibleWhen":{"op":"eq","parameter":"enableExtra","value":true}},
+                {"key":"resultOnly","displayName":"派生结果","valueType":"number","defaultValue":1,"readOnly":true}
+            ]
+        })json"));
+    const auto _Root = TestRoot();
+    const auto _HiddenPath = _Root / "hidden-input.xlsx";
+    EXPECT_THROW(WriteBatchExcelTemplate(_HiddenPath, _Descriptor, {{"internalResource", "内部资源", false, ""}}), std::invalid_argument);
+    EXPECT_FALSE(std::filesystem::exists(_HiddenPath));
+    EXPECT_THROW(ValidateBatchExcelColumns(_Descriptor, {{"resultOnly", "派生结果", false, ""}}), std::invalid_argument);
+    EXPECT_NO_THROW(ValidateBatchExcelColumns(_Descriptor, {{"extraWidth", "条件尺寸", false, ""}}));
+    // A hidden contract edited independently must obey the same visibility.
+    WriteTableWorkbook(_HiddenPath, "非法内部参数", {"内部资源"}, {{std::string("system:fixture")}},
+        R"json({"schema":"icax.tube-designer.batch-excel","templateId":"test.visibility","templateVersion":"1.0.0","columns":[{"key":"internalResource","title":"内部资源"}]})json");
+    EXPECT_THROW(ReadBatchExcelImport(_HiddenPath, _Descriptor), std::invalid_argument);
 }
 
 TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInstances)
@@ -545,4 +595,49 @@ TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppends
     EXPECT_NE(_Cell("R6").find("外购"), std::string::npos);
     EXPECT_NE(_Cell("S6").find("外购成品"), std::string::npos);
     EXPECT_EQ(_Content.find("母材长度 (mm)"), std::string::npos);
+}
+
+TEST(TubeDesignerNestingExport, PartListRowsMakeRoomForWrappedNamesAndExplicitNewlines)
+{
+    const auto _Path = TestRoot() / "wrapped-part-list.xlsx";
+    WritePartListWorkbook(_Path, {
+        { 1, "产品", "PRODUCT-1", 1, "LONG-PART-NUMBER-12345678901234567890",
+            "长度较长的中文零件名称用于检查自动换行后的行高", "矩形管", "40 × 20 × R2 × 1.5",
+            1200, 2, "LONG-PART-NUMBER-12345678901234567890.step",
+            "产品目录/LONG-PART-NUMBER-12345678901234567890.step", "tube", 0, 0, 0,
+            "304", "made", "切割\n焊接\n打磨" },
+        { 1, "产品", "PRODUCT-1", 2, "P-2", "短杆", "管", "20×20", 300, 1, "P-2.step", "产品/P-2.step" },
+    });
+    const auto _Workbook = ReadBytes(_Path);
+    EXPECT_GE(RowHeight(_Workbook, 2), 30.0);
+    EXPECT_GE(RowHeight(_Workbook, 3), 53.0); // Three explicit process lines plus padding.
+    EXPECT_GT(RowHeight(_Workbook, 3), RowHeight(_Workbook, 4));
+    EXPECT_EQ(RowHeight(_Workbook, 4), 24.0);
+    EXPECT_LE(RowHeight(_Workbook, 3), 409.0);
+    EXPECT_NE(_Workbook.find("<dimension ref=\"A1:S4\"/>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("<mergeCell ref=\"A3:A4\"/>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("<v>1200</v>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("<v>2</v>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("切割\n焊接\n打磨"), std::string::npos);
+}
+
+TEST(TubeDesignerNestingExport, TableHeaderAndTextRowsGrowWithoutChangingCellValues)
+{
+    const auto _Path = TestRoot() / "wrapped-import-table.xlsx";
+    const std::string _Heading = "本列用于填写已经确认加工方式的较长中文零件名称";
+    const std::string _LongValue = "LONG-PART-NUMBER-1234567890123456789012345678901234567890";
+    WriteTableWorkbook(_Path, "批量导入", { _Heading, "长度" }, {
+        { _LongValue, 1200.125 }, { std::string("短"), 300.0 },
+    });
+    const auto _Workbook = ReadBytes(_Path);
+    EXPECT_GT(RowHeight(_Workbook, 2), 30.0);
+    EXPECT_GT(RowHeight(_Workbook, 3), 24.0);
+    EXPECT_EQ(RowHeight(_Workbook, 4), 24.0);
+    EXPECT_LE(RowHeight(_Workbook, 2), 409.0);
+    EXPECT_NE(_Workbook.find(_Heading), std::string::npos);
+    EXPECT_NE(_Workbook.find(_LongValue), std::string::npos);
+    EXPECT_NE(_Workbook.find("<v>1200.125</v>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("<v>300</v>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("<dimension ref=\"A1:B4\"/>"), std::string::npos);
+    EXPECT_NE(_Workbook.find("name val=\"Microsoft YaHei\""), std::string::npos);
 }

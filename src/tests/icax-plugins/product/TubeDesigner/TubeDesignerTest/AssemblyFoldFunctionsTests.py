@@ -167,6 +167,15 @@ class FoldFunctionsTests(unittest.TestCase):
                     elif template == "node-v-notch-integrated":
                         self.assertAlmostEqual(1, changed["forming"][0]["hingePoint"][2]
                                                - baseline["forming"][0]["hingePoint"][2])
+                    elif template == "node-edge-arc-integrated":
+                        before, after = baseline['forming'][0], changed['forming'][0]
+                        for index in (0, 1, 2, 4, 5, 6, 8, 9, 10):
+                            self.assertAlmostEqual(before['targetTransform'][index], after['targetTransform'][index])
+                        self.assertAlmostEqual(before['materialCornerReserves']['incoming'],
+                                               after['materialCornerReserves']['outgoing'])
+                        self.assertAlmostEqual(before['materialCornerReserves']['outgoing'],
+                                               after['materialCornerReserves']['incoming'])
+                        self.assertNotEqual(before['targetTransform'], after['targetTransform'])
                     else:
                         # Retained arc details change the cut, not the target bend angle.
                         self.assertEqual(baseline["forming"][0]["targetTransform"],

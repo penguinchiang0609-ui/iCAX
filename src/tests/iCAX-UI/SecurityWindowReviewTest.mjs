@@ -46,7 +46,7 @@ assert.doesNotMatch(defaultReview, /大框未四边闭合|V 槽折弯|须先打�
 const rendered = renderSecurityWindowReview(template, defaults);
 assert.match(rendered, /data-security-window-review/);
 assert.match(rendered, /800 × 1000 mm/);
-assert.match(rendered, /830 × 1000 mm/);
+assert.match(rendered, /820 × 1000 mm/);
 assert.match(rendered, /成品外包尺寸/);
 assert.match(rendered, /目标尺寸为设计值，不代表现场可通行或合规结论/);
 assert.match(rendered, /仅完成几何与装配校验，五金开启、墙体锚固、承载和当地要求待现场核验/);
@@ -86,23 +86,23 @@ for (const faceType of ["single", "two", "three", "five"]) {
   const html = renderSecurityWindowReview(template, { ...defaults, faceType });
   assert.match(html, /data-security-window-review/);
   assert.match(html, /成品外包尺寸/);
-  assert.match(html, /830 × 1000 mm/);
+  assert.match(html, /820 × 1000 mm/);
 }
-assert.match(renderSecurityWindowReview(template), /830 × 1000 mm/);
+assert.match(renderSecurityWindowReview(template), /820 × 1000 mm/);
 const maintenance = renderSecurityWindowReview(template, { ...defaults, doorClearWidth: 400, doorClearHeight: 400 });
 assert.match(maintenance, /逃生窗/);
 assert.match(maintenance, /目标通行净尺寸/);
 assert.match(maintenance, /400 × 400 mm/);
-assert.match(maintenance, /430 × 400 mm/);
+assert.match(maintenance, /420 × 400 mm/);
 assert.doesNotMatch(maintenance, /检修口|目标开启净尺寸/);
 
 for (const disabled of [false, "false", "否"]) {
   const html = renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: disabled });
   assert.match(html, /未设置逃生窗/);
-  assert.doesNotMatch(html, /800 × 1000 mm|830 × 1000 mm/);
+  assert.doesNotMatch(html, /800 × 1000 mm|820 × 1000 mm/);
 }
 for (const enabled of [true, "true", "是"]) {
-  assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: enabled }), /830 × 1000 mm/);
+  assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: enabled }), /820 × 1000 mm/);
 }
 const malicious = '<img src=x onerror="boom"> &';
 assert.match(renderSecurityWindowReview(template, { ...defaults, doorClearWidth: malicious }), /待填写有效尺寸/);
@@ -121,17 +121,17 @@ const imported = Object.freeze({
   }),
 });
 assert.deepEqual(securityWindowOpeningDimensions(imported), {
-  width: 800, height: 1000, leafDepth: 48, fixedWidth: 36, hardware: 10,
-  fixedClearWidth: 858, outsideWidth: 930, outsideHeight: 1072,
+  width: 800, height: 1000, leafDepth: 48, fixedWidth: 36,
+  fixedClearWidth: 848, outsideWidth: 920, outsideHeight: 1072,
 });
-assert.match(renderSecurityWindowReview(template, imported), /858 × 1000 mm/);
-assert.match(renderSecurityWindowReview(template, imported), /窗扇厚度 48 mm/);
-assert.doesNotMatch(renderSecurityWindowReview(template, imported), /830 × 1000 mm/);
+assert.match(renderSecurityWindowReview(template, imported), /848 × 1000 mm/);
+assert.match(renderSecurityWindowReview(template, imported), /窗扇厚度.*48 mm/);
+assert.doesNotMatch(renderSecurityWindowReview(template, imported), /820 × 1000 mm/);
 for (const invalidDepth of [undefined, 0, -1, "", malicious]) {
   const values = { ...imported, tubeDesignerProfileOverrides: { doorLeafFrame: importedProfile(33, invalidDepth) } };
   assert.equal(securityWindowOpeningDimensions(values).outsideWidth, null);
   assert.match(renderSecurityWindowReview(template, values), /待填写有效尺寸/);
-  assert.doesNotMatch(renderSecurityWindowReview(template, values), /830 × 1000 mm|<img|NaN/);
+  assert.doesNotMatch(renderSecurityWindowReview(template, values), /820 × 1000 mm|<img|NaN/);
 }
 
 // Exercise both production render entry points and draft changes.
@@ -158,7 +158,15 @@ const view = { scene: { tubeDesigner: {
 } } };
 const existingProduct = renderDesignerRightPane(context, view);
 assert.doesNotMatch(existingProduct, /data-tube-designer-parameter="doorClearWidth"/);
-assert.match(existingProduct, /aria-label="结构摘要"/);
+// Structure is selected at creation and has no editor after creation.
+function assertCurrentStructureControls(html) {
+  assert.doesNotMatch(html, /aria-label="结构摘要"/);
+  assert.doesNotMatch(html, /data-tube-designer-current-structure/);
+  for (const key of ["outerFrameStructure", "doorFrameStructure", "doorLeafFrameStructure"]) {
+    assert.doesNotMatch(html, new RegExp(`data-cam-action="tube-designer-open-product-structure"[^>]*data-product-control-key="${key}"`));
+  }
+}
+assertCurrentStructureControls(existingProduct);
 assert.doesNotMatch(existingProduct, /data-tube-designer-parameter="faceType"/);
 view.tubeDesignerRightDraft = { doorClearWidth: 300, doorClearHeight: 400 };
 const updated = renderDesignerRightPane(context, view);
@@ -179,7 +187,7 @@ for (const [faceType, extraStructureKeys] of [
   for (const key of ["faceType", "accessDoorEnabled", ...extraStructureKeys]) {
     assert.doesNotMatch(html, new RegExp(`data-tube-designer-parameter="${key}"`));
   }
-  assert.match(html, /aria-label="结构摘要"/);
+  assertCurrentStructureControls(html);
   assert.doesNotMatch(html, /data-tube-designer-parameter-group="section:specifications"/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="width"/);
   assert.match(html, /data-tube-designer-parameter-group="section:materials"/);

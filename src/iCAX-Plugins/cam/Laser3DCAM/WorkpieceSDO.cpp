@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "RenderData/RenderData.h"
@@ -20,10 +21,10 @@ namespace
         CWorkpieceSDO()
             : CSDO("Workpiece")
         {
-            ExposeMethod("Instantiate", &iCAX::CAM::SDO::HandleInstantiateWorkpiece);
-            ExposeMethod("List", &iCAX::CAM::SDO::HandleListWorkpieces);
-            ExposeMethod("SetActive", &iCAX::CAM::SDO::HandleSetActiveWorkpiece);
-            ExposeMethod("Delete", &iCAX::CAM::SDO::HandleDeleteWorkpiece);
+            ExposeMethod("Instantiate", tube::license::ProtectProductMethod<11046, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleInstantiateWorkpiece));
+            ExposeMethod("List", tube::license::ProtectProductMethod<11047, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleListWorkpieces));
+            ExposeMethod("SetActive", tube::license::ProtectProductMethod<11048, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleSetActiveWorkpiece));
+            ExposeMethod("Delete", tube::license::ProtectProductMethod<11049, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleDeleteWorkpiece));
         }
     };
 

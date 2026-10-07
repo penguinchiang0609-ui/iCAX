@@ -147,6 +147,7 @@ namespace iCAX
             * @brief 生成净变更摘要。
             */
             CChangeSet Build() const;
+            CChangeSet Take();
 
         private:
             void EraseEntityChanges(IN const CChangeEntityKey& Key_);

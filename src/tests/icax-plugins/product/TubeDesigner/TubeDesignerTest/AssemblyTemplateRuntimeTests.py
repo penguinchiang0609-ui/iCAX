@@ -415,7 +415,7 @@ class AssemblyTemplateRuntimeTests(unittest.TestCase):
                     self.runtime._validate_template(broken, directory)
 
     def test_bound_miter_accepts_centered_provided_rectangular_tube_not_profile_id(self):
-        system = json.loads((ROOT / "apps/tube-designer/templates/product/aluminium_window"
+        system = json.loads((ROOT / "apps/tube-designer/docs/deferred-products/aluminium-window/reference"
                             / "systems/demonstration.json").read_text(encoding="utf-8"))
         frame = system["profiles"]["frame"]
         section = {"schema": "icax.tube-profile", "schemaVersion": 1,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { selectPunchProfileSource, updatePunchProfileParameter } from "../../apps/tube-designer/webpage/punchProfileSource.mjs";
+import { selectPunchProfileSource, updatePunchProfileParameter, waitForPunchProfileSources } from "../../apps/tube-designer/webpage/punchProfileSource.mjs";
 import { createPunchWizardState, openPunchParameters, closePunchParameters } from "../../apps/tube-designer/webpage/punchWizard.mjs";
+import { createPunchBatch, copyPunchBatchParts, selectPunchBatchDefinition, removePunchBatchParts } from "../../apps/tube-designer/webpage/punchBatch.mjs";
 
 const part={entityId:"source-test",length:1000};
 const geometry=width=>({width,parameters:{width},contours:[{kind:"circle",radius:width/2}]});
@@ -128,4 +129,60 @@ dxfCalls[1].reject(new Error("DXF parse failed"));await assert.rejects(failure,/
 assert.equal(dxf.view.pending,false);assert.equal(dxf.view.tubeDesignerOperation,null);
 assert.equal(dxf.item.section.profile.width,24,"failed import must preserve the previously selected geometry");
 
-console.log("TubeDesignerPunchProfileSourceTest passed: controlled single-flight progress, saved defaults, ownership guards, cancellation and failure recovery.");
+// Batch section edits stay interactive while only the latest matching contour
+// is published into the shared definition and every unfinished referencing row.
+async function batchFixture() {
+  const result = await fixture();
+  result.view.tubeDesignerNestingPunchPartDraft = { profileKey:"system:rect", name:"section", length:"1000", quantity:"1" };
+  const batch = createPunchBatch(result.view);
+  batch.selectedPartIds = [batch.parts[0].id];
+  copyPunchBatchParts(result.view);
+  result.state = result.view.tubeDesignerPunchWizard;
+  result.item = result.state.features[0];
+  return { ...result, batch };
+}
+const batchLatest=await batchFixture(),batchCalls=deferredContext();
+const firstBatch=updatePunchProfileParameter(batchCalls.context,batchLatest.view,target(batchLatest.dataset,30));
+assert.equal(batchLatest.view.pending,false,"a batch contour request does not disable continued editing");
+assert.equal(batchLatest.batch.definitions[0].recipe.section.parameters.width,30,"shared parameters are synchronized before the request");
+assert(batchLatest.batch.parts.every(row=>row.wizard.features[0].section.profile===null),"old contours cannot travel with new parameters");
+await Promise.resolve();
+const secondBatch=updatePunchProfileParameter(batchCalls.context,batchLatest.view,target(batchLatest.dataset,40));
+await Promise.resolve();
+assert.equal(batchCalls.calls.length,2,"continued input reaches the native source without an exclusive lock");
+let drainCompleted=false;
+const drain=waitForPunchProfileSources(batchLatest.view).then(()=>{drainCompleted=true;});
+batchCalls.calls[1].resolve({profile:geometry(40)});assert.equal(await secondBatch,true);
+assert.equal(drainCompleted,false,"the save drain still includes an older pending native request");
+batchCalls.calls[0].resolve({profile:geometry(30)});assert.equal(await firstBatch,false);
+await drain;
+assert(batchLatest.batch.parts.every(row=>row.wizard.features[0].section.profile.width===40));
+assert.equal(batchLatest.batch.definitions[0].recipe.section.profile.width,40);
+assert.equal(batchLatest.view.pending,false);
+
+// A definition belongs to the batch, not the row or draft that initiated its
+// generation. Selecting another definition or deleting that row cannot leave
+// surviving users of the shared shape without their current contour.
+for(const ownershipChange of ["select-definition","remove-request-row"]) {
+  const value=await batchFixture(),native=deferredContext();
+  const definitionId=value.item.batchDefinitionId;
+  const job=updatePunchProfileParameter(native.context,value.view,target(value.dataset,36));
+  await Promise.resolve();
+  if(ownershipChange==="select-definition") {
+    value.batch.definitions.push({id:"other-shape",label:"H2",recipe:{recordKind:"tool",type:"circle",diameter:10}});
+    selectPunchBatchDefinition(value.view,"other-shape");
+  } else {
+    value.batch.selectedPartIds=[value.batch.selectedPartId];
+    removePunchBatchParts(value.view);
+  }
+  native.calls[0].resolve({profile:geometry(36)});assert.equal(await job,true,ownershipChange);
+  assert.equal(value.batch.definitions.find(def=>def.id===definitionId).recipe.section.profile.width,36);
+  assert(value.batch.parts.every(row=>row.wizard.features[0].section.profile.width===36));
+}
+
+const batchCancel=await batchFixture(),cancelNative=deferredContext();
+const cancelled=updatePunchProfileParameter(cancelNative.context,batchCancel.view,target(batchCancel.dataset,38));
+await Promise.resolve();batchCancel.view.tubeDesignerPunchBatch=null;
+cancelNative.calls[0].resolve({profile:geometry(38)});assert.equal(await cancelled,false,"closing the batch rejects a late response");
+
+console.log("TubeDesignerPunchProfileSourceTest passed: nonbatch single-flight progress; interactive batch contour generation, latest response, shared ownership, save drain, cancellation and failure recovery.");

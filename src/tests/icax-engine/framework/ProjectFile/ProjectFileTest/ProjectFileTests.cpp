@@ -7,10 +7,12 @@
 #include <Database/IMetaRegistry.h>
 #include <Resources/BinaryResource.h>
 #include <Resources/ResourceLibrary.h>
+#include <Data/VariantSerializer.h>
 
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <stdexcept>
 
 using namespace iCAX::ProjectFile;
@@ -288,90 +290,7 @@ namespace
         return _Bytes;
     }
 
-    class CDocumentMigration1To2 final
-        : public IProjectDocumentMigration
-    {
-    public:
-        std::string ProductID() const override
-        {
-            return "icax.cam";
-        }
-
-        uint32_t FromRevision() const override
-        {
-            return 1;
-        }
-
-        uint32_t ToRevision() const override
-        {
-            return 2;
-        }
-
-        std::string ToFormatVersion() const override
-        {
-            return "2.0";
-        }
-
-        void Upgrade(
-            IN OUT CProjectDocument& Document_,
-            IN OUT CProjectMigrationContext& Context_) const override
-        {
-            Document_.Info.ProjectSettings["upgraded"] =
-                std::string("yes");
-            Context_.Note("document 1 -> 2");
-        }
-    };
-
-    class CGeometryMigration1To2 final
-        : public IProjectResourceMigration
-    {
-    public:
-        std::string ResourceTypeID() const override
-        {
-            return "geometry.mesh";
-        }
-
-        uint32_t FromSchemaVersion() const override
-        {
-            return 1;
-        }
-
-        uint32_t ToSchemaVersion() const override
-        {
-            return 2;
-        }
-
-        void Upgrade(
-            IN OUT CProjectResourceRecord& Resource_,
-            IN OUT CProjectMigrationContext& Context_) const override
-        {
-            Resource_.Body.push_back(40);
-            Resource_.Metadata["schema"] = "2";
-            Context_.Note("geometry 1 -> 2");
-        }
-    };
-
-    class CThrowingDocumentMigration final
-        : public IProjectDocumentMigration
-    {
-    public:
-        std::string ProductID() const override { return "icax.cam"; }
-        uint32_t FromRevision() const override { return 1; }
-        uint32_t ToRevision() const override { return 2; }
-        std::string ToFormatVersion() const override { return "2.0"; }
-        void Upgrade(
-            IN OUT CProjectDocument& Document_,
-            IN OUT CProjectMigrationContext&) const override
-        {
-            Document_.Info.ProjectName = "partially changed";
-            throw std::runtime_error("migration failure");
-        }
-    };
 }
-
-ICAX_REGISTER_PROJECT_DOCUMENT_MIGRATION(CDocumentMigration1To2)
-ICAX_REGISTER_PROJECT_RESOURCE_MIGRATION(CGeometryMigration1To2)
-ICAX_REGISTER_CURRENT_PROJECT_RESOURCE_SCHEMA("geometry.mesh", 2)
 
 TEST(ProjectFileCodec, ASCIIAndBinaryRoundTripSameDocument)
 {
@@ -431,6 +350,67 @@ TEST(ProjectFileCodec, RejectsTruncatedAndUnknownContainer)
         std::invalid_argument);
 }
 
+TEST(ProjectFileCodec, RejectsObsoleteContainerAndResourceLayout)
+{
+    auto _Binary = CProjectFileCodec::Encode(
+        MakeDocument(), EProjectFileEncoding::Binary);
+    ASSERT_GE(_Binary.size(), 12u);
+    _Binary[8] = 1;
+    _Binary[9] = _Binary[10] = _Binary[11] = 0;
+    EXPECT_THROW(CProjectFileCodec::Decode(_Binary), std::invalid_argument);
+
+    const auto _ASCII = CProjectFileCodec::Encode(
+        MakeDocument(), EProjectFileEncoding::ASCII);
+    std::string _Text(_ASCII.begin(), _ASCII.end());
+    const auto _Version = "CONTAINER_VERSION(" +
+        std::to_string(kCurrentContainerVersion) + ")";
+    const auto _VersionPosition = _Text.find(_Version);
+    ASSERT_NE(_VersionPosition, std::string::npos);
+    auto _Obsolete = _Text;
+    _Obsolete.replace(_VersionPosition, _Version.size(), "CONTAINER_VERSION(1)");
+    const auto _Decode = [](const std::string& Text_) {
+        return CProjectFileCodec::Decode(std::span<const uint8_t>(
+            reinterpret_cast<const uint8_t*>(Text_.data()), Text_.size()));
+    };
+    EXPECT_THROW(_Decode(_Obsolete), std::invalid_argument);
+
+    const auto _ResourcePosition = _Text.find("RESOURCE(");
+    ASSERT_NE(_ResourcePosition, std::string::npos);
+    const auto _ResourceEnd = _Text.find('\n', _ResourcePosition);
+    ASSERT_NE(_ResourceEnd, std::string::npos);
+    _Text.replace(_ResourcePosition, _ResourceEnd - _ResourcePosition,
+        R"(RESOURCE("icax://project/geometry",3,"geometry.mesh",1,EMBEDDED,"model/mesh","abc","","{}");)");
+    EXPECT_THROW(_Decode(_Text), std::invalid_argument);
+}
+
+TEST(ProjectFileStore, RejectsOtherProductFormatVersionsBeforeRestore)
+{
+    const CProjectFile _File({
+        .Magic = "ICAX-CAM-PROJECT",
+        .ProductID = "icax.cam",
+        .CurrentFormatVersion = "1.0",
+        .nCurrentFormatRevision = 1
+    });
+    const auto _Path = std::filesystem::temp_directory_path() /
+        ("icax_current_format_" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()) + ".icax");
+    for (const auto _Encoding : {EProjectFileEncoding::ASCII, EProjectFileEncoding::Binary})
+    {
+        auto _Document = MakeDocument();
+        _Document.Info.FormatVersion = "0.9";
+        CProjectFileCodec::WriteAtomic(_Path, _Document, _Encoding);
+        EXPECT_THROW((void)_File.PrepareOpen(_Path), std::invalid_argument);
+        _Document.Info.FormatVersion = "1.0";
+        _Document.Info.nFormatRevision = 2;
+        CProjectFileCodec::WriteAtomic(_Path, _Document, _Encoding);
+        EXPECT_THROW((void)_File.PrepareOpen(_Path), std::invalid_argument);
+        _Document.Info.nFormatRevision = 1;
+        CProjectFileCodec::WriteAtomic(_Path, _Document, _Encoding);
+        EXPECT_EQ(_File.PrepareOpen(_Path).Result().Info, _Document.Info);
+    }
+    std::filesystem::remove(_Path);
+}
+
 TEST(ProjectFileCodec, AtomicWritePreservesExistingFileOnInvalidInput)
 {
     const auto _Path = std::filesystem::temp_directory_path() /
@@ -459,6 +439,106 @@ TEST(ProjectFileCodec, AtomicWritePreservesExistingFileOnInvalidInput)
     std::filesystem::remove(_Path, _Ignored);
 }
 
+TEST(ProjectFileCodec, LargeComponentPropertiesPreserveTypesAndBytes)
+{
+    using namespace iCAX::Data;
+    auto _Source = MakeDocument();
+    auto& _Properties = _Source.Components.front().Properties;
+    _Properties["recipe"] = std::string(64ull * 1024ull * 1024ull, 'g');
+    _Properties["typedFacts"] = ObjectMap{
+        {"boolean", true},
+        {"signed", static_cast<long long>(-9)},
+        {"unsigned", (std::numeric_limits<unsigned long long>::max)()},
+        {"real", 1.2345678901234567},
+        {"uuid", ParseTestUUID("40000000-0000-4000-8000-000000000001")},
+        {"escaped", std::string("typed \"recipe\"\\\n\t")},
+        {"array", VariantArray{Variant{}, false, 3.5, ObjectMap{{"nested", std::string("mm")}}}}};
+    ASSERT_GT(VariantSerializer::Serialize(Variant(_Properties)).size(),
+        64ull * 1024ull * 1024ull);
+    const auto _Bytes = CProjectFileCodec::Encode(_Source, EProjectFileEncoding::Binary);
+    const auto _Decoded = CProjectFileCodec::Decode(_Bytes);
+    ASSERT_EQ(_Decoded.Document, _Source);
+    EXPECT_EQ(CProjectFileCodec::Encode(_Decoded.Document, EProjectFileEncoding::Binary), _Bytes);
+
+    const auto _Path = std::filesystem::temp_directory_path() /
+        ("icax-project-large-properties-" + to_string(GenerateNewUUID()) + ".icax");
+    CProjectFileCodec::WriteAtomic(_Path, _Source, EProjectFileEncoding::Binary);
+    EXPECT_EQ(ReadBytes(_Path), _Bytes);
+    EXPECT_EQ(CProjectFileCodec::Read(_Path).Document, _Source);
+    std::error_code _Ignored;
+    std::filesystem::remove(_Path, _Ignored);
+}
+
+TEST(ProjectFileCodec, OrdinaryProjectNameStillRejectsMoreThan64MiB)
+{
+    auto _Source = MakeDocument();
+    _Source.Info.ProjectName = std::string(64ull * 1024ull * 1024ull + 1, 'n');
+    const auto _Bytes = CProjectFileCodec::Encode(_Source, EProjectFileEncoding::Binary);
+    try
+    {
+        CProjectFileCodec::Decode(_Bytes);
+        FAIL() << "Ordinary project names retain the 64 MiB limit";
+    }
+    catch (const std::invalid_argument& _Error)
+    {
+        EXPECT_STREQ(_Error.what(), "Binary project string is too large");
+    }
+}
+
+TEST(ProjectFileCodec, ComponentPropertiesRejectForgedLengthAndTruncatedPayload)
+{
+    auto _Source = MakeDocument();
+    constexpr std::string_view _ClassName = "ComponentPropertiesLengthSentinel";
+    _Source.Components.front().ComponentClass = _ClassName;
+    const auto _Original = CProjectFileCodec::Encode(_Source, EProjectFileEncoding::Binary);
+    const auto _Name = std::search(_Original.begin(), _Original.end(), _ClassName.begin(), _ClassName.end());
+    ASSERT_NE(_Name, _Original.end());
+    const auto _NamePosition = static_cast<std::size_t>(_Name - _Original.begin());
+    // Component payload: UUID, class string length/name, enabled, properties
+    // string length/value. Record length precedes that payload.
+    const auto _PropertiesLengthPosition = _NamePosition + _ClassName.size() + 1;
+    const auto _RecordLengthPosition = _NamePosition - 8 - 16 - 8;
+    const auto _ReadUInt64 = [](const auto& _Bytes, const std::size_t _Position) {
+        uint64_t _Value = 0;
+        for (std::size_t i = 0; i < 8; ++i) _Value |= static_cast<uint64_t>(_Bytes.at(_Position + i)) << (8 * i);
+        return _Value;
+    };
+    const auto _WriteUInt64 = [](auto& _Bytes, const std::size_t _Position, const uint64_t _Value) {
+        for (std::size_t i = 0; i < 8; ++i) _Bytes.at(_Position + i) = static_cast<uint8_t>(_Value >> (8 * i));
+    };
+    for (const uint64_t _Length : {
+        256ull * 1024ull * 1024ull + 1,
+        (std::numeric_limits<uint64_t>::max)()})
+    {
+        auto _Forged = _Original;
+        _WriteUInt64(_Forged, _PropertiesLengthPosition, _Length);
+        try
+        {
+            CProjectFileCodec::Decode(_Forged);
+            FAIL() << "Forged properties length must be rejected";
+        }
+        catch (const std::invalid_argument& _Error)
+        {
+            EXPECT_STREQ(_Error.what(), "Binary project string is too large");
+        }
+    }
+    auto _MissingPayload = _Original;
+    _WriteUInt64(_MissingPayload, _PropertiesLengthPosition, 64ull * 1024ull * 1024ull + 1);
+    EXPECT_THROW(CProjectFileCodec::Decode(_MissingPayload), std::invalid_argument);
+    auto _TruncatedPayload = _Original;
+    _WriteUInt64(_TruncatedPayload, _RecordLengthPosition,
+        _ReadUInt64(_TruncatedPayload, _RecordLengthPosition) - 1);
+    try
+    {
+        CProjectFileCodec::Decode(_TruncatedPayload);
+        FAIL() << "A component's declared properties must fit its bounded record";
+    }
+    catch (const std::invalid_argument& _Error)
+    {
+        EXPECT_STREQ(_Error.what(), "Binary project record is truncated");
+    }
+}
+
 TEST(ProjectDocumentValidation, RejectsMissingReferencesAndCycles)
 {
     auto _Missing = MakeDocument();
@@ -479,136 +559,33 @@ TEST(ProjectDocumentValidation, RejectsMissingReferencesAndCycles)
         std::invalid_argument);
 }
 
-TEST(ProjectMigration, UpgradesDocumentAndCascadesResourceVersions)
+TEST(ProjectDocumentValidation, NestedRecipeReferencesAreCheckedWithoutChangingTheDocument)
 {
-    const auto _Source = MakeDocument(1);
-    CProjectMigrationRegistry _Registry;
-    _Registry.RegisterDocumentMigration(
-        std::make_shared<CDocumentMigration1To2>());
-    _Registry.RegisterResourceMigration(
-        std::make_shared<CGeometryMigration1To2>());
-    _Registry.SetCurrentResourceSchema("geometry.mesh", 2);
-
-    CProjectMigrationContext _Context;
-    const auto _Result = _Registry.UpgradeToCurrent(
-        _Source,
-        2,
-        "2.0",
-        &_Context);
-
-    EXPECT_EQ(_Source, MakeDocument(1));
-    EXPECT_EQ(_Result.Info.nFormatRevision, 2u);
-    EXPECT_EQ(_Result.Info.FormatVersion, "2.0");
-    EXPECT_EQ(_Context.Diagnostics.size(), 2u);
-
-    const CProjectResourceReference _NewGeometry{
-        "icax://project/geometry", 4};
-    const CProjectResourceReference _NewToolpath{
-        "icax://project/toolpath", 8};
-    const auto* _pGeometry = _Result.FindResource(_NewGeometry);
-    const auto* _pToolpath = _Result.FindResource(_NewToolpath);
-    ASSERT_NE(_pGeometry, nullptr);
-    ASSERT_NE(_pToolpath, nullptr);
-    EXPECT_EQ(_pGeometry->nSchemaVersion, 2u);
-    EXPECT_EQ(_pGeometry->Body,
-        (std::vector<uint8_t>{10, 20, 30, 40}));
-    EXPECT_NE(std::find(
-        _pToolpath->Dependencies.begin(),
-        _pToolpath->Dependencies.end(),
-        _NewGeometry),
-        _pToolpath->Dependencies.end());
-
-    const auto _RootGeometry = TryGetResourceReferenceValue(
-        _Result.Info.ProjectSettings.at("geometry"));
-    ASSERT_TRUE(_RootGeometry.has_value());
-    EXPECT_EQ(*_RootGeometry, _NewGeometry);
-    const auto _ToolpathReference = TryGetResourceReferenceValue(
-        _Result.Components.back().Properties.at("toolpath"));
-    ASSERT_TRUE(_ToolpathReference.has_value());
-    EXPECT_EQ(*_ToolpathReference, _NewToolpath);
-}
-
-TEST(ProjectMigration, ASCIIAndBinaryOldDocumentsUpgradeIdentically)
-{
-    CProjectMigrationRegistry _Registry;
-    _Registry.RegisterDocumentMigration(
-        std::make_shared<CDocumentMigration1To2>());
-    _Registry.RegisterResourceMigration(
-        std::make_shared<CGeometryMigration1To2>());
-    _Registry.SetCurrentResourceSchema("geometry.mesh", 2);
-
-    std::optional<CProjectDocument> _Expected;
-    for (const auto _Encoding : {
-        EProjectFileEncoding::ASCII,
-        EProjectFileEncoding::Binary})
-    {
-        const auto _Decoded = CProjectFileCodec::Decode(
-            CProjectFileCodec::Encode(
-                MakeDocument(1),
-                _Encoding));
-        const auto _Upgraded = _Registry.UpgradeToCurrent(
-            _Decoded.Document,
-            2,
-            "2.0");
-        if (!_Expected)
-            _Expected = _Upgraded;
-        else
-            EXPECT_EQ(_Upgraded, *_Expected);
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::Variant;
+    using iCAX::Data::VariantArray;
+    auto document=MakeDocument();
+    VariantArray branches;
+    for(std::size_t index=0;index<128;++index) {
+        Variant nested=ObjectMap{{"payload",std::string(4096,'x')},
+            {"reference",MakeResourceReferenceValue({"icax://project/geometry",3})}};
+        for(std::size_t depth=0;depth<24;++depth)
+            nested=ObjectMap{{"children",VariantArray{std::move(nested)}}};
+        branches.emplace_back(std::move(nested));
     }
-}
-
-TEST(ProjectMigration, RejectsMissingPathsAndDowngrades)
-{
-    CProjectMigrationRegistry _Empty;
-    EXPECT_THROW(
-        _Empty.UpgradeToCurrent(MakeDocument(1), 2, "2.0"),
-        std::invalid_argument);
-    EXPECT_THROW(
-        _Empty.UpgradeToCurrent(MakeDocument(2), 1, "1.0"),
-        std::invalid_argument);
-
-    CProjectMigrationRegistry _MissingResourcePath;
-    _MissingResourcePath.RegisterDocumentMigration(
-        std::make_shared<CDocumentMigration1To2>());
-    _MissingResourcePath.SetCurrentResourceSchema(
-        "geometry.mesh", 2);
-    EXPECT_THROW(
-        _MissingResourcePath.UpgradeToCurrent(
-            MakeDocument(1), 2, "2.0"),
-        std::invalid_argument);
-}
-
-TEST(ProjectMigration, FailureDoesNotMutateSourceOrOutputContext)
-{
-    const auto _Source = MakeDocument(1);
-    const auto _Before = _Source;
-    CProjectMigrationContext _Context;
-    _Context.Note("caller state");
-    CProjectMigrationRegistry _Registry;
-    _Registry.RegisterDocumentMigration(
-        std::make_shared<CThrowingDocumentMigration>());
-
-    EXPECT_THROW(
-        _Registry.UpgradeToCurrent(
-            _Source, 2, "2.0", &_Context),
-        std::runtime_error);
-    EXPECT_EQ(_Source, _Before);
-    ASSERT_EQ(_Context.Diagnostics.size(), 1u);
-    EXPECT_EQ(_Context.Diagnostics.front(), "caller state");
-}
-
-TEST(ProjectMigrationRegistration, ReplaysModuleContributionsIntoRegistry)
-{
-    EXPECT_GE(CProjectMigrationRegistrationCatalog::Count(), 3u);
-    CProjectMigrationRegistry _Registry;
-    CProjectMigrationRegistrationCatalog::ReplayAll(_Registry);
-    const auto _Result = _Registry.UpgradeToCurrent(
-        MakeDocument(1),
-        2,
-        "2.0");
-    EXPECT_NE(
-        _Result.FindResource({"icax://project/geometry", 4}),
-        nullptr);
+    document.Components.front().Properties["frozenRecipe"]=std::move(branches);
+    const auto original=document;
+    EXPECT_TRUE(ValidateProjectDocument(document).empty());
+    EXPECT_EQ(document,original);
+    auto& recipes=std::get<VariantArray>(document.Components.front().Properties.at("frozenRecipe").m_Value);
+    recipes.emplace_back(ObjectMap{{"children",VariantArray{
+        MakeResourceReferenceValue({"icax://project/missing",9})}}});
+    const auto invalid=document;
+    EXPECT_FALSE(ValidateProjectDocument(document).empty());
+    EXPECT_EQ(document,invalid);
+    recipes.back()=ObjectMap{{"children",VariantArray{ObjectMap{
+        {"__project_file_type",std::string(kResourceReferenceValueTag)},{"url",true},{"version",9ull}}}}};
+    EXPECT_THROW(RequireValidProjectDocument(document),std::invalid_argument);
 }
 
 TEST(ProjectFileStore, SavesAndOpensDatabaseAndResourcesDirectly)

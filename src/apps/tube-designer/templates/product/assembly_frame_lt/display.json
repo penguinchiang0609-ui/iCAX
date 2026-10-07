@@ -1,0 +1,331 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "frame_size": {
+          "title": {
+            "zh-CN": "框架定位"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "frame_outer": {
+          "title": {
+            "zh-CN": "外框原管"
+          },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "frame_middle": {
+          "title": {
+            "zh-CN": "中横档原管"
+          },
+          "order": 30,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "size": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true,
+          "sectionGroup": "frame_size"
+        },
+        "frame": {
+          "category": "materials",
+          "order": 20,
+          "defaultOpen": true,
+          "sectionGroup": "frame_outer"
+        },
+        "middle": {
+          "category": "materials",
+          "order": 30,
+          "defaultOpen": true,
+          "sectionGroup": "frame_middle"
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 10,
+          "category": "specifications",
+          "sectionGroup": "frame_size",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "width": {
+          "order": 20,
+          "category": "specifications",
+          "sectionGroup": "frame_size",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "height": {
+          "order": 30,
+          "category": "specifications",
+          "sectionGroup": "frame_size",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleHeight": {
+          "order": 40,
+          "category": "specifications",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleAxisAngle": {
+          "order": 50,
+          "category": "specifications",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameProfileType": {
+          "order": 60,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameWidth": {
+          "order": 70,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameDepth": {
+          "order": 80,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameWallThickness": {
+          "order": 90,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameCornerRadius": {
+          "order": 100,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameInnerRadius": {
+          "order": 110,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameMaterial": {
+          "order": 120,
+          "category": "materials",
+          "sectionGroup": "frame_outer",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "middleProfileType": {
+          "order": 130,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "middleWidth": {
+          "order": 140,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleDepth": {
+          "order": 150,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleWallThickness": {
+          "order": 160,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleCornerRadius": {
+          "order": 170,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleInnerRadius": {
+          "order": 180,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "middleMaterial": {
+          "order": 190,
+          "category": "materials",
+          "sectionGroup": "frame_middle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "width": {
+          "order": 0,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "height": {
+          "order": 10,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "middleHeight": {
+          "order": 20,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "middleAxisAngle": {
+          "order": 30,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "product_dimensions": {
+          "title": {
+            "zh-CN": "产品定位尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {
+        "width": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "order": 10,
+          "editable": true
+        },
+        "height": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "order": 20,
+          "editable": true
+        },
+        "middleHeight": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "横档中心高"
+          },
+          "order": 30,
+          "editable": true
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{width} × {height} mm"
+        }
+      }
+    ]
+  }
+}

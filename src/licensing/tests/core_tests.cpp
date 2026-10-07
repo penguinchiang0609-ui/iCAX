@@ -29,13 +29,18 @@ struct TestKey {
     Bytes Public() const { return ExportDevicePublicKey(key.value); }
 };
 Bytes Body(const Bytes& device, Kind kind = Kind::Permanent, std::uint32_t features = KnownFeatures,
-    std::string_view product = Product) {
-    Bytes body{'T','D','L','I','C','0','0','1'};
+    std::string_view product = Product, bool appendTrial = true) {
+    Bytes body{'T','D','L','I','C','0','0','3'};
     for (auto text : {std::string_view("test-issuer"), std::string_view("license-1"), std::string_view("request-1"), std::string_view("customer-1"), product}) AppendText(body, text);
     Append32(body, 1); Append32(body, static_cast<std::uint32_t>(kind)); Append32(body, features);
     Append32(body, 1); Append32(body, 2);
     Append64(body, 1000); Append64(body, kind == Kind::Trial ? 1000 : 0); Append64(body, kind == Kind::Trial ? 2000 : 0);
-    AppendField(body, device); return body;
+    AppendField(body, device);
+    if (kind == Kind::Trial && appendTrial) {
+        const Bytes nv{'\x01','\x50','\x12','\x34','\x00','\x0b','\x22','\x04','\x00','\x14','\x00','\x00','\x00','\x08'};
+        AppendField(body, nv); Append64(body, 5000); Append32(body, 3600);
+    }
+    return body;
 }
 Bytes Sign(const TestKey& issuer, Bytes body) {
     auto signature = SignDeviceChallenge(issuer.key.value, body);
@@ -111,7 +116,7 @@ void TrialTimeTests() {
     auto bad = c; bad.trialQuantumSeconds = 1;
     Reject([&] { PlanTrialTime(bad, 5000, c.notBefore); }, "Unapproved granularity rejected");
     TestKey issuer, device;
-    auto body = Body(device.Public(), Kind::Trial); body[7] = '2';
+    auto body = Body(device.Public(), Kind::Trial, KnownFeatures, Product, false);
     AppendField(body, c.trialNvPublic); Append64(body, c.trialInitialCounter); Append32(body, 3600);
     const auto parsed = VerifyCertificate(Sign(issuer, body), "test-issuer", issuer.Public());
     Check(parsed.trialNvPublic == c.trialNvPublic && parsed.trialInitialCounter == 5000, "Trial certificate binds NV");
@@ -153,22 +158,38 @@ int main(int argc, char** argv) {
         Reject([&] { verify(trailing); }, "Trailing bytes rejected");
         Reject([&] { VerifyCertificate(file, "test-issuer", other.Public()); }, "Wrong issuer key");
         Reject([&] { VerifyCertificate(file, "other", pub); }, "Wrong issuer ID");
-        Reject([&] { verify(Sign(issuer, Body(device.Public(), Kind::Permanent, 16))); }, "Unknown feature");
+        Reject([&] { verify(Sign(issuer, Body(device.Public(), Kind::Permanent, 8192))); }, "Unknown feature");
+        for (const auto& feature : FeatureCatalog) {
+            const auto mask = RequiredFeatures(feature.feature);
+            Check(IsValidFeatureSet(mask), "Page and operation feature set valid");
+            Check(verify(Sign(issuer, Body(device.Public(), Kind::Permanent, mask))).features == mask, "Individual capability certificate");
+            Check(HasFeature(mask, feature.feature), "Capability requires its parent page");
+            if (feature.parent) {
+                const auto orphan = static_cast<std::uint32_t>(feature.feature);
+                Check(!HasFeature(orphan, feature.feature), "Orphan operation denies access");
+                Check(!HasFeature(feature.parent, feature.feature), "Page alone does not grant operation");
+                Reject([&] { verify(Sign(issuer, Body(device.Public(), Kind::Permanent, orphan))); }, "Signed orphan operation rejected");
+            }
+        }
+        for (const auto oldFormat : {'1', '2'}) {
+            auto legacy = Body(device.Public()); legacy[7] = oldFormat;
+            Reject([&] { verify(Sign(issuer, legacy)); }, "Signed old certificate format rejected");
+        }
         Reject([&] { verify(Sign(issuer, Body(device.Public(), Kind::Permanent, 0))); }, "No features");
         Reject([&] { verify(Sign(issuer, Body(device.Public(), Kind::Permanent, 1, "other-product"))); }, "Wrong product");
         auto malformed = Body(device.Public()); malformed[8] = 0xff;
         Reject([&] { verify(Sign(issuer, malformed)); }, "Oversize field");
         auto nonce = RandomChallenge();
-        auto challenge = DeviceChallenge(certificate, Feature::Design, nonce);
+        auto challenge = DeviceChallenge(certificate, Feature::ProductDesign, nonce);
         auto response = SignDeviceChallenge(device.key.value, challenge);
         VerifySignature(certificate.devicePublicKey, challenge, response); ++checks;
         Reject([&] { VerifySignature(other.Public(), challenge, response); }, "Wrong device proof");
-        auto next = DeviceChallenge(certificate, Feature::Design, RandomChallenge());
+        auto next = DeviceChallenge(certificate, Feature::ProductDesign, RandomChallenge());
         Check(challenge != next, "Fresh challenges");
         Reject([&] { VerifySignature(certificate.devicePublicKey, next, response); }, "Replay rejected");
-        auto otherFeature = DeviceChallenge(certificate, Feature::StepExport, nonce);
+        auto otherFeature = DeviceChallenge(certificate, Feature::ProductExport, nonce);
         Reject([&] { VerifySignature(certificate.devicePublicKey, otherFeature, response); }, "Feature bound proof");
-        const auto otherSite = DeviceChallenge(certificate, Feature::Design, nonce, 2);
+        const auto otherSite = DeviceChallenge(certificate, Feature::ProductDesign, nonce, 2);
         Reject([&] { VerifySignature(certificate.devicePublicKey, otherSite, response); }, "Call site bound proof");
         const auto trial = verify(Sign(issuer, Body(device.Public(), Kind::Trial)));
         TrialCheckpoint checkpoint{25, 25, 1200, 1300, true, true, true, true};
@@ -185,11 +206,11 @@ int main(int argc, char** argv) {
         Check(EvaluateTrial(trial, checkpoint) == TrialDecision::Expired, "Expiry is exclusive");
         checkpoint.nowUtc = 1300; checkpoint.lastAcceptedUtc = 1800;
         Check(EvaluateTrial(trial, checkpoint) == TrialDecision::ClockRollback, "Clock rollback");
-        Reject([&] { VerifyAtSite<1, Feature::Design>(Sign(issuer, Body(device.Public(), Kind::Trial)),
+        Reject([&] { VerifyAtSite<1, Feature::ProductDesign>(Sign(issuer, Body(device.Public(), Kind::Trial)),
             "test-issuer", pub, 1, L"does-not-exist"); }, "Unqualified trial provider never opens access");
-        Reject([&] { VerifyAtSite<2, Feature::StepExport>(Sign(issuer, Body(device.Public(), Kind::Permanent, 1)),
+        Reject([&] { VerifyAtSite<2, Feature::ProductExport>(Sign(issuer, Body(device.Public(), Kind::Permanent, 1)),
             "test-issuer", pub, 1, L"does-not-exist"); }, "Feature denial before device access");
-        Reject([&] { VerifyAtSite<3, Feature::Design>(file, "test-issuer", pub, 3, L"does-not-exist"); }, "Version denial");
+        Reject([&] { VerifyAtSite<3, Feature::ProductDesign>(file, "test-issuer", pub, 3, L"does-not-exist"); }, "Version denial");
         NvEvidenceTests();
         TrialTimeTests();
         std::cout << checks << " checks passed (ephemeral software-key tests, not TPM certification)\n";

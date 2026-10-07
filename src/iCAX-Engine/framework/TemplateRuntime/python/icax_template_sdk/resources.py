@@ -63,14 +63,19 @@ def _compose(outer: dict[str, Any], inner: dict[str, Any]) -> dict[str, Any]:
 
 
 def _referenced_names(value: Any) -> set[str]:
-    if isinstance(value, str):
-        return {value}
-    if isinstance(value, dict):
-        return set().union(*(_referenced_names(child)
-                             for pair in value.items() for child in pair), set())
-    if isinstance(value, (list, tuple)):
-        return set().union(*(_referenced_names(child) for child in value), set())
-    return set()
+    result = set()
+    def collect(child: Any) -> None:
+        if isinstance(child, str):
+            result.add(child)
+        elif isinstance(child, dict):
+            for key, entry in child.items():
+                collect(key)
+                collect(entry)
+        elif isinstance(child, (list, tuple)):
+            for entry in child:
+                collect(entry)
+    collect(value)
+    return result
 
 
 def _validate_graph(nodes: dict[str, dict[str, Any]]) -> None:
@@ -102,7 +107,7 @@ def to_resource_model(document: dict[str, Any]) -> dict[str, Any]:
     if document.get("schema") != "icax.neutral-model":
         raise ValueError("unsupported neutral model schema")
     if document.get("schemaVersion") == 2:
-        expand_resource_model(document)
+        _resource_layout(document)
         return deepcopy(document)
     if document.get("schemaVersion") != 1 or "resources" in document:
         raise ValueError("unsupported or mixed neutral model schema version")
@@ -172,7 +177,7 @@ def to_resource_model(document: dict[str, Any]) -> dict[str, Any]:
     result.pop("geometry")
     result["schemaVersion"] = 2
     # Validate the self-contained published graph and all instance references.
-    expand_resource_model(result)
+    _resource_layout(result)
     return result
 
 
@@ -196,11 +201,29 @@ def expand_resource_model(document: dict[str, Any]) -> dict[str, Any]:
     if document.get("schemaVersion") != 2 or "geometry" in document:
         raise ValueError("unsupported or mixed neutral model schema version")
     result = deepcopy(document)
-    nodes = _nodes(result.get("resources"), "resources")
+    nodes, instances, item_representations = _resource_layout(result)
+    for item, representations in zip(result.get("items", []), item_representations):
+        item["representations"] = representations
+    result["geometry"] = list(nodes.values()) + list(instances.values())
+    result.pop("resources")
+    result["schemaVersion"] = 1
+    return result
+
+
+def _resource_layout(document: dict[str, Any]) -> tuple[dict, dict, list]:
+    """Validate the complete resource graph without cloning an unused model.
+
+    The returned layout borrows resource nodes. Only expansion of an already
+    owned document publishes it; validation callers discard the layout.
+    """
+    if document.get("schemaVersion") != 2 or "geometry" in document:
+        raise ValueError("unsupported or mixed neutral model schema version")
+    nodes = _nodes(document.get("resources"), "resources")
     _validate_graph(nodes)
     instances = {}
     item_keys = set()
-    for item in result.get("items", []):
+    item_representations = []
+    for item in document.get("items", []):
         item_key = item.get("key")
         if not isinstance(item_key, str) or not item_key or item_key in item_keys:
             raise ValueError("invalid or duplicate item key")
@@ -227,8 +250,5 @@ def expand_resource_model(document: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"conflicting instanceKey: {key}")
             instances[key] = node
             representations[purpose] = key
-        item["representations"] = representations
-    result["geometry"] = list(nodes.values()) + list(instances.values())
-    result.pop("resources")
-    result["schemaVersion"] = 1
-    return result
+        item_representations.append(representations)
+    return nodes, instances, item_representations

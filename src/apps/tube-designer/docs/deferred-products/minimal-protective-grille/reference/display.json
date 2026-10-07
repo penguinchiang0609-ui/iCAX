@@ -1,0 +1,864 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "grille_frame": {
+          "title": {
+            "zh-CN": "边框"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "grille_inner": {
+          "title": {
+            "zh-CN": "内横杆"
+          },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "grille_handle": {
+          "title": {
+            "zh-CN": "把手禁区"
+          },
+          "order": 30,
+          "defaultOpen": true
+        },
+        "grille_install": {
+          "title": {
+            "zh-CN": "安装"
+          },
+          "order": 40,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "overall": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true,
+          "sectionGroup": "grille_frame"
+        },
+        "layout": {
+          "category": "specifications",
+          "order": 20,
+          "defaultOpen": true,
+          "sectionGroup": "grille_inner"
+        },
+        "handle": {
+          "category": "specifications",
+          "order": 30,
+          "defaultOpen": true,
+          "sectionGroup": "grille_handle"
+        },
+        "frame_profile": {
+          "category": "materials",
+          "order": 40,
+          "defaultOpen": true,
+          "sectionGroup": "grille_frame"
+        },
+        "inner_profile": {
+          "category": "materials",
+          "order": 50,
+          "defaultOpen": true,
+          "sectionGroup": "grille_inner"
+        },
+        "frame_process": {
+          "category": "process",
+          "order": 60,
+          "defaultOpen": true,
+          "sectionGroup": "grille_frame"
+        },
+        "joint": {
+          "category": "process",
+          "order": 70,
+          "defaultOpen": true,
+          "sectionGroup": "grille_inner"
+        },
+        "install": {
+          "category": "process",
+          "order": 80,
+          "defaultOpen": true,
+          "sectionGroup": "grille_install"
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 10,
+          "category": "specifications",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "width": {
+          "order": 20,
+          "category": "specifications",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "height": {
+          "order": 30,
+          "category": "specifications",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameType": {
+          "order": 40,
+          "category": "specifications",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "assemblyPlanningMode": {
+          "order": 50,
+          "category": "specifications",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "barLayoutMode": {
+          "order": 60,
+          "category": "specifications",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "barCount": {
+          "order": 70,
+          "category": "specifications",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "maximumClearGap": {
+          "order": 80,
+          "category": "specifications",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "barPitch": {
+          "order": 90,
+          "category": "specifications",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "pitchAlignment": {
+          "order": 100,
+          "category": "specifications",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "handleEnabled": {
+          "order": 110,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "handleSide": {
+          "order": 120,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "handleReference": {
+          "order": 130,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "handleReferenceY": {
+          "order": 140,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handleWidth": {
+          "order": 150,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handleHeight": {
+          "order": 160,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handleKeepoutTop": {
+          "order": 170,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handleKeepoutBottom": {
+          "order": 180,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "handleDistribution": {
+          "order": 190,
+          "category": "specifications",
+          "sectionGroup": "grille_handle",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameProfileType": {
+          "order": 200,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameProfileOrientation": {
+          "order": 210,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameWidth": {
+          "order": 220,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameDepth": {
+          "order": 230,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameWallThickness": {
+          "order": 240,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameInnerWidth": {
+          "order": 250,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameInnerDepth": {
+          "order": 260,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameInnerOffsetX": {
+          "order": 270,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameInnerOffsetY": {
+          "order": 280,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameCornerRadius": {
+          "order": 290,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "frameOuterRadii": {
+          "order": 300,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameInnerRadii": {
+          "order": 310,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameOuterCorners": {
+          "order": 320,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameInnerCorners": {
+          "order": 330,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameMaterial": {
+          "order": 340,
+          "category": "materials",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerProfileType": {
+          "order": 350,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerProfileOrientation": {
+          "order": 360,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerWidth": {
+          "order": 370,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerDepth": {
+          "order": 380,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerWallThickness": {
+          "order": 390,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerInnerWidth": {
+          "order": 400,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerInnerDepth": {
+          "order": 410,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerInnerOffsetX": {
+          "order": 420,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerInnerOffsetY": {
+          "order": 430,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerCornerRadius": {
+          "order": 440,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "innerOuterRadii": {
+          "order": 450,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerInnerRadii": {
+          "order": 460,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerOuterCorners": {
+          "order": 470,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerInnerCorners": {
+          "order": 480,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "innerMaterial": {
+          "order": 490,
+          "category": "materials",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "frameCornerJoint": {
+          "order": 500,
+          "category": "process",
+          "sectionGroup": "grille_frame",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "maleHeadLength": {
+          "order": 510,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "maleHeadWidth": {
+          "order": 520,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "maleCornerType": {
+          "order": 530,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "maleCornerSize": {
+          "order": 540,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "holeTotalClearanceDepth": {
+          "order": 550,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "holeTotalClearanceHeight": {
+          "order": 560,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "minimumFeatureWeb": {
+          "order": 570,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleEnabled": {
+          "order": 580,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "installHoleOrientation": {
+          "order": 590,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "installHoleCountPerSide": {
+          "order": 600,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleBottomOffset": {
+          "order": 610,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleTopOffset": {
+          "order": 620,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleLargeDiameter": {
+          "order": 630,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleSmallDiameter": {
+          "order": 640,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "installHoleAutoAvoid": {
+          "order": 650,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "installHoleMaximumShift": {
+          "order": 660,
+          "category": "process",
+          "sectionGroup": "grille_install",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "grilleFrameStructure": {
+          "order": 0,
+          "category": "process",
+          "sectionGroup": "grille_frame",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "grilleBarLayoutStructure": {
+          "order": 10,
+          "category": "process",
+          "sectionGroup": "grille_inner",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "grilleHandleStructure": {
+          "order": 20,
+          "category": "process",
+          "sectionGroup": "grille_handle",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "grilleFrameCornerConnection": {
+          "order": 30,
+          "category": "process",
+          "sectionGroup": "grille_frame",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "grilleFrameStructure": {
+          "order": 0,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "grilleBarLayoutStructure": {
+          "order": 10,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "grilleHandleStructure": {
+          "order": 20,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "product_dimensions": {
+          "title": {
+            "zh-CN": "产品定位尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {
+        "width": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "order": 10,
+          "editable": true
+        },
+        "height": {
+          "kind": "linear",
+          "group": "product_dimensions",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "order": 20,
+          "editable": true
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{width} × {height} mm"
+        }
+      }
+    ]
+  }
+}

@@ -305,15 +305,6 @@ namespace
         return _Certified(Geometry_.Left) && _Certified(Geometry_.Right);
     }
 
-    bool HasLegacyFeatureGeometry(const SNestingPart& Part_)
-    {
-        for (const auto& _Variant : Part_.Variants)
-            if (IsValidCutLineFeature(_Variant.LeftEnd.Feature)
-                && IsValidCutLineFeature(_Variant.RightEnd.Feature))
-                return true;
-        return false;
-    }
-
     // Stock-shortage fallback asks the same table-only solver for progressively
     // larger shortest-first subsets.  Geometry is never re-evaluated here.
     SolveResult SolveAvailableSubset(
@@ -365,6 +356,7 @@ namespace
 
 bool IsTubeManufacturingPart(const ObjectMap& Properties_)
 {
+    if (!Properties_.contains("manufacturing.partKind")) return false;
     if (Properties_.contains("manufacturing.plate")) return false;
     for (const auto* _Name : { "manufacturing.sourcing", "manufacturing.process" })
     {
@@ -401,34 +393,160 @@ bool IsTubeManufacturingPart(const ObjectMap& Properties_)
     return true;
 }
 
-bool MatchesNestingProfileKey(
-    const std::string& Key_, const ObjectMap& Profile_, const std::string& PartID_)
+namespace
 {
-    ObjectMap _Section;
-    for (const auto* _Field : {
-        "id", "kind", "packageVersion", "width", "depth", "diameter", "wallThickness",
-        "cornerRadius", "hollow", "contentDigest", "parameters", "contours", "specification" })
+    // 1e-9 mm is well below modelling tolerance. This removes round-off
+    // noise without rounding stock dimensions to a manufacturing increment.
+    Variant SectionGeometryValue(const Variant& Value_)
     {
-        const auto _Found = Profile_.find(_Field);
-        if (_Found == Profile_.end() || _Found->second.Is<std::monostate>()) continue;
-        if (_Found->second.Is<std::string>() && _Found->second.To<std::string>().empty()) continue;
-        _Section[_Field] = _Found->second;
-    }
-    if (!_Section.contains("id") && !_Section.contains("kind"))
-    {
-        const auto _Name = Profile_.find("displayName");
-        if (_Name != Profile_.end() && _Name->second.Is<std::string>())
+        if (const auto _Number = Number(Value_))
         {
-            auto _Text = _Name->second.To<std::string>();
-            const auto _First = _Text.find_first_not_of(" \t\r\n");
-            if (_First != std::string::npos)
-                _Section["displayName"] = _Text.substr(_First, _Text.find_last_not_of(" \t\r\n") - _First + 1);
+            if (!std::isfinite(*_Number) || std::abs(*_Number) > 1'000'000'000.0)
+                throw std::invalid_argument("管型截面包含无效几何数值");
+            return static_cast<long long>(std::llround(*_Number * 1'000'000'000.0));
         }
-        // buildProfileGroups adds an empty displayName even alongside unnamed dimensions.
-        if (!_Section.empty() && !_Section.contains("displayName")) _Section["displayName"] = std::string();
+        if (Value_.Is<VariantArray>())
+        {
+            VariantArray _Result;
+            for (const auto& _Value : Value_.To<VariantArray>())
+                _Result.push_back(SectionGeometryValue(_Value));
+            return _Result;
+        }
+        if (Value_.Is<ObjectMap>())
+        {
+            ObjectMap _Result;
+            for (const auto& [_Key, _Value] : Value_.To<ObjectMap>())
+                if (_Key != "id" && _Key != "name")
+                    _Result[_Key] = SectionGeometryValue(_Value);
+            return _Result;
+        }
+        return Value_;
     }
-    if (_Section.empty()) return Key_ == "unknown:" + PartID_;
-    try { return SameJson(Variant(_Section), iCAX::TemplateRuntime::CStandardJsonCodec::Parse(Key_)); }
+
+    std::string SectionGeometryText(const Variant& Value_)
+    {
+        return iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(SectionGeometryValue(Value_));
+    }
+
+    std::string SectionEdgeIdentity(const ObjectMap& Edge_)
+    {
+        const auto _Forward = SectionGeometryText(Edge_);
+        auto _Reverse = Edge_;
+        const auto _Kind = Edge_.at("kind").To<std::string>();
+        if ((_Kind == "line" || _Kind == "arc")
+            && Edge_.contains("start") && Edge_.contains("end"))
+        {
+            // Three-point arcs retain the middle point, so complementary long
+            // and short arcs cannot acquire the same identity.
+            std::swap(_Reverse.at("start"), _Reverse.at("end"));
+        }
+        else if ((_Kind == "bezier" || _Kind == "bspline" || _Kind == "nurbs")
+            && Edge_.contains("controlPoints") && Edge_.at("controlPoints").Is<VariantArray>()
+            && !Edge_.contains("poles") && !Edge_.contains("points")
+            && !Edge_.contains("first") && !Edge_.contains("last") && !Edge_.contains("reversed")
+            && (!Edge_.contains("periodic") || !Edge_.at("periodic").To<bool>())
+            && (_Kind != "bezier" || !Edge_.contains("startParameter"))
+            && (Edge_.contains("startParameter") == Edge_.contains("endParameter")))
+        {
+            const auto _ReverseArray = [&](const char* Key_) {
+                if (!_Reverse.contains(Key_)) return;
+                auto _Values = _Reverse.at(Key_).To<VariantArray>();
+                std::reverse(_Values.begin(), _Values.end());
+                _Reverse[Key_] = std::move(_Values);
+            };
+            _ReverseArray("controlPoints"); _ReverseArray("weights");
+            if (_Kind != "bezier")
+            {
+                auto _Knots = Edge_.at("knots").To<VariantArray>();
+                if (_Knots.empty()) throw std::invalid_argument("管型样条节点不能为空");
+                const auto _Numeric = [](const Variant& Value_) {
+                    const auto _Value = Number(Value_);
+                    if (!_Value || !std::isfinite(*_Value))
+                        throw std::invalid_argument("管型样条节点或裁剪参数无效");
+                    return *_Value;
+                };
+                const double _Sum = _Numeric(_Knots.front()) + _Numeric(_Knots.back());
+                std::reverse(_Knots.begin(), _Knots.end());
+                for (auto& _Knot : _Knots) _Knot = _Sum - _Numeric(_Knot);
+                _Reverse["knots"] = std::move(_Knots);
+                _ReverseArray("multiplicities");
+                if (Edge_.contains("startParameter") && Edge_.contains("endParameter"))
+                {
+                    _Reverse["startParameter"] = _Sum - _Numeric(Edge_.at("endParameter"));
+                    _Reverse["endParameter"] = _Sum - _Numeric(Edge_.at("startParameter"));
+                }
+            }
+        }
+        else
+        {
+            // ellipseArc already denotes an unoriented increasing parameter
+            // interval. Preserve its full interval and rotation. Periodic
+            // splines and other primitives also retain all of their fields;
+            // endpoint-only matching would erase real geometry differences.
+            return _Forward;
+        }
+        return std::min(_Forward, SectionGeometryText(_Reverse));
+    }
+
+    std::string SectionLoopIdentity(const ObjectMap& Loop_)
+    {
+        ObjectMap _Identity;
+        // Native profile2d assigns outer/inner roles by exact containment of the
+        // complete curves. Recognition's inner flag is descriptive metadata.
+        std::vector<std::string> _Edges;
+        if (Loop_.contains("segments"))
+        {
+            if (Loop_.contains("closed") && !Loop_.at("closed").To<bool>())
+                throw std::invalid_argument("管型截面轮廓必须闭合");
+            for (const auto& _Edge : Loop_.at("segments").To<VariantArray>())
+                _Edges.push_back(SectionEdgeIdentity(_Edge.To<ObjectMap>()));
+        }
+        else if (Loop_.contains("points"))
+        {
+            const auto _Points = Loop_.at("points").To<VariantArray>();
+            if (_Points.size() < 3) throw std::invalid_argument("管型截面轮廓点不足");
+            for (std::size_t _Index = 0; _Index < _Points.size(); ++_Index)
+            {
+                const auto& _Start = _Points[_Index];
+                const auto& _End = _Points[(_Index + 1) % _Points.size()];
+                if (SectionGeometryText(_Start) == SectionGeometryText(_End)) continue;
+                _Edges.push_back(SectionEdgeIdentity(ObjectMap{{"kind", std::string("line")},
+                    {"start", _Start}, {"end", _End}}));
+            }
+        }
+        else return SectionGeometryText(Loop_);
+        if (_Edges.empty()) throw std::invalid_argument("管型截面轮廓不能为空");
+        // Validated simple closed loops are uniquely defined by their complete
+        // unoriented curve edges. Sorting removes cyclic start and traversal,
+        // without changing curve geometry or transforming the section.
+        std::sort(_Edges.begin(), _Edges.end());
+        VariantArray _Values;
+        for (const auto& _Edge : _Edges) _Values.emplace_back(_Edge);
+        _Identity["edges"] = std::move(_Values);
+        return iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(_Identity);
+    }
+}
+
+std::string BuildNestingSectionIdentity(const ObjectMap& Profile_)
+{
+    const auto _Contours = Profile_.find("contours");
+    if (_Contours == Profile_.end() || !_Contours->second.Is<VariantArray>()
+        || _Contours->second.To<VariantArray>().empty())
+        throw std::invalid_argument("管型缺少真实截面轮廓");
+    std::vector<std::string> _Loops;
+    for (const auto& _Loop : _Contours->second.To<VariantArray>())
+        _Loops.push_back(SectionLoopIdentity(_Loop.To<ObjectMap>()));
+    std::sort(_Loops.begin(), _Loops.end());
+    VariantArray _Values;
+    for (const auto& _Loop : _Loops) _Values.emplace_back(_Loop);
+    ObjectMap _Identity{{"schema", std::string("icax.nesting-section.v1")}, {"contours", std::move(_Values)}};
+    return iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(_Identity);
+}
+
+bool MatchesNestingProfileKey(
+    const std::string& Key_, const ObjectMap& Profile_, const std::string&)
+{
+    try { return Key_ == BuildNestingSectionIdentity(Profile_); }
     catch (const std::exception&) { return false; }
 }
 
@@ -537,7 +655,6 @@ ObjectMap SolveManufacturingNestingSinglePriority(
     std::map<std::string, PairTableBuildInput> _Groups;
     std::size_t _RecognizedProfileCount = 0;
     std::size_t _RecognizedNumericProfileCount = 0;
-    std::size_t _LegacyBridgeCount = 0;
     std::size_t _ConservativeProfileCount = 0;
     bool _AllProfilesNativeCertified = true;
     for (const auto& _Part : Parts_)
@@ -620,12 +737,6 @@ ObjectMap SolveManufacturingNestingSinglePriority(
                     || _Geometry.Right.SourceQuality != ProfileSourceQuality::NativeCertified)
                     _AllProfilesNativeCertified = false;
             }
-        }
-        else if (HasLegacyFeatureGeometry(_Part))
-        {
-            _Geometry = FlatGeometry(_Length);
-            ++_LegacyBridgeCount;
-            _AllProfilesNativeCertified = false;
         }
         else
         {
@@ -958,9 +1069,6 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         _Diagnostics.emplace_back(std::string("其中 ")
             + std::to_string(_RecognizedNumericProfileCount)
             + " 种只有数值采样谱；为避免未经证明的互穿，本次按轴向包络排样，未使用其重叠节约量。");
-    if (_LegacyBridgeCount)
-        _Diagnostics.emplace_back(std::string("有 ") + std::to_string(_LegacyBridgeCount)
-            + " 种零件只有旧端线采样；本次按轴向包络排样，旧在线相位匹配未进入顺序求解。");
     if (_ConservativeProfileCount)
         _Diagnostics.emplace_back(std::string("有 ") + std::to_string(_ConservativeProfileCount)
             + " 种零件缺少端口谱，已使用不重叠的轴向包络平面，结果安全但可能少节料。");

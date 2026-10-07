@@ -10,7 +10,23 @@
   "requiresSection": true,
   "category": "端面",
   "inputs": [{"key": "targetSection", "displayName": "短管截面", "valueType": "profile", "required": true}],
-  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "rect"
+    },
+    "section": {
+      "profileRef": {
+        "scope": "system",
+        "id": "rect"
+      },
+      "parameters": {
+        "width": 30,
+        "depth": 20,
+        "wallThickness": 2
+      }
+    }
+  },
   "illustration": {"viewBox": "0 0 48 48", "paths": ["M5 7H32V11H38Q43 11 43 16Q43 21 38 21H32V25H5Z", "M5 29H32V32H38Q43 32 43 37Q43 42 38 42H32V45H5Z"]},
   "operationParameters": [
     {"key": "trim", "displayName": "端部修剪量（mm）", "valueType": "number", "defaultValue": 0, "min": 0, "max": 100000, "step": 0.1},

@@ -55,14 +55,13 @@ def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
         return effective
     clear_width = number(parameters, "doorClearWidth", 800)
     clear_height = number(parameters, "doorClearHeight", 1000)
-    hardware = number(parameters, "doorHardwareClearance", 10)
-    if clear_width <= 0 or clear_height <= 0 or hardware < 0:
-        raise ValueError("净开口尺寸必须大于0，五金预留量不能为负数")
+    if clear_width <= 0 or clear_height <= 0:
+        raise ValueError("净开口尺寸必须大于0")
     if str(parameters.get("accessDoorFace", "front")) == "top":
         raise ValueError("逃生窗不支持顶面；请改选立面或底面并核对通路")
-    # At the design opening position, reserve the leaf thickness plus hardware.
+    # At the design opening position, reserve the actual leaf thickness.
     # The actual purchased hinge and its swept volume still require verification.
-    fixed_clear_width = clear_width + leaf_depth + hardware
+    fixed_clear_width = clear_width + leaf_depth
     frame_allowance = fixed_width * (2 if layout == "single-face" else 1)
     effective["doorWidth"] = fixed_clear_width + frame_allowance
     effective["doorHeight"] = clear_height + frame_allowance
@@ -76,7 +75,6 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
     allowance = fixed_width * (2 if layout == "single-face" else 1)
     fixed_clear_width = number(effective, "doorWidth", 0) - allowance if enabled else 0
     fixed_clear_height = number(effective, "doorHeight", 0) - allowance if enabled else 0
-    hardware = number(original, "doorHardwareClearance", 10) if enabled else 0
     single = layout == "single-face"
     frame_mode = str(original.get("frameManufacturingMode","segment_weld"))
     if layout in {"single-face","five-face"} and frame_mode=="spatial_v_notch":
@@ -99,7 +97,7 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         "reviewVersion": 2, "layout": layout, "dimensions": "outside",
         "openingEnabled": enabled, "openingUse": "escape",
         "fixedClearWidth": fixed_clear_width, "fixedClearHeight": fixed_clear_height,
-        "designClearWidth": max(0, fixed_clear_width - leaf_depth - hardware),
+        "designClearWidth": max(0, fixed_clear_width - leaf_depth),
         "designClearHeight": max(0, fixed_clear_height),
         "leafVerticalCount": sum(
             1 for item in document.get("items", [])
@@ -141,7 +139,7 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
     if not single:
         warning("SW_PROJECTION_REVIEW", "外凸尺寸、背面靠墙收口、原窗开启及清洁检修空间须现场核对，不默认当地允许外凸安装。")
     if v_groove_active:
-        warning("SW_V_GROOVE_TRIAL", "V槽连续折合须按实际材质、壁厚、槽向、折合顺序及设备打样，复核补偿、回弹和焊缝；理论展开不等于可直接批量生产。")
+        warning("SW_V_GROOVE_TRIAL", "连续框成形须按实际材质、壁厚、加工方向、成形顺序及设备打样，复核补偿、回弹和焊缝；理论展开不等于可直接批量生产。")
     if not enabled:
         warning("SW_NO_OPENING", "未设置应急开启口；住宅和出租房应核对所在房间的逃生及救援条件。", "accessDoorEnabled")
     if review["infillPattern"] == "horizontal":

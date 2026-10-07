@@ -2,13 +2,21 @@ import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
 import { capturePaneInteraction } from "./utils/paneInteractionState.mjs";
 const renderedPaneAreas = new WeakMap();
 import { renderProgress } from "./layout/commonViews.mjs";
-import { activateProjectArea, getProjectArea, getProjectView, setProjectAreaViewContent } from "./state/projectViewStore.mjs";
+import { activateProjectArea, findProjectView, getProjectArea, getProjectView, releaseProjectView, setProjectAreaViewContent } from "./state/projectViewStore.mjs";
 import { getMachineId, getMachineSubtreeEntityIds, getMachines, getSelectedMachine, reconcileSelectedMachine } from "./state/sceneSelectors.mjs";
 import { escapeAttr, escapeText, formatNumber } from "./utils/format.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "./viewport/viewCube.mjs";
 import { ensureStyles } from "./styles/ensureStyles.mjs";
-import { exposeLaserCamAutomation } from "./automation/laserCamAutomation.mjs";
+import { exposeWorkbenchAutomation } from "./automation/workbenchAutomation.mjs";
 import { RENDER_ENTITY_VIEW_PROJECTION } from "./projection.mjs";
+
+export function releaseProject(context) {
+  const projectId = context?.project?.projectId;
+  const view = projectId ? findProjectView(projectId) : null;
+  if (!view) return Promise.resolve(false);
+  try { stopViewCubeAnimation(view); } catch {}
+  return releaseProjectView(projectId);
+}
 
 // Product-specific features are opt-in; the default workbench never queries CAM services.
 export function createWorkbench(features = {}) {
@@ -99,6 +107,7 @@ function mountProduct(context) {
 }
 
 function mountProject(context) {
+  if (context.isCurrentProject?.() === false) return;
   const { mount, sceneProxy, project } = context;
   if (!mount || !sceneProxy || !project?.projectId) {
     return;
@@ -115,6 +124,7 @@ function mountProject(context) {
 }
 
 async function synchronizeActiveAreaView(context, expectation = {}) {
+  if (context.isCurrentProject?.() === false) return null;
   const projectId = String(context?.project?.projectId ?? "").trim();
   if (!projectId) {
     throw new Error("Active-area synchronization requires a project");
@@ -172,12 +182,17 @@ function normalizeAreaId(context, tabId) {
 }
 
 function renderProject(context, view) {
+  if (view.disposed) return;
   const mount = resolveProjectMount(context);
   const { project } = context;
   if (!mount) {
     return;
   }
   const tab = normalizeAreaId(context, context.activeRibbonTabId);
+  if (context.errorPresentation === "log" && view.error) {
+    appendProjectLog(context, "error", String(view.error));
+    view.error = "";
+  }
   const restorePanes = renderedPaneAreas.get(mount) === tab ? capturePaneInteraction(mount) : () => {};
   context.beforeProjectRender?.(context, view, mount);
   activateProjectArea(view, tab);
@@ -274,12 +289,17 @@ function renderProject(context, view) {
     const actionTarget = event.target instanceof Element ? event.target.closest("[data-cam-action]") : null;
     if (actionTarget && !actionTarget.hasAttribute("disabled")) {
       const action = String(actionTarget.dataset.camAction ?? "");
+      const actionAreaId = view.activeAreaId;
+      const actionSceneProxy = view.sceneProxy;
       const operation = runAction(context, view, action, actionTarget);
       view.activeAreaAction = { action, promise: operation };
       void operation
         .catch((error) => {
-          view.error = error?.message ?? String(error);
-          appendProjectLog(context, "error", `${action} 失败：${view.error}`);
+          const message = error?.message ?? String(error);
+          appendProjectLog(context, "error", `${action} 失败：${message}`);
+          if (!mount.isConnected || context.mount !== mount || view.activeAreaId !== actionAreaId
+              || view.sceneProxy !== actionSceneProxy || view.activeAreaAction?.promise !== operation) return;
+          view.error = message;
           renderProject(context, view);
         })
         .finally(() => {
@@ -348,12 +368,17 @@ function renderProject(context, view) {
       : null;
     if (!actionTarget || actionTarget.hasAttribute("disabled")) return;
     const action = String(actionTarget.dataset.camChangeAction ?? "");
+    const actionAreaId = view.activeAreaId;
+    const actionSceneProxy = view.sceneProxy;
     const operation = runAction(context, view, action, actionTarget);
     view.activeAreaAction = { action, promise: operation };
     void operation
       .catch((error) => {
-        view.error = error?.message ?? String(error);
-        appendProjectLog(context, "error", `${action} 失败：${view.error}`);
+        const message = error?.message ?? String(error);
+        appendProjectLog(context, "error", `${action} 失败：${message}`);
+        if (!mount.isConnected || context.mount !== mount || view.activeAreaId !== actionAreaId
+            || view.sceneProxy !== actionSceneProxy || view.activeAreaAction?.promise !== operation) return;
+        view.error = message;
         renderProject(context, view);
       })
       .finally(() => {
@@ -678,6 +703,9 @@ function mountRenderViewport(context, view) {
       backgroundColor: 0x182128,
       showGrid: context.showViewportGrid !== false,
       onPick: (userData, hit, event, hits) => handleViewportPick(context, view, userData, hit, event, hits),
+      onHover: typeof context.handleAreaViewportHover === "function"
+        ? (userData, hit, event, hits, state) => context.handleAreaViewportHover(context, view, userData, hit, event, hits, state)
+        : undefined,
       onDiagnostic: (entry) => appendProjectLog(context, entry.level ?? "info", entry.message ?? ""),
     });
   }
@@ -714,7 +742,7 @@ function mountRenderViewport(context, view) {
   view.viewport.mount(host);
   attachViewCube(view, mount);
   syncViewportSelection(view, view.scene);
-  exposeLaserCamAutomation(context, view, {
+  exposeWorkbenchAutomation(context, view, {
     importMachineDefinition: (commandContext, commandView, sourcePath) =>
       importMachinePathAction(commandContext, commandView, sourcePath, getProjectOps()),
     importWorkpiece: (commandContext, commandView, sourcePath) =>
@@ -748,6 +776,7 @@ function mountRenderViewport(context, view) {
 }
 
 function resolveProjectMount(context) {
+  if (context.isCurrentProject?.() === false) return null;
   const liveMount = document.querySelector("[data-product-surface='project']");
   if (liveMount) {
     context.mount = liveMount;
@@ -843,6 +872,7 @@ function refreshScene(context, view) {
 }
 
 async function refreshSceneState(context, view) {
+  if (view.disposed) return false;
   const sceneProxy = resolveSceneProxy(context, view);
   if (!sceneProxy) {
     return false;
@@ -855,6 +885,7 @@ async function refreshSceneState(context, view) {
     const scene = {};
     for (const sdoMethod of features.sceneMethods ?? []) {
       mergeScenePayload(scene, await sceneProxy.invoke(sdoMethod, {}, { timeoutMs: 30000 }));
+      if (view.disposed) return false;
     }
     scene.readiness = buildReadiness(scene);
     view.scene = scene;
@@ -867,6 +898,7 @@ async function refreshSceneState(context, view) {
     syncViewportSelection(view, scene);
     return true;
   } catch (error) {
+    if (view.disposed) return false;
     view.error = error?.message ?? String(error);
     appendProjectLog(context, "error", `刷新项目状态失败：${view.error}`);
     return false;
@@ -877,6 +909,7 @@ async function refreshSceneState(context, view) {
 }
 
 async function ensureAreaViewContent(context, view, areaId, options = {}) {
+  if (view.disposed) return null;
   const { force = false, render = true } = options;
   const defaultDefinition = AREA_VIEW_DEFINITIONS[areaId];
   const definition = typeof context.resolveAreaViewDefinition === "function"
@@ -894,10 +927,12 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
       return area.viewContentRequest;
     }
     await area.viewContentRequest;
+    if (view.disposed) return null;
     return ensureAreaViewContent(context, view, areaId, options);
   }
   if (area.viewReader && area.viewDefinitionKey !== definitionKey) {
     await area.viewReader.stop();
+    if (view.disposed) return null;
     area.viewReader = null;
     area.viewContent = null;
     area.appliedViewRevision = "0";
@@ -907,6 +942,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
     const snapshot = force
       ? await area.viewReader.poll()
       : (area.viewReader.snapshot ?? await area.viewReader.poll());
+    if (view.disposed) return null;
     if (snapshot) {
       return enqueueAreaViewSnapshot(context, view, areaId, snapshot, render);
     }
@@ -918,6 +954,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
     .start(definition, {
       pollIntervalMs: 100,
       onChange: (snapshot) => {
+        if (view.disposed) return;
         void enqueueAreaViewSnapshot(
           context,
           view,
@@ -925,19 +962,28 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
           snapshot,
           view.activeAreaId === areaId,
         ).catch((error) => {
+          if (view.disposed) return;
           appendProjectLog(context, "error", `应用 View revision 失败：${error?.message ?? error}`);
         });
       },
     })
     .then(async (reader) => {
+      // Closing can win the race while native View creation is pending.
+      // The late reader still owns a poller and must be stopped explicitly.
+      if (view.disposed) {
+        try { await reader.stop(); } catch {}
+        return null;
+      }
       area.viewReader = reader;
       const snapshot = await reader.poll().catch(() => null);
+      if (view.disposed) return null;
       if (snapshot) {
         return enqueueAreaViewSnapshot(context, view, areaId, snapshot, render);
       }
       return area.viewContent;
     })
     .catch((error) => {
+      if (view.disposed) return null;
       const message = error?.message ?? String(error);
       view.error = `读取 View 资源失败：${message}`;
       appendProjectLog(context, "error", view.error);
@@ -953,6 +999,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
 }
 
 function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
+  if (view.disposed) return Promise.resolve(null);
   const area = getProjectArea(view, areaId);
   const revision = String(snapshot?.revision ?? "0");
   const snapshotKey = `${String(snapshot?.viewId ?? "")}:${revision}`;
@@ -984,6 +1031,7 @@ function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
 }
 
 async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
+  if (view.disposed) return null;
   const area = getProjectArea(view, areaId);
   const revision = String(snapshot?.revision ?? "0");
   if (view.activeAreaId !== areaId) {
@@ -998,9 +1046,11 @@ async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
       resolveSceneProxy(context, view)?.resources,
     );
   } catch (error) {
+    if (view.disposed) return null;
     appendProjectLog(context, "error", `渲染 View 资源失败：${error?.message ?? error}`);
     throw error;
   }
+  if (view.disposed) return null;
   if (!viewportReceipt?.applied || viewportReceipt.revision !== revision) {
     throw new Error(
       `View revision ${revision} was superseded before its geometry was applied`,
@@ -1017,8 +1067,10 @@ async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
 }
 
 async function refreshActiveAreaView(context, view, expectation = {}) {
+  if (view.disposed) return null;
   const areaId = view.activeAreaId || normalizeAreaId(context, context.activeRibbonTabId);
   await ensureAreaViewContent(context, view, areaId, { render: false });
+  if (view.disposed) return null;
   const area = getProjectArea(view, areaId);
   if (!area.viewReader?.waitForSnapshot) {
     throw new Error(`View reader for area ${areaId} does not support revision events`);
@@ -1031,6 +1083,7 @@ async function refreshActiveAreaView(context, view, expectation = {}) {
     ? await area.viewReader.waitForSnapshot((candidate) =>
         snapshotMatchesExpectation(candidate, expectation))
     : await area.viewReader.poll();
+  if (view.disposed) return null;
   if (!snapshot) {
     throw new Error(`View reader for area ${areaId} returned no snapshot`);
   }
@@ -1616,6 +1669,14 @@ function createSDOCallProgress(sdoMethod) {
 }
 
 function showNotice(context, view, message) {
+  if (view.disposed) return;
+  if (context.noticePresentation === "log") {
+    view.notice = "";
+    view.error = "";
+    appendProjectLog(context, "info", message);
+    renderProject(context, view);
+    return;
+  }
   view.notice = message;
   view.noticeRevision = Number(view.noticeRevision ?? 0) + 1;
   view.error = "";
@@ -1648,7 +1709,7 @@ function synchronizeNoticeDismiss(mount, view) {
   view.noticeDismissRevision = revision;
   view.noticeDismissTimer = window.setTimeout(() => {
     view.noticeDismissTimer = null;
-    if (String(view.notice ?? "") !== notice
+    if (view.disposed || String(view.notice ?? "") !== notice
         || Number(view.noticeRevision ?? 0) !== revision) {
       return;
     }
@@ -1661,5 +1722,5 @@ function synchronizeNoticeDismiss(mount, view) {
   }, NOTICE_VISIBLE_DURATION_MS);
 }
 
-return { mountProduct, mountProject, synchronizeActiveAreaView, waitForActiveAreaAction, handleRibbonCommand };
+return { mountProduct, mountProject, releaseProject, synchronizeActiveAreaView, waitForActiveAreaAction, handleRibbonCommand };
 }

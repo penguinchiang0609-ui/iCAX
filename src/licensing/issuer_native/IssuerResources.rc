@@ -1,0 +1,2 @@
+#include <windows.h>
+101 ICON "@CMAKE_CURRENT_SOURCE_DIR@/issuer_native/assets/IssuerIcon.ico"

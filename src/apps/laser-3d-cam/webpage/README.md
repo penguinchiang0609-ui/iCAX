@@ -13,7 +13,7 @@
 - `machining/`：加工大区，包括刀路/作业 action、作业现场状态、作业机床选择、排序规划和输出入口。
 - `toolpath/`：刀路视图片段，包括刀路列表和 SVG 后备刀路叠加。
 - `view/`：视图大区的显示对象和视图参数面板。
-- `automation/`：CDP/UI smoke 使用的 `window.__icaxLaser3DCAM` 自动化诊断入口。正常产品 UI 不直接依赖这里的具体实现。
+- `automation/`：CDP/UI smoke 使用的 `window.__icaxWorkbench` 自动化诊断入口。正常产品 UI 不直接依赖这里的具体实现。
 - `styles/`：产品页面 CSS 和样式加载器。CSS 不再内嵌到 `entry.mjs` 的字符串中。
 - `utils/`：HTML 转义、数字格式化等通用前端小工具。
 

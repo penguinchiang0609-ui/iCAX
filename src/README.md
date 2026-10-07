@@ -26,4 +26,4 @@ src/apps/<product-id>/
   protocol/
 ```
 
-公共前端框架位于 `src/iCAX-UI/`。Engine 与 UI 的组合入口位于 `src/iCAX-Application/`。直接运行 `src/x64/Debug/Application.exe` 时，默认使用 WPF UI 容器；如需无窗口验收，在 `Setting/UIContainer.Setting` 中配置 `type=headless`；如需 CEF/H5，配置 `type=cef` 和 `modulePath=CefUIContainer.dll`。
+公共前端框架位于 `src/iCAX-UI/`。Engine 与 UI 的组合入口位于 `src/iCAX-Application/`。直接运行 `src/x64/Debug/TubeDesigner.exe` 时，默认使用 CEF/H5 UI 容器；如需无窗口验收，在 `Setting/UIContainer.Setting` 中配置 `type=headless`。

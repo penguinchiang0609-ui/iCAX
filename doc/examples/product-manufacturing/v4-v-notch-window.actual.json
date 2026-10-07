@@ -1,0 +1,149 @@
+{
+  "schema": "icax.manufacturing-model",
+  "schemaVersion": 4,
+  "connections": [
+    {
+      "key": "main_grid.horizontal.0001.joint.start",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0001",
+        "outer_frame.left.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0001.joint.end",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0001",
+        "outer_frame.right.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0002.joint.start",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0002",
+        "outer_frame.left.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0002.joint.end",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0002",
+        "outer_frame.right.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0003.joint.start",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0003",
+        "outer_frame.left.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0003.joint.end",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0003",
+        "outer_frame.right.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0004.joint.start",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0004",
+        "outer_frame.left.0001"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "main_grid.horizontal.0004.joint.end",
+      "kind": "assembly",
+      "items": [
+        "main_grid.horizontal.0004",
+        "outer_frame.right.0001"
+      ],
+      "properties": {}
+    }
+  ],
+  "processes": [
+    {
+      "key": "window.assembly",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "security-window-assembly",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 3,
+          "parts": {
+            "members": {
+              "scope": "design",
+              "itemKeys": [
+                "outer_frame.left.0001",
+                "outer_frame.right.0001",
+                "outer_frame.bottom.0001",
+                "outer_frame.top.0001",
+                "main_grid.horizontal.0001",
+                "main_grid.horizontal.0002",
+                "main_grid.horizontal.0003",
+                "main_grid.horizontal.0004",
+                "main_grid.vertical.0001",
+                "main_grid.vertical.0002",
+                "main_grid.vertical.0003"
+              ]
+            }
+          },
+          "geometry": {
+            "layout": {
+              "faceType": "single",
+              "accessDoorEnabled": false
+            }
+          },
+          "resources": {
+            "outerFrameGroove": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {
+          "assemblyPlanningMode": "legacy_processed",
+          "frameManufacturingMode": "plane_v_notch",
+          "frameJoinType": "miter_45",
+          "frameCornerJoin": "post_butt",
+          "frameButtWrapMode": "side_wraps_horizontal",
+          "doorFrameJoinType": "miter_45",
+          "doorFrameButtWrapMode": "side_wraps_horizontal",
+          "doorLeafFrameJoinType": "miter_45",
+          "doorLeafFrameButtWrapMode": "side_wraps_horizontal",
+          "assemblyClearance": 0.1,
+          "horizontalBranchReserve": 5,
+          "verticalBranchReserve": 10
+        },
+        "processDrafts": {
+          "outerFrameGroove": {
+            "v-notch-sharp": {}
+          }
+        },
+        "outputs": {
+          "manufacturing": {
+            "kind": "manufacturing-set",
+            "key": "window.manufacturing"
+          }
+        },
+        "dependencies": []
+      }
+    }
+  ]
+}

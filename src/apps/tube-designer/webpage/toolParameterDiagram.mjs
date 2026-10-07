@@ -158,34 +158,15 @@ function richDiagramSvg(tool, diagram, values, definitions, annotationKind = "to
   return `<svg class="tool-parameter-svg is-rich" viewBox="0 0 ${width} ${height}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g class="tool-diagram-shape" transform="translate(${rounded(tx)} ${rounded(ty)}) scale(${rounded(scale)})${mirrorTransform}">${markup}</g>${contextualLabels}${rendered}</svg>`;
 }
 
-function legacyDiagramSvg(tool, diagram, values, definitions, annotationKind = "tool") {
-  const [sourceX, , sourceWidth] = viewBoxOf(diagram);
-  const mirrored = !!diagram.mirrorParameter && values?.[diagram.mirrorParameter] === false;
-  const transform = mirrored ? ` transform="translate(${attr(sourceX * 2 + sourceWidth)} 0) scale(-1 1)"` : "";
-  const definitionMap = new Map(definitions.map((definition, index) => [definition.key, { definition, index: index + 1 }]));
-  const labels = (diagram.labels ?? []).map((label) => {
-    const found = label?.parameter ? definitionMap.get(label.parameter) : null;
-    if (label?.parameter && !found) return "";
-    const value = found ? toolParameterValueText(found.definition, values) : "";
-    const unit = found ? definitionUnit(found.definition) : "";
-    const content = found ? `${label.text || shortName(found.definition)} ${value}${label.unit ?? (unit ? ` ${unit}` : "")}` : String(label?.text ?? "");
-    if (!content) return "";
-    const body = `<text class="tool-diagram-label" x="${attr(label.x)}" y="${attr(label.y)}" text-anchor="${attr(label.anchor ?? "middle")}">${text(content)}</text>`;
-    return found ? `<g class="tool-diagram-annotation" data-${attr(annotationKind)}-annotation-key="${attr(label.parameter)}"${parameterDiagramLevelAttribute(found.definition)} role="button" tabindex="0" aria-label="${attr(content)}"><circle class="tool-diagram-parameter-badge" cx="${attr(Number(label.x) - 12)}" cy="${attr(Number(label.y) - 3)}" r="8"/><text class="tool-diagram-badge-text" x="${attr(Number(label.x) - 12)}" y="${attr(Number(label.y) - 3)}" text-anchor="middle" dominant-baseline="central">${found.index}</text>${body}</g>` : body;
-  }).join("");
-  return `<svg class="tool-parameter-svg" viewBox="${attr(diagram.viewBox ?? "0 0 240 160")}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g${transform}>${shapeMarkup(diagram)}</g>${labels}</svg>`;
-}
-
 export function renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg = "", annotationKind = "tool") {
   definitions = definitions.filter(d => parameterVisible(d, values));
   const diagram = resolvedDiagram(tool, values);
   if (!diagram) return fallbackSvg;
-  return diagram.schemaVersion === 2
-    ? richDiagramSvg(tool, diagram, values, definitions, annotationKind)
-    : legacyDiagramSvg(tool, diagram, values, definitions, annotationKind);
+  if (diagram.schemaVersion !== 2) throw new Error("参数示意图版本不受支持。");
+  return richDiagramSvg(tool, diagram, values, definitions, annotationKind);
 }
 
-export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram", showToggle = true, annotationKind = "tool" }) {
+export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram", showToggle = true, annotationKind = "tool", guidance = "尺寸随参数实时更新 · 点击编号可定位参数" }) {
   definitions = definitions.filter(d => parameterVisible(d, values));
   const rows = renderParameterLevels(definitions, (definition) => {
     const index = definitions.indexOf(definition);
@@ -198,7 +179,7 @@ export function renderToolParameterDiagram({ tool, values, definitions, expanded
   const annotations = validAnnotations(diagram, definitions, values);
   const hasDiagram = !!diagram || !!fallbackSvg;
   const subject = annotationKind === "tool" ? "模具" : "模板";
-  return `<section class="tube-tool-library-parameter-diagram" data-${attr(annotationKind)}-parameter-diagram><header><div><strong>参数示意图</strong><span>尺寸随参数实时更新 · 点击编号可定位参数</span></div>${showToggle ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="${attr(annotationKind)}" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button>` : ""}</header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg, annotationKind)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此${subject}尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">此${subject}没有可编辑参数。</p>`}</div>` : ""}</section>`;
+  return `<section class="tube-tool-library-parameter-diagram" data-${attr(annotationKind)}-parameter-diagram><header><div><strong>参数示意图</strong><span>${text(guidance)}</span></div>${showToggle ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="${attr(annotationKind)}" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button>` : ""}</header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg, annotationKind)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此${subject}尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">图中未标注尺寸参数。</p>`}</div>` : ""}</section>`;
 }
 
 /** Keep each mould independent from the main/branch profile diagrams around it. */

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import test from "node:test";
-import { clearPartsViewportAnnotations, renderNestingViewportOverlay } from "../../apps/tube-designer/webpage/partsArea.mjs";
+import { clearPartsViewportAnnotations, renderNestingViewportOverlay, handlePartsAreaAction } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { encodeNestingGeometry } from "../../apps/tube-designer/webpage/nestingPreview.mjs";
 import { loadRenderResource } from "../../iCAX-UI/SDK/Viewport/renderResource.mjs";
 
@@ -18,7 +19,7 @@ const measurement = {
 };
 const part = (entityId) => ({
   entityId, name: entityId, length: 100, quantity: 1,
-  profile: { kind: "rect", width: 20, depth: 16, specification: "20 × 16" },
+  profile: { sectionIdentity: nativeSectionIdentity("rect-20-16"), kind: "rect", width: 20, depth: 16, specification: "20 × 16" },
   thumbnailGeometryResourceId: `icax-resource://${entityId}`,
   thumbnailGeometryResourceVersion: 4, manufacturingGeometryResourceVersion: 7,
   properties: { "manufacturing.partKind": "tube", "nesting.snapshot": { source: "standard-part" } },
@@ -118,7 +119,9 @@ test("added standard part remains visible through cached workbench renders witho
   await f.ready();
   const viewport = f.view.viewport;
   assert.deepEqual(viewport.visibleEntityIds, ["standard-1"]);
-  assert.ok(viewport.annotations.length > 0, "final-BRep dimensions are drawn alongside the solid");
+  assert.deepEqual(viewport.annotations, [], "new nesting parts initially hide every annotation");
+  await handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {});
+  assert.ok(viewport.annotations.length > 0, "the tree master can show final-BRep dimensions alongside the solid");
   assert.equal(viewport.snapshots[0].resources.get("icax-resource://standard-1").data.kind, "mesh");
   const fitCount = viewport.fitCount;
   for (let index = 0; index < 20; index++) {
@@ -132,7 +135,7 @@ test("added standard part remains visible through cached workbench renders witho
   assert.deepEqual(f.reads, ["icax-resource://standard-1"]);
   assert.deepEqual(f.measures, ["standard-1"]);
   assert.equal(viewport.fitCount, fitCount, "cached renders do not refit the user's camera");
-  f.view.tubeDesignerPartDimensionsVisible = false;
+  await handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {});
   f.render();
   await tick();
   assert.deepEqual(viewport.visibleEntityIds, ["standard-1"]);

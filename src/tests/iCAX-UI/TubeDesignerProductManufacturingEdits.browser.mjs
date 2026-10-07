@@ -10,16 +10,15 @@ const templates = readdirSync(root).flatMap((directory) => {
   try { return [JSON.parse(readFileSync(new URL(`${directory}/template.json`, root), "utf8"))]; }
   catch (error) { if (error.code === "ENOENT" || error.code === "ENOTDIR") return []; throw error; }
 }).filter((template) => template.extensions?.catalog?.listed !== false);
-assert.equal(templates.length, 10);
+assert.equal(templates.length, 7);
 const independent = {
   "single-face-security-window": "assemblyClearance", "minimal-protective-grille": "installHoleEnabled",
-  "straight-steel-staircase": "boltHoleDiameter", "louver-window": "slotClearance",
-  "decorative-door": "finish", "aluminium-window": "glassType",
+  "straight-steel-staircase": "boltHoleDiameter",
 };
 for (const template of templates) {
   const keys = manufacturingOnlyParameterKeys(template);
   assert(keys.has("productCode"), template.id);
-  assert(keys.has(independent[template.id] ?? "materialGrade"), template.id);
+  assert(keys.has(independent[template.id] ?? "productCode"), template.id);
   const defaults = Object.fromEntries(template.parameters.map((field) => [field.key, field.defaultValue]));
   assert.deepEqual(productDisplayParameters(template, { ...defaults, productCode: "UPDATED" }),
     productDisplayParameters(template, defaults), `${template.id}: identity cannot expire geometry`);
@@ -53,7 +52,7 @@ try {
   });
   await page.goto("http://tube-designer.test/");
   const cases = templates.map((descriptor) => ({ descriptor,
-    editKey: independent[descriptor.id] ?? "materialGrade", displayEdit: false }));
+    editKey: independent[descriptor.id] ?? "productCode", displayEdit: false }));
   cases.push({ descriptor: templates.find((item) => item.id === "single-face-security-window"),
     editKey: "frameWidth", displayEdit: true });
   for (const { descriptor, editKey, displayEdit } of cases) {

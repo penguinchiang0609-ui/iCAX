@@ -14,6 +14,10 @@ def window(joint='weld', **changes):
               'height': 1000, 'width': 1200, 'accessDoorEnabled': False,
               'verticalMaximumCenterSpacing': 600, 'sideVerticalMaximumCenterSpacing': 600,
               'topBottomRodMaximumCenterSpacing': 600, 'foldedPostJoint': joint, **changes}
+    if joint != 'weld' and 'outerFramePostMaterial' not in changes:
+        # Prepare the physical product materials explicitly before machining.
+        values['outerFramePostMaterial'] = ('middle_only' if values['faceType'] in ('two', 'three')
+            and values['frameManufacturingMode'] != 'segment_weld' else 'independent')
     before = deepcopy(values)
     declaration, design = core.manufacturing(values), core.display(values)
     compiled = load('assembly_window_process').compile_window_assembly(

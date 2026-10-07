@@ -5,7 +5,7 @@
 ## 职责
 
 - 通过 `ICAX_REGISTER_UI_CONTAINER("wpf", CWpfUIContainer)` 注册到 `CUIContainerFactory`。
-- 在 native `Application.exe` 进程内启动 WPF UI 线程。
+- 在 native `TubeDesigner.exe` 进程内启动 WPF UI 线程。
 - 使用 `IFrontendBridge` 直接连接 backend `ApplicationRuntime`。
 - 通过 SDO 发送 application/product/project 请求并轮询 report/response/event；Report 保留 pending 调用，Response 才结束调用。
 - 为后续 native viewport 留出中心区域，便于用 `HwndHost` 嵌入 C++ 渲染窗口。

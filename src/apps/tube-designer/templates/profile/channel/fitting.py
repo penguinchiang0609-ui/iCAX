@@ -127,33 +127,38 @@ def _fit_channel(loop,tolerance):
                    for end in ("start","end") for start in ("start","end"))
     root_arcs=[arc for arc in arcs if any(adjacent(arc,line) for line in web)]
     free_arcs=[arc for arc in arcs if arc not in root_arcs]
-    if len(root_arcs)!=4 or not 0<=len(free_arcs)<=2: return False
+    # The parallel-flange constructor has sharp toes. Rounded toes belong
+    # to the sloped hot-rolled branch and must not be silently discarded.
+    if len(root_arcs)>4 or free_arcs:return False
     outer_radii=[0,0]
     inner_radii=[0,0]
-    for edge in root_arcs:
-        radius=float(edge.get("radius",-1))
-        if radius<0 or not math.isfinite(radius): return False
-        matches=[i for i,level in enumerate(levels)
-                 if abs(edge["start"][1]-level)<=tolerance
-                 or abs(edge["end"][1]-level)<=tolerance]
-        if len(matches)!=1: return False
-        index=matches[0]
-        if index==0: slot=outer_radii; side=0
-        elif index==3: slot=outer_radii; side=1
-        elif index==1: slot=inner_radii; side=0
-        else: slot=inner_radii; side=1
-        if slot[side] and abs(slot[side]-radius)>tolerance: return False
+    outer_web=min(web,key=lambda e:e["start"][0])
+    inner_web=max(web,key=lambda e:e["start"][0])
+    ordered_horizontal=sorted(horizontal,key=lambda e:e["start"][1])
+    assigned=[]
+    # The four root corners are independent. A sharp outside root with a
+    # rounded inside root is a legitimate section, as is an all-sharp U.
+    # Match each arc to both adjoining walls; a missing arc is accepted
+    # only when those walls meet at a real common endpoint.
+    for horizontal_wall,vertical_wall,slot,side in (
+        (ordered_horizontal[0],outer_web,outer_radii,0),
+        (ordered_horizontal[3],outer_web,outer_radii,1),
+        (ordered_horizontal[1],inner_web,inner_radii,0),
+        (ordered_horizontal[2],inner_web,inner_radii,1),
+    ):
+        matches=[arc for arc in root_arcs
+                 if adjacent(arc,horizontal_wall) and adjacent(arc,vertical_wall)]
+        if len(matches)>1:return False
+        if matches:
+            radius=float(matches[0].get("radius",-1))
+            if radius<0 or not math.isfinite(radius):return False
+            assigned.append(matches[0])
+        else:
+            if not adjacent(horizontal_wall,vertical_wall):return False
+            radius=0.0
         slot[side]=radius
-    if any(outer<inner-tolerance for outer,inner in zip(outer_radii,inner_radii)): return False
+    if len(assigned)!=len(root_arcs):return False
     free_radii=[0,0]
-    for edge in free_arcs:
-        radius=float(edge.get("radius",-1))
-        if radius<0 or not math.isfinite(radius): return False
-        matches=[i for i,level in enumerate(levels)
-                 if abs(edge["start"][1]-level)<=tolerance
-                 or abs(edge["end"][1]-level)<=tolerance]
-        if len(matches)!=1 or matches[0] not in (1,2): return False
-        free_radii[0 if matches[0]==1 else 1]=radius
     independent_free=abs(free_radii[0]-free_radii[1])>tolerance
     use_inner=any(abs(outer-inner-wall)>tolerance
                   for outer,inner in zip(outer_radii,inner_radii))
@@ -177,6 +182,9 @@ def fitting(section,context):
     if len(section)!=1:return False
     for loops,pose in g.frames(section):
         corners=q.polygon_corners(loops[0],t)
+        # Validate the complete boundary, including all fillet tangencies,
+        # before interpreting wall pairs and their independent root radii.
+        if not corners:continue
         result=_fit_hot_rolled(corners,t) or _fit_channel(loops[0],t)
         if result:
             parameters,origin=result

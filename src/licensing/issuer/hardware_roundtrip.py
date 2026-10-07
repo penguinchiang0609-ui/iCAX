@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 from cryptography.hazmat.primitives.asymmetric import ec
 import authority
+from feature_catalog import ALL_FEATURES
 from enrollment import parse_request, verify_ek_native
 from production import activation_package, read_bounded
 
@@ -20,7 +21,7 @@ verify_ek_native(request.ek_area, request.certificates, [read_bounded(args.root,
 key = ec.generate_private_key(ec.SECP256R1())
 certificate = authority.sign_body(key, authority.encode_body(issuer_id="hardware-test-only",
     license_id="hardware-test-only", request_id=request.digest, customer_id="hardware-test-only",
-    device_public_key=request.device_public, kind=1, features=15, min_major=0, max_major=0, issued_at=int(time.time())))
+    device_public_key=request.device_public, kind=1, features=ALL_FEATURES, min_major=0, max_major=0, issued_at=int(time.time())))
 args.output_directory.mkdir(exist_ok=False)
 authority.exclusive_write(args.output_directory / "test-public.blob", authority.public_blob(key.public_key()))
 authority.exclusive_write(args.output_directory / "test.tdact", activation_package(key, request, certificate))

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import { readFileSync } from "node:fs";
 
 import {
@@ -52,6 +53,7 @@ import {
   getReusablePresetValues,
   renderDesignerDialogs,
   renderDesignerRightPane,
+  renderDesignerAddDialog,
   renderDesignerLeftPane,
 } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
@@ -60,6 +62,7 @@ import {
   PROFILE_PREVIEW_PROGRESS_DELAY_MS,
   PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS,
   renderProfileLibraryLeftPane,
+  renderProfileLibraryDiagramDock,
   renderProfileLibraryRightPane,
   renderProfileLibraryViewportOverlay,
 } from "../../apps/tube-designer/webpage/profileLibrary.mjs";
@@ -72,7 +75,6 @@ import {
   renderNestingResultDock,
   renderNestingRightPane,
   renderNestingViewportOverlay,
-  renderPartsLeftPane,
 } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import {
   hasProductionWorkflowAccess,
@@ -112,7 +114,7 @@ function testVariantSerializer() {
 
 function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   const basePart = {
-    profile: { displayName: "矩形管", specification: "25 × 25 × R2 × 1.5" },
+    profile: { sectionIdentity: nativeSectionIdentity("rect-25-25-r2-t1.5"), displayName: "矩形管", specification: "25 × 25 × R2 × 1.5" },
     quantity: 1,
   };
   const parts = [
@@ -256,7 +258,11 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   assert.match(inspectionHtml, /零件复尺 · 产品-主竖杆-01/);
   assert.doesNotMatch(inspectionHtml, /\.step/);
   assert.match(inspectionHtml, /data-tube-designer-part-inspection-viewport/);
-  assert.match(inspectionHtml, /data-cam-action="tube-designer-toggle-automatic-dimensions"/);
+  assert.doesNotMatch(inspectionHtml, /tube-designer-toggle-automatic-dimensions|隐藏标尺/);
+  assert.match(inspectionHtml, /data-tube-inspection-all-dimensions/);
+  assert.match(inspectionHtml, /data-tube-inspection-dimension-categories/);
+  assert.match(inspectionHtml, /aria-label="关闭零件复尺"/);
+  assert.doesNotMatch(inspectionHtml, /tube-designer-part-inspection-toolbar|tube-designer-measurement-help|数据来源|默认视图|适合窗口|尺寸以当前版本|最终三维实体为准/);
   assert.doesNotMatch(inspectionHtml, /手工两点测量|tube-designer-toggle-part-measurement|tube-designer-clear-part-measurement/);
   assert.doesNotMatch(inspectionHtml, /tube-designer-breakdown-dialog/);
   assert.doesNotMatch(inspectionHtml, /data-tube-designer-part-thumbnail/);
@@ -277,24 +283,21 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   view.tubeDesignerSelectedInstanceIds = ["product-1"];
   const selectionHtml = renderDesignerRightPane({}, view);
   assert.match(selectionHtml, /选择已拆单产品/);
-  assert.match(selectionHtml, /不会重新拆单，也不会复制源几何/);
+  assert.match(selectionHtml, /不会重新拆单或重新生成零件/);
   assert.doesNotMatch(selectionHtml, /当前状态|等待拆单|将重新拆单/);
 }
 
-function testTubeDesignerPublishesTheNestingWorkflow() {
+function testTubeDesignerPublicWorkflow() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["resources", "资源库"]],
+    [["view", "产品"], ["resources", "资源库"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
-  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "nesting").groups
-    .flatMap((group) => group.commands)
-    .some((command) => command.id === "nesting.start"));
   const productRibbonGroups = tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view").groups;
   const productPartCommands = productRibbonGroups.find((group) => group.title === "零件").commands;
   assert.deepEqual(
     productPartCommands.map((command) => [command.id, command.title]),
-    [["designer.inspect-active-part", "复尺"], ["designer.export-active-product-parts", "导出清单"]],
+    [["designer.inspect-active-part", "复尺"], ["designer.disassemble", "拆单"], ["designer.export-active-product-parts", "导出清单"]],
   );
   assert.equal(hasProductionWorkflowAccess({}), false);
   assert.equal(hasProductionWorkflowAccess({
@@ -307,7 +310,7 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
     partNumber: "P-A",
     length: 1200,
     quantity: 2,
-    profile: { displayName: "矩形管", specification: "40 × 20 × 1.5" },
+    profile: { sectionIdentity: nativeSectionIdentity("rect-40-20-t1.5"), displayName: "矩形管", specification: "40 × 20 × 1.5" },
     properties: {
       "manufacturing.material": "Q235B",
       "tubeDesigner.endProcess": { startCut: "square", endCut: "square" },
@@ -318,7 +321,7 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
     partNumber: "P-B",
     length: 800,
     quantity: 1,
-    profile: { displayName: "矩形管", specification: "40 × 20 × 1.5" },
+    profile: { sectionIdentity: nativeSectionIdentity("rect-40-20-t1.5"), displayName: "矩形管", specification: "40 × 20 × 1.5" },
     properties: {
       "manufacturing.material": "Q235B",
       "tubeDesigner.endProcess": { startCut: "square", endCut: "square" },
@@ -329,7 +332,7 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
     partNumber: "P-C",
     length: 600,
     quantity: 1,
-    profile: { displayName: "圆管", specification: "⌀19 × 1" },
+    profile: { sectionIdentity: nativeSectionIdentity("round-19-t1"), displayName: "圆管", specification: "⌀19 × 1" },
     properties: {
       "manufacturing.material": "304",
       "tubeDesigner.endProcess": { startCut: "miter-45", endCut: "miter-45" },
@@ -350,13 +353,14 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
   assert.equal(sectionGroups[0].totalLength, 3200);
   assert.equal(buildMaterialProfileGroups(sameSectionDifferentMaterials).length, 2);
   const profileSnapshot = {
+    sectionIdentity: nativeSectionIdentity("rect-40-20-r2-t1.5"),
     id: "rect", kind: "rect", displayName: "矩形管", specification: "同名规格",
     width: 40, depth: 20, wallThickness: 1.5, cornerRadius: 2,
   };
   assert.equal(buildProfileGroups([
     { ...parts[0], profile: profileSnapshot },
-    { ...parts[1], profile: { ...profileSnapshot, width: 50 } },
-    { ...parts[2], profile: { ...profileSnapshot, wallThickness: 2 } },
+    { ...parts[1], profile: { ...profileSnapshot, width: 50, sectionIdentity: nativeSectionIdentity("rect-50-20-r2-t1.5") } },
+    { ...parts[2], profile: { ...profileSnapshot, wallThickness: 2, sectionIdentity: nativeSectionIdentity("rect-40-20-r2-t2") } },
   ]).length, 3, "Equal display labels must not merge different section dimensions or wall thicknesses");
   assert.equal(buildProfileGroups([
     { ...parts[0], profile: profileSnapshot },
@@ -384,12 +388,6 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
       parts,
     }] } },
   };
-  const unlocked = renderPartsLeftPane({}, { ...view, tubeDesignerProductionAccess: true });
-  assert.match(unlocked, /2 个材料截面组/);
-  assert.match(unlocked, /data-cam-action="tube-designer-parts-select-part"/);
-  assert.match(unlocked, /data-cam-change-action="tube-designer-parts-search"/);
-  assert.match(unlocked, /斜切 \/ 异形/);
-
   const cuttingView = { ...view, activeAreaId: "nesting", tubeDesignerProductionAccess: true };
   const cuttingLeft = renderNestingLeftPane({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
@@ -402,13 +400,13 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
   assert.doesNotMatch(cuttingLeft, /材料截面组|材料未指定|Q235B|304/);
   assert.doesNotMatch(cuttingLeft, /进入排样|进入下料/);
   const cuttingCenter = renderNestingViewportOverlay({}, cuttingView);
-  assert.match(cuttingCenter, /待排零件/);
-  assert.match(cuttingCenter, /tube-designer-parts-toggle-dimensions/);
+  assert.doesNotMatch(cuttingCenter, /待排零件/);
+  assert.doesNotMatch(cuttingCenter, /tube-designer-parts-toggle-dimensions|data-tube-designer-part-dimension-tree/);
   const cuttingRight = renderNestingRightPane({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
   }, cuttingView);
   assert.match(cuttingRight, /<strong>当前零件<\/strong>/);
-  assert.match(cuttingRight, /下料信息/);
+  assert.doesNotMatch(cuttingRight, /下料信息/);
   const linkedRight = renderNestingRightPane({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
   }, {
@@ -448,7 +446,6 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
   assert.match(populatedResultDock, /88%/);
 
   const choiceHtml = renderDesignerDialogs({}, {
-    tubeDesignerPostDisassemblyChoice: { groupCount: 2, partCount: 7 },
   });
   assert.equal(choiceHtml, "", "导入下料完成后直接切换页面，不再弹出后续选择框");
 
@@ -474,9 +471,6 @@ function testTubeDesignerPublishesTheNestingWorkflow() {
 }
 
 async function testTubeDesignerNestingPartListUsesTheBreakdownPage() {
-  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "nesting")
-    .groups.flatMap((group) => group.commands)
-    .some((command) => command.id === "nesting.export-parts" && command.title === "零件清单"));
   let rendered = false;
   const view = {
     pending: false,
@@ -491,7 +485,7 @@ async function testTubeDesignerNestingPartListUsesTheBreakdownPage() {
           partNumber: "N-001",
           length: 1200,
           quantity: 2,
-          profile: { displayName: "矩形管", specification: "40 × 20 × 1.5" },
+          profile: { sectionIdentity: nativeSectionIdentity("rect-40-20-t1.5"), displayName: "矩形管", specification: "40 × 20 × 1.5" },
         }],
       }],
     } },
@@ -623,7 +617,7 @@ async function testTubeDesignerImportsExistingDisassemblyDirectlyIntoCutting() {
             { entityId: "source-tube", partKind: "tube", linkedNesting: true },
             { entityId: "source-plate", partKind: "plate", linkedNesting: true },
           ] }],
-        }, partEntityIds: ["source-tube", "source-plate"] };
+        }, partEntityIds: ["source-tube", "source-plate"], stagedParts: ["source-tube", "source-plate"].map(id=>({sourcePartEntityId:id,partEntityId:id,generationRunId:"run-1",quantity:1})) };
       }
       throw new Error(method);
     } },
@@ -642,43 +636,6 @@ async function testTubeDesignerImportsExistingDisassemblyDirectlyIntoCutting() {
   assert.equal(view.tubeDesignerBreakdownOpen, false);
   assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["source-tube", "source-plate"]);
   assert.equal(view.tubeDesignerActiveNestingPartId, "source-tube");
-}
-
-async function testTubeDesignerEntersCuttingFromThePartList() {
-  let selectedAreaId = "view";
-  let rendered = false;
-  const view = {
-    tubeDesignerBreakdownOpen: true,
-    tubeDesignerPostDisassemblyChoice: { groupCount: 1, partCount: 3 },
-    scene: { tubeDesigner: { manufacturingGroups: [{ parts: [{ entityId: "source-part", partKind: "tube" }] }] } },
-  };
-  const result = await handleDesignerAreaAction({
-    sceneProxy: { async invoke(method, payload) {
-      assert.equal(method, "TubeDesigner.StageNestingParts");
-      assert.deepEqual(payload.partEntityIds, ["source-part"]);
-      return { staged: true, tubeDesigner: { nestingGroups: [{ generationRunId: "run-1", parts: [
-        { entityId: "source-part", linkedNesting: true },
-      ] }], nestingTask: { revision: "1", parts: [
-        { partEntityId: "source-part", generationRunId: "run-1", productEntityId: "product-1", source: "product" },
-      ] } }, partEntityIds: ["source-part"] };
-    } },
-    actions: {
-      selectRibbonTab: async (areaId) => {
-        selectedAreaId = areaId;
-      },
-    },
-  }, view, "tube-designer-enter-cutting", {}, {
-    renderProject() {
-      rendered = true;
-    },
-  });
-
-  assert.equal(result.handled, true);
-  assert.equal(selectedAreaId, "nesting");
-  assert.equal(view.tubeDesignerBreakdownOpen, false);
-  assert.equal(view.tubeDesignerPostDisassemblyChoice, null);
-  assert.equal(rendered, true);
-  assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["source-part"]);
 }
 
 function testTubeDesignerSketchJoinsTheMainWorkflow() {
@@ -700,7 +657,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
     closed: true,
   };
   state.section.entities = [outer];
-  state.section.selectedId = "outer";
+  state.section.selectedIds = ["outer"];
   assert.equal(isSectionPreviewReady(state.section), true);
   const profile = buildProfileFromSectionDraft(state.section, "草图矩形管");
   assert.equal(profile.schema, "icax.imported-tube-profile");
@@ -743,7 +700,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.ok(!tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "nesting", "resources"],
+    ["view", "resources", "about"],
   );
   const commands = sketchRibbonGroups.flatMap((group) => group.commands)
     .map((command) => command.id);
@@ -806,18 +763,18 @@ function testTubeDesignerBuildsTabbedTemplateHierarchyFromDisplayNames() {
     scene: { tubeDesigner: { templates } },
   };
 
-  const securityWindows = renderDesignerRightPane({}, view);
-  assert.equal((securityWindows.match(/role="tab"/g) ?? []).length, 2);
-  assert.match(securityWindows, /data-tube-designer-template-tab-id="template-path:防盗窗"[^>]*aria-selected="true"/);
-  assert.match(securityWindows, /data-tube-designer-template-tab-id="template-path:楼梯"[^>]*aria-selected="false"/);
-  assert.equal((securityWindows.match(/<button class="tube-designer-template-card /g) ?? []).length, 2);
+  const securityWindows = renderDesignerAddDialog(view.scene.tubeDesigner, view);
+  assert.equal((securityWindows.match(/role="tab"/g) ?? []).length, 0);
+  assert.match(securityWindows, /data-tube-designer-template-group-id="template-path:防盗窗"/);
+  assert.match(securityWindows, /data-tube-designer-template-group-id="template-path:楼梯"/);
+  assert.equal((securityWindows.match(/<button class="tube-designer-template-card /g) ?? []).length, 4);
   assert.match(securityWindows, />单面防盗窗<\/strong>/);
   assert.match(securityWindows, />两面防盗窗<\/strong>/);
-  assert.doesNotMatch(securityWindows, />直跑钢楼梯<\/strong>/);
+  assert.match(securityWindows, />直跑钢楼梯<\/strong>/);
 
-  view.tubeDesignerAddCatalogTabId = "template-path:楼梯";
-  const stairs = renderDesignerRightPane({}, view);
-  assert.match(stairs, /data-tube-designer-template-tab-id="template-path:楼梯"[^>]*aria-selected="true"/);
+  view.tubeDesignerAddTemplateId = "straight-steel-staircase";
+  const stairs = renderDesignerAddDialog(view.scene.tubeDesigner, view);
+  assert.match(stairs, /data-tube-designer-template-id="straight-steel-staircase"[^>]*aria-pressed="true"/);
   assert.match(stairs, /data-tube-designer-template-group-id="template-path:楼梯\/护栏"/);
   assert.match(stairs, /data-tube-designer-template-group-id="template-path:楼梯\/钢楼梯"/);
   assert.match(stairs, />直跑钢楼梯<\/strong>/);
@@ -953,9 +910,7 @@ function testTubeDesignerManifestDoesNotPublishCompatibilityTemplates() {
 function testSecurityWindowHorizontalProfilesAreSmallerThanFrames() {
   const templateFolders = [
     "single_face_security_window",
-    "two_face_security_window",
-    "three_face_security_window",
-    "five_face_security_window",
+
   ];
   for (const folder of templateFolders) {
     const descriptor = JSON.parse(readFileSync(
@@ -983,50 +938,17 @@ function testSecurityWindowHorizontalProfilesAreSmallerThanFrames() {
 }
 
 function testTubeDesignerBuildsParameterHierarchyFromDisplayNamePaths() {
-  const template = {
-    id: "single-face-security-window",
-    name: "单面防盗窗",
-    available: true,
-    groups: [
-      { key: "door_frame_profile", displayName: "固定窗框矩形管", order: 30 },
-      { key: "door_position", displayName: "逃生窗位置", order: 20 },
-      { key: "overall", displayName: "基本尺寸", order: 10 },
-    ],
-    parameters: [
-      { key: "doorWidth", displayName: "逃生窗/位置与尺寸/窗框宽度", groupKey: "door_position", group: "逃生窗位置", type: "number", defaultValue: 300, order: 20 },
-      { key: "doorFrameWidth", displayName: "逃生窗/固定窗框截面/截面宽度", groupKey: "door_frame_profile", group: "固定窗框矩形管", type: "number", defaultValue: 25, order: 10 },
-      { key: "width", displayName: "产品宽度", groupKey: "overall", group: "基本尺寸", type: "number", defaultValue: 1200, order: 10 },
-      { key: "doorLeft", displayName: "逃生窗/位置与尺寸/窗框左边距", groupKey: "door_position", group: "逃生窗位置", type: "number", defaultValue: 450, order: 10 },
-      { key: "accessDoorEnabled", displayName: "逃生窗/是否启用", groupKey: "door_position", group: "逃生窗位置", type: "boolean", defaultValue: false, order: 1 },
-    ],
-  };
-  const html = renderDesignerRightPane({}, {
-    pending: false,
-    scene: {
-      tubeDesigner: {
-        product: {
-          entityId: "product-parameter-tree",
-          name: "单面防盗窗-测试",
-          templateId: template.id,
-          parameters: {},
-        },
-        templates: [template],
-        members: [],
-        joints: [],
-        parts: [],
-      },
-    },
-  });
-
-  assert.equal((html.match(/class="tube-designer-parameter-section"/g) ?? []).length, 2);
-  assert.equal((html.match(/class="tube-designer-parameter-subsection"/g) ?? []).length, 2);
-  assert.match(html, /<summary><span>逃生窗<\/span><small>4 项<\/small><\/summary>/);
-  assert.match(html, /<summary><span>位置与尺寸<\/span><small>2 项<\/small><\/summary>/);
-  assert.match(html, /<summary><span>固定窗框截面<\/span><small>1 项<\/small><\/summary>/);
-  assert.doesNotMatch(html, /逃生窗\/是否启用/);
-  assert.ok(html.indexOf("基本尺寸") < html.indexOf("<summary><span>逃生窗"));
-  assert.ok(html.indexOf("位置与尺寸") < html.indexOf("固定窗框截面"));
-  assert.ok(html.indexOf("窗框左边距") < html.indexOf("窗框宽度"));
+  const raw=JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.json",import.meta.url),"utf8"));
+  const parameters=Object.fromEntries(raw.parameters.map(field=>[field.key,field.defaultValue]));
+  const template={...raw,available:true,name:"防盗窗",groups:raw.groups.map(group=>({...group,displayName:group.displayName["zh-CN"]})),parameters:raw.parameters.map(field=>({...field,displayName:field.displayName["zh-CN"],groupKey:field.group,type:({enum:"select",string:"text"})[field.valueType]??field.valueType,options:field.choices?.map(choice=>({...choice,label:choice.displayName["zh-CN"]}))}))};
+  const before=JSON.stringify(template);
+  const html=renderDesignerRightPane({}, {scene:{tubeDesigner:{templates:[template],product:{entityId:"current-window",templateId:template.id,parameters}}}});
+  assert.match(html,/data-tube-designer-parameter-group="section:materials"/);
+  assert.match(html,/data-tube-designer-parameter-group="section:process"/);
+  assert.match(html,/data-tube-designer-profile-prefix="frame"/);
+  assert.match(html,/data-tube-designer-parameter="frameWidth"/);
+  assert.ok(html.indexOf("section:materials")<html.indexOf("section:process"));
+  assert.equal(JSON.stringify(template),before);
 }
 
 function testTubeDesignerBuildsDimensionsOnlyFromFinalGeometryMeasurement() {
@@ -1084,6 +1006,27 @@ function testTubeDesignerBuildsDimensionsOnlyFromFinalGeometryMeasurement() {
   assert.equal(report.holes[1].endEdgeDistance, 690);
   assert.deepEqual(report.pitches, [{ from: 1, to: 2, centerDistance: 200, edgeClearance: 180 }]);
   assert.ok(report.annotations.length >= 7);
+
+  const duplicateStations = buildAutomaticDimensionReport({ geometryMeasurement: {
+    available: true, source: "final-brep", length: 1000,
+    section: { width: 40, height: 30 },
+    linearReference: { start: [0, 0, 0], end: [1000, 0, 0] },
+    features: [
+      { kind: "side-opening", station: 700, center: [700, 0, 15], openingSpanAlong: 25, openingSpanAcross: 20 },
+      { kind: "through-opening", station: 100, center: [100, 10, 0], shape: "circle", diameter: 20, openingSpanAlong: 20, openingSpanAcross: 20 },
+      { kind: "through-opening", station: 100, center: [100, -10, 0], shape: "circle", diameter: 20, openingSpanAlong: 20, openingSpanAcross: 20 },
+    ],
+  } });
+  assert.deepEqual(duplicateStations.holes.map((hole) => hole.center), [[100, 10, 0], [100, -10, 0], [700, 0, 15]]);
+  assert.deepEqual(duplicateStations.holes.map((hole) => hole.elementId), ["hole:1", "hole:2", "hole:3"]);
+  assert.equal(new Set(duplicateStations.annotations.map((annotation) => annotation.id)).size, duplicateStations.annotations.length);
+  for (const hole of duplicateStations.holes) {
+    const size = duplicateStations.annotations.find((annotation) => annotation.category === "opening-size" && annotation.elementIds.includes(hole.elementId));
+    assert.ok(size, "Every opening retains its own ruler association after sorting");
+    assert.equal((size.start[1] + size.end[1]) / 2, hole.center[1]);
+    assert.equal((size.start[0] + size.end[0]) / 2, hole.station);
+  }
+  assert.equal(duplicateStations.annotations.some((annotation) => annotation.elementIds.some((id) => !duplicateStations.holes.some((hole) => hole.elementId === id))), false);
 
   const ignoredTemplateData = buildAutomaticDimensionReport({
     properties: {
@@ -1172,6 +1115,9 @@ function testTubeDesignerRendersBuiltInAndPersonalPresetChoices() {
         customValue: "custom",
         presets: [{ value: "balanced", values: { frameWidth: 38 } }],
       },
+      parameterLayout: { sections: [
+        { key: "materials", displayName: "用料", allowPresets: true, groups: ["profile"] },
+      ] },
     },
   };
   const html = renderDesignerRightPane({}, {
@@ -1183,7 +1129,7 @@ function testTubeDesignerRendersBuiltInAndPersonalPresetChoices() {
       customers: [{ id: "customer-1", name: "王师傅" }],
       parameterPresets: [{
         id: "preset-1", name: "常用厚料", templateId: template.id,
-        templateVersion: template.version, customerId: "customer-1", values: { frameWidth: 42 },
+        templateVersion: template.version, scopeKey: "materials", customerId: "customer-1", values: { frameWidth: 42 },
       }],
     },
   });
@@ -1196,17 +1142,22 @@ function testTubeDesignerRendersBuiltInAndPersonalPresetChoices() {
 
 function testTubeDesignerRendersFrozenDxfProfilesWithoutEditableDimensions() {
   const imported = {
-    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "imported-dxf",
+    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "fixed-section", profileForm: "fixed", sectionKind: "rect",
     name: "供应商梅花管", sourceFileName: "plum-50.dxf", sourceUnit: "毫米",
     specification: "DXF 50 × 48 mm", width: 50, depth: 48,
     wallThickness: 1.6, cornerRadius: 0, contourCount: 2,
-    contours: [{ kind: "polygon", points: [[-25, -24], [25, -24], [25, 24], [-25, 24]] }],
+    contours: [
+      { kind: "polygon", points: [[-25, -24], [25, -24], [25, 24], [-25, 24]] },
+      { kind: "polygon", points: [[-23.4, -22.4], [23.4, -22.4], [23.4, 22.4], [-23.4, 22.4]] },
+    ],
   };
   const template = {
     id: "profile-test", version: "1.0.0", name: "测试产品", available: true,
     groups: [{ key: "profile", displayName: "管型", order: 1 }],
     parameters: [
-      { key: "frameProfileType", type: "select", displayName: "截面类型", defaultValue: "rect", options: [{ value: "rect", label: "矩形管" }], groupKey: "profile", group: "管型", order: 1 },
+      { key: "frameProfileType", type: "select", displayName: "截面类型", defaultValue: "rect", options: [{ value: "rect", label: "矩形管" }],
+        presentation: { editor: "profile-library", resourceRole: "frame", profileConstraints: { sectionKinds: ["rect"] } },
+        groupKey: "profile", group: "管型", order: 1 },
       { key: "frameWidth", type: "number", displayName: "截面宽度", defaultValue: 38, groupKey: "profile", group: "管型", order: 2 },
       { key: "frameDepth", type: "number", displayName: "截面深度", defaultValue: 25, groupKey: "profile", group: "管型", order: 3 },
       { key: "frameWallThickness", type: "number", displayName: "壁厚", defaultValue: 1.2, groupKey: "profile", group: "管型", order: 4 },
@@ -1254,7 +1205,7 @@ function testTubeDesignerRendersFrozenDxfProfilesWithoutEditableDimensions() {
 
 function testTubeDesignerHasIndependentEditableProfileLibrary() {
   const preview = {
-    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "parametric-package",
+    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "profile-package", profileForm: "parametric",
     name: "参数梅花管", specification: "50 × 48 × 1.5", width: 50, depth: 48,
     wallThickness: 1.5, cornerRadius: 0, contourCount: 2,
     contours: [
@@ -1265,7 +1216,7 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
     parameterDefinitions: [], editableParameters: true, frozenGeometry: false,
   };
   const editable = {
-    id: "profile-editable", revision: 3, profileType: "parametric-package",
+    id: "profile-editable", revision: 3, profileType: "profile-package", profileForm: "parametric",
     name: "参数梅花管", sourceFileName: "plum.icaxprofile",
     descriptor: {
       id: "plum", version: "1.2.0",
@@ -1277,13 +1228,13 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
     defaultParameters: { width: 50, depth: 48 }, previewProfile: preview,
   };
   const frozen = {
-    id: "profile-dxf", revision: 1, profileType: "imported-dxf",
+    id: "profile-dxf", revision: 1, profileType: "fixed-section", profileForm: "fixed",
     name: "供应商 DXF", sourceFileName: "vendor.dxf", sourceUnit: "毫米",
     specification: "DXF 30 × 20 mm", width: 30, depth: 20, contourCount: 1,
     contours: [{ kind: "roundedRectangle", width: 30, height: 20, radius: 0 }],
   };
   const system = {
-    id: "round", profileType: "parametric-package", name: "圆管",
+    id: "round", profileType: "profile-package", profileForm: "parametric", name: "圆管",
     descriptor: {
       id: "round", version: "2.0.0",
       displayName: { "zh-CN": "圆管" },
@@ -1294,27 +1245,27 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
     },
     defaultParameters: { width: 40, wallThickness: 2 },
     previewProfile: {
-      schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "parametric-package",
+      schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "profile-package", profileForm: "parametric",
       name: "圆管", specification: "Φ40 × 2", width: 40, depth: 40,
       wallThickness: 2, contours: [{ kind: "circle", radius: 20 }, { kind: "circle", radius: 18 }],
     },
   };
   const view = {
     pending: false,
-    tubeDesignerSelectedProfileId: editable.id,
+    tubeDesignerSelectedProfileId: "user:" + editable.id,
     tubeDesignerSystemProfiles: [system],
     tubeDesignerUserData: { profiles: [editable, frozen] },
   };
   const left = renderProfileLibraryLeftPane({}, view);
   const right = renderProfileLibraryRightPane({}, view);
   const previewHtml = renderProfileLibraryViewportOverlay({}, view);
-  assert.equal((left.match(/role="tab"/g) ?? []).length, 3);
+  assert.equal((left.match(/role="tab"/g) ?? []).length, 2);
   assert.match(left, /tube-profile-library-card-copy[\s\S]*程式/);
   assert.doesNotMatch(left, /tube-profile-library-card-type-badge/);
   assert.doesNotMatch(left, /role="tablist" aria-label="管型类型"/);
   assert.doesNotMatch(left, /系统内置 · 程式|程式管型包/);
   assert.match(left, /data-tube-profile-library-scope="system"/);
-  assert.match(left, /data-tube-profile-library-scope="template"/);
+  assert.doesNotMatch(left, /data-tube-profile-library-scope="template"/);
   assert.match(left, /data-tube-profile-library-scope="user"/);
   assert.match(left, /系统内置/);
   assert.doesNotMatch(left, /data-tube-designer-profile-key="system:round"/);
@@ -1323,9 +1274,9 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   assert.match(right, /默认参数/);
   assert.match(right, /data-tube-profile-editor-parameter="width"/);
   assert.match(right, /保存名称和默认参数/);
-  assert.match(right, /data-profile-parameter-diagram/);
-  assert.match(right, /data-profile-parameter-key="width"/);
-  assert.match(right, /尚未提供参数位置标注/, "legacy packages retain their real contour without inferred dimensions");
+  assert.match(previewHtml, /data-profile-parameter-diagram/);
+  assert.doesNotMatch(previewHtml, /data-profile-annotation-key=/, "a package without parameterDiagram metadata cannot invent parameter positions");
+  assert.match(previewHtml, /td-profile-diagram-shape/, "packages without annotations retain their real contour");
   assert.doesNotMatch(right, /data-cam-action="tube-designer-profile-export-dxf"/);
   assert.doesNotMatch(right, /data-cam-action="tube-designer-profile-export-step"/);
   assert.match(previewHtml, /tube-profile-library-preview-hud/);
@@ -1351,10 +1302,9 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
     tubeDesignerUserData: { profiles: [editable, frozen] },
   };
   const systemRight = renderProfileLibraryRightPane({}, systemView);
-  assert.match(systemRight, /系统内置管型/);
+  assert.match(systemRight, /data-tube-designer-profile-scope="system"/);
   assert.match(systemRight, /预览参数/);
   assert.match(systemRight, /data-tube-profile-editor-parameter="width"/);
-  assert.match(systemRight, /仅影响当前预览与本次导出/);
   assert.doesNotMatch(systemRight, /data-tube-profile-editor-name/);
   assert.doesNotMatch(systemRight, /tube-designer-profile-library-save/);
   assert.doesNotMatch(systemRight, /tube-designer-profile-library-delete/);
@@ -1362,9 +1312,9 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
 }
 
 function testTubeDesignerProfileSvgPreservesCurvesAndVisibleBounds() {
-  const renderMiniature = (profile) => renderProfileLibraryRightPane({}, {
+  const renderMiniature = (profile) => renderProfileLibraryDiagramDock({
     pending: false,
-    tubeDesignerSelectedProfileId: profile.id,
+    tubeDesignerSelectedProfileId: "user:" + profile.id,
     tubeDesignerUserData: { profiles: [profile] },
   });
   const outerPathTag = (html) => (html.match(/<path\b[^>]*>/g) ?? [])
@@ -1383,7 +1333,7 @@ function testTubeDesignerProfileSvgPreservesCurvesAndVisibleBounds() {
   };
   const baseProfile = {
     revision: 1,
-    profileType: "imported-dxf",
+    profileType: "fixed-section", profileForm: "fixed",
     sourceFileName: "curve.dxf",
     sourceUnit: "毫米",
     contourCount: 2,
@@ -1532,7 +1482,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
   const profile = {
     id: "8c31dc03-39a9-44cb-9f0e-293a1158f48d",
     revision: 1,
-    profileType: "imported-dxf",
+    profileType: "fixed-section", profileForm: "fixed",
     name: "自动化圆管",
     specification: "DXF 40 × 40 mm",
     width: 40,
@@ -1541,7 +1491,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
   };
   const view = {
     activeAreaId: "profiles",
-    tubeDesignerSelectedProfileId: profile.id,
+    tubeDesignerSelectedProfileId: "user:" + profile.id,
     tubeDesignerUserData: { profiles: [profile] },
     viewport: {
       getAppliedViewState: () => ({ revision: "0", entityIds: [] }),
@@ -1563,7 +1513,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
       invoke: async (method, payload) => {
         assert.equal(method, "TubeDesigner.GenerateProfilePreview");
         assert.deepEqual(payload.profileRef, { scope: "user", id: profile.id });
-        assert.equal(payload.length, 500);
+        assert.deepEqual(payload.parameters, {}, "fixed sections send no editable shape parameters");
         return {
           geometryResourceId: "resource://profile-preview.mesh",
           geometryResourceVersion: 7,
@@ -1592,7 +1542,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
 
 async function testTubeDesignerSystemProfilePreviewUsesScopedReference() {
   const profile = {
-    id: "round", profileType: "parametric-package", name: "圆管",
+    id: "round", profileType: "profile-package", profileForm: "parametric", name: "圆管",
     descriptor: {
       id: "round", version: "2.0.0",
       parameters: [
@@ -1672,7 +1622,7 @@ function testViewportOwnsTransientInteraction() {
     new URL("../../apps/tube-designer/webpage/entry.mjs", import.meta.url),
     "utf8",
   );
-  assert.match(designerEntrySource, /setProjectionToggleVisible\?\.\(!\["sketch", "about"\]\.includes\(normalizedAreaId\)\)/);
+  assert.match(designerEntrySource, /setProjectionToggleVisible\?\.\(!\["sketch", "about", "assemblies"\]\.includes\(normalizedAreaId\)\)/);
   assert.match(designerEntrySource, /setOrbitConstrained\?\.\(normalizedAreaId === "view"\)/);
   assert.match(designerEntrySource, /tubeDesignerProjectionModes\[currentAreaId\] = mode/);
 }
@@ -1687,12 +1637,12 @@ function testStandardViewDirections() {
   assert.equal(resolveStandardViewDirection("unknown"), null);
 }
 
-function testTubeDesignerAppliesDefaultViewAfterNewRevisionIsFitted() {
+function testTubeDesignerFitsNewRevisionAfterApplyingDefaultDirection() {
   const events = [];
   const view = {
     viewport: {
-      fitViewForRevision(revision) {
-        events.push(["fit", revision]);
+      fitViewForRevision(revision, padding) {
+        events.push(["fit", revision, padding]);
         return { fitted: true, revision, renderSequence: 41 };
       },
       setViewDirection(direction) {
@@ -1701,30 +1651,33 @@ function testTubeDesignerAppliesDefaultViewAfterNewRevisionIsFitted() {
       },
       getAppliedViewState() {
         events.push(["receipt"]);
-        return { revision: "revision-42", renderSequence: 42 };
+        return { revision: "revision-42", renderSequence: 41 };
       },
     },
   };
 
   const product = {
-    templateId: "two-face-security-window",
-    parameters: { sidePosition: "right" },
+    templateId: "single-face-security-window",
+    parameters: { faceType: "two", sidePosition: "right" },
   };
   assert.deepEqual(fitDesignerDefaultView(view, "revision-42", product), {
     revision: "revision-42",
     defaultViewDirection: [0.18, -1, 0.08],
     fitRenderSequence: 41,
-    defaultViewRenderSequence: 42,
+    defaultViewRenderSequence: 41,
   });
   assert.deepEqual(events, [
-    ["fit", "revision-42"],
     ["view-direction", [0.18, -1, 0.08]],
+    ["fit", "revision-42", 1.35],
     ["receipt"],
   ]);
   assert.deepEqual(getDesignerDefaultViewDirection({
-    templateId: "two-face-security-window",
-    parameters: { sidePosition: "left" },
-  }), [-0.18, -1, 0.08]);
+    templateId: "single-face-security-window",
+    parameters: { faceType: "two", sidePosition: "left" },
+  }, { display: { views: { scene: { viewDirections: [{
+    when: { op: "all", conditions: [{ op: "eq", parameter: "faceType", value: "two" },
+      { op: "eq", parameter: "sidePosition", value: "left" }] }, direction: [-0.18, -1, 0.08],
+  }] } } } }), [-0.18, -1, 0.08]);
   assert.deepEqual(getDesignerDefaultViewDirection(product), [0.18, -1, 0.08]);
 }
 
@@ -2447,14 +2400,25 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+if (process.argv.includes("--nesting-section")) {
+  testTubeDesignerPublicWorkflow();
+  await testTubeDesignerNestingPartListUsesTheBreakdownPage();
+  console.log("Nesting section grouping SDK tests passed");
+} else if (process.argv.includes("--part-inspection")) {
+  testTubeDesignerBuildsTemplateDefinedPartCategories();
+  testTubeDesignerBuildsDimensionsOnlyFromFinalGeometryMeasurement();
+  testViewportOwnsTransientInteraction();
+  testStandardViewDirections();
+  testPartThumbnailNormalizesTheLongestAxisHorizontally();
+  console.log("Part inspection SDK tests passed");
+} else {
 testSDOMethodCodes();
 testTubeDesignerBuildsTemplateDefinedPartCategories();
-testTubeDesignerPublishesTheNestingWorkflow();
+testTubeDesignerPublicWorkflow();
 await testTubeDesignerNestingPartListUsesTheBreakdownPage();
 await testTubeDesignerOpensPersistentPartListWithoutEnteringCutting();
 await testTubeDesignerKeepsPersistentPartsWhenClosingDirectExport();
 await testTubeDesignerImportsExistingDisassemblyDirectlyIntoCutting();
-await testTubeDesignerEntersCuttingFromThePartList();
 testTubeDesignerSketchJoinsTheMainWorkflow();
 testTubeDesignerChoosesTheFirstAvailableCatalogTemplate();
 testTubeDesignerBuildsTabbedTemplateHierarchyFromDisplayNames();
@@ -2478,7 +2442,7 @@ await testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalViewport();
 await testTubeDesignerSystemProfilePreviewUsesScopedReference();
 testViewportOwnsTransientInteraction();
 testStandardViewDirections();
-testTubeDesignerAppliesDefaultViewAfterNewRevisionIsFitted();
+testTubeDesignerFitsNewRevisionAfterApplyingDefaultDirection();
 testPartThumbnailNormalizesTheLongestAxisHorizontally();
 testVariantSerializer();
 testViewResourceParsing();
@@ -2503,5 +2467,4 @@ await testProductModuleLoader();
 testMachineJointTransformPanel();
 
 console.log("SDK tests passed");
-
-
+}

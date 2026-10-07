@@ -10,12 +10,18 @@ import {
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
 import { rememberPunchDom } from "./punchDomPatch.mjs";
 import { attachPunchParameterWindow } from "./punchParameterWindow.mjs";
+import { bindDiagramDragging } from "./floatingParameterDiagram.mjs";
+import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
+import { attachPunchModalBoundary } from "./punchModal.mjs";
 
 const controllers = new WeakMap();
 const presentations = new WeakMap();
 const previewFlights = new WeakMap();
 const inputBindings = new WeakMap();
 const wizardWindowBindings = new WeakMap();
+const regionResizeBindings = new WeakMap();
+const sheetResizeBindings = new WeakMap();
+const continuityNodes = new WeakMap();
 const paint = () => typeof requestAnimationFrame === "function" ? new Promise(resolve => requestAnimationFrame(()=>requestAnimationFrame(resolve))) : Promise.resolve();
 export function setPunchPreviewView(mount,name) {
   const viewport=controllers.get(mount)?.viewport;
@@ -24,8 +30,24 @@ export function setPunchPreviewView(mount,name) {
   return true;
 }
 
+function retainPunchHorizontalFrame(mount, changeLayout) {
+  const controller=controllers.get(mount),viewport=controller?.viewport;
+  const before=viewport?.camera?.isOrthographicCamera
+    ? {width:viewport.camera.right-viewport.camera.left,state:viewport.getCameraState()}:null;
+  changeLayout();
+  if(!before||controllers.get(mount)!==controller)return;
+  viewport.resize();
+  const width=viewport.camera.right-viewport.camera.left;
+  if(before.width>0&&width>0&&Math.abs(width-before.width)>.001) {
+    // Changing a pane's aspect must not magnify the stock until its ends leave
+    // the view. Preserve the user's horizontal framing, target and direction.
+    viewport.setCameraState({...before.state,radius:before.state.radius*before.width/width});
+  }
+}
+
 export function beginPunchOperation(context, view, title) {
   const operation = { kind: "punch", title, message: "正在准备刀具和基准实体", phaseLabel: "准备中" };
+  operation.finished=new Promise(resolve=>{operation.resolveFinished=resolve;});
   view.tubeDesignerOperation = operation;
   view.pending = true;
   return { timeoutMs: 180000, onReport(report) {
@@ -61,7 +83,11 @@ export function finishPunchOperation(view, expectedOperation = null) {
   }
   if(view.tubeDesignerOperation?.kind==="punch")view.tubeDesignerOperation=null;
   view.pending=false;
+  operation?.resolveFinished?.();
   return true;
+}
+export function waitForPunchPreview(view) {
+  return previewFlights.get(view)?.finished??Promise.resolve();
 }
 function punchPreviewPayload(view, part, includeDraft) {
   const state = view.tubeDesignerPunchWizard;
@@ -155,7 +181,7 @@ function previewReferences(preview) {
     ...(preview.toolPreviews??[]).map(item=>item.geometry)].filter(Boolean);
 }
 function unchangedPreviewEntities(state, mode) {
-  if(mode!=="tools" || !state.preview?.baseGeometry?.url)return [];
+  if(mode!=="tools" || !state?.preview?.baseGeometry?.url)return [];
   // Compare live source records, including invalid edits that never reach a
   // request. A previous successful payload must not keep a stale changed tool.
   const previous=state.previewSourceRecipe??state.previewRecipe;
@@ -213,7 +239,10 @@ function recordPreviewFailure(state, message, includesDraft) {
 
 export async function previewPunch(context, view, part, ops, creation = null, previewOptions = {}) {
   const state = view.tubeDesignerPunchWizard;
-  const includeDraft = state?.parameterEditor ? state.parameterEditor.index==="draft"&&!state.parameterEditor.end : previewOptions.includeDraft === true;
+  // A shared batch hole definition is not an instance on the selected part.
+  // Only its assigned feature rows belong in the stock preview.
+  const includeDraft = !view.tubeDesignerPunchBatch && (state?.parameterEditor
+    ? state.parameterEditor.index==="draft"&&!state.parameterEditor.end : previewOptions.includeDraft === true);
   if(!state || view.pending || previewFlights.has(view))return false;
   state.requestedPreviewIncludesDraft=includeDraft;
   // Retry the displayed recipe, not an unrelated unfinished new-row draft.
@@ -244,20 +273,27 @@ export async function previewPunch(context, view, part, ops, creation = null, pr
   // Editing only constructs/places display tools. Manufacturing subtraction is
   // deliberately reserved for the final Add/Apply action.
   payload.toolsOnly=true;
+  payload.individualToolPreviews=true;
   state.pendingPreviewRecipe=structuredClone(payload);
   if(previewOptions.quiet===true&&!state.error&&!state.previewPending&&state.preview?.toolsOnly===true&&state.preview?.baseGeometry?.url
-    &&state.preview.revision===revision&&state.preview.includesDraft===includeDraft) {
+    &&state.preview.includesDraft===includeDraft&&(state.preview.revision===revision
+      ||view.tubeDesignerPunchBatch&&JSON.stringify(state.previewRecipe)===JSON.stringify(payload))) {
+    // Editing/selecting an unused shared definition changes UI revision only;
+    // the selected part has exactly the same validated geometry request.
+    state.preview={...state.preview,revision};
+    state.previewSourceRecipe=sourceRecipe;
     ops.renderProject(context,view);
     await presentations.get(state)?.flight;
     return !state.previewRenderError;
   }
   const requestId=(state.previewRequestId??0)+1;
   state.previewRequestId=requestId;
-  // "quiet" used to bypass the busy gate and issue overlapping native jobs.
-  // Every preview now owns a visible operation until its response settles; busy
-  // input is rejected, not queued for an unexpected later replay.
-  const options=beginPunchOperation(context,view,"正在更新冲孔刀具体");
-  const operation=view.tubeDesignerOperation;
+  // Batch previews are serialized by the creation queue, independently of the
+  // exclusive save/catalogue operation. Editing does not wait for the scene.
+  const background=previewOptions.background===true;
+  const options=background?{timeoutMs:180000}:beginPunchOperation(context,view,"正在更新冲孔刀具体");
+  const operation=background?{background:true}:view.tubeDesignerOperation;
+  if(background)operation.finished=new Promise(resolve=>{operation.resolveFinished=resolve;});
   previewFlights.set(view,operation);
   state.previewPending=true;
   state.previewRenderError="";
@@ -266,10 +302,13 @@ export async function previewPunch(context, view, part, ops, creation = null, pr
   try {
     ops.renderProject(context,view);
     await paint();
+    if(view.tubeDesignerPunchWizard!==state||state.revision!==revision||state.previewRequestId!==requestId
+      ||state.requestedPreviewIncludesDraft!==includeDraft||background&&view.pending)return false;
     const result=await context.sceneProxy.invoke("TubeDesigner.PreviewPunchWizard",payload,options);
     if(result?.toolsOnly!==true||!result?.baseGeometry?.url||result?.geometry?.url)
       throw new Error("刀具体预览接口未返回独立主管与刀具，请更新后端组件后重试。");
-    if(view.tubeDesignerPunchWizard===state && state.revision===revision && state.previewRequestId===requestId) {
+    if((!view.pending||!background)&&view.tubeDesignerPunchWizard===state && state.revision===revision && state.previewRequestId===requestId
+      &&state.requestedPreviewIncludesDraft===includeDraft) {
       state.preview={...result,revision,includesDraft:includeDraft};
       state.previewRecipe=structuredClone(payload);
       state.previewSourceRecipe=sourceRecipe;
@@ -280,36 +319,58 @@ export async function previewPunch(context, view, part, ops, creation = null, pr
     }
     return true;
   } catch(error) {
-    if(view.tubeDesignerPunchWizard===state && state.previewRequestId===requestId)
+    if((!view.pending||!background)&&view.tubeDesignerPunchWizard===state && state.revision===revision && state.previewRequestId===requestId
+      &&state.requestedPreviewIncludesDraft===includeDraft)
       recordPreviewFailure(state,error?.message??String(error),includeDraft);
     return false;
   } finally {
     if(state.previewRequestId===requestId)state.previewPending=false;
     if(previewFlights.get(view)===operation)previewFlights.delete(view);
-    finishPunchOperation(view,operation);
+    if(background)operation.resolveFinished();else finishPunchOperation(view,operation);
     ops.renderProject(context,view);
   }
 }
 export function attachPunchEditor(context,view,mount,ops) {
   const state=view.tubeDesignerPunchWizard;
   rememberPunchDom(view,mount);
-  attachPunchRightbarResize(view,mount);
+  attachPunchRegionResize(view,mount);
   attachPunchWizardWindow(view,mount);
   attachPunchInputContinuity(state,mount,view);
+  // Restore the edited control before the modal's initial-focus fallback can
+  // focus the first field and overwrite the retained editing position.
+  attachPunchModalBoundary(view,mount);
+  attachPunchBatchCells(context,view,mount,ops);
   attachPunchParameterWindow(mount,state);
-  for(const name of mount?.querySelectorAll?.("[data-punch-edit-name]")??[]) {
-    const open=()=>name.closest("tr")?.querySelector('[data-cam-action$="parameters-open"]')?.click();
-    name.ondblclick=open;name.onkeydown=event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();open();}};
+  bindDiagramDragging(mount,view);
+  bindProfileParameterDiagrams(mount);
+  const scroll=mount?.querySelector?.('.tube-designer-punch-sheet-scroll');
+  const previousSheet=sheetResizeBindings.get(mount);
+  if(previousSheet?.scroll!==scroll) {previousSheet?.observer.disconnect();sheetResizeBindings.delete(mount);}
+  if(scroll) {
+    scroll.style.setProperty('--punch-table-visible-width',scroll.clientWidth+'px');
+    // A full-row shape editor follows the visible sheet width while the many
+    // parameter columns scroll horizontally within this region only.
+    if(!sheetResizeBindings.has(mount)) {
+      const observer=new scroll.ownerDocument.defaultView.ResizeObserver(()=>{
+        scroll.style.setProperty('--punch-table-visible-width',scroll.clientWidth+'px');
+      });observer.observe(scroll);sheetResizeBindings.set(mount,{scroll,observer});
+    }
+  }
+  for(const cell of mount?.querySelectorAll?.('[data-punch-cell-activate]')??[]) {
+    cell.onkeydown=event=>{
+      if(event.target===cell&&['Enter',' '].includes(event.key)){event.preventDefault();cell.click();}
+    };
   }
   if(state?.scrollToFeatureIndex!==undefined) {
     mount?.querySelector?.('[data-tube-designer-punch-row="'+state.scrollToFeatureIndex+'"]')?.scrollIntoView?.({block:"nearest",inline:"nearest"});
     delete state.scrollToFeatureIndex;
   }
-  const parameterDialog=mount?.querySelector?.("[data-punch-parameter-dialog]");
-  if(parameterDialog) {
-    if(!state.parameterEditor.focused){parameterDialog.querySelector("select,input,button")?.focus();state.parameterEditor.focused=true;}
+  const parameterDialog=[...mount?.querySelectorAll?.("[data-punch-inline-editor],[data-punch-parameter-dialog]")??[]]
+    .find(node=>!node.closest('[data-punch-batch-definition-editor]'));
+  if(parameterDialog&&state?.parameterEditor) {
+    if(!state.parameterEditor.focused){parameterDialog.querySelector("select,input")?.focus({preventScroll:true});state.parameterEditor.focused=true;}
     parameterDialog.onkeydown=event=>{
-      if(event.key==="Escape"){event.preventDefault();event.stopPropagation();parameterDialog.querySelector('[data-cam-action$="parameters-cancel"]')?.click();}
+      if(event.key==="Escape"){event.preventDefault();event.stopPropagation();parameterDialog.querySelector('[data-cam-action$="parameters-close"]')?.click();}
     };
   }
   if(state?.catalogueStatus==="idle" && !view.pending && context.sceneProxy?.invoke) {
@@ -343,7 +404,7 @@ export function attachPunchEditor(context,view,mount,ops) {
 // The position is UI-only and is restored on every incremental render.
 function attachPunchWizardWindow(view,mount) {
   if(!mount?.querySelector)return;
-  const state=view?.tubeDesignerPunchWizard;
+  const state=view?.tubeDesignerPunchBatch??view?.tubeDesignerPunchWizard;
   const dialog=mount.querySelector("[data-tube-designer-punch-window-drag]")?.closest?.(".tube-designer-punch-dialog");
   const previous=wizardWindowBindings.get(mount);
   if(previous&&previous.dialog===dialog&&previous.state===state){previous.keepReachable();return;}
@@ -359,8 +420,10 @@ function attachPunchWizardWindow(view,mount) {
   let drag=null;
   const place=(left,top)=>{
     const box=dialog.getBoundingClientRect();
-    left=Math.max(margin,Math.min(Number(left)||0,win.innerWidth-box.width-margin));
-    top=Math.max(margin,Math.min(Number(top)||0,win.innerHeight-box.height-margin));
+    const horizontalMargin=Math.min(margin,Math.max(0,(win.innerWidth-box.width)/2));
+    const verticalMargin=Math.min(margin,Math.max(0,(win.innerHeight-box.height)/2));
+    left=Math.max(horizontalMargin,Math.min(Number(left)||0,win.innerWidth-box.width-horizontalMargin));
+    top=Math.max(verticalMargin,Math.min(Number(top)||0,win.innerHeight-box.height-verticalMargin));
     state.wizardWindowPosition={left,top};
     Object.assign(dialog.style,{position:"fixed",left:left+"px",top:top+"px",margin:"0px"});
   };
@@ -402,55 +465,63 @@ function attachPunchWizardWindow(view,mount) {
   keepReachable();
 }
 
-function attachPunchRightbarResize(view,mount) {
-  const splitter=mount?.querySelector?.("[data-tube-designer-punch-rightbar-splitter]");
-  const workspace=splitter?.closest?.(".tube-designer-punch-sheet-workspace");
-  if(!splitter||!workspace||!view?.tubeDesignerPunchWizard)return;
-  splitter.onpointerdown=(event)=>{
-    if(event.button!==0)return;
-    event.preventDefault();
-    const current=Number(view.tubeDesignerPunchWizard.rightbarWidth);
-    const computed=parseFloat(getComputedStyle(workspace).getPropertyValue("--tube-designer-punch-rightbar-width"));
-    const startWidth=Number.isFinite(current)&&current>0?current:(Number.isFinite(computed)?computed:520);
-    const leftPane=workspace.querySelector(".tube-designer-punch-sidebar")?.getBoundingClientRect?.();
-    const workspaceRect=workspace.getBoundingClientRect?.();
-    const minWidth=340;
-    const maxWidth=Math.max(minWidth,Math.min(820,(workspaceRect?.width??1600)-(leftPane?.width??260)-420));
-    const clamp=value=>Math.max(minWidth,Math.min(maxWidth,value));
-    const pointerId=event.pointerId;
-    const startX=event.clientX;
-    const move=(moveEvent)=>{
-      if(moveEvent.pointerId!==pointerId)return;
-      const width=clamp(startWidth-(moveEvent.clientX-startX));
-      view.tubeDesignerPunchWizard.rightbarWidth=width;
-      workspace.style.setProperty("--tube-designer-punch-rightbar-width",`${Math.round(width)}px`);
-      moveEvent.preventDefault();
-    };
-    const finish=(finishEvent)=>{
-      if(finishEvent.pointerId!==pointerId)return;
-      document.removeEventListener("pointermove",move,true);
-      document.removeEventListener("pointerup",finish,true);
-      document.removeEventListener("pointercancel",finish,true);
-      document.body.classList.remove("tube-designer-punch-rightbar-resizing");
-    };
-    document.body.classList.add("tube-designer-punch-rightbar-resizing");
-    document.addEventListener("pointermove",move,true);
-    document.addEventListener("pointerup",finish,true);
-    document.addEventListener("pointercancel",finish,true);
-    try{splitter.setPointerCapture?.(pointerId);}catch{/* Synthetic pointers may not be capturable. */}
+function attachPunchRegionResize(view,mount) {
+  const workspace=mount?.querySelector?.('.tube-designer-punch-sheet-workspace');
+  const state=view?.tubeDesignerPunchBatch??view?.tubeDesignerPunchWizard,previous=regionResizeBindings.get(mount);
+  if(previous?.workspace===workspace&&previous.state===state)return;
+  previous?.abort.abort();regionResizeBindings.delete(mount);
+  const splitters=[...workspace?.querySelectorAll?.('[data-punch-region-splitter]')??[]];
+  if(!state||!splitters.length)return;
+  const win=workspace.ownerDocument.defaultView,abort=new AbortController(),options={signal:abort.signal};
+  const regions=Object.fromEntries([...workspace.querySelectorAll('[data-punch-region]')].map(node=>[node.dataset.punchRegion,node]));
+  const fixedRegions=Object.keys(regions).filter(name=>name!=="scene");
+  const minimum=name=>parseFloat(win.getComputedStyle(regions[name]).getPropertyValue('--punch-region-min-height'))||96;
+  const sizes=()=>Object.fromEntries(Object.entries(regions).map(([name,node])=>[name,node.getBoundingClientRect().height]));
+  const place=values=>{
+    retainPunchHorizontalFrame(mount,()=>{
+      state.punchRegionSizes=values;
+      for(const name of fixedRegions)workspace.style.setProperty('--punch-'+name+'-height',values[name]+'px');
+      for(const splitter of splitters){const [before]=splitter.dataset.punchRegionSplitter.split(':');splitter.setAttribute('aria-valuenow',Math.round(values[before]));}
+    });
   };
-  splitter.onkeydown=(event)=>{
-    if(!["ArrowLeft","ArrowRight"].includes(event.key))return;
-    event.preventDefault();
-    const workspaceRect=workspace.getBoundingClientRect?.();
-    const leftPane=workspace.querySelector(".tube-designer-punch-sidebar")?.getBoundingClientRect?.();
-    const minWidth=340;
-    const maxWidth=Math.max(minWidth,Math.min(820,(workspaceRect?.width??1600)-(leftPane?.width??260)-420));
-    const current=Number(view.tubeDesignerPunchWizard.rightbarWidth)||parseFloat(getComputedStyle(workspace).getPropertyValue("--tube-designer-punch-rightbar-width"))||520;
-    const width=Math.max(minWidth,Math.min(maxWidth,current+(event.key==="ArrowLeft"?20:-20)));
-    view.tubeDesignerPunchWizard.rightbarWidth=width;
-    workspace.style.setProperty("--tube-designer-punch-rightbar-width",`${Math.round(width)}px`);
+  const keepInside=()=>{
+    if(!workspace.isConnected)return;
+    const values=sizes(),available=workspace.clientHeight-splitters.reduce((sum,node)=>sum+node.getBoundingClientRect().height,0);
+    const excess=Object.values(values).reduce((sum,height)=>sum+height,0)-available;
+    if(excess<=.5)return;
+    const capacity=fixedRegions.reduce((sum,name)=>sum+Math.max(0,values[name]-minimum(name)),0);
+    if(capacity<=0)return;
+    for(const name of fixedRegions)values[name]=Math.max(minimum(name),values[name]-Math.min(excess,capacity)*Math.max(0,values[name]-minimum(name))/capacity);
+    place(values);
   };
+  let drag=null;
+  const resize=(pair,values,delta)=>{
+    const [before,after]=pair,total=values[before]+values[after];
+    const height=Math.max(minimum(before),Math.min(total-minimum(after),values[before]+delta));
+    place({...values,[before]:height,[after]:total-height});
+  };
+  const stop=event=>{
+    if(!drag||event.pointerId!==drag.id)return;
+    if(drag.splitter.hasPointerCapture?.(drag.id))drag.splitter.releasePointerCapture(drag.id);
+    drag=null;workspace.ownerDocument.body.classList.remove('tube-designer-punch-regions-resizing');
+  };
+  for(const splitter of splitters) {
+    const pair=splitter.dataset.punchRegionSplitter.split(':');
+    splitter.addEventListener('pointerdown',event=>{
+      if(event.button!==0||event.isPrimary===false)return;
+      event.preventDefault();drag={id:event.pointerId,y:event.clientY,values:sizes(),pair,splitter};
+      splitter.setPointerCapture?.(event.pointerId);workspace.ownerDocument.body.classList.add('tube-designer-punch-regions-resizing');
+    },options);
+    splitter.addEventListener('keydown',event=>{
+      if(!['ArrowUp','ArrowDown'].includes(event.key))return;
+      event.preventDefault();resize(pair,sizes(),event.key==='ArrowDown'?20:-20);
+    },options);
+  }
+  win.addEventListener('pointermove',event=>{if(drag?.id===event.pointerId){event.preventDefault();resize(drag.pair,drag.values,event.clientY-drag.y);}},options);
+  win.addEventListener('pointerup',stop,options);win.addEventListener('pointercancel',stop,options);
+  const observer=new win.ResizeObserver(keepInside);observer.observe(workspace);
+  abort.signal.addEventListener('abort',()=>{observer.disconnect();workspace.ownerDocument.body.classList.remove('tube-designer-punch-regions-resizing');},{once:true});
+  regionResizeBindings.set(mount,{workspace,state,abort});keepInside();
 }
 // The workbench replaces its DOM on each preview update. Retain the editing
 // position locally so a Tab sequence behaves like a sheet, not a page reload.
@@ -461,11 +532,15 @@ function attachPunchInputContinuity(state,mount,view) {
   const capture={capture:true,signal:binding.signal};
   // Main-table edits can be committed by buttons in the header or footer, too.
   // Keep the whole active dialog in the same blur/click transaction boundary.
-  const liveScope=()=>mount.querySelector("[data-punch-parameter-dialog]")
+  const liveScope=()=>mount.querySelector("[data-punch-profile-advanced-dialog]")
+    ??mount.querySelector("[data-punch-parameter-dialog]")
     ??mount.querySelector(".tube-designer-punch-dialog")??mount.querySelector(".tube-designer-punch-sheet");
   const scope=liveScope();
   if(!scope)return;
-  const key=control=>JSON.stringify([control.dataset.tubeDesignerPunchField,control.dataset.tubeDesignerPunchParameter,
+  const key=control=>JSON.stringify([control.closest?.('[data-punch-batch-current-part]')?.dataset.punchBatchCurrentPart,
+    control.dataset.punchBatchPartId,control.dataset.punchBatchField,
+    control.closest?.('[data-punch-batch-definition-editor]')?.dataset.punchBatchDefinitionEditor,
+    control.dataset.tubeDesignerPunchField,control.dataset.tubeDesignerPunchParameter,
     control.dataset.tubeDesignerPunchProfileParameter,control.dataset.tubeDesignerPunchIndex,control.dataset.tubeDesignerPunchEnd,
     control.dataset.tubeDesignerNestingPunchField,control.dataset.tubeDesignerMainProfileParameter,
     control.dataset.tubeDesignerPunchArrayGroup,control.dataset.tubeDesignerPunchArrayField]);
@@ -477,6 +552,7 @@ function attachPunchInputContinuity(state,mount,view) {
   const buttonKey=button=>JSON.stringify(Object.entries(button.dataset).sort(([a],[b])=>a.localeCompare(b)));
   const details=[...scope.querySelectorAll("details")];
   const detailEntries=[];
+  const previousNodes=continuityNodes.get(state);
   state.uiDetails??={};
   for(const detail of details) {
     const input=detail.querySelector("[data-tube-designer-punch-field],[data-tube-designer-punch-profile-parameter],[data-tube-designer-punch-array-field]");
@@ -484,14 +560,17 @@ function attachPunchInputContinuity(state,mount,view) {
       ??["parameters",state.parameterEditor?.index,state.parameterEditor?.end];
     const id=JSON.stringify([row,detail.className,input?key(input):detail.querySelector("summary")?.textContent??""]);
     detailEntries.push([id,detail]);
-    if(state.uiDetails[id]!==undefined)detail.open=state.uiDetails[id];
+    if(previousNodes?.details.get(id)===detail)state.uiDetails[id]=detail.open;
+    else if(state.uiDetails[id]!==undefined)detail.open=state.uiDetails[id];
     detail.ontoggle=()=>{if(detail.isConnected)state.uiDetails[id]=detail.open;};
   }
   const scroll=mount.querySelector(".tube-designer-punch-sheet-scroll");
   if(scroll) {
-    if(state.uiScroll){scroll.scrollTop=state.uiScroll.top;scroll.scrollLeft=state.uiScroll.left;}
+    if(previousNodes?.scroll===scroll)state.uiScroll={top:scroll.scrollTop,left:scroll.scrollLeft};
+    else if(state.uiScroll){scroll.scrollTop=state.uiScroll.top;scroll.scrollLeft=state.uiScroll.left;}
     scroll.onscroll=()=>{state.uiScroll={top:scroll.scrollTop,left:scroll.scrollLeft};};
   }
+  continuityNodes.set(state,{scroll,details:new Map(detailEntries)});
   // toggle/scroll notifications are asynchronous; snapshot before the delegated
   // change handler can replace the DOM, even when the user edits immediately.
   scope.addEventListener("change",event=>{
@@ -504,7 +583,8 @@ function attachPunchInputContinuity(state,mount,view) {
     for(const [id,detail] of detailEntries)if(detail.isConnected)state.uiDetails[id]=detail.open;
     if(scroll?.isConnected)state.uiScroll={top:scroll.scrollTop,left:scroll.scrollLeft};
   },capture);
-  const clickTarget=event=>event.target.closest?.("button[data-cam-action],input,select,textarea");
+  const actionSelector='button[data-cam-action],[data-punch-cell-activate]';
+  const clickTarget=event=>event.target.closest?.(actionSelector+',input,select,textarea');
   scope.addEventListener("mousedown",event=>{
     const target=clickTarget(event),active=scope.ownerDocument.activeElement;
     if(target&&target!==active&&scope.contains(target)&&isDirty(active))event.preventDefault();
@@ -515,7 +595,7 @@ function attachPunchInputContinuity(state,mount,view) {
     // Preserve the intended action across the blur-triggered DOM replacement.
     // Otherwise the first click merely commits text and removes its own button.
     event.preventDefault();event.stopImmediatePropagation();
-    const button=target.matches("button"),identity=button?buttonKey(target):key(target);
+    const button=target.matches(actionSelector),identity=button?buttonKey(target):key(target);
     const cancelling=button&&target.dataset.camAction?.endsWith("-cancel");
     if(cancelling) {
       // Cancelling an uncommitted input must not start work only to discard it.
@@ -531,7 +611,7 @@ function attachPunchInputContinuity(state,mount,view) {
     if(intent)state.uiPendingClick=intent;
     if(button)delete state.uiFocus;else state.uiFocus=identity;
     active.blur();
-    const current=liveScope(),selector=button?"button[data-cam-action]":"input,select,textarea";
+    const current=liveScope(),selector=button?actionSelector:"input,select,textarea";
     const replacement=[...current?.querySelectorAll(selector)??[]].find(candidate=>(button?buttonKey(candidate):key(candidate))===identity);
     if(!replacement||replacement.disabled||view.pending)return;
     if(state.uiPendingClick===intent)delete state.uiPendingClick;
@@ -569,7 +649,12 @@ function attachPunchInputContinuity(state,mount,view) {
     };
   }
   for(const button of scope.querySelectorAll("button"))button.addEventListener("focus",()=>{delete state.uiFocus;},{signal:binding.signal});
-  if(state.uiFocus)inputs.find(control=>key(control)===state.uiFocus&&!control.disabled)?.focus({preventScroll:true});
+  // A remembered key is only a fallback after replacement/blur. A live input
+  // in this retained dialog is newer than that key, especially while an
+  // asynchronous preview returns after the user moved to another field.
+  const active=scope.ownerDocument.activeElement;
+  if(inputs.includes(active)&&!active.disabled)state.uiFocus=key(active);
+  else if(state.uiFocus)inputs.find(control=>key(control)===state.uiFocus&&!control.disabled)?.focus({preventScroll:true});
   if(state.restoreParameterFocus&&!state.parameterEditor&&!view.pending) {
     const target=[...mount.querySelectorAll('[data-cam-action$="parameters-open"]')].find(button=>
       String(button.dataset.tubeDesignerPunchIndex)===state.restoreParameterFocus.index
@@ -593,10 +678,46 @@ function attachPunchInputContinuity(state,mount,view) {
       if(view.tubeDesignerPunchWizard!==state||state.parameterEditor!==intent.editor||blockingError) {
         delete state.uiPendingClick;return;
       }
-      const button=[...liveScope()?.querySelectorAll("button[data-cam-action]")??[]]
+      const button=[...liveScope()?.querySelectorAll(actionSelector)??[]]
         .find(candidate=>buttonKey(candidate)===intent.identity&&!candidate.disabled);
       delete state.uiPendingClick;button?.click();
     },0);
+  }
+}
+function attachPunchBatchCells(context,view,mount,ops) {
+  const batch=view.tubeDesignerPunchBatch;
+  const dialog=mount?.querySelector?.('.tube-designer-punch-batch-dialog');
+  if(!batch||!dialog)return;
+  const send=(control,suffix,value)=>{
+    if(view.tubeDesignerPunchBatch!==batch||view.pending||!dialog.isConnected)return;
+    const target=dialog.ownerDocument.createElement('input');
+    target.type='hidden';target.value=value??'';
+    target.dataset.punchBatchPartId=control.dataset.punchBatchPartId;
+    target.dataset.punchBatchField=control.dataset.punchBatchField;
+    target.dataset.camChangeAction=(control.dataset.camChangeAction??'').replace(/batch-change$/,suffix);
+    dialog.append(target);
+    target.dispatchEvent(new dialog.ownerDocument.defaultView.Event('change',{bubbles:true}));
+    target.remove();
+  };
+  for(const control of dialog.querySelectorAll('[data-punch-batch-part-id][data-punch-batch-field]')) {
+    const originalKeydown=control.onkeydown;
+    control.onkeydown=event=>{
+      if(event.key!=='Enter'||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey){originalKeydown?.call(control,event);return;}
+      if(view.pending)return;
+      event.preventDefault();event.stopPropagation();control.blur();
+      void Promise.resolve(view.activeAreaAction?.promise).then(()=>send(control,'batch-enter')).catch(()=>{});
+    };
+    control.onpaste=event=>{
+      const text=event.clipboardData?.getData('text/plain')??'';
+      if(!text.includes('\t')&&!/[\r\n]/.test(text))return;
+      event.preventDefault();event.stopPropagation();send(control,'batch-paste',text);
+    };
+  }
+  const focus=batch.focusCell;
+  if(focus&&!view.pending) {
+    const control=[...dialog.querySelectorAll('[data-punch-batch-part-id][data-punch-batch-field]')]
+      .find(node=>node.dataset.punchBatchPartId===focus.partId&&node.dataset.punchBatchField===focus.field&&!node.disabled);
+    if(control){control.focus({preventScroll:true});control.scrollIntoView({block:'nearest',inline:'nearest'});delete batch.focusCell;}
   }
 }
 function hydrate(context,view,mount,ops) {
@@ -605,7 +726,16 @@ function hydrate(context,view,mount,ops) {
   const host=mount.querySelector?.("[data-tube-designer-punch-viewport]");
   let controller=controllers.get(mount);
   const preview=state?.preview,mode=state?.previewMode??"tools";
+  const owner=view.tubeDesignerPunchBatch??state;
   if(!host||!preview) {
+    if(host&&controller?.owner===owner&&controller.viewport) {
+      if(presentations.get(controller.state)===controller)presentations.delete(controller.state);
+      controller.state=state;controller.displayKey=null;controller.failedKey=null;presentations.set(state,controller);
+      controller.viewport.setVisibleEntityIds([]);controller.sceneHidden=true;
+      delete host.dataset.punchPreviewReady;
+      renderPreviewNotice(host,"正在准备当前零件预览");
+      return controller.flight??Promise.resolve(false);
+    }
     disposePunchController(controller);controllers.delete(mount);
     if(host)host.textContent=state?.creationMode==="main-tube-punch"
       ? "正在准备完整主管预览；添加孔位后可查看主管扣孔结果"
@@ -613,8 +743,13 @@ function hydrate(context,view,mount,ops) {
     return Promise.resolve(false);
   }
   if(controller?.state!==state) {
-    disposePunchController(controller);
-    controller={state,host,viewport:null,ready:false,flight:null,displayKey:null,failedKey:null};
+    if(controller?.owner===owner&&controller.viewport&&controller.host===host) {
+      if(presentations.get(controller.state)===controller)presentations.delete(controller.state);
+      controller.state=state;controller.displayKey=null;controller.failedKey=null;
+    } else {
+      disposePunchController(controller);
+      controller={state,owner,host,viewport:null,ready:false,flight:null,displayKey:null,failedKey:null};
+    }
     controllers.set(mount,controller);
     presentations.set(state,controller);
   }
@@ -643,23 +778,31 @@ function hydrate(context,view,mount,ops) {
     return Promise.resolve(true);
   }
   if(controller.failedKey===key)return Promise.resolve(false);
-  // Rendering is part of the same serial operation as native computation.
-  // An existing owner cannot unlock while its resource/decode/render hold lives.
+  // Resource loading participates in the preview flight, but a batch preview
+  // must not take the exclusive form/save lock.
   if(view.pending&&!view.tubeDesignerOperation)return Promise.resolve(false);
-  const ownsOperation=!view.tubeDesignerOperation;
+  const background=!!view.tubeDesignerPunchBatch&&state.creationMode==="main-tube-punch";
+  const ownsOperation=!view.tubeDesignerOperation&&!background;
   if(ownsOperation)beginPunchOperation(context,view,"正在显示主管与刀具体");
-  const operation=view.tubeDesignerOperation;
+  const operation=view.tubeDesignerOperation??previewFlights.get(view)??{background:true};
   operation.renderHolds=(operation.renderHolds??0)+1;
   operation.message="刀具体已生成，正在加载对应网格和材质";
   operation.phaseLabel="显示刀具体";operation.completed=0;operation.total=null;
   state.previewRenderPending=true;state.previewRenderError="";
   delete host.dataset.punchPreviewReady;
-  const current=()=>controllers.get(mount)===controller&&view.tubeDesignerPunchWizard===state;
+  const mounted=()=>controllers.get(mount)===controller&&controller.state===state&&view.tubeDesignerPunchWizard===state;
+  const current=()=>mounted()&&state.preview===preview&&previewIsCurrent(state);
+  const hideObsolete=()=>{
+    if(controllers.get(mount)!==controller)return;
+    const live=view.tubeDesignerPunchWizard;
+    controller.viewport?.setVisibleEntityIds(loadedPreviewEntities(controller.viewport,live?.preview,live?.previewMode??"tools",unchangedPreviewEntities(live,live?.previewMode??"tools")));
+    controller.sceneHidden=true;delete controller.host.dataset.punchPreviewReady;
+  };
   controller.flight=Promise.resolve().then(async()=>{
     const {createThreeViewport}=await import("../../../iCAX-UI/SDK/Viewport/threeViewport.mjs");
     if(!current())return false;
     if(!controller.viewport)controller.viewport=createThreeViewport({backgroundColor:0x13252d,continuousRender:false,constrainOrbit:false,projectionMode:"orthographic",
-      showProjectionToggle:true,pickingEnabled:false,antialias:true,pixelRatioCap:2});
+      showProjectionToggle:true,pickingEnabled:false,blankDoubleClickFitEnabled:true,antialias:true,pixelRatioCap:2});
     mountPunchController(controller,controller.host,mount);
     const viewport=controller.viewport;
     // Keep unchanged objects visible while the changed resources arrive.
@@ -668,8 +811,8 @@ function hydrate(context,view,mount,ops) {
     const camera=controller.ready?viewport.getCameraState():null;
     const boundsKey=JSON.stringify(preview.baseBounds??preview.bounds??{length:state.baseLength??preview.length});
     viewport.retainViewResources(previewReferences(preview));
-    const receipt=await viewport.applyViewSnapshot({revision:key,rows:desiredRows},context.sceneProxy?.resources);
-    if(!current())return false;
+    const receipt=await viewport.applyViewSnapshot({revision:key,rows:desiredRows,isCurrent:current},context.sceneProxy?.resources);
+    if(!current()){hideObsolete();return false;}
     if(!receipt?.applied||!receipt.entityIds?.length||receipt.missingGeometryEntityIds?.length)throw new Error("预览几何未完整进入视口。");
     viewport.retainViewResources(previewReferences(preview));
     // Keep an intentional camera for ordinary hole edits/mode switches, but
@@ -683,7 +826,7 @@ function hydrate(context,view,mount,ops) {
     controller.entityIds=receipt.entityIds;controller.sceneHidden=false;
     // Wait for the mounted canvas to reach a displayed frame before unlocking.
     await paint();
-    if(!current())return false;
+    if(!current()){hideObsolete();return false;}
     if(previewUnavailableReason(state,mode)) {
       viewport.setVisibleEntityIds(loadedPreviewEntities(viewport,preview,mode,unchangedPreviewEntities(state,mode)));controller.sceneHidden=true;return false;
     }
@@ -702,9 +845,11 @@ function hydrate(context,view,mount,ops) {
   }).finally(()=>{
     controller.flight=null;
     operation.renderHolds=Math.max(0,(operation.renderHolds??1)-1);
-    if(current())state.previewRenderPending=false;
+    state.previewRenderPending=false;
     if(ownsOperation||operation.finishRequested)finishPunchOperation(view,operation);
-    if(current())ops?.renderProject(context,view);
+    // A part/recipe may have changed during decode. The stable batch owner
+    // re-renders the live state and starts its latest resource snapshot.
+    if(controllers.get(mount)===controller&&(mounted()||view.tubeDesignerPunchBatch===owner))ops?.renderProject(context,view);
   });
   // The nested render only remounts this same controller and joins its flight.
   // Set the flight first so no DOM replacement starts a duplicate resource load.
@@ -728,9 +873,6 @@ function mountPunchController(controller,host,mount) {
     viewport.setStandardView(String(target.dataset.camView??"iso"));
   };
   host.addEventListener("click",controller.viewCubeClick,true);
-  const nav=host.ownerDocument.createElement("nav");nav.className="tube-punch-view-controls";nav.setAttribute("aria-label","三维观察方向");
-  const button=host.ownerDocument.createElement("button");button.type="button";button.textContent="适合窗口";
-  button.addEventListener("click",event=>{event.stopPropagation();setPunchPreviewView(mount,"fit");});nav.append(button);host.append(nav);
 }
 
 function disposePunchController(controller) {

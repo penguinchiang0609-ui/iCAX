@@ -6,16 +6,26 @@
 #include <TemplateRuntime/StandardJsonCodec.h>
 #include <TemplateRuntime/TemplateCodec.h>
 #include <Task/Task.h>
+#include <GeometryData/BRepPersistence.h>
 
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Curve2d.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
@@ -23,16 +33,24 @@
 #include <TopLoc_Location.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
+#include <TopoDS_Wire.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <TopoDS.hxx>
+#include <gp_Ax1.hxx>
+#include <gp_Ax2.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <gp_Elips.hxx>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+#include <variant>
 
 namespace
 {
@@ -309,6 +327,67 @@ TEST(ComponentResource, ParallelBooleansPreserveSharedInputsAndMatchSerial)
     }
 }
 
+TEST(ComponentResource, DependencyReadyBranchesAndDuplicateInputsMatchSerial)
+{
+    auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+    _Model.Geometry.push_back({ "tool", EGeometryOperator::Transform,
+        { "component.prototype" }, ResourcePlacement(5, 0, 0) });
+    std::vector<std::string> _Roots;
+    for (int _Branch = 0; _Branch < 13; ++_Branch)
+    {
+        std::string _Previous = "component.prototype";
+        for (int _Depth = 0; _Depth <= _Branch % 4; ++_Depth)
+        {
+            const auto _Key = "branch." + std::to_string(_Branch) + "." + std::to_string(_Depth);
+            _Model.Geometry.push_back({ _Key, EGeometryOperator::Boolean,
+                { _Previous, "tool" }, { { "operation", std::string("subtract") } } });
+            _Previous = _Key;
+        }
+        const auto _Placed = "placed." + std::to_string(_Branch);
+        _Model.Geometry.push_back({ _Placed, EGeometryOperator::Transform,
+            { _Previous }, ResourcePlacement(20.0 * _Branch, 0, 0) });
+        _Roots.push_back(_Placed);
+    }
+    // Repeated references are one dependency but remain two compound members.
+    auto _Children = _Roots;
+    _Children.push_back(_Roots.front());
+    _Model.Geometry.push_back({ "assembly", EGeometryOperator::Compound, _Children, {} });
+    _Roots.push_back("assembly");
+    const auto _Serial = EvaluateNeutralModel(_Model, _Roots, { 1, true });
+    for (const auto _Concurrency : { 2u, 4u, 8u })
+    {
+        const auto _Parallel = EvaluateNeutralModel(_Model, _Roots, { _Concurrency, true });
+        ASSERT_EQ(_Serial.Geometry.size(), _Parallel.Geometry.size());
+        EXPECT_TRUE(_Parallel.At("component.prototype").IsPartner(_Parallel.At("tool")));
+        for (const auto& _Key : _Roots)
+        {
+            SCOPED_TRACE(_Key);
+            EXPECT_NEAR(ResourceVolume(_Serial.At(_Key)), ResourceVolume(_Parallel.At(_Key)), 1e-6);
+            ExpectResourceBounds(_Parallel.At(_Key), ResourceBounds(_Serial.At(_Key)));
+        }
+        EXPECT_NEAR(6000.0, ResourceVolume(_Parallel.At("component.prototype")), 1e-6);
+    }
+}
+
+TEST(ComponentResource, CoordinatorFailureDrainsWorkersBeforeReturning)
+{
+    auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+    std::vector<std::string> _Roots;
+    for (int _Index = 0; _Index < 12; ++_Index)
+    {
+        const auto _Key = "independent." + std::to_string(_Index);
+        _Model.Geometry.push_back({ _Key, EGeometryOperator::Resource, {},
+            { { "brep", ResourceBRep(BRepPrimAPI_MakeBox(20, 20, 30).Shape()) } } });
+        _Roots.push_back(_Key);
+    }
+    _Model.Geometry.push_back({ "bad.placement", EGeometryOperator::Transform,
+        { "component.prototype" }, {} });
+    _Roots.push_back("bad.placement");
+    EXPECT_THROW(EvaluateNeutralModel(_Model, _Roots, { 4, true }), std::invalid_argument);
+    const auto _Valid = EvaluateNeutralModel(_Model, { "component.prototype" }, { 4, true });
+    EXPECT_NEAR(6000.0, ResourceVolume(_Valid.At("component.prototype")), 1e-6);
+}
+
 TEST(ComponentResource, BoundingBoxFilterPreservesDisjointTouchingAndOverlappingOperations)
 {
     for (const double _Offset : { 100.0, 10.0, 9.9999999, 5.0, 0.0 })
@@ -366,6 +445,9 @@ TEST(ComponentResource, NativeCylinderBRepRoundTripPreservesSeamAndVolume)
 {
     const auto _Shape = BRepPrimAPI_MakeCylinder(7, 30).Shape();
     const auto _Neutral = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(_Shape, "cylinder", "cylinder", 0.025);
+    EXPECT_TRUE(std::any_of(_Neutral.Surfaces3.begin(), _Neutral.Surfaces3.end(), [](const auto& Surface_) {
+        return std::holds_alternative<iCAX::GeometryData::CylindricalSurface3>(Surface_.Geometry);
+    }));
     const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(_Neutral);
     ASSERT_TRUE(_Rebuilt.bOK);
     EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
@@ -383,6 +465,200 @@ TEST(ComponentResource, MirroredCylinderBRepRoundTripPreservesSurfaceHandedness)
     ASSERT_TRUE(_Rebuilt.bOK);
     EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
     EXPECT_NEAR(ResourceVolume(_Shape), ResourceVolume(_Rebuilt.Shape), 1e-6);
+}
+
+namespace
+{
+    TopoDS_Wire ResourceEllipseWire(double Major_, double Minor_, const gp_Ax2& Frame_)
+    {
+        BRepBuilderAPI_MakeWire _Wire;
+        const gp_Elips _Ellipse(Frame_, Major_, Minor_);
+        // Match the exact quadrant arcs emitted by the actual tube templates.
+        for (int _Index = 0; _Index < 4; ++_Index)
+            _Wire.Add(BRepBuilderAPI_MakeEdge(_Ellipse, _Index * std::acos(-1.) / 2,
+                (_Index + 1) * std::acos(-1.) / 2).Edge());
+        return _Wire.Wire();
+    }
+
+    TopoDS_Shape ResourceEllipticalTube()
+    {
+        const gp_Ax2 _Frame(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
+        BRepBuilderAPI_MakeFace _Face(ResourceEllipseWire(50, 10, _Frame));
+        _Face.Add(TopoDS::Wire(ResourceEllipseWire(48.5, 8.5, _Frame).Reversed()));
+        if (!_Face.IsDone()) throw std::runtime_error("ellipse test face failed");
+        return BRepPrimAPI_MakePrism(_Face.Face(), gp_Vec(0, 0, 970)).Shape();
+    }
+
+    bool ResourceHasSurface(const TopoDS_Shape& Shape_, GeomAbs_SurfaceType Type_)
+    {
+        for (TopExp_Explorer _Face(Shape_, TopAbs_FACE); _Face.More(); _Face.Next())
+            if (BRepAdaptor_Surface(TopoDS::Face(_Face.Current()), true).GetType() == Type_) return true;
+        return false;
+    }
+
+    double ResourceAdaptiveVolume(const TopoDS_Shape& Shape_)
+    {
+        GProp_GProps _Properties;
+        const auto _Error = BRepGProp::VolumeProperties(Shape_, _Properties, 1e-10, false, false);
+        EXPECT_LT(_Error, 1e-7);
+        return _Properties.Mass();
+    }
+
+    // Orientation, closed flag and all four edge occurrence orientations.
+    // INTERNAL edges are exact topology even though a connection-order explorer
+    // cannot visit them. Sorting removes irrelevant wire enumeration order.
+    using ResourceWireSignature = std::array<std::size_t, 6>;
+
+    std::vector<ResourceWireSignature> ResourceWireSignatures(const TopoDS_Shape& Shape_)
+    {
+        std::vector<ResourceWireSignature> _Signatures;
+        for (TopExp_Explorer _Faces(Shape_, TopAbs_FACE); _Faces.More(); _Faces.Next())
+        {
+            const auto _Face = _Faces.Current().Oriented(TopAbs_FORWARD);
+            for (TopoDS_Iterator _Wires(_Face, false, true); _Wires.More(); _Wires.Next())
+            {
+                const auto _Occurrence = _Wires.Value();
+                if (_Occurrence.ShapeType() != TopAbs_WIRE) continue;
+                const auto _Wire = _Occurrence.Oriented(TopAbs_FORWARD);
+                ResourceWireSignature _Signature{
+                    static_cast<std::size_t>(_Occurrence.Orientation()),
+                    static_cast<std::size_t>(_Wire.Closed()), 0, 0, 0, 0 };
+                for (TopoDS_Iterator _Edges(_Wire, false, true); _Edges.More(); _Edges.Next())
+                    ++_Signature[2 + static_cast<std::size_t>(_Edges.Value().Orientation())];
+                _Signatures.push_back(_Signature);
+            }
+        }
+        std::sort(_Signatures.begin(), _Signatures.end());
+        return _Signatures;
+    }
+
+    std::vector<ResourceWireSignature> ResourceWireSignatures(const iCAX::GeometryData::BRepModel& Model_)
+    {
+        std::vector<ResourceWireSignature> _Signatures;
+        for (const auto& _Face : Model_.Faces)
+            for (std::size_t _Index = 0; _Index < _Face.WireIds.size(); ++_Index)
+            {
+                const auto _Wire = std::find_if(Model_.Wires.begin(), Model_.Wires.end(),
+                    [&](const auto& _Candidate) { return _Candidate.Id == _Face.WireIds[_Index]; });
+                if (_Wire == Model_.Wires.end()) throw std::runtime_error("test face references missing wire");
+                ResourceWireSignature _Signature{
+                    static_cast<std::size_t>(_Face.WireOrientations.at(_Index)),
+                    static_cast<std::size_t>(_Wire->Closed), 0, 0, 0, 0 };
+                for (const auto& _Coedge : _Wire->Coedges)
+                    ++_Signature[2 + static_cast<std::size_t>(_Coedge.Orientation)];
+                _Signatures.push_back(_Signature);
+            }
+        std::sort(_Signatures.begin(), _Signatures.end());
+        return _Signatures;
+    }
+
+    void ExpectResourceSweptRoundTrip(const TopoDS_Shape& Source_, double Tolerance_ = 0.001)
+    {
+        ASSERT_TRUE(BRepCheck_Analyzer(Source_).IsValid());
+        const auto _Volume = ResourceAdaptiveVolume(Source_);
+        ASSERT_GT(_Volume, 0);
+        const auto _WireSignatures = ResourceWireSignatures(Source_);
+        auto _Neutral = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(Source_, "swept", "swept", Tolerance_);
+        EXPECT_EQ(ResourceWireSignatures(_Neutral), _WireSignatures);
+        // Exercise the persisted model, not just the in-memory conversion.
+        _Neutral = iCAX::GeometryData::Persistence::Deserialize(iCAX::GeometryData::Persistence::Serialize(_Neutral));
+        const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(_Neutral);
+        ASSERT_TRUE(_Rebuilt.bOK);
+        ASSERT_FALSE(_Rebuilt.Shape.IsNull());
+        ASSERT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
+        EXPECT_EQ(ResourceWireSignatures(_Rebuilt.Shape), _WireSignatures);
+        int _Solids = 0;
+        for (TopExp_Explorer _Solid(_Rebuilt.Shape, TopAbs_SOLID); _Solid.More(); _Solid.Next()) ++_Solids;
+        EXPECT_EQ(_Solids, 1);
+        EXPECT_NEAR(ResourceAdaptiveVolume(_Rebuilt.Shape), _Volume, _Volume * 1e-7);
+        Bnd_Box _Before, _After;
+        BRepBndLib::AddOptimal(Source_, _Before, false, false);
+        BRepBndLib::AddOptimal(_Rebuilt.Shape, _After, false, false);
+        std::array<double, 6> _Expected{}, _Actual{};
+        _Before.Get(_Expected[0], _Expected[1], _Expected[2], _Expected[3], _Expected[4], _Expected[5]);
+        _After.Get(_Actual[0], _Actual[1], _Actual[2], _Actual[3], _Actual[4], _Actual[5]);
+        for (std::size_t _Index = 0; _Index < _Expected.size(); ++_Index)
+            EXPECT_NEAR(_Actual[_Index], _Expected[_Index], 1e-5) << "bound " << _Index;
+        // Face and edge validity alone can miss an inconsistent UV frame.
+        // Check that each saved pcurve evaluates onto its actual 3D edge.
+        for (TopExp_Explorer _Face(_Rebuilt.Shape, TopAbs_FACE); _Face.More(); _Face.Next())
+        {
+            const auto _ActualFace = TopoDS::Face(_Face.Current());
+            BRepAdaptor_Surface _Surface(_ActualFace, true);
+            for (TopExp_Explorer _Edge(_ActualFace, TopAbs_EDGE); _Edge.More(); _Edge.Next())
+            {
+                const auto _ActualEdge = TopoDS::Edge(_Edge.Current());
+                if (BRep_Tool::Degenerated(_ActualEdge)) continue;
+                BRepAdaptor_Curve _Curve(_ActualEdge);
+                BRepAdaptor_Curve2d _PCurve(_ActualEdge, _ActualFace);
+                const auto _Tolerance = std::max(1e-6, 2 * (BRep_Tool::Tolerance(_ActualEdge) + BRep_Tool::Tolerance(_ActualFace)));
+                for (int _Sample = 0; _Sample <= 10; ++_Sample)
+                {
+                    const auto _T = _PCurve.FirstParameter() + (_PCurve.LastParameter() - _PCurve.FirstParameter()) * _Sample / 10.;
+                    const auto _UV = _PCurve.Value(_T);
+                    EXPECT_LE(_Curve.Value(_T).Distance(_Surface.Value(_UV.X(), _UV.Y())), _Tolerance);
+                }
+            }
+        }
+    }
+}
+
+TEST(ComponentResource, EllipticalExtrusionBRepRoundTripPreservesParametersAndMaterial)
+{
+    const auto _Tube = ResourceEllipticalTube();
+    ASSERT_TRUE(ResourceHasSurface(_Tube, GeomAbs_SurfaceOfExtrusion));
+    const auto _AnalyticVolume = std::acos(-1.) * (50 * 10 - 48.5 * 8.5) * 970;
+    EXPECT_NEAR(ResourceAdaptiveVolume(_Tube), _AnalyticVolume, _AnalyticVolume * 1e-7);
+    ExpectResourceSweptRoundTrip(_Tube);
+    gp_Trsf _Placement;
+    _Placement.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 2, 3)), 0.37);
+    _Placement.SetTranslationPart(gp_Vec(600, 1700, 520));
+    ExpectResourceSweptRoundTrip(_Tube.Moved(TopLoc_Location(_Placement)));
+}
+
+TEST(ComponentResource, EllipticalBooleanCutBRepRoundTripKeepsTrimmedPcurves)
+{
+    const auto _Tube = ResourceEllipticalTube();
+    const auto _Tool = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(15, -30, 400), gp_Dir(0, 1, 0)), 4, 60).Shape();
+    BRepAlgoAPI_Cut _Cut(_Tube, _Tool);
+    ASSERT_TRUE(_Cut.IsDone());
+    ASSERT_TRUE(ResourceHasSurface(_Cut.Shape(), GeomAbs_SurfaceOfExtrusion));
+    EXPECT_LT(ResourceAdaptiveVolume(_Cut.Shape()), ResourceAdaptiveVolume(_Tube));
+    ExpectResourceSweptRoundTrip(_Cut.Shape());
+}
+
+TEST(ComponentResource, EllipticalRevolutionBRepRoundTripKeepsItsAngularParameterFrame)
+{
+    const gp_Ax2 _Frame(gp_Pnt(30, 0, 0), gp_Dir(0, -1, 0), gp_Dir(1, 0, 0));
+    const auto _Face = BRepBuilderAPI_MakeFace(ResourceEllipseWire(8, 5, _Frame)).Face();
+    const auto _Ring = BRepPrimAPI_MakeRevol(_Face, gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1))).Shape();
+    ASSERT_TRUE(ResourceHasSurface(_Ring, GeomAbs_SurfaceOfRevolution));
+    const auto _AnalyticVolume = 2 * std::acos(-1.) * 30 * std::acos(-1.) * 8 * 5;
+    EXPECT_NEAR(ResourceAdaptiveVolume(_Ring), _AnalyticVolume, _AnalyticVolume * 1e-7);
+    ExpectResourceSweptRoundTrip(_Ring);
+}
+
+TEST(ComponentResource, ActualEllipticalPostCopeBRepRoundTripPreservesInternalWireOccurrences)
+{
+    const auto _Model = CTemplateCodec::ParseNeutralModel(CStandardJsonCodec::Parse(
+#include "AssemblyInfillEllipseCopeFixture.inc"
+    ));
+    ASSERT_EQ(_Model.Geometry.size(), 15u);
+    const auto _Geometry = EvaluateNeutralModel(_Model,
+        { "process.83fa65dc210548e1aeb74668.operation.0" }, { 1, false });
+    const auto& _Coped = _Geometry.At("process.83fa65dc210548e1aeb74668.operation.0");
+    ASSERT_TRUE(BRepCheck_Analyzer(_Coped).IsValid());
+    const auto _Signatures = ResourceWireSignatures(_Coped);
+    EXPECT_TRUE(std::any_of(_Signatures.begin(), _Signatures.end(),
+        [](const auto& _Signature) { return _Signature[4] != 0; }))
+        << "actual cope must retain its internal boolean edge occurrences";
+    // Native disassembly uses this tolerance. Validate the original boolean
+    // topology and the whole-shape exact parameter conversion independently.
+    ExpectResourceSweptRoundTrip(_Coped, 0.025);
+    BRepBuilderAPI_NurbsConvert _Conversion(_Coped, true);
+    ASSERT_TRUE(_Conversion.IsDone());
+    ASSERT_TRUE(BRepCheck_Analyzer(_Conversion.Shape()).IsValid());
+    ExpectResourceSweptRoundTrip(_Conversion.Shape(), 0.025);
 }
 
 TEST(ComponentResource, ParallelBRepTranslationPreservesOrderGeometryAndUnmeshedPrototypes)
@@ -430,6 +706,37 @@ TEST(ComponentResource, ParallelBRepTranslationPreservesOrderGeometryAndUnmeshed
             TopLoc_Location _Location;
             EXPECT_TRUE(BRep_Tool::Triangulation(TopoDS::Face(_Face.Current()), _Location).IsNull());
         }
+}
+
+TEST(ComponentResource, RepeatedBRepShapesKeepIndependentResourceMetadata)
+{
+    using namespace iCAX::OpenCascade;
+    const auto _Shape = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    const auto _Results = ConvertOpenCascadeShapesToBRep({
+        { _Shape, "first", "resource/first" },
+        { _Shape, "second", "resource/second" },
+    }, 0.025, 2);
+    ASSERT_EQ(2u, _Results.size());
+    for (std::size_t _Index = 0; _Index < _Results.size(); ++_Index)
+    {
+        const auto _Name = _Index == 0 ? "first" : "second";
+        const auto _ID = _Index == 0 ? "resource/first" : "resource/second";
+        SCOPED_TRACE(_ID);
+        EXPECT_EQ(_Name, _Results[_Index].Metadata.Name);
+        EXPECT_EQ(_ID, _Results[_Index].Metadata.SourceId);
+        const auto _CheckRows = [&](const auto& Rows_) {
+            for (const auto& _Row : Rows_) EXPECT_EQ(_ID, _Row.Metadata.SourceId);
+        };
+        _CheckRows(_Results[_Index].Curves2); _CheckRows(_Results[_Index].Curves3);
+        _CheckRows(_Results[_Index].Surfaces3); _CheckRows(_Results[_Index].Triangulations3);
+        _CheckRows(_Results[_Index].Vertices); _CheckRows(_Results[_Index].Edges);
+        _CheckRows(_Results[_Index].Wires); _CheckRows(_Results[_Index].Faces);
+        _CheckRows(_Results[_Index].Shells); _CheckRows(_Results[_Index].Solids);
+        _CheckRows(_Results[_Index].CompSolids); _CheckRows(_Results[_Index].Compounds);
+        const auto _Rebuilt = BuildOpenCascadeShape(_Results[_Index]);
+        ASSERT_TRUE(_Rebuilt.bOK);
+        EXPECT_NEAR(ResourceVolume(_Shape), ResourceVolume(_Rebuilt.Shape), 1e-6);
+    }
 }
 
 TEST(ComponentResource, BRepTranslationRejectsInvalidBatchAndCanRunAgain)

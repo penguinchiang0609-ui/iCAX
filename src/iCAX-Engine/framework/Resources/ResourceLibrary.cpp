@@ -280,6 +280,12 @@ iCAX::Resource::CResourceLibrary::GetDependents(
     return GetPool().GetDependents(Target_);
 }
 
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourceLibrary::DiscardRuntimeResource(IN const std::string& strSource_)
+{
+    return GetPool().DiscardRuntimeResource(MakeResourceKeyFromSource(strSource_));
+}
+
 iCAX::Resource::CResourceReachabilityResult
 iCAX::Resource::CResourceLibrary::CollectReachable(
     IN const std::vector<CResourceReference>& Roots_) const

@@ -1,6 +1,4 @@
 import base64
-from contextlib import closing
-import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -10,6 +8,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 import authority
+from feature_catalog import ALL_FEATURES
 from issuance import Issuer, canonical, read_request
 
 
@@ -30,7 +29,7 @@ class IssuanceTests(unittest.TestCase):
         self.envelope = dict(body=body, signature=base64.b64encode(r.to_bytes(32, "big") + s.to_bytes(32, "big")).decode())
         self.request = self.root / "request.tdreq"
         self.request.write_bytes(canonical(self.envelope))
-        self.options = dict(customer="测试客户", kind=1, features=15, min_major=1, max_major=2)
+        self.options = dict(customer="测试客户", kind=1, features=ALL_FEATURES, min_major=1, max_major=2)
 
     def issue(self, **changes):
         return self.issuer.issue(self.request, self.password, **(self.options | changes))
@@ -61,10 +60,9 @@ class IssuanceTests(unittest.TestCase):
         self.assertEqual(self.issuer.records(), [])
 
     def test_trial(self):
-        self.issue(kind=2, days=30)
-        with closing(sqlite3.connect(self.issuer.directory / "issuance.sqlite")) as db:
-            policy = json.loads(db.execute("SELECT policy FROM licenses").fetchone()[0])
-        self.assertEqual(policy["expires_at"] - policy["not_before"], 30 * 86400)
+        with self.assertRaisesRegex(ValueError, "TPM NV"):
+            self.issue(kind=2, days=30)
+        self.assertEqual(self.issuer.records(), [])
 
     def test_untrusted_request_rejected(self):
         for modification in [dict(format="TDREQ-1"), dict(product="other"), dict(request_id="changed")]:

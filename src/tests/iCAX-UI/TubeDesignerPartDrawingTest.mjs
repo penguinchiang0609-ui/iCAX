@@ -47,11 +47,19 @@ choice="C:\\fixture\\支管.dxf";await act("section-select",{dataset:{drawingSec
 const draft=getPartDrawingPayload(view,{includeDraft:true});assert.equal(draft.features.length,1);assert.equal(getPartDrawingPayload(view).features.length,1);
 // Axial columns and transverse rows combine; UI direction signs never depend on the datum.
 const field=(key,value)=>act("field-change",{dataset:{tubeDesignerPunchField:key},value:String(value)});
+assert.doesNotMatch(renderPartDrawingDialog(view),/data-cam-action="tube-designer-drawing-array"/);
+await field("arrayDimension","two");
 await field("arrayCount",3);await field("arraySpacing",70);await field("rowCount",2);await field("rowSpacing",8);
+assert.match(renderPartDrawingDialog(view),/跳过组合位置/);
+assert.match(renderPartDrawingDialog(view),/data-tube-designer-punch-field="skipInstancesText"/);
+await field("skipInstancesText","2:1,3:2");
+assert.deepEqual(getPartDrawingPayload(view).features[0].skippedInstances,["0:1","1:2"],
+  "the live drawing field uses X:row text and native row:column indices");
 for(const face of ["top","left","round"]) {
   await field("drawingArrayMode",face);await field("rowDirection","negative");
   const f=getPartDrawingPayload(view,{includeDraft:true}).features[0];
   assert.equal(f.face,face);assert.equal(f.arrayCount*f.rowCount,6);assert.equal(f.rowPitch,-8);
+  assert.deepEqual(f.skippedInstances,["0:1","1:2"],"Y/Z/polar row direction does not reinterpret selected instance indices");
   assert.match(renderPartDrawingDialog(view),face==="round"?/角度间隔/:/排间距/);
   assert.equal("drawingArrayMode" in f,false);assert.equal("rowDirection" in f,false);
 }
@@ -61,8 +69,21 @@ await field("arraySpacing",90);assert.equal(s.draft.arrayPitch,90);
 await field("arrayDirection","positive");assert.equal(s.draft.arrayPitch,-90);
 await field("reference","start");assert.equal(s.draft.arrayPitch,90);
 const beforeInvalid=s.draft.rowPitch;await field("rowSpacing",-5);assert.equal(s.draft.rowPitch,beforeInvalid);assert.match(s.error,/正数/);
+await field("arrayDimension","one");assert.equal(s.draft.arrayCount,3);assert.equal(s.draft.rowCount,1);
+assert.deepEqual(getPartDrawingPayload(view).features[0].skippedInstances,[],"inactive two-dimensional selectors do not affect a one-dimensional array");
+assert.doesNotMatch(renderPartDrawingDialog(view),/data-tube-designer-punch-field="rowCount"/);
+await field("arrayDimension","none");assert.equal(s.draft.arrayCount,1);assert.equal(s.draft.rowCount,1);
+assert.deepEqual(getPartDrawingPayload(view).features[0].skippedInstances,[]);
+assert.doesNotMatch(renderPartDrawingDialog(view),/data-tube-designer-punch-field="skipInstancesText"/);
+assert.doesNotMatch(renderPartDrawingDialog(view),/data-tube-designer-punch-field="arrayCount"/);
+await field("arrayDimension","two");assert.equal(s.draft.arrayCount,3);assert.equal(s.draft.rowCount,2);assert.equal(s.draft.rowPitch,-8);
+assert.deepEqual(getPartDrawingPayload(view).features[0].skippedInstances,["0:1","1:2"],"returning to two dimensions restores that dimension's selectors");
+assert.equal(getPartDrawingPayload(view).features[0].arrayEditing,undefined,"Only effective existing array fields reach the native APIs");
+await act("undo");await node(s.features[0].id);assert.equal(s.draft.arrayEditing.dimension,"none");assert.equal(s.draft.arrayCount,1);
+await act("redo");await node(s.features[0].id);assert.equal(s.draft.arrayEditing.dimension,"two");assert.equal(s.draft.rowCount,2);
+await field("skipInstancesText","");
 await field("drawingArrayMode","top");await field("arrayCount",1);await field("rowCount",1);await field("rowDirection","positive");
-await command("v-notch");assert.equal(s.draft.type,"v-notch");assert.equal(s.features.length,2);
+await command("v-notch-sharp");assert.equal(s.draft.type,"v-notch-sharp");assert.equal(s.features.length,2);
 assert.equal(s.features[1].toolTarget,"part");
 const beforeFeaturePreview=calls.length;
 reject=true;await field("station",220);assert.equal(s.features[1].station,220);
@@ -74,7 +95,7 @@ assert.equal(s.features[0].face,"left");assert.equal(s.features[0].rowCount,3);a
 await field("drawingArrayMode","top");await field("rowCount",1);await node(first);
 await act("field-change",{dataset:{tubeDesignerPunchField:"station"},value:"220"});
 assert.equal(s.features[0].station,220);assert.equal(getPartDrawingPayload(view,{includeDraft:true}).features[0].station,220);
-await act("cancel-operation");assert.equal(s.features[0].station,220,"The obsolete cancel action cannot roll back a live edit");
+assert.equal(s.features[0].station,220,"The obsolete cancel action cannot roll back a live edit");
 await node(first);await act("field-change",{dataset:{tubeDesignerPunchField:"station"},value:"230"});
 assert.equal(s.features[0].station,230);assert.equal(view.tubeDesignerPartDrawing.selected,first);
 const second=s.features[1].id;await node(second);await act("selected-remove");
@@ -85,7 +106,7 @@ assert.equal(view.tubeDesignerPartDrawing.selected,s.features[0].id,"Deleting an
 const beforeLiveLength=s.history.length;
 await command("main");await act("main-change",{dataset:{drawingField:"length"},value:"800"});assert.equal(s.drawing.length,"800");
 assert.ok(s.history.length>beforeLiveLength,"Live parameter changes are undoable immediately");
-await act("cancel-operation");assert.equal(s.drawing.length,"800");
+assert.equal(s.drawing.length,"800");
 await command("main");await act("main-change",{dataset:{drawingField:"length"},value:"700"});await act("main-change",{dataset:{drawingField:"length"},value:"800"});assert.equal(s.baseLength,800);
 await act("undo");assert.equal(s.baseLength,700);await act("redo");assert.equal(s.baseLength,800);
 await act("selected-remove");assert.match(s.error,/主管不可删除/);assert.equal(view.tubeDesignerPartDrawing.selected,"main","The main tube stays selected and cannot be deleted");
@@ -93,9 +114,9 @@ const payload=getPartDrawingPayload(view);assert.equal(JSON.stringify(payload).i
 await act("apply");assert.equal(calls.at(-1).method,"TubeDesigner.AddPartDrawing");assert.equal(view.tubeDesignerPartDrawing,null);
 assert.equal(calls.at(-1).payload.toolsOnly,undefined,"The final Generate action, unlike editing previews, requests a real finished part");
 assert.equal(view.tubeDesignerPunchWizard,unrelatedPunchState,"Finishing drawing must not close or replace machining state");
-const part={entityId:"saved",name:"已保存零件",length:800,manufacturingGeometryResourceId:"final",manufacturingGeometryResourceVersion:7,properties:{"tubeDesigner.punchWizard":{...payload,baseLength:800}}};
+const part={entityId:"saved",name:"已保存零件",length:800,manufacturingGeometryResourceId:"final",manufacturingGeometryResourceVersion:7,properties:{"tubeDesigner.partDrawing":{...payload,baseLength:800}}};
 {
-  const newPart={...part,independentNesting:true,properties:{"tubeDesigner.partDrawing":structuredClone(part.properties["tubeDesigner.punchWizard"])}};
+  const newPart={...part,independentNesting:true,properties:{"manufacturing.process":"part-drawing","tubeDesigner.partDrawing":structuredClone(part.properties["tubeDesigner.partDrawing"])}};
   const independentView={};openPartDrawing(independentView,newPart);
   installDrawingCatalogue(independentView.tubeDesignerPartDrawing.state,{tools});
   assert.equal(independentView.tubeDesignerPartDrawing.state.features.length,payload.features.length);
@@ -113,7 +134,7 @@ view.tubeDesignerSystemProfiles=[];view.tubeDesignerTemplateProfiles=[];view.tub
 openPartDrawing(view,part);s=view.tubeDesignerPartDrawing.state;installDrawingCatalogue(s,{tools:[]});
 await command("main");assert.match(renderPartDrawingDialog(view),/主管截面和长度已锁定/);
 await act("main-change",{dataset:{drawingField:"length"},value:"900"});assert.equal(s.drawing.length,800);
-await act("cancel-operation");await node(s.features[0].id);assert.match(renderPartDrawingDialog(view),/仅可删除/);
+await node(s.features[0].id);assert.match(renderPartDrawingDialog(view),/仅可删除/);
 await act("selected-copy");assert.match(s.error,/仅可删除/);
 await act("selected-remove");assert.equal(s.features.length,1);await node(s.features[0].id);await act("selected-remove");
 await act("apply");assert.equal(calls.at(-1).method,"TubeDesigner.ApplyPartDrawing");assert.equal(calls.at(-1).payload.resourceVersion,7);

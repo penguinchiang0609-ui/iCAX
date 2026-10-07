@@ -15,5 +15,7 @@ namespace iCAX::TemplateRuntime
     public:
         static iCAX::Data::Variant Parse(const std::string& strJson_);
         static std::string Serialize(const iCAX::Data::Variant& Value_);
+        static std::string Serialize(const iCAX::Data::ObjectMap& Value_);
+        static std::string Serialize(const iCAX::Data::VariantArray& Value_);
     };
 }

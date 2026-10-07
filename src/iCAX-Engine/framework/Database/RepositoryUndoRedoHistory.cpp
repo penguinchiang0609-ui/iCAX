@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "RepositoryUndoRedoHistory.h"
 #include "IMetaRegistry.h"
+#include <iterator>
 
 
 namespace
@@ -85,6 +86,7 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
     }
 
     m_pCommandBuilder = std::make_unique<COperationBatchBuilder>(EOperationBatchKind::UserCommand, strName_);
+    m_CommandBatches.clear();
     return std::make_unique<CRepositoryUndoRedoHistoryScope>(*this);
 }
 
@@ -110,6 +112,7 @@ void iCAX::Database::CRepositoryUndoRedoHistory::HandleCommittedOperationBatch(I
 void iCAX::Database::CRepositoryUndoRedoHistory::Clear()
 {
     m_pCommandBuilder.reset();
+    m_CommandBatches.clear();
     m_UndoStack.clear();
     m_RedoStack.clear();
 }
@@ -181,9 +184,22 @@ void iCAX::Database::CRepositoryUndoRedoHistory::EndCommand()
     }
 
     auto _pBuilder = std::move(m_pCommandBuilder);
+    auto _CommittedBatches = std::move(m_CommandBatches);
+    m_CommandBatches.clear();
 
     // End 时才做 meta 过滤：记录阶段保留原始顺序，结束阶段只剔除不可撤销字段。
-    auto _Batch = FilterTransactionalOperationBatch(_pBuilder->Build(), GetMetaRegistry());
+    auto _Batch = _pBuilder->Take();
+    std::size_t _OperationCount = 0;
+    for (const auto& _Committed : _CommittedBatches)
+        _OperationCount += _Committed->Operations.size();
+    _Batch.Operations.reserve(_OperationCount);
+    for (const auto& _Committed : _CommittedBatches)
+    {
+        auto _Transactional = FilterTransactionalOperationBatch(*_Committed, GetMetaRegistry());
+        _Batch.Operations.insert(_Batch.Operations.end(),
+            std::make_move_iterator(_Transactional.Operations.begin()),
+            std::make_move_iterator(_Transactional.Operations.end()));
+    }
     if (_Batch.IsEmpty())
     {
         return;
@@ -192,7 +208,7 @@ void iCAX::Database::CRepositoryUndoRedoHistory::EndCommand()
     auto _pStep = std::make_shared<CHistoryStep>();
     _pStep->ID = iCAX::Data::GenerateNewUUID();
     _pStep->Name = _Batch.Name;
-    _pStep->Batch = _Batch;
+    _pStep->Batch = std::move(_Batch);
     PushStep(_pStep);
 }
 
@@ -212,7 +228,19 @@ void iCAX::Database::CRepositoryUndoRedoHistory::RecordCommittedOperationBatch(I
         return;
     }
 
-    m_pCommandBuilder->AppendBatch(Batch_);
+    // The public const-reference entry point must freeze an independent
+    // snapshot immediately; its caller still owns and may reuse Batch_.
+    m_CommandBatches.push_back(std::make_shared<const COperationBatch>(Batch_));
+}
+
+void iCAX::Database::CRepositoryUndoRedoHistory::HandleSharedCommittedOperationBatch(
+    IN std::shared_ptr<const COperationBatch> pBatch_)
+{
+    if (!pBatch_ || pBatch_->IsEmpty()) return;
+    if (IsRecording())
+        m_CommandBatches.push_back(std::move(pBatch_));
+    else
+        ClearForCommittedOperationBatch(*pBatch_);
 }
 
 void iCAX::Database::CRepositoryUndoRedoHistory::PushStep(IN std::shared_ptr<CHistoryStep> pStep_)

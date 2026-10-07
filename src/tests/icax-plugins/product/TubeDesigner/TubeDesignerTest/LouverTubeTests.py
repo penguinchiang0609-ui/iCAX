@@ -5,6 +5,7 @@ import unittest
 from WindowCatalogueTests import package
 
 
+@unittest.skip("Deferred product reference; not part of the current active catalogue")
 class LouverTubeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -89,6 +90,181 @@ class LouverTubeTests(unittest.TestCase):
         for changes in cases:
             with self.subTest(changes=changes),self.assertRaises(ValueError):
                 self.module.generate(self.values(**changes),{'template':self.descriptor})
+
+    def test_external_axis_aligned_blades_are_uncut_l_and_t_members(self):
+        for angle in (0, 90, -90, 180, -180):
+            for purpose in ('display', 'manufacturing'):
+                with self.subTest(angle=angle, purpose=purpose):
+                    values = self.values(assemblyPlanningMode='external_templates',
+                                         bladeDirectionAngle=angle, arrayMode='count',
+                                         bladeCount=3)
+                    original = deepcopy(values)
+                    result = self.module.generate(values, {'template': self.descriptor,
+                                                            'geometryPurpose': purpose})
+                    self.assertEqual(values, original)
+                    self.assertEqual(result['parameters'], original)
+                    self.assertEqual(result['extensions']['louver']['assemblyPlanningMode'],
+                                     'external_templates')
+                    self.assertFalse(result['extensions']['louver']['assemblyCuttingReady'])
+                    self.assertEqual(len(result['items']), 7)
+                    self.assertFalse(any(node['operator'] == 'boolean'
+                                         for node in result['geometry']))
+                    self.assertEqual([r['properties']['topology']
+                                     for r in result['relationships']],
+                                     ['L'] * 4 + ['T'] * 6)
+                    frame_face = next(item for item in result['items']
+                                      if item['key'] == 'frame.left')['properties']['tubeDesigner.profile']['width']
+                    for item in result['items']:
+                        properties = item['properties']
+                        self.assertEqual(properties['tubeDesigner.assemblyPlanning'],
+                                         {'stockState': 'uncut', 'ready': False})
+                        frame = properties['assemblyFrame.member']
+                        self.assertEqual(frame['stockState'], 'uncut')
+                        self.assertEqual(frame['start'], properties['louver.part']['start'])
+                        self.assertEqual(frame['end'], properties['louver.part']['end'])
+                        interval = frame['stockInterval']
+                        self.assertLess(interval['startStation'], 0)
+                        self.assertGreater(interval['endStation'], frame['axisLength'])
+                        self.assertAlmostEqual(properties['length'],
+                                               interval['endStation']-interval['startStation'])
+                        self.assertAlmostEqual(math.dist(frame['start'], frame['end']),
+                                               frame['axisLength'])
+                        self.assertEqual(properties['tubeDesigner.endProcess'],
+                                         {'startCut': 'square', 'endCut': 'square',
+                                          'lengthBasis': 'blank_axial_extent'})
+                        self.assertEqual(item['representations']['result'].split('.')[-1],
+                                         'solid')
+                    left = next(item for item in result['items']
+                                if item['key'] == 'frame.left')['properties']['assemblyFrame.member']
+                    self.assertEqual(left['start'], [frame_face/2, 0, frame_face/2])
+                    self.assertEqual(left['end'], [frame_face/2, 0, values['height']-frame_face/2])
+                    frame_profiles = [item['properties']['tubeDesigner.profile']['contours']
+                                      for item in result['items'] if item['key'] in ('frame.left', 'frame.bottom')]
+                    self.assertEqual(frame_profiles[0], frame_profiles[1])
+                    self.assert_external_anchors(result)
+
+    def assert_external_anchors(self, result):
+        items = {item['key']: item for item in result['items']}
+        geometry = {node['key']: node for node in result['geometry']}
+        for relation in result['relationships']:
+            point = relation['properties']['centerlinePoint']
+            participants = relation['properties']['participantAnchors']
+            self.assertEqual([anchor['itemKey'] for anchor in participants], relation['items'])
+            for participant in participants:
+                item = items[participant['itemKey']]
+                props = item['properties']
+                start = props['louver.part']['start']
+                axis = props['tubeDesigner.manufacturingStartToEnd']
+                frame = props['assemblyFrame.member']
+                interval = frame['stockInterval']
+                station = participant['localAxialStation']
+                expected = [start[i] + axis[i] * station for i in range(3)]
+                solid = geometry[item['representations']['result']]
+                actual_origin = solid['arguments']['placement']['origin']
+                physical_start = [start[i] + axis[i]*interval['startStation'] for i in range(3)]
+                section = frame['sectionFrame']
+                x_axis, y_axis = section['xAxis'], section['yAxis']
+                cross = [x_axis[1]*y_axis[2]-x_axis[2]*y_axis[1],
+                         x_axis[2]*y_axis[0]-x_axis[0]*y_axis[2],
+                         x_axis[0]*y_axis[1]-x_axis[1]*y_axis[0]]
+                for coordinate in range(3):
+                    self.assertAlmostEqual(expected[coordinate], point[coordinate],
+                                           places=6, msg=relation['key'])
+                    self.assertAlmostEqual(actual_origin[coordinate], physical_start[coordinate],
+                                           places=6, msg=item['key'])
+                    self.assertAlmostEqual(cross[coordinate], axis[coordinate])
+                    self.assertAlmostEqual(
+                        section['originAtStart'][coordinate]
+                        + x_axis[coordinate]*section['centerlineUV'][0]
+                        + y_axis[coordinate]*section['centerlineUV'][1], start[coordinate])
+                    self.assertAlmostEqual(
+                        section['originAtStart'][coordinate]
+                        + axis[coordinate]*interval['startStation'], actual_origin[coordinate])
+                extrusion = geometry[solid['inputs'][0]]
+                self.assertAlmostEqual(math.dist([0,0,0],extrusion['arguments']['vector']),
+                                       props['length'], places=6)
+                self.assertEqual(participant['centerlinePoint'], point)
+                if participant['kind'] == 'end':
+                    expected_allowance = (-interval['startStation'] if participant['end'] == 'start'
+                                          else interval['endStation']-frame['axisLength'])
+                    self.assertAlmostEqual(participant['anchor']['stockAllowance'],expected_allowance)
+                    if relation['properties']['topology'] == 'L':
+                        self.assertAlmostEqual(participant['anchor']['contactInset'],expected_allowance)
+                if participant['kind'] == 'side':
+                    self.assertGreater(station, 0)
+                    self.assertLess(station, props['length'])
+                    normal = participant['faceNormal']
+                    self.assertEqual(section['faceNormals'][participant['face']], normal)
+                    contact = participant['contactPoint']
+                    for coordinate in range(3):
+                        self.assertAlmostEqual(contact[coordinate],
+                                               point[coordinate] + normal[coordinate]
+                                               * props['tubeDesigner.profile']['width'] / 2,
+                                               places=6)
+
+    def test_external_split_supports_have_complete_t_nodes(self):
+        for angle in (0, 90):
+            with self.subTest(angle=angle):
+                values = self.values(assemblyPlanningMode='external_templates',
+                                     middlePostCount=1, middleBeamCount=1,
+                                     bladeDirectionAngle=angle, arrayMode='count',
+                                     bladeCount=2)
+                result = self.module.generate(values, {'template': self.descriptor,
+                                                        'geometryPurpose': 'manufacturing'})
+                blades = [item for item in result['items']
+                          if item['key'].startswith('blade.')]
+                self.assertEqual(len(blades), 8)
+                self.assertEqual(len(result['items']), 4 + 1 + 2 + 8)
+                self.assertEqual(len(result['relationships']),
+                                 4 + 2 * (1 + 2 + 8))
+                self.assertFalse(any(node['operator'] == 'boolean'
+                                     for node in result['geometry']))
+                self.assert_external_anchors(result)
+                by_key = {relation['key']: relation for relation in result['relationships']}
+                self.assertEqual(by_key['beam.1.0.right']['items'][0], 'post.1')
+                self.assertEqual(by_key['beam.1.1.left']['items'][0], 'post.1')
+                self.assertEqual(by_key['post.1.bottom']['items'][0], 'frame.bottom')
+
+    def test_external_ignores_inactive_cutting_drafts_but_returns_input(self):
+        base = self.values(assemblyPlanningMode='external_templates')
+        changed = dict(base, frameJoint='miter', endClearance=-1,
+                       insertDepth=-1, throughExtension=-1, slotClearance=-1)
+        for purpose in ('display', 'manufacturing'):
+            with self.subTest(purpose=purpose):
+                context = {'template': self.descriptor, 'geometryPurpose': purpose}
+                expected = self.module.generate(base, context)
+                actual = self.module.generate(changed, context)
+                self.assertEqual(actual['parameters'], changed)
+                self.assertEqual(actual['geometry'], expected['geometry'])
+                self.assertEqual(actual['items'], expected['items'])
+                self.assertEqual(actual['relationships'], expected['relationships'])
+
+    def test_external_rejects_unexpressed_crossings_and_cuts(self):
+        cases = (
+            ({'bladeDirectionAngle': 30}, '斜向'),
+            ({'bladeConnection': 'slot_insert'}, '插槽'),
+            ({'bladeConnection': 'through_insert'}, '穿透'),
+            ({'middlePostCount': 1, 'supportMode': 'through'}, '开槽'),
+            ({'startOffset': 0, 'equalEdgeMargin': False}, '第三侧'),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
+                self.module.generate(self.values(assemblyPlanningMode='external_templates',
+                                                 **changes), {'template': self.descriptor,
+                                                              'geometryPurpose': 'manufacturing'})
+
+    def test_legacy_mode_still_applies_requested_miter_and_slots(self):
+        values = self.values(assemblyPlanningMode='legacy_processed',
+                             frameJoint='miter', bladeConnection='slot_insert')
+        result = self.module.generate(values, {'template': self.descriptor,
+                                                'geometryPurpose': 'manufacturing'})
+        self.assertEqual(result['parameters'], values)
+        self.assertTrue(any(node['operator'] == 'boolean'
+                            for node in result['geometry']))
+        self.assertTrue(any(item['properties']['louver.part'].get('miter')
+                            for item in result['items']))
+        self.assertTrue(all('assemblyFrame.member' not in item['properties']
+                            for item in result['items']))
 
 
 if __name__=='__main__':

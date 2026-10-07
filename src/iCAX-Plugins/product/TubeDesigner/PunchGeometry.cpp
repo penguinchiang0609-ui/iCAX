@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "PunchGeometry.h"
+#include <OpenCascadeResourceImport/OpenCascadeCancellation.h>
+#include <Task/TaskStatus.h>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -111,7 +113,7 @@ namespace
         // The input base is reused by previews and feature replay; never mutate it.
         op.SetNonDestructive(true);
         op.SetFuzzyValue(Tol);
-        op.Build();
+        iCAX::OpenCascade::COpenCascadeCancellationScope::Build(op);
         if (!op.IsDone() || op.Shape().IsNull()) throw std::runtime_error("加工布尔运算失败");
         auto result = op.Shape();
         requireSolid(result,allowDisconnected);
@@ -124,7 +126,7 @@ namespace
         NCollection_List<TopoDS_Shape> arguments, tools;
         arguments.Append(shapes.front());
         for (std::size_t i=1; i<shapes.size(); ++i) tools.Append(shapes[i]);
-        op.SetArguments(arguments); op.SetTools(tools); op.SetNonDestructive(true); op.Build();
+        op.SetArguments(arguments); op.SetTools(tools); op.SetNonDestructive(true); iCAX::OpenCascade::COpenCascadeCancellationScope::Build(op);
         if (!op.IsDone()) throw std::runtime_error("无法构造孔轮廓");
         return op.Shape();
     }
@@ -206,6 +208,7 @@ namespace
         if (l>2*r+Tol) pieces.push_back(rectangleTool(s,l-2*r,w,f.Rotation,depth));
         if (w>2*r+Tol) pieces.push_back(rectangleTool(s,l,w-2*r,f.Rotation,depth));
         for (double x:{-l/2+r,l/2-r}) for (double y:{-w/2+r,w/2-r}) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             auto corner=s; corner.origin=s.origin.Translated(u*x+v*y);
             pieces.push_back(circleTool(corner,r,depth));
         }
@@ -221,6 +224,7 @@ namespace
             for (int i=0;i<48;++i) points.push_back({a*std::cos(2*Pi*i/48)*0.999,b*std::sin(2*Pi*i/48)*0.999});
         } else if(f.Type=="custom") {
             for(std::size_t i=0;i<f.Contour.size();++i) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const auto& a=f.Contour[i]; const auto& b=f.Contour[(i+1)%f.Contour.size()];
                 for(int j=0;j<8;++j) points.push_back({(a[0]+(b[0]-a[0])*j/8)*0.999,(a[1]+(b[1]-a[1])*j/8)*0.999});
             }
@@ -228,10 +232,12 @@ namespace
             const double r=f.Type=="slot"?f.SpanAcross/2:f.CornerRadius;
             const double hx=f.SpanAlong/2-r,hy=f.SpanAcross/2-r;
             for (int i=0;i<64;++i) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const double a=2*Pi*i/64,c=std::cos(a),s=std::sin(a);
                 points.push_back({(std::copysign(hx,c)+r*c)*0.999,(std::copysign(hy,s)+r*s)*0.999});
             }
             if(r<=Tol) for (int i=0;i<=16;++i) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const double t=-1+2.0*i/16;
                 points.push_back({t*f.SpanAlong/2*0.999,f.SpanAcross/2*0.999});
                 points.push_back({t*f.SpanAlong/2*0.999,-f.SpanAcross/2*0.999});
@@ -245,10 +251,14 @@ namespace
     {
         IntCurvesFace_ShapeIntersector ray;
         ray.Load(shape,Tol);
+        // All sampled intervals belong to the same stock. Retain its solid
+        // explorer instead of loading the complete BRep again for each point.
+        BRepClass3d_SolidClassifier classifier(shape);
         const auto [u,v]=axes(s,f.ToolShape.IsNull()&&f.Type=="circle"?0:f.Rotation);
         double firstWallExit=0,opposite=std::numeric_limits<double>::max(),entrance=std::numeric_limits<double>::max();
         std::size_t hits=0;
         for(const auto& p:footprint(f)) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             const auto origin=s.origin.Translated(u*p[0]+v*p[1]);
             ray.Perform(gp_Lin(origin,gp_Dir(-s.normal)),0,s.reach);
             std::vector<double> values;
@@ -257,8 +267,9 @@ namespace
             values.erase(std::unique(values.begin(),values.end(),[](double a,double b){return std::abs(a-b)<Tol*10;}),values.end());
             std::vector<std::pair<double,double>> intervals;
             for(std::size_t i=1;i<values.size();++i) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const auto mid=origin.Translated(-s.normal*((values[i-1]+values[i])/2));
-                BRepClass3d_SolidClassifier classifier(shape,mid,Tol);
+                classifier.Perform(mid,Tol);
                 if(classifier.State()==TopAbs_IN) intervals.emplace_back(values[i-1],values[i]);
             }
             if(intervals.empty()) {
@@ -382,6 +393,7 @@ void ValidatePunchFeatureLayout(const SPunchFeature& f)
         if(f.Enabled&&f.ArrayTransforms.empty())throw std::invalid_argument("启用的阵列组必须保留至少一个刀具位置");
         std::set<std::array<long long,16>> seen;
         for(const auto& m:f.ArrayTransforms) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             for(double value:m)if(!std::isfinite(value)||std::abs(value)>1e9)throw std::invalid_argument("阵列矩阵必须为有限且合理范围的刚性变换");
             if(std::abs(m[12])+std::abs(m[13])+std::abs(m[14])+std::abs(m[15]-1)>1e-8)
                 throw std::invalid_argument("阵列矩阵最后一行须为 0,0,0,1");
@@ -408,6 +420,7 @@ void ValidatePunchFeatureLayout(const SPunchFeature& f)
             throw std::invalid_argument(std::string(name)+"数量与阵列数量不一致");
         std::vector<double> ordered;ordered.reserve(offsets.size());
         for(double value:offsets) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             if(!std::isfinite(value)) throw std::invalid_argument(std::string(name)+"必须为有限数字");
             ordered.push_back(angular?std::remainder(value,360.):value);
         }
@@ -431,6 +444,7 @@ void ValidatePunchFeatureLayout(const SPunchFeature& f)
     }
     std::set<std::string> skipped;
     for(const auto& id:f.SkippedInstances) {
+        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
         const auto colon=id.find(':');
         std::uint64_t row=0,col=0;
         const auto readIndex=[](const char* begin,const char* end,std::uint64_t& value) {
@@ -467,10 +481,12 @@ void PreparePunchToolFootprint(SPunchFeature& f)
     };
     // Sample exact analytic edges, not a triangulated display mesh.
     for(TopExp_Explorer e(f.ToolShape,TopAbs_EDGE);e.More();e.Next()) {
+        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
         BRepAdaptor_Curve c(TopoDS::Edge(e.Current()));
         const double first=c.FirstParameter(),last=c.LastParameter();
         if(!std::isfinite(first)||!std::isfinite(last)) throw std::invalid_argument("刀具包含无界曲线");
         for(int i=0;i<64;++i) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             const auto p=c.Value(first+(last-first)*i/64);
             add(p.X()*0.999999,p.Y()*0.999999);
         }
@@ -493,7 +509,8 @@ std::array<double,2> PunchFeatureExtents(const SPunchFeature& f)
     if(f.Type=="ellipse") return {std::hypot(f.SpanAlong*c,f.SpanAcross*s)/2,std::hypot(f.SpanAlong*s,f.SpanAcross*c)/2};
     if(f.Type=="custom") {
         std::array<double,2> result{};
-        for(auto p:f.Contour) { result[0]=std::max(result[0],std::abs(p[0]*c-p[1]*s)); result[1]=std::max(result[1],std::abs(p[0]*s+p[1]*c)); }
+        for(auto p:f.Contour) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested(); result[0]=std::max(result[0],std::abs(p[0]*c-p[1]*s)); result[1]=std::max(result[1],std::abs(p[0]*s+p[1]*c)); }
         return result;
     }
     const double r=f.Type=="slot"?f.SpanAcross/2:f.CornerRadius;
@@ -511,7 +528,7 @@ TopoDS_Shape BuildPunchToolPreview(const TopoDS_Shape& base,const std::vector<SP
     for(const auto& item:cuts) if(!item.Shape.IsNull()) {
         NCollection_List<TopoDS_Shape> arguments;arguments.Append(item.Shape);
         BRepAlgoAPI_Common clip;clip.SetArguments(arguments);clip.SetTools(limits);
-        clip.SetNonDestructive(true);clip.SetFuzzyValue(Tol);clip.Build();
+        clip.SetNonDestructive(true);clip.SetFuzzyValue(Tol);iCAX::OpenCascade::COpenCascadeCancellationScope::Build(clip);
         if(!clip.IsDone()) throw std::runtime_error("无法生成局部端部刀具显示体");
         if(!clip.Shape().IsNull()&&volume(clip.Shape())>Tol) builder.Add(result,clip.Shape());
     }
@@ -525,15 +542,26 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
     if(statistics){*statistics={};statistics->CountsExact=false;}
     if(diagnostic)*diagnostic={};
     for(bool start:{true,false}) {
+        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
         if(diagnostic){diagnostic->FailureStage="ends";diagnostic->FailureTarget="end";diagnostic->FailureKey=start?"start":"end";}
         const auto tool=endTool(start?ends.Start:ends.End,start,box);
         if(!tool.IsNull()){cuts.push_back({"end",start?"start":"end",tool});if(statistics)++statistics->EndToolCount;}
     }
+    // Reject an oversized recipe before placing any of its cutters. Checking
+    // the budget while generating groups needlessly builds an entire first
+    // array before a later group pushes the same existing limit over 1000.
+    std::size_t candidateBudget=0;
+    for(const auto& source:features)if(source.Enabled) {
+        if(diagnostic){diagnostic->FailureStage="features";diagnostic->FailureTarget="feature";diagnostic->FailureKey=source.ID;diagnostic->FailureIndex=&source-features.data();}
+        ValidatePunchFeatureLayout(source);
+        candidateBudget+=candidates(source)*(source.Opposite?2u:1u);
+        if(candidateBudget>MaxHoles)throw std::invalid_argument("单个零件最多支持 1000 个候选刀具");
+    }
     std::size_t total=0;
     for(const auto& source:features)if(source.Enabled) {
         if(diagnostic){diagnostic->FailureStage="features";diagnostic->FailureTarget="feature";diagnostic->FailureKey=source.ID;diagnostic->FailureIndex=&source-features.data();}
-        ValidatePunchFeatureLayout(source);const auto sides=source.Opposite?2u:1u;
-        total+=candidates(source)*sides;if(total>MaxHoles)throw std::invalid_argument("单个零件最多支持 1000 个候选刀具");
+        const auto sides=source.Opposite?2u:1u;
+        total+=candidates(source)*sides;
         if(statistics){statistics->CandidateCount=total;statistics->SkippedCount+=(candidates(source)-retained(source))*sides;}
         if(!retained(source))continue;
         if(!source.FrozenCut.IsNull()) {cuts.push_back({"side",source.ID,source.FrozenCut,source.FrozenCutInstanceCount});continue;}
@@ -548,6 +576,7 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
                 return seeds;
             }
             for(unsigned side=0;side<sides;++side) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 auto s=surface(f,x,box);
                 if(side){s.origin=gp_Pnt(x,2*box.yc()-s.origin.Y(),2*box.zc()-s.origin.Z());s.normal.Reverse();}
                 const double depth=wallDepth(base,f,s);
@@ -563,6 +592,7 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
         } else {
             const std::set<std::string> skipped(source.SkippedInstances.begin(),source.SkippedInstances.end());
             for(std::uint64_t row=0;row<source.RowCount;++row)for(std::uint64_t col=0;col<source.ArrayCount;++col) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 if(skipped.contains(std::to_string(row)+":"+std::to_string(col)))continue;
                 const double axial=source.ArrayOffsets.empty()?(source.Reference=="end"?-1.:1.)*col*source.ArrayPitch:source.ArrayOffsets[col];
                 const double across=source.RowOffsets.empty()?row*source.RowPitch:source.RowOffsets[row];
@@ -619,6 +649,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
     if(progress) progress(0,total+3,"正在计算两端切形");
     NCollection_List<TopoDS_Shape> endTools;
     for(bool start:{true,false}) {
+        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
         phase("ends","end",start?"start":"end");
         const auto& end=start?ends.Start:ends.End;
         const auto tool=endTool(end,start,box);
@@ -637,11 +668,11 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                     NCollection_List<TopoDS_Shape> bases,bands,insideShapes,tools;
                     bases.Append(base);bands.Append(band);tools.Append(tool);
                     BRepAlgoAPI_Common inside;inside.SetArguments(bases);inside.SetTools(bands);
-                    inside.SetNonDestructive(true);inside.Build();
+                    inside.SetNonDestructive(true);iCAX::OpenCascade::COpenCascadeCancellationScope::Build(inside);
                     if(!inside.IsDone()||inside.Shape().IsNull()) throw std::invalid_argument("无法检查端切刀具接触区域");
                     insideShapes.Append(inside.Shape());
                     BRepAlgoAPI_Common hit;hit.SetArguments(insideShapes);hit.SetTools(tools);
-                    hit.SetNonDestructive(true);hit.Build();
+                    hit.SetNonDestructive(true);iCAX::OpenCascade::COpenCascadeCancellationScope::Build(hit);
                     if(!hit.IsDone()||hit.Shape().IsNull()||volume(hit.Shape())<=Tol)
                         throw std::invalid_argument("截面端切刀具未接触选定端面材料；请调整轴向/横向偏移或刀具姿态");
                     if(end.RequireRetainedEndMaterial&&volume(inside.Shape())-volume(hit.Shape())<=Tol)
@@ -699,6 +730,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 auto f=source;
                 const double x=datum(f,ends,box,finished)+(f.Reference=="end"?-f.Station:f.Station);
                 for(unsigned side=0;side<sides;++side) {
+                    iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                     auto s=surface(f,x,box);
                     if(side){s.origin=gp_Pnt(x,2*box.yc()-s.origin.Y(),2*box.zc()-s.origin.Z());s.normal.Reverse();}
                     double depth=wallDepth(shape,f,s);
@@ -706,6 +738,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                     // instance which can establish its extrusion, then move the
                     // resulting single rigid cutter with each exact matrix.
                     if(depth<0)for(const auto& matrix:source.ArrayTransforms) {
+                        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                         const auto localBase=BRepBuilderAPI_Transform(shape,matrixPlacement(matrix).Inverted(),true).Shape();
                         depth=wallDepth(localBase,f,s);if(depth>=0)break;
                     }
@@ -715,11 +748,12 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
             Bnd_Box partBox;BRepBndLib::AddOptimal(shape,partBox,false,false);
             completed+=(candidates(source)-retained(source))*sides;
             for(const auto& matrix:source.ArrayTransforms)for(const auto& seed:seeds) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const auto tool=BRepBuilderAPI_Transform(seed,matrixPlacement(matrix),true).Shape();
                 Bnd_Box toolBox;BRepBndLib::AddOptimal(tool,toolBox,false,false);++completed;
                 if(partBox.IsOut(toolBox)){if(statistics)++statistics->OutsideCount;continue;}
                 NCollection_List<TopoDS_Shape> arguments,cutters;arguments.Append(shape);cutters.Append(tool);
-                BRepAlgoAPI_Common hit;hit.SetArguments(arguments);hit.SetTools(cutters);hit.SetNonDestructive(true);hit.SetFuzzyValue(Tol);hit.Build();
+                BRepAlgoAPI_Common hit;hit.SetArguments(arguments);hit.SetTools(cutters);hit.SetNonDestructive(true);hit.SetFuzzyValue(Tol);iCAX::OpenCascade::COpenCascadeCancellationScope::Build(hit);
                 if(!hit.IsDone())throw std::invalid_argument("无法计算阵列刀具与主管材料的相交："+source.ID);
                 if(hit.Shape().IsNull()||volume(hit.Shape())<=Tol){if(statistics)++statistics->OutsideCount;continue;}
                 tools.Append(tool);builder.Add(group,tool);++inserted;if(statistics)++statistics->AppliedCount;
@@ -750,6 +784,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 sourceTool=placePartLocal(source, x, box);
             }
             for(std::uint64_t row=0;row<source.RowCount;++row) for(std::uint64_t col=0;col<source.ArrayCount;++col) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 if(skip(row,col)) continue;
                 gp_Trsf placement;
                 if(source.Face=="round") placement.SetRotation(gp_Ax1(gp_Pnt(0,box.yc(),box.zc()),gp_Dir(1,0,0)),rowOffset(row)*Pi/180);
@@ -765,7 +800,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 }
                 // Reject tangent/empty intersections before accepting a feature.
                 BRepAlgoAPI_Common common;NCollection_List<TopoDS_Shape> a,b;a.Append(shape);b.Append(tool);
-                common.SetArguments(a);common.SetTools(b);common.SetNonDestructive(true);common.SetFuzzyValue(Tol);common.Build();
+                common.SetArguments(a);common.SetTools(b);common.SetNonDestructive(true);common.SetFuzzyValue(Tol);iCAX::OpenCascade::COpenCascadeCancellationScope::Build(common);
                 if(!common.IsDone()) throw std::invalid_argument("无法计算刀具与主管材料的相交："+source.ID);
                 if(common.Shape().IsNull() || volume(common.Shape())<=Tol) {
                     if(statistics)++statistics->OutsideCount;
@@ -780,11 +815,13 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
             continue;
         }
         for(std::uint64_t row=0;row<source.RowCount;++row) for(std::uint64_t col=0;col<source.ArrayCount;++col) {
+            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             if(skip(row,col)) continue;
             auto f=source;
             f.Offset+=rowOffset(row);
             const double x=datum(f,ends,box,finished)+(f.Reference=="end"?-f.Station:f.Station)+axialOffset(col);
             for(int side=0;side<(f.Opposite?2:1);++side) {
+                iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 if(side) {
                     if(f.Face=="round") f.Offset+=180;
                     else if(f.Face=="top") f.Face="bottom"; else if(f.Face=="bottom") f.Face="top";
@@ -807,7 +844,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                     const auto tool=makeTool(f,s,depth);
                     tools.Append(tool);builder.Add(group,tool);++inserted;
                     if(statistics)++statistics->AppliedCount;
-                } catch(const std::exception& error) {
+                } catch(const iCAX::Tasks::TaskCanceledException&) { throw; } catch(const std::exception& error) {
                     throw std::invalid_argument("孔特征 "+(f.ID.empty()?std::to_string(completed+1):f.ID)+"："+error.what());
                 }
                 ++completed;

@@ -1,13 +1,13 @@
 // Real dedicated viewport / local DOM regression; native cutter shapes are tested in C++.
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync,mkdirSync} from "node:fs";
+import {readFileSync,readdirSync,mkdirSync,existsSync} from "node:fs";
 import {resolve,sep} from "node:path";
 import {fileURLToPath} from "node:url";
 import {tubeDesignerCss} from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
-const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(d=>d.isDirectory()).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",toolsRoot)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
+const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(d=>d.isDirectory()&&existsSync(new URL(d.name+"/tool.json",toolsRoot))).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",toolsRoot)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
 const browser=await chromium.launch({headless:true,channel:process.env.ICAX_BROWSER_CHANNEL||"msedge"});
 try {
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));page.setDefaultTimeout(15000);
@@ -48,11 +48,11 @@ try {
     });
     const toolPreviews=(payload.features??[]).filter(f=>f.enabled!==false).map(f=>({target:"feature",key:f.id,geometry:put("tool",JSON.stringify(f),()=>{
      let cutter;
-     if(f.toolRef?.id==="v-notch") {
+     if(f.toolRef?.id==="v-notch-sharp") {
       const p=f.toolParameters??{},shape=new THREE.Shape();
-      const left=p.style==="asymmetric_v"?40*Math.tan(p.leftAngle*Math.PI/180):40,right=p.style==="asymmetric_v"?40*Math.tan(p.rightAngle*Math.PI/180):40;
-      shape.moveTo(-left,21);shape.lineTo(p.style==="flat_v"?-p.flatWidth/2:0,-19);
-      if(p.style==="flat_v")shape.lineTo(p.flatWidth/2,-19);
+      const left=p.asymmetric?40*Math.tan(p.leftAngle*Math.PI/180):40,right=p.asymmetric?40*Math.tan(p.rightAngle*Math.PI/180):40;
+      shape.moveTo(-left,21);shape.lineTo(p.bottomStrategy==="flat"?-p.flatWidth/2:0,-19);
+      if(p.bottomStrategy==="flat")shape.lineTo(p.flatWidth/2,-19);
       shape.lineTo(right,21);shape.closePath();
       cutter=new THREE.ExtrudeGeometry(shape,{depth:44,steps:1,bevelEnabled:false});cutter.rotateX(Math.PI/2);cutter.translate(f.station??250,22,0);
      } else {cutter=new THREE.CylinderGeometry(20,20,100,32);cutter.rotateX(Math.PI/2);cutter.translate(f.station??250,0,0);}
@@ -88,7 +88,7 @@ try {
  for(const size of [{width:1600,height:1000},{width:1024,height:768},{width:780,height:820}]) {
   await page.setViewportSize(size);await command("branch").click();await ready();
   // A deliberate fit after resizing is allowed; subsequent field edits must not move the camera.
-  await page.locator("[data-part-drawing-preview-controls] button").click();
+  await page.locator(".icax-three-viewport-canvas").dblclick({position:{x:12,y:12}});
   await page.evaluate(()=>window.fixture.camera=window.fixture.viewport.getCameraState());
   assert.equal(await page.locator('[data-cam-change-action=tube-designer-drawing-section-select][data-drawing-section=branch]').inputValue(),"system:round","A new branch has a usable default section");
   assert.ok(await page.evaluate(()=>window.fixture.state.draft.section?.profile?.contours?.length)>0);
@@ -105,6 +105,7 @@ try {
   await page.locator(".td-draw-property-scroll").evaluate(e=>e.scrollTop=0);await screenshot("part-drawing-branch-"+size.width);
   const arrays=page.locator("details").filter({has:page.locator("summary",{hasText:/^阵列$/})});
   if(!await arrays.evaluate(e=>e.open))await arrays.locator("summary").click();
+  await control("arrayDimension").selectOption("two");await ready();
   await control("arraySpacing").fill("60");await control("arraySpacing").press("Tab");await ready();
   assert.equal(await arrays.evaluate(e=>e.open),true,"Local patch preserves expanded groups");
   assert.ok(await page.locator(".td-draw-property-scroll").evaluate(e=>e.scrollTop)>0,"Local patch preserves inspector scroll");
@@ -122,17 +123,21 @@ try {
   await page.locator('[role=treeitem]').nth(1).click();assert.equal(await control("station").inputValue(),"180");
   await control("station").fill("210");await control("station").press("Tab");await ready();assert.equal(await page.evaluate(()=>window.fixture.state.features[0].station),210);
   await page.evaluate(()=>{const f=window.fixture;f.keptToolUrl=f.state.preview.toolPreviews[0].geometry.url;f.keptTool=f.viewport.geometryObjects.get(f.keptToolUrl);});
-  await command("v-notch").click();await ready();assert.equal(await page.locator('[data-drawing-section=branch]').count(),0);
-  assert.equal(await parameter("style").locator("option").count(),7);assert.equal(await parameter("rootRadius").count(),1);assert.equal(await parameter("curveRadius").count(),0);
-  for(const style of ["asymmetric_v","rounded_v","left_arc","right_arc","flat_v","relief_v","sharp_v"]) {
-   await parameter("style").selectOption(style);await ready();
-   assert.equal(await parameter("leftAngle").count(),style==="asymmetric_v"?1:0);assert.equal(await parameter("rightAngle").count(),style==="asymmetric_v"?1:0);
-   assert.equal(await parameter("curveRadius").count(),style==="rounded_v"?1:0);assert.equal(await parameter("flatWidth").count(),style==="flat_v"?1:0);assert.equal(await parameter("holeDiameter").count(),style==="relief_v"?1:0);
-   if(style==="asymmetric_v")assert.equal(await parameter("angle").count(),0);await checkIdentity();
+  await command("part").click();await ready();
+  await control("tool").selectOption("v-notch-sharp");await ready();assert.equal(await page.locator('[data-drawing-section=branch]').count(),0);
+  assert.equal(await parameter("bottomStrategy").locator("option").count(),4);assert.equal(await parameter("style").count(),0);
+  await parameter("asymmetric").check();await ready();
+  assert.equal(await parameter("leftAngle").count(),1);assert.equal(await parameter("rightAngle").count(),1);assert.equal(await parameter("angle").count(),0);
+  await parameter("asymmetric").uncheck();await ready();
+  for(const strategy of ["sharp","flat","rounded","relief"]) {
+   await parameter("bottomStrategy").selectOption(strategy);await ready();
+   assert.equal(await parameter("leftAngle").count(),0);assert.equal(await parameter("rightAngle").count(),0);
+   assert.equal(await parameter("roundRadius").count(),strategy==="rounded"?1:0);assert.equal(await parameter("flatWidth").count(),strategy==="flat"?1:0);assert.equal(await parameter("reliefShape").count(),strategy==="relief"?1:0);
+   await checkIdentity();
    assert.equal(await page.evaluate(()=>window.fixture.keptTool===window.fixture.viewport.geometryObjects.get(window.fixture.keptToolUrl)),true,"Updating a V slot keeps the existing branch GPU geometry");
   }
-  await parameter("style").selectOption("rounded_v");await parameter("curveRadius").fill("6");await parameter("curveRadius").press("Tab");await ready();
-  await parameter("style").selectOption("asymmetric_v");await ready();await page.locator(".td-draw-property-scroll").evaluate(e=>e.scrollTop=0);await screenshot("part-drawing-v-notch-"+size.width);
+  await parameter("bottomStrategy").selectOption("rounded");await parameter("roundRadius").fill("6");await parameter("roundRadius").press("Tab");await ready();
+  await parameter("bottomStrategy").selectOption("sharp");await parameter("asymmetric").check();await ready();await page.locator(".td-draw-property-scroll").evaluate(e=>e.scrollTop=0);await screenshot("part-drawing-v-notch-"+size.width);
   await act("selected-remove").click();await ready();
   await page.locator('[role=treeitem]').nth(1).click();await act("selected-remove").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),1);
   await command("start").click();assert.equal(await page.locator('[data-tube-designer-punch-end=start]').count()>0,true);
@@ -142,5 +147,5 @@ try {
  assert.ok(calls.some(c=>c.method==="TubeDesigner.GetPartDrawingTools"));assert.ok(calls.filter(c=>c.method==="TubeDesigner.PreviewPartDrawing").every(c=>c.payload.toolsOnly===true));
  assert.ok(calls.every(c=>!["TubeDesigner.GetPunchTools","TubeDesigner.PreviewPunchPart"].includes(c.method)));
  assert.deepEqual(await page.evaluate(()=>[...window.fixture.reads].filter(([url])=>url.startsWith("fixture://main/")).map(([,count])=>count)),[1],"Unchanged main geometry is fetched once through all parameter edits");
- assert.deepEqual(errors,[]);console.log("Dedicated drawing: 3 left-tree / canvas / right-inspector layouts, default main tube, live feature/section edits, 7 V types, stable main resource + canvas + outer workbench passed.");
+ assert.deepEqual(errors,[]);console.log("Dedicated drawing: 3 left-tree / canvas / right-inspector layouts, default main tube, live feature/section edits, current V strategy conditions, stable main resource + canvas + outer workbench passed.");
 } finally {await browser.close();}

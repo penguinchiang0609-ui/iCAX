@@ -1540,6 +1540,46 @@ iCAX::Resource::CResourcePool::DeleteCurrentVersioned(
     return EResourceMutationResult::Removed;
 }
 
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourcePool::DiscardRuntimeResource(IN const CResourceKey& Key_)
+{
+    ValidateKey(Key_);
+    std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
+    const auto _Current = m_mapResources.find(Key_);
+    const auto _History = m_mapArchivedVersions.find(Key_);
+    if (_Current == m_mapResources.end() && _History == m_mapArchivedVersions.end())
+        return EResourceMutationResult::NotFound;
+    if (_Current != m_mapResources.end() && !_Current->second.Info.IsRuntimeOnly())
+        return EResourceMutationResult::PreconditionFailed;
+    if (_History != m_mapArchivedVersions.end())
+        for (const auto& [_Version, _Record] : _History->second)
+            if (!_Record.Info.IsRuntimeOnly()) return EResourceMutationResult::PreconditionFailed;
+    const auto _ReferencesTarget = [&](const CResourceInfo& Info_) {
+        return std::any_of(Info_.Dependencies.begin(), Info_.Dependencies.end(),
+            [&](const CResourceReference& Dependency_) { return Dependency_.URL == Key_.Source; });
+    };
+    for (const auto& [_Key, _Record] : m_mapResources)
+        if (_Key != Key_ && _ReferencesTarget(_Record.Info))
+            return EResourceMutationResult::PreconditionFailed;
+    for (const auto& [_Key, _Versions] : m_mapArchivedVersions)
+        if (_Key != Key_)
+            for (const auto& [_Version, _Record] : _Versions)
+                if (_ReferencesTarget(_Record.Info)) return EResourceMutationResult::PreconditionFailed;
+    if (_History != m_mapArchivedVersions.end())
+    {
+        for (const auto& [_Version, _Record] : _History->second)
+            if (!_Record.ColdStoragePath.empty())
+            {
+                std::error_code _Error;
+                std::filesystem::remove(_Record.ColdStoragePath, _Error);
+                if (_Error) throw std::runtime_error("Cannot discard runtime resource history: " + _Error.message());
+            }
+        m_mapArchivedVersions.erase(_History);
+    }
+    if (_Current != m_mapResources.end()) m_mapResources.erase(_Current);
+    return EResourceMutationResult::Removed;
+}
+
 std::vector<iCAX::Resource::CResourceInfo> iCAX::Resource::CResourcePool::GetManifest(IN bool bIncludeRuntimeOnly_) const
 {
     std::vector<CResourceInfo> _Infos;

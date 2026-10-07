@@ -278,7 +278,6 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
     height = _number(p, "guardHeight", 300)
     bottom = _number(p, "bottomClearance")
     drop = _number(p, "upperRailDrop", 1)
-    extension = _number(p, "endExtension")
     max_post = _number(p, "maximumPostSpacing", 100)
     maximum_gap = _number(p, "maximumVerticalClearGap", 1) if distributed_infill else 1.0
     double_gap = _number(p, "doublePostClearGap")
@@ -479,8 +478,10 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         origin, finish = vertices[index], vertices[index + 1]
         side = _lateral(direction)
         current = segment_posts[index]
-        cap_start = _add(origin, direction, -_number(p, "startExtension") if index == 0 and "startExtension" in p else -extension if index == 0 else handrail.width / 2)
-        cap_end = _add(finish, direction, _number(p, "finishExtension") if index == len(directions)-1 and "finishExtension" in p else extension if index == len(directions) - 1 else handrail.width / 2)
+        start_reach = current[0].half_extent(direction) + _number(p, "startExtension")
+        finish_reach = current[-1].half_extent(direction) + _number(p, "finishExtension")
+        cap_start = _add(origin, direction, -start_reach if index == 0 else handrail.width / 2)
+        cap_end = _add(finish, direction, finish_reach if index == len(directions) - 1 else handrail.width / 2)
         if handrail.kind == "round" and index > 0:
             cap_start = origin
         cuts: list[tuple[Point, Post | None]] = [(cap_start, None)]
@@ -926,9 +927,6 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                 "endCutSource": "finished_geometry"}
         if part.component_clips:
             tube_properties["manufacturing.clearanceComponents"] = list(part.component_clips)
-        material_grade = str(parameters.get("materialGrade", "")).strip()
-        if material_grade:
-            tube_properties["manufacturing.materialGrade"] = material_grade
         add_item(part.key, part.name, display_representation, manufacturing_representation, tube_properties)
         for index, receiver in enumerate(dict.fromkeys(part.clips), 1):
             model.relationship(f"joint.{part.key}.{index}", "weld", [part.key, receiver], properties={"geometry": "outer-envelope-cope"})
@@ -968,9 +966,8 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                 a[0] * b[1] - b[0] * a[1] for a, b in zip(part.outline, part.outline[1:] + part.outline[:1]))) / 2
         if part.part_kind == "glass" and parameters.get("_infillPanelKind") == "board":
             properties.update({"manufacturing.partKind": "plate", "manufacturing.materialCategory": "plate", "manufacturing.categoryName": "挡板"})
-        material_grade = str(parameters.get("materialGrade", "")).strip()
-        if material_grade and part.part_kind != "glass":
-            properties["manufacturing.materialGrade"] = material_grade
+            # Appearance belongs to the display item, independently of its stock kind.
+            properties["displayMaterial"] = "translucent-panel"
         properties["group"] = part.group
         add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
     for part in built.components:

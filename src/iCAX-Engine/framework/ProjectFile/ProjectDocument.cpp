@@ -72,7 +72,7 @@ namespace
         }
         if (Value_.Is<iCAX::Data::ObjectMap>())
         {
-            const auto _Object = Value_.To<iCAX::Data::ObjectMap>();
+            const auto& _Object = std::get<iCAX::Data::ObjectMap>(Value_.m_Value);
             for (const auto& [_, _Child] : _Object)
             {
                 CollectVariantReferences(_Child, References_);
@@ -81,7 +81,7 @@ namespace
         }
         if (Value_.Is<iCAX::Data::VariantArray>())
         {
-            const auto _Array = Value_.To<iCAX::Data::VariantArray>();
+            const auto& _Array = std::get<iCAX::Data::VariantArray>(Value_.m_Value);
             for (const auto& _Child : _Array)
             {
                 CollectVariantReferences(_Child, References_);
@@ -246,7 +246,7 @@ iCAX::ProjectFile::TryGetResourceReferenceValue(
     {
         return std::nullopt;
     }
-    const auto _Object = Value_.To<iCAX::Data::ObjectMap>();
+    const auto& _Object = std::get<iCAX::Data::ObjectMap>(Value_.m_Value);
     const auto _Type = _Object.find(kValueTypeKey);
     const auto _URL = _Object.find(kValueURLKey);
     const auto _Version = _Object.find(kValueVersionKey);
@@ -501,4 +501,3 @@ void iCAX::ProjectFile::RequireValidProjectDocument(
     }
     throw std::invalid_argument(_Message.str());
 }
-

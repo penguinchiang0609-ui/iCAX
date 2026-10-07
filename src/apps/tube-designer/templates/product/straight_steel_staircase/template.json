@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "straight-steel-staircase",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "displayName": {
     "zh-CN": "钢楼梯"
   },
@@ -10,10 +10,25 @@
   "extensions": {
     "parameterDependencies": {
       "manufacturingOnly": [
+        "boltEdgeDistance",
+        "boltHoleDiameter",
+        "connectionPlateThickness",
+        "connectionType",
+        "handrailConnection",
         "productCode",
-        "treadMaterial",
-        "materialGrade",
-        "boltHoleDiameter"
+        "tubeDesignerToolBindings"
+      ],
+      "creationOnly": [
+        "railingSide",
+        "stairRoute",
+        "turnDirection",
+        "stringerSystem",
+        "stringerConstruction",
+        "treadSupport",
+        "treadType",
+        "landingColumns",
+        "railingInfill",
+        "bracketType"
       ]
     },
     "catalog": {
@@ -33,18 +48,861 @@
     "sceneSpecificationAnnotations": {
       "schemaVersion": 1,
       "annotations": [
-        { "parameter": "stairWidth", "axis": "y", "centered": true, "offset": [-160, 0, 0], "label": { "zh-CN": "梯段净宽" }, "order": 10 },
-        { "parameter": "floorHeight", "axis": "z", "offset": [-180, 0, 0], "label": { "zh-CN": "层高" }, "order": 20 }
+        {
+          "parameter": "stairWidth",
+          "axis": "y",
+          "centered": true,
+          "offset": [
+            -160,
+            0,
+            0
+          ],
+          "label": {
+            "zh-CN": "梯段净宽"
+          },
+          "order": 10
+        },
+        {
+          "parameter": "floorHeight",
+          "axis": "z",
+          "offset": [
+            -180,
+            0,
+            0
+          ],
+          "label": {
+            "zh-CN": "层高"
+          },
+          "order": 20
+        },
+        {
+          "parameter": "postEveryRisers",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 1.0
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "guard",
+          "order": 100,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          }
+        },
+        {
+          "parameter": "maximumPostSpacing",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.9333333333333333
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "guard",
+          "order": 101,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "railingSide",
+                "value": "none"
+              },
+              {
+                "op": "ne",
+                "parameter": "stairRoute",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "totalRiserCount",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.7333333333333334
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "flight",
+          "order": 104
+        },
+        {
+          "parameter": "railingHeight",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.6666666666666667
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "railing",
+          "order": 105,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          }
+        },
+        {
+          "parameter": "firstFlightRiserCount",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.6
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 106,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "stairRoute",
+            "value": "straight"
+          }
+        },
+        {
+          "parameter": "landingLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.5333333333333333
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "landing",
+          "order": 107,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "stairRoute",
+            "value": "straight"
+          }
+        },
+        {
+          "parameter": "wellGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.4666666666666667
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "landing",
+          "order": 108,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "u_turn"
+          }
+        },
+        {
+          "parameter": "stringerSpacing",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.4
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "structure",
+          "order": 109,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stringerSystem",
+            "value": "twin"
+          }
+        },
+        {
+          "parameter": "treadGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.33333333333333337
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "treads",
+          "order": 110,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "treadType",
+            "value": "none"
+          }
+        },
+        {
+          "parameter": "landingSupportSpacing",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.2666666666666667
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "landing",
+          "order": 111,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "stairRoute",
+            "value": "straight"
+          }
+        },
+        {
+          "parameter": "horizontalRailCount",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.19999999999999996
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "guard",
+          "order": 112,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "railingSide",
+                "value": "none"
+              },
+              {
+                "op": "eq",
+                "parameter": "railingInfill",
+                "value": "horizontal"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "maximumInfillGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.1333333333333333
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "guard",
+          "order": 113,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "railingSide",
+                "value": "none"
+              },
+              {
+                "op": "eq",
+                "parameter": "railingInfill",
+                "value": "vertical"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "zigzagDepth",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.06666666666666665
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "structure",
+          "order": 114,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "zigzag"
+          }
+        },
+        {
+          "parameter": "treadDepth",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "stairWidth",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "floorHeight",
+              "scale": 0.25
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "flight",
+          "order": 132
+        }
       ]
     },
     "resourceRoles": {
       "profiles": {
-        "stringer": { "parameter": "stringerProfileType" },
-        "tread": { "parameter": "treadProfileType" },
-        "handrail": { "parameter": "handrailProfileType" },
-        "post": { "parameter": "postProfileType" },
-        "landing": { "parameter": "landingProfileType" },
-        "infill": { "parameter": "infillProfileType" }
+        "stringer": {
+          "parameter": "stringerProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "channel": "system:channel",
+            "round": "system:round",
+            "oval": "system:oval"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "stringerWidth",
+              "depth": "stringerDepth",
+              "wallThickness": "stringerWallThickness",
+              "cornerRadius": "stringerCornerRadius"
+            },
+            "channel": {
+              "width": "stringerWidth",
+              "depth": "stringerDepth",
+              "wallThickness": "stringerWallThickness"
+            },
+            "round": {
+              "width": "stringerWidth",
+              "wallThickness": "stringerWallThickness"
+            },
+            "oval": {
+              "width": "stringerWidth",
+              "depth": "stringerDepth",
+              "wallThickness": "stringerWallThickness"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 3,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "stringerWidth",
+            "stringerDepth",
+            "stringerWallThickness",
+            "stringerCornerRadius",
+            "stringerInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "横向宽度"
+              },
+              "depth": {
+                "zh-CN": "法向高度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "channel": {
+              "width": {
+                "zh-CN": "横向宽度"
+              },
+              "depth": {
+                "zh-CN": "法向高度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "oval": {
+              "width": {
+                "zh-CN": "横向宽度"
+              },
+              "depth": {
+                "zh-CN": "法向高度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        },
+        "tread": {
+          "parameter": "treadProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "treadWidth",
+              "depth": "treadDepthProfile",
+              "wallThickness": "treadWallThickness",
+              "cornerRadius": "treadCornerRadius"
+            }
+          },
+          "managedParameters": [
+            "treadWidth",
+            "treadDepth",
+            "treadDepthProfile",
+            "treadWallThickness",
+            "treadCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        },
+        "handrail": {
+          "parameter": "handrailProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round",
+            "oval": "system:oval",
+            "racetrack": "system:racetrack"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "handrailWidth",
+              "depth": "handrailDepth",
+              "wallThickness": "handrailWallThickness",
+              "cornerRadius": "handrailCornerRadius"
+            },
+            "round": {
+              "width": "handrailWidth",
+              "wallThickness": "handrailWallThickness"
+            },
+            "oval": {
+              "width": "handrailWidth",
+              "depth": "handrailDepth",
+              "wallThickness": "handrailWallThickness"
+            },
+            "racetrack": {
+              "width": "handrailWidth",
+              "depth": "handrailDepth",
+              "wallThickness": "handrailWallThickness"
+            }
+          },
+          "managedParameters": [
+            "handrailWidth",
+            "handrailDepth",
+            "handrailWallThickness",
+            "handrailCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "oval": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "racetrack": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        },
+        "post": {
+          "parameter": "postProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round",
+            "oval": "system:oval",
+            "racetrack": "system:racetrack"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "postWidth",
+              "depth": "postDepth",
+              "wallThickness": "postWallThickness",
+              "cornerRadius": "postCornerRadius"
+            },
+            "round": {
+              "width": "postWidth",
+              "wallThickness": "postWallThickness"
+            },
+            "oval": {
+              "width": "postWidth",
+              "depth": "postDepth",
+              "wallThickness": "postWallThickness"
+            },
+            "racetrack": {
+              "width": "postWidth",
+              "depth": "postDepth",
+              "wallThickness": "postWallThickness"
+            }
+          },
+          "managedParameters": [
+            "postWidth",
+            "postDepth",
+            "postWallThickness",
+            "postCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "oval": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "racetrack": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        },
+        "landing": {
+          "parameter": "landingProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "landingWidth",
+              "depth": "landingDepth",
+              "wallThickness": "landingWallThickness",
+              "cornerRadius": "landingCornerRadius"
+            }
+          },
+          "managedParameters": [
+            "landingWidth",
+            "landingDepth",
+            "landingWallThickness",
+            "landingCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        },
+        "infill": {
+          "parameter": "infillProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round",
+            "oval": "system:oval",
+            "racetrack": "system:racetrack"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "infillWidth",
+              "depth": "infillDepth",
+              "wallThickness": "infillWallThickness",
+              "cornerRadius": "infillCornerRadius"
+            },
+            "round": {
+              "width": "infillWidth",
+              "wallThickness": "infillWallThickness"
+            },
+            "oval": {
+              "width": "infillWidth",
+              "depth": "infillDepth",
+              "wallThickness": "infillWallThickness"
+            },
+            "racetrack": {
+              "width": "infillWidth",
+              "depth": "infillDepth",
+              "wallThickness": "infillWallThickness"
+            }
+          },
+          "managedParameters": [
+            "infillWidth",
+            "infillDepth",
+            "infillWallThickness",
+            "infillCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "oval": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            },
+            "racetrack": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        }
       }
     },
     "sceneParameterBindings": {
@@ -53,47 +911,1324 @@
         "overall": "all",
         "basic": "all",
         "flight": "all",
-        "structure": { "memberStableKeyPatterns": ["flight.*.beam.*", "landing.*"] },
-        "treads": { "memberStableKeyPatterns": ["flight.*.tread.*"] },
-        "landing": { "memberStableKeyPrefixes": ["landing."] },
-        "railing": { "memberStableKeyPatterns": ["flight.*.guard.*", "landing.*.guard.*"] },
-        "guard": { "memberStableKeyPatterns": ["flight.*.guard.*", "landing.*.guard.*"] },
-        "material": "all",
-        "process": "all",
-        "joints": "all"
+        "structure": {
+          "memberStableKeyPatterns": [
+            "flight.*.beam.*",
+            "landing.*"
+          ]
+        },
+        "treads": {
+          "memberStableKeyPatterns": [
+            "flight.*.step.*"
+          ]
+        },
+        "landing": {
+          "memberStableKeyPrefixes": [
+            "landing."
+          ]
+        },
+        "railing": {
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*",
+            "landing.*.guard.*"
+          ]
+        },
+        "guard": {
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*",
+            "landing.*.guard.*"
+          ]
+        },
+        "material": {},
+        "process": {},
+        "joints": {
+          "memberStableKeyPatterns": [
+            "flight.*.beam.*.base",
+            "flight.*.beam.*.end",
+            "flight.*.beam.*.start",
+            "landing.*.column.*.base"
+          ]
+        }
       },
       "profileRoles": {
         "stringer": {
-          "parameters": ["stringerProfileType", "stringerWidth", "stringerDepth", "stringerCornerRadius", "stringerInnerRadius", "stringerWallThickness"],
-          "memberStableKeyPatterns": ["flight.*.beam.*"]
+          "parameters": [
+            "stringerProfileType",
+            "stringerWidth",
+            "stringerDepth",
+            "stringerCornerRadius",
+            "stringerInnerRadius",
+            "stringerWallThickness"
+          ],
+          "memberStableKeyPatterns": [
+            "flight.*.beam.*"
+          ]
         },
         "tread": {
-          "parameters": ["treadProfileType", "treadWidth", "treadDepthProfile", "treadCornerRadius", "treadWallThickness"],
-          "memberStableKeyPatterns": ["flight.*.tread.*"]
+          "parameters": [
+            "treadProfileType",
+            "treadWidth",
+            "treadDepthProfile",
+            "treadCornerRadius",
+            "treadWallThickness",
+            "treadMaterial"
+          ],
+          "memberStableKeyPatterns": [
+            "flight.*.step.*.cross.*",
+            "flight.*.step.*.edge.*",
+            "flight.*.step.*.support.*"
+          ]
         },
         "handrail": {
-          "parameters": ["handrailProfileType", "handrailWidth", "handrailDepth", "handrailCornerRadius", "handrailWallThickness"],
-          "memberStableKeyPatterns": ["flight.*.guard.*.top", "landing.*.guard.*.rail"]
+          "parameters": [
+            "handrailProfileType",
+            "handrailWidth",
+            "handrailDepth",
+            "handrailCornerRadius",
+            "handrailWallThickness"
+          ],
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*.top",
+            "landing.*.guard.*.rail"
+          ],
+          "memberStableKeyPrefixes": [
+            "transition."
+          ]
         },
         "post": {
-          "parameters": ["postProfileType", "postWidth", "postDepth", "postCornerRadius", "postWallThickness"],
-          "memberStableKeyPatterns": ["flight.*.guard.*.post.*", "landing.*.guard.*.post.*"]
+          "parameters": [
+            "postProfileType",
+            "postWidth",
+            "postDepth",
+            "postCornerRadius",
+            "postWallThickness"
+          ],
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*.post.*",
+            "landing.*.guard.*.post.*"
+          ]
         },
         "landing": {
-          "parameters": ["landingProfileType", "landingWidth", "landingDepth", "landingCornerRadius", "landingWallThickness"],
-          "memberStableKeyPatterns": ["landing.*.front", "landing.*.back", "landing.*.left", "landing.*.right", "landing.*.cross.*", "landing.*.column.*"]
+          "parameters": [
+            "landingProfileType",
+            "landingWidth",
+            "landingDepth",
+            "landingCornerRadius",
+            "landingWallThickness"
+          ],
+          "memberStableKeyPatterns": [
+            "landing.*.front",
+            "landing.*.back",
+            "landing.*.left",
+            "landing.*.right",
+            "landing.*.cross.*",
+            "landing.*.column.*"
+          ]
         },
         "infill": {
-          "parameters": ["infillProfileType", "infillWidth", "infillDepth", "infillCornerRadius", "infillWallThickness"],
-          "memberStableKeyPatterns": ["flight.*.guard.*.infill.*", "flight.*.guard.*.lower.*", "landing.*.guard.*.infill.*", "landing.*.guard.*.picket.*"]
+          "parameters": [
+            "infillProfileType",
+            "infillWidth",
+            "infillDepth",
+            "infillCornerRadius",
+            "infillWallThickness"
+          ],
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*.infill.*",
+            "flight.*.guard.*.lower.*",
+            "landing.*.guard.*.fill.*",
+            "landing.*.guard.*.picket.*"
+          ]
+        }
+      },
+      "sceneBindings": {
+        "stairsRouteStructure": "all",
+        "stairsStringerStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.beam.*",
+            "flight.*.step.*.support.*"
+          ]
+        },
+        "stairsTreadSupportStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.step.*.cross.*",
+            "flight.*.step.*.edge.*"
+          ]
+        },
+        "stairsDeckStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.step.*.deck",
+            "landing.*.deck"
+          ]
+        },
+        "stairsBracketStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.step.*.support.*"
+          ]
+        },
+        "stairsGuardStructure": [
+          {
+            "memberStableKeyPatterns": [
+              "flight.*.guard.*",
+              "landing.*.guard.*"
+            ]
+          },
+          {
+            "memberStableKeyPrefixes": [
+              "transition."
+            ]
+          }
+        ],
+        "stairsInfillStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*.infill.*",
+            "flight.*.guard.*.lower.*",
+            "landing.*.guard.*.fill.*",
+            "landing.*.guard.*.picket.*"
+          ]
+        },
+        "stairsConnectionStructure": {
+          "memberStableKeyPatterns": [
+            "flight.*.beam.*.base",
+            "flight.*.beam.*.end",
+            "flight.*.beam.*.start",
+            "landing.*.column.*.base"
+          ]
+        },
+        "stairsHandrailConnection": {
+          "memberStableKeyPatterns": [
+            "flight.*.guard.*.top",
+            "landing.*.guard.*.rail"
+          ],
+          "memberStableKeyPrefixes": [
+            "transition."
+          ]
         }
       }
     },
     "parameterLayout": {
       "sections": [
-        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "basic", "flight", "structure", "treads", "landing", "railing", "guard"] },
-        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["preset", "profiles", "material"] },
-        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "joints"] }
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "产品规格"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "overall",
+            "basic",
+            "flight",
+            "structure",
+            "treads",
+            "landing",
+            "railing",
+            "guard"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "用料"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "preset",
+            "profiles",
+            "material"
+          ]
+        },
+        {
+          "key": "process",
+          "displayName": {
+            "zh-CN": "装配"
+          },
+          "order": 30,
+          "allowPresets": true,
+          "groups": [
+            "process",
+            "joints"
+          ]
+        }
+      ]
+    },
+    "productControls": [
+      {
+        "key": "stairsRouteStructure",
+        "displayName": {
+          "zh-CN": "楼梯路线"
+        },
+        "group": "basic",
+        "order": 10,
+        "choices": [
+          {
+            "value": "straight",
+            "displayName": {
+              "zh-CN": "直跑"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "stairRoute",
+              "value": "straight"
+            },
+            "parameters": {
+              "stairRoute": "straight"
+            }
+          },
+          {
+            "value": "straight_landing",
+            "displayName": {
+              "zh-CN": "同向双跑＋平台"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "stairRoute",
+              "value": "straight_landing"
+            },
+            "parameters": {
+              "stairRoute": "straight_landing"
+            }
+          },
+          {
+            "value": "l_turn",
+            "displayName": {
+              "zh-CN": "L型平台转角"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "stairRoute",
+              "value": "l_turn"
+            },
+            "parameters": {
+              "stairRoute": "l_turn"
+            }
+          },
+          {
+            "value": "u_turn",
+            "displayName": {
+              "zh-CN": "U型平台折返"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "stairRoute",
+              "value": "u_turn"
+            },
+            "parameters": {
+              "stairRoute": "u_turn"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsStringerStructure",
+        "displayName": {
+          "zh-CN": "梯梁结构"
+        },
+        "group": "structure",
+        "order": 20,
+        "choices": [
+          {
+            "value": "mono_profile",
+            "displayName": {
+              "zh-CN": "单中梁 · 型材梯梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "mono"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "profile"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "mono",
+              "stringerConstruction": "profile"
+            }
+          },
+          {
+            "value": "mono_zigzag",
+            "displayName": {
+              "zh-CN": "单中梁 · 锯齿钢板梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "mono"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "zigzag"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "mono",
+              "stringerConstruction": "zigzag"
+            }
+          },
+          {
+            "value": "twin_profile",
+            "displayName": {
+              "zh-CN": "双中梁 · 型材梯梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "twin"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "profile"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "twin",
+              "stringerConstruction": "profile"
+            }
+          },
+          {
+            "value": "twin_zigzag",
+            "displayName": {
+              "zh-CN": "双中梁 · 锯齿钢板梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "twin"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "zigzag"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "twin",
+              "stringerConstruction": "zigzag"
+            }
+          },
+          {
+            "value": "side_profile",
+            "displayName": {
+              "zh-CN": "两侧管梁 · 型材梯梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "side"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "profile"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "side",
+              "stringerConstruction": "profile"
+            }
+          },
+          {
+            "value": "side_zigzag",
+            "displayName": {
+              "zh-CN": "两侧管梁 · 锯齿钢板梁"
+            },
+            "matchWhen": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "parameter": "stringerSystem",
+                  "value": "side"
+                },
+                {
+                  "op": "eq",
+                  "parameter": "stringerConstruction",
+                  "value": "zigzag"
+                }
+              ]
+            },
+            "parameters": {
+              "stringerSystem": "side",
+              "stringerConstruction": "zigzag"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsTreadSupportStructure",
+        "displayName": {
+          "zh-CN": "踏步支撑结构"
+        },
+        "group": "treads",
+        "order": 30,
+        "choices": [
+          {
+            "value": "cross_tube",
+            "displayName": {
+              "zh-CN": "立支架＋横管"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadSupport",
+              "value": "cross_tube"
+            },
+            "parameters": {
+              "treadSupport": "cross_tube"
+            }
+          },
+          {
+            "value": "tube_frame",
+            "displayName": {
+              "zh-CN": "立支架＋管框"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadSupport",
+              "value": "tube_frame"
+            },
+            "parameters": {
+              "treadSupport": "tube_frame"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsDeckStructure",
+        "displayName": {
+          "zh-CN": "踏板结构"
+        },
+        "group": "treads",
+        "order": 40,
+        "choices": [
+          {
+            "value": "steel",
+            "displayName": {
+              "zh-CN": "钢板"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadType",
+              "value": "steel"
+            },
+            "parameters": {
+              "treadType": "steel"
+            }
+          },
+          {
+            "value": "wood",
+            "displayName": {
+              "zh-CN": "木踏板（外购）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadType",
+              "value": "wood"
+            },
+            "parameters": {
+              "treadType": "wood"
+            }
+          },
+          {
+            "value": "glass",
+            "displayName": {
+              "zh-CN": "玻璃踏板（外购）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadType",
+              "value": "glass"
+            },
+            "parameters": {
+              "treadType": "glass"
+            }
+          },
+          {
+            "value": "stone",
+            "displayName": {
+              "zh-CN": "石材踏板（外购）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadType",
+              "value": "stone"
+            },
+            "parameters": {
+              "treadType": "stone"
+            }
+          },
+          {
+            "value": "none",
+            "displayName": {
+              "zh-CN": "仅支撑结构"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "treadType",
+              "value": "none"
+            },
+            "parameters": {
+              "treadType": "none"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsBracketStructure",
+        "displayName": {
+          "zh-CN": "踏步立支架结构"
+        },
+        "group": "treads",
+        "order": 50,
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "stringerConstruction",
+          "value": "profile"
+        },
+        "choices": [
+          {
+            "value": "tube",
+            "displayName": {
+              "zh-CN": "管材支架"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "bracketType",
+              "value": "tube"
+            },
+            "parameters": {
+              "bracketType": "tube"
+            }
+          },
+          {
+            "value": "plate",
+            "displayName": {
+              "zh-CN": "钢板支架"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "bracketType",
+              "value": "plate"
+            },
+            "parameters": {
+              "bracketType": "plate"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsGuardStructure",
+        "displayName": {
+          "zh-CN": "护栏布置"
+        },
+        "group": "railing",
+        "order": 60,
+        "choices": [
+          {
+            "value": "both",
+            "displayName": {
+              "zh-CN": "两侧"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingSide",
+              "value": "both"
+            },
+            "parameters": {
+              "railingSide": "both"
+            }
+          },
+          {
+            "value": "left",
+            "displayName": {
+              "zh-CN": "上行左侧"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingSide",
+              "value": "left"
+            },
+            "parameters": {
+              "railingSide": "left"
+            }
+          },
+          {
+            "value": "right",
+            "displayName": {
+              "zh-CN": "上行右侧"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingSide",
+              "value": "right"
+            },
+            "parameters": {
+              "railingSide": "right"
+            }
+          },
+          {
+            "value": "none",
+            "displayName": {
+              "zh-CN": "不设置"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingSide",
+              "value": "none"
+            },
+            "parameters": {
+              "railingSide": "none"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsInfillStructure",
+        "displayName": {
+          "zh-CN": "护栏填充结构"
+        },
+        "group": "guard",
+        "order": 70,
+        "visibleWhen": {
+          "op": "ne",
+          "parameter": "railingSide",
+          "value": "none"
+        },
+        "choices": [
+          {
+            "value": "none",
+            "displayName": {
+              "zh-CN": "仅扶手与立柱"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingInfill",
+              "value": "none"
+            },
+            "parameters": {
+              "railingInfill": "none"
+            }
+          },
+          {
+            "value": "horizontal",
+            "displayName": {
+              "zh-CN": "横杆"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingInfill",
+              "value": "horizontal"
+            },
+            "parameters": {
+              "railingInfill": "horizontal"
+            }
+          },
+          {
+            "value": "vertical",
+            "displayName": {
+              "zh-CN": "竖杆"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railingInfill",
+              "value": "vertical"
+            },
+            "parameters": {
+              "railingInfill": "vertical"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsConnectionStructure",
+        "displayName": {
+          "zh-CN": "连接板结构"
+        },
+        "group": "joints",
+        "order": 80,
+        "choices": [
+          {
+            "value": "weld",
+            "displayName": {
+              "zh-CN": "焊接端切（建筑节点另行设计）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "connectionType",
+              "value": "weld"
+            },
+            "parameters": {
+              "connectionType": "weld"
+            }
+          },
+          {
+            "value": "end_plate",
+            "displayName": {
+              "zh-CN": "带孔底板／端板"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "connectionType",
+              "value": "end_plate"
+            },
+            "parameters": {
+              "connectionType": "end_plate"
+            }
+          }
+        ]
+      },
+      {
+        "key": "stairsHandrailConnection",
+        "displayName": {
+          "zh-CN": "扶手连接做法"
+        },
+        "group": "process",
+        "order": 90,
+        "visibleWhen": {
+          "op": "ne",
+          "parameter": "railingSide",
+          "value": "none"
+        },
+        "choices": [
+          {
+            "value": "separate",
+            "displayName": {
+              "zh-CN": "独立梯段"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "handrailConnection",
+              "value": "separate"
+            },
+            "parameters": {
+              "handrailConnection": "separate"
+            }
+          },
+          {
+            "value": "continuous",
+            "displayName": {
+              "zh-CN": "连续斜切焊接转接"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "handrailConnection",
+              "value": "continuous"
+            },
+            "parameters": {
+              "handrailConnection": "continuous"
+            }
+          }
+        ]
+      }
+    ],
+    "structureEditors": [
+      {
+        "key": "stairsRouteStructure",
+        "controlKey": "stairsRouteStructure",
+        "displayName": {
+          "zh-CN": "楼梯路线"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改楼梯路线"
+        },
+        "controls": [
+          "stairsRouteStructure"
+        ]
+      },
+      {
+        "key": "stairsStringerStructure",
+        "controlKey": "stairsStringerStructure",
+        "displayName": {
+          "zh-CN": "梯梁结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改梯梁结构"
+        },
+        "controls": [
+          "stairsStringerStructure"
+        ]
+      },
+      {
+        "key": "stairsTreadSupportStructure",
+        "controlKey": "stairsTreadSupportStructure",
+        "displayName": {
+          "zh-CN": "踏步支撑结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改踏步支撑结构"
+        },
+        "controls": [
+          "stairsTreadSupportStructure"
+        ]
+      },
+      {
+        "key": "stairsDeckStructure",
+        "controlKey": "stairsDeckStructure",
+        "displayName": {
+          "zh-CN": "踏板结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改踏板结构"
+        },
+        "controls": [
+          "stairsDeckStructure"
+        ]
+      },
+      {
+        "key": "stairsBracketStructure",
+        "controlKey": "stairsBracketStructure",
+        "displayName": {
+          "zh-CN": "踏步立支架结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改踏步立支架结构"
+        },
+        "controls": [
+          "stairsBracketStructure"
+        ]
+      },
+      {
+        "key": "stairsGuardStructure",
+        "controlKey": "stairsGuardStructure",
+        "displayName": {
+          "zh-CN": "护栏布置"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改护栏布置"
+        },
+        "controls": [
+          "stairsGuardStructure"
+        ]
+      },
+      {
+        "key": "stairsInfillStructure",
+        "controlKey": "stairsInfillStructure",
+        "displayName": {
+          "zh-CN": "护栏填充结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改护栏填充结构"
+        },
+        "controls": [
+          "stairsInfillStructure"
+        ]
+      },
+      {
+        "key": "stairsConnectionStructure",
+        "controlKey": "stairsConnectionStructure",
+        "displayName": {
+          "zh-CN": "连接板结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改连接板结构"
+        },
+        "controls": [
+          "stairsConnectionStructure"
+        ]
+      }
+    ],
+    "addDialog": {
+      "structureParameters": [
+        "stairsRouteStructure",
+        "turnDirection",
+        "stairsStringerStructure",
+        "stairsTreadSupportStructure",
+        "stairsDeckStructure",
+        "stairsBracketStructure",
+        "stairsGuardStructure",
+        "stairsInfillStructure",
+        "stairsConnectionStructure",
+        "landingColumns"
+      ],
+      "parameterGroups": [
+        {
+          "key": "stair-route",
+          "displayName": {
+            "zh-CN": "路线"
+          },
+          "parameters": [
+            "stairsRouteStructure",
+            "turnDirection"
+          ]
+        },
+        {
+          "key": "stair-stringer",
+          "displayName": {
+            "zh-CN": "梯梁"
+          },
+          "parameters": [
+            "stairsStringerStructure"
+          ]
+        },
+        {
+          "key": "stair-tread",
+          "displayName": {
+            "zh-CN": "踏步"
+          },
+          "parameters": [
+            "stairsTreadSupportStructure",
+            "stairsDeckStructure",
+            "stairsBracketStructure"
+          ]
+        },
+        {
+          "key": "stair-guard",
+          "displayName": {
+            "zh-CN": "护栏"
+          },
+          "parameters": [
+            "stairsGuardStructure",
+            "stairsInfillStructure"
+          ]
+        },
+        {
+          "key": "stair-connection",
+          "displayName": {
+            "zh-CN": "连接板"
+          },
+          "parameters": [
+            "stairsConnectionStructure"
+          ]
+        },
+        {
+          "key": "creation:landing",
+          "displayName": {
+            "zh-CN": "平台与立柱"
+          },
+          "parameters": [
+            "landingColumns"
+          ]
+        }
+      ]
+    },
+    "productDiagram": {
+      "schemaVersion": 1,
+      "kind": "layered-svg",
+      "viewBox": "0 0 320 210",
+      "layers": [
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "mono"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "profile"
+              }
+            ]
+          },
+          "svg": "<path d=\"M52 150 L255 58\" stroke=\"#609f9a\" stroke-width=\"8\" fill=\"none\"/>",
+          "label": "单中梁 · 型材梯梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "mono"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "zigzag"
+              }
+            ]
+          },
+          "svg": "<polyline points=\"52,150 81,150 81,137 110,137 110,124 139,124 139,111 168,111 168,98 197,98 197,85 226,85 226,72 255,72\" stroke=\"#609f9a\" stroke-width=\"7\" fill=\"none\"/>",
+          "label": "单中梁 · 锯齿钢板梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "twin"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "profile"
+              }
+            ]
+          },
+          "svg": "<path d=\"M52 140 L255 48\" stroke=\"#609f9a\" stroke-width=\"8\" fill=\"none\"/><path d=\"M52 159 L255 67\" stroke=\"#609f9a\" stroke-width=\"8\" fill=\"none\"/>",
+          "label": "双中梁 · 型材梯梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "twin"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "zigzag"
+              }
+            ]
+          },
+          "svg": "<polyline points=\"52,140 81,140 81,127 110,127 110,114 139,114 139,101 168,101 168,88 197,88 197,75 226,75 226,62 255,62\" stroke=\"#609f9a\" stroke-width=\"7\" fill=\"none\"/><polyline points=\"52,159 81,159 81,146 110,146 110,133 139,133 139,120 168,120 168,107 197,107 197,94 226,94 226,81 255,81\" stroke=\"#609f9a\" stroke-width=\"7\" fill=\"none\"/>",
+          "label": "双中梁 · 锯齿钢板梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "side"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "profile"
+              }
+            ]
+          },
+          "svg": "<path d=\"M52 126 L255 34\" stroke=\"#609f9a\" stroke-width=\"8\" fill=\"none\"/><path d=\"M52 173 L255 81\" stroke=\"#609f9a\" stroke-width=\"8\" fill=\"none\"/>",
+          "label": "两侧梁 · 型材梯梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "stringerSystem",
+            "stringerConstruction"
+          ],
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "stringerSystem",
+                "value": "side"
+              },
+              {
+                "op": "eq",
+                "parameter": "stringerConstruction",
+                "value": "zigzag"
+              }
+            ]
+          },
+          "svg": "<polyline points=\"52,126 81,126 81,113 110,113 110,100 139,100 139,87 168,87 168,74 197,74 197,61 226,61 226,48 255,48\" stroke=\"#609f9a\" stroke-width=\"7\" fill=\"none\"/><polyline points=\"52,173 81,173 81,160 110,160 110,147 139,147 139,134 168,134 168,121 197,121 197,108 226,108 226,95 255,95\" stroke=\"#609f9a\" stroke-width=\"7\" fill=\"none\"/>",
+          "label": "两侧梁 · 锯齿钢板梁",
+          "labelY": 17
+        },
+        {
+          "parameters": [
+            "treadSupport"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadSupport",
+            "value": "cross_tube"
+          },
+          "svg": "<path d=\"M66 143 V129\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M44 129 L89 139\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M95 130 V116\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M73 116 L118 126\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M124 117 V103\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M102 103 L147 113\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M153 104 V90\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M131 90 L176 100\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M182 91 V77\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M160 77 L205 87\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M211 78 V64\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M189 64 L234 74\" stroke=\"#91c7c0\" stroke-width=\"4\"/><path d=\"M240 65 V51\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M218 51 L263 61\" stroke=\"#91c7c0\" stroke-width=\"4\"/>",
+          "label": "立支架＋横管",
+          "labelY": 31
+        },
+        {
+          "parameters": [
+            "treadSupport"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadSupport",
+            "value": "tube_frame"
+          },
+          "svg": "<path d=\"M66 143 V129\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M44 126 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M95 130 V116\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M73 113 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M124 117 V103\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M102 100 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M153 104 V90\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M131 87 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M182 91 V77\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M160 74 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M211 78 V64\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M189 61 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M240 65 V51\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/><path d=\"M218 48 l29 -4 l16 14 l-29 4 Z\" fill=\"none\" stroke=\"#91c7c0\" stroke-width=\"3\"/>",
+          "label": "立支架＋管框",
+          "labelY": 31
+        },
+        {
+          "parameters": [
+            "treadType"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "steel"
+          },
+          "svg": "<path d=\"M42 123 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M71 110 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M100 97 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M129 84 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M158 71 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M187 58 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/><path d=\"M216 45 l29 -4 l20 14 l-29 4 Z\" fill=\"#78b6af\" fill-opacity=\"0.45\" stroke=\"#78b6af\" stroke-width=\"1.5\"/>"
+        },
+        {
+          "parameters": [
+            "treadType"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "wood"
+          },
+          "svg": "<path d=\"M42 123 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M71 110 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M100 97 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M129 84 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M158 71 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M187 58 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/><path d=\"M216 45 l29 -4 l20 14 l-29 4 Z\" fill=\"#bca676\" fill-opacity=\"0.45\" stroke=\"#bca676\" stroke-width=\"1.5\"/>"
+        },
+        {
+          "parameters": [
+            "treadType"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "glass"
+          },
+          "svg": "<path d=\"M42 123 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M71 110 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M100 97 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M129 84 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M158 71 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M187 58 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/><path d=\"M216 45 l29 -4 l20 14 l-29 4 Z\" fill=\"#7ecdda\" fill-opacity=\"0.45\" stroke=\"#7ecdda\" stroke-width=\"1.5\"/>"
+        },
+        {
+          "parameters": [
+            "treadType"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "stone"
+          },
+          "svg": "<path d=\"M42 123 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M71 110 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M100 97 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M129 84 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M158 71 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M187 58 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/><path d=\"M216 45 l29 -4 l20 14 l-29 4 Z\" fill=\"#c4c1b5\" fill-opacity=\"0.45\" stroke=\"#c4c1b5\" stroke-width=\"1.5\"/>"
+        },
+        {
+          "parameters": [
+            "stairRoute"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "straight"
+          },
+          "svg": "<path d=\"M260 22 L305 22\" fill=\"none\" stroke=\"#58b6a8\" stroke-width=\"5\"/>",
+          "label": "直跑",
+          "labelX": 220,
+          "labelY": 12
+        },
+        {
+          "parameters": [
+            "stairRoute"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "straight_landing"
+          },
+          "svg": "<path d=\"M260 22 H278 V25 H306\" fill=\"none\" stroke=\"#58b6a8\" stroke-width=\"5\"/>",
+          "label": "同向双跑＋平台",
+          "labelX": 220,
+          "labelY": 12
+        },
+        {
+          "parameters": [
+            "stairRoute"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "l_turn"
+          },
+          "svg": "<path d=\"M268 38 V18 H306\" fill=\"none\" stroke=\"#58b6a8\" stroke-width=\"5\"/>",
+          "label": "L型平台转角",
+          "labelX": 220,
+          "labelY": 12
+        },
+        {
+          "parameters": [
+            "stairRoute"
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "u_turn"
+          },
+          "svg": "<path d=\"M268 38 V18 H300 V38\" fill=\"none\" stroke=\"#58b6a8\" stroke-width=\"5\"/>",
+          "label": "U型平台折返",
+          "labelX": 220,
+          "labelY": 12
+        },
+        {
+          "parameters": [
+            "railingSide"
+          ],
+          "visibleWhen": {
+            "op": "in",
+            "parameter": "railingSide",
+            "values": [
+              "left",
+              "both"
+            ]
+          },
+          "svg": "<g transform=\"translate(0,25)\"><path d=\"M41 69 L249 -23\" stroke=\"#87c6bc\" stroke-width=\"3\"/><path d=\"M41 117 V69\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M99 91 V43\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M157 65 V17\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M244 26 V-22\" stroke=\"#87c6bc\" stroke-width=\"2\"/></g>"
+        },
+        {
+          "parameters": [
+            "railingSide"
+          ],
+          "visibleWhen": {
+            "op": "in",
+            "parameter": "railingSide",
+            "values": [
+              "right",
+              "both"
+            ]
+          },
+          "svg": "<g transform=\"translate(0,25)\"><path d=\"M41 116 L249 24\" stroke=\"#87c6bc\" stroke-width=\"3\"/><path d=\"M41 164 V116\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M99 138 V90\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M157 112 V64\" stroke=\"#87c6bc\" stroke-width=\"2\"/><path d=\"M244 73 V25\" stroke=\"#87c6bc\" stroke-width=\"2\"/></g>"
+        }
       ]
     }
   },
@@ -350,7 +2485,10 @@
         }
       ],
       "group": "railing",
-      "order": 10
+      "order": 10,
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "railingHeight",
@@ -381,7 +2519,23 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "stringer", "profileConstraints": {"sectionKinds": ["rect", "channel", "round", "oval"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "stringer",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "channel",
+            "round",
+            "oval"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "choices": [
         {
           "value": "rect",
@@ -518,8 +2672,16 @@
       "visibleWhen": {
         "op": "all",
         "conditions": [
-          { "op": "eq", "parameter": "stringerConstruction", "value": "profile" },
-          { "op": "eq", "parameter": "stringerProfileType", "value": "rect" }
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "rect"
+          }
         ]
       }
     },
@@ -551,7 +2713,20 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "tread", "profileConstraints": {"sectionKinds": ["rect"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "tread",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "choices": [
         {
           "value": "rect",
@@ -634,7 +2809,23 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "handrail", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "handrail",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round",
+            "oval",
+            "racetrack"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "choices": [
         {
           "value": "rect",
@@ -780,7 +2971,23 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "post", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "post",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round",
+            "oval",
+            "racetrack"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "choices": [
         {
           "value": "rect",
@@ -952,7 +3159,10 @@
             "zh-CN": "U型平台折返"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "firstFlightRiserCount",
@@ -1077,7 +3287,10 @@
             "zh-CN": "两侧管梁"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "stringerSpacing",
@@ -1120,7 +3333,10 @@
             "zh-CN": "立支架＋管框"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "treadType",
@@ -1161,7 +3377,10 @@
             "zh-CN": "仅支撑结构"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "treadThickness",
@@ -1233,22 +3452,26 @@
       }
     },
     {
-      "key": "materialGrade",
-      "displayName": {
-        "zh-CN": "钢结构材质牌号"
-      },
-      "valueType": "string",
-      "defaultValue": "Q235B",
-      "group": "material"
-    },
-    {
       "key": "landingProfileType",
       "displayName": {
         "zh-CN": "平台管材／截面类型"
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "landing", "profileConstraints": {"sectionKinds": ["rect"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "landing",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "group": "profiles",
       "choices": [
         {
@@ -1399,7 +3622,10 @@
             "zh-CN": "带孔底板／端板"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "connectionPlateThickness",
@@ -1493,6 +3719,9 @@
         "op": "ne",
         "parameter": "railingSide",
         "value": "none"
+      },
+      "presentation": {
+        "visible": false
       }
     },
     {
@@ -1560,7 +3789,23 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "presentation": { "editor": "profile-library", "resourceRole": "infill", "profileConstraints": {"sectionKinds": ["rect", "round", "oval", "racetrack"]}},
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "infill",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect",
+            "round",
+            "oval",
+            "racetrack"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
       "group": "profiles",
       "choices": [
         {
@@ -1765,7 +4010,10 @@
         }
       ],
       "defaultValue": "profile",
-      "group": "process"
+      "group": "structure",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "bracketType",
@@ -1793,6 +4041,9 @@
         "op": "eq",
         "parameter": "stringerConstruction",
         "value": "profile"
+      },
+      "presentation": {
+        "visible": false
       }
     },
     {
@@ -1894,8 +4145,11 @@
         "op": "ne",
         "parameter": "railingSide",
         "value": "none"
+      },
+      "presentation": {
+        "visible": false
       }
     }
-      ],
+  ],
   "name": "楼梯/钢楼梯"
 }

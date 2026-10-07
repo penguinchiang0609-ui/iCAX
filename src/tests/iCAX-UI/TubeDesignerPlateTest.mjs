@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import { buildProfileGroups, filterManufacturingParts, listManufacturingParts, renderNestingLeftPane,
   renderNestingRightPane, renderPartsViewportOverlay, handlePartsAreaAction } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildNestingRequest } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
@@ -14,7 +15,7 @@ assert.equal(isTubeNestingPart({ properties: { "manufacturing.partKind": "tube",
 assert.equal(isTubeNestingPart({ properties: { "manufacturing.plate": {} } }), false);
 
 const tube = { entityId: "t", name: "横管", quantity: 1, length: 1200,
-  profile: { kind: "rect", width: 40, depth: 20, wallThickness: 2, displayName: "矩形管" } };
+  profile: { kind: "rect", width: 40, depth: 20, wallThickness: 2, displayName: "矩形管", sectionIdentity: nativeSectionIdentity("rect-40-20-t2") } };
 const plate = { entityId: "p", name: "封板", quantity: 1, length: 600, status: "ready", properties: {
   "manufacturing.partKind": "plate", "manufacturing.materialCategory": "plate",
   "manufacturing.plate": { width: 300, height: 600, thickness: 2, areaMm2: 180000 } } };
@@ -45,7 +46,8 @@ assert.throws(() => buildNestingRequest(view), /请先.*零件/);
 const left = renderNestingLeftPane({}, view);
 assert.match(left, /不参与管材排样/);
 assert.match(left, /300 × 600 × 2 mm/);
-assert.match(renderNestingRightPane({}, view), /板件尺寸/);
+assert.match(renderNestingRightPane({}, view), /data-tube-designer-part-field="name"/);
+assert.doesNotMatch(renderNestingRightPane({}, view), /基本信息|下料信息|板件尺寸|<dt>截面<\/dt>/);
 assert.match(renderPartsViewportOverlay({}, view), /可导出/);
 assert.doesNotMatch(renderPartsViewportOverlay({}, view), /可排样/);
 

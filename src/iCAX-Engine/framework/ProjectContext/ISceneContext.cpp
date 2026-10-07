@@ -5,6 +5,11 @@ iCAX::Project::ISceneContext::ISceneContext() = default;
 
 iCAX::Project::ISceneContext::~ISceneContext() = default;
 
+bool iCAX::Project::ISceneContext::IsStopRequested() const noexcept
+{
+    return false;
+}
+
 bool iCAX::Project::ISceneContext::HasViews() const
 {
     return false;

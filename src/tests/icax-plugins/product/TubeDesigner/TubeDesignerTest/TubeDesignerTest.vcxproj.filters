@@ -5,6 +5,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ProductAssemblyPairGeometryTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="RecoveredPartDrawingFeaturesTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ImportedPartHoleRecoveryTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ImportedPartBatchRecoveryTests.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ComponentResourceTests.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ComponentModelLibraryTests.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ProfileGenerationPerformanceTests.cpp"><Filter>源文件</Filter></ClCompile>

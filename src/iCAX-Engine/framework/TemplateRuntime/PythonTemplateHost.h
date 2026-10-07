@@ -31,6 +31,8 @@ namespace iCAX::TemplateRuntime
         // response envelope. Public model documents and parameters stay pure.
         iCAX::Data::ObjectMap Invoke(const iCAX::Data::ObjectMap& Request_,
             std::vector<std::string>* ProfileRolesConsumed_ = nullptr);
+        iCAX::Data::ObjectMap Invoke(iCAX::Data::ObjectMap&& Request_,
+            std::vector<std::string>* ProfileRolesConsumed_ = nullptr);
         bool IsRunning() const noexcept;
         void Stop() noexcept;
 

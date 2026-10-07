@@ -22,6 +22,8 @@ const part = {
 
 async function keepsParameterEditorAfterPartListGeneration() {
   const calls = [];
+  const logs = [];
+  const member = { entityId: "member-1" };
   const view = {
     pending: false,
     activeAreaId: "view",
@@ -36,6 +38,7 @@ async function keepsParameterEditorAfterPartListGeneration() {
             product, activeProductId: product.entityId,
             // Native disassembly replies contain only the compact catalogue.
             templates: [{ id: descriptor.id, name: descriptor.name, available: true }],
+            members: [member],
             manufacturingGroups: [{ productEntityId: product.entityId, parts: [part] }],
           } };
         }
@@ -46,12 +49,59 @@ async function keepsParameterEditorAfterPartListGeneration() {
     actions: { async refreshActiveSceneState() {} },
   };
   await handleDesignerAreaAction(context, view, "tube-designer-disassemble-active-product", {}, {
+    getActiveAreaViewRevision() { return "12"; },
+    async refreshActiveAreaView(_context, currentView, expectation) {
+      assert.equal(currentView.scene.tubeDesigner.members[0].entityId, member.entityId);
+      assert.deepEqual(expectation, { expectedEntityIds: [member.entityId] });
+      calls.push("View.Refresh");
+      return {
+        revision: "12",
+        viewportReceipt: { applied: true, revision: "12", entityIds: [member.entityId] },
+      };
+    },
     renderProject() {}, showNotice() {},
+    appendProjectLog(_context, level, message) { logs.push({ level, message }); },
   });
 
-  assert.deepEqual(calls, ["TubeDesigner.DisassembleSelected", "TubeDesigner.GetTemplateDescriptor"]);
+  assert.deepEqual(calls, ["TubeDesigner.DisassembleSelected", "TubeDesigner.GetTemplateDescriptor", "View.Refresh"]);
   assert.deepEqual(view.scene.tubeDesigner.templates[0].parameters, descriptor.parameters);
   assert.doesNotMatch(renderDesignerRightPane({}, view), /正在载入产品参数/);
+  const timing = view.tubeDesignerDisassemblyTiming;
+  assert.equal(timing.completed, true);
+  assert.deepEqual(timing.phases.map(({ label }) => label), [
+    "界面准备", "拆单请求（含后端处理、传输和解析）", "整理清单与参数",
+    "确认三维视图", "同步项目状态", "界面刷新（含绘制等待）",
+  ]);
+  assert.ok(timing.phases.every(({ elapsedMs }) => Number.isFinite(elapsedMs) && elapsedMs >= 0));
+  assert.ok(Math.abs(timing.phases.reduce((sum, phase) => sum + phase.elapsedMs, 0) - timing.totalMs) < 0.01);
+  assert.match(logs.at(-1).message, /拆单总耗时（从操作开始到界面刷新）/);
+}
+
+async function rejectsAnUnappliedViewAndRecordsFailure() {
+  const logs = [];
+  const view = {
+    pending: false, activeAreaId: "view",
+    scene: { tubeDesigner: { product, templates: [descriptor] } },
+  };
+  await assert.rejects(handleDesignerAreaAction({
+    sceneProxy: { async invoke(method) {
+      if (method === "TubeDesigner.GetTemplateDescriptor") return { template: descriptor };
+      return { tubeDesigner: {
+        product, templates: [descriptor], members: [{ entityId: "member-1" }],
+        manufacturingGroups: [{ productEntityId: product.entityId, parts: [part] }],
+      } };
+    } },
+  }, view, "tube-designer-disassemble-active-product", {}, {
+    renderProject() {}, showNotice() {},
+    async refreshActiveAreaView() {
+      return { revision: "12", viewportReceipt: { applied: true, revision: "12", entityIds: [] } };
+    },
+    appendProjectLog(_context, level, message) { logs.push({ level, message }); },
+  }), /缺少 1 个预览构件/);
+  assert.equal(view.pending, false);
+  assert.equal(view.tubeDesignerDisassemblyTiming.completed, false);
+  assert.equal(logs.at(-1).level, "error");
+  assert.ok(!logs.some(({ message }) => message.startsWith("拆单总耗时")));
 }
 
 async function exportsWithoutMutatingOrRerenderingInstanceDock() {
@@ -166,6 +216,7 @@ async function deletesOnlyTheActiveProductAndSelectsTheRemainingInstance() {
 }
 
 await keepsParameterEditorAfterPartListGeneration();
+await rejectsAnUnappliedViewAndRecordsFailure();
 await exportsWithoutMutatingOrRerenderingInstanceDock();
 await deletesOnlyTheActiveProductAndSelectsTheRemainingInstance();
 console.log("Product part generation keeps parameters hydrated; export preserves the instance dock.");

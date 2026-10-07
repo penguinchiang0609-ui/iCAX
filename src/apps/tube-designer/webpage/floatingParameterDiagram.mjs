@@ -1,13 +1,11 @@
 // Shared, non-modal diagram windows. Dragging changes only presentation state.
-import { patchDomNode } from './punchDomPatch.mjs';
-const bindings = new WeakMap();
 const dragBindings = new WeakMap();
-const PANEL_SELECTOR = '[data-floating-parameter-diagram], [data-library-floating-diagram]';
+const PANEL_SELECTOR = '[data-library-floating-diagram]';
 const DEFAULT_DIAGRAM_WIDTH = 360;
 const DEFAULT_DIAGRAM_HEIGHT = 405;
 
-export function floatingParameterDiagramHost(mount, create = true) {
-  const workbench = mount?.querySelector?.('.cam-workbench');
+export function floatingParameterDiagramHost(mount, create = true, scope = null) {
+  const workbench = scope ?? mount?.querySelector?.('.cam-workbench');
   if (!workbench) return null;
   let host = workbench.querySelector(':scope > [data-floating-parameter-diagram-layer]');
   if (!host && create) {
@@ -22,7 +20,7 @@ export function floatingParameterDiagramHost(mount, create = true) {
 function diagramState(view, panel) {
   const library = panel?.dataset?.libraryFloatingDiagram;
   if (library) return ((view.tubeDesignerLibraryDiagramPositions ??= {})[library] ??= {});
-  return view?.tubeDesignerFloatingToolDiagram ?? null;
+  return null;
 }
 
 function applyWorkspaceGeometry(panel, host, state, fallbackRect = null) {
@@ -45,8 +43,21 @@ function applyWorkspaceGeometry(panel, host, state, fallbackRect = null) {
 }
 
 function initialDiagramRect(mount, panel, state, measured) {
-  if (Number.isFinite(state?.x) || Number.isFinite(state?.y)) {
+  if (state?.coordinateSpace === 'workbench' && (Number.isFinite(state?.x) || Number.isFinite(state?.y))) {
     if (measured?.width > 0 && measured?.height > 0) return measured;
+  }
+  const scope=panel.closest('[data-floating-parameter-diagram-scope]');
+  if(scope) {
+    if (panel.dataset.floatingDiagramInitial === 'center') {
+      const viewport = scope.getBoundingClientRect();
+      const width = Math.min(DEFAULT_DIAGRAM_WIDTH, Math.max(0, viewport.width - 16));
+      const height = Math.min(DEFAULT_DIAGRAM_HEIGHT, Math.max(0, viewport.height - 16));
+      return { left: viewport.left + (viewport.width - width) / 2,
+        top: viewport.top + (viewport.height - height) / 2, width, height };
+    }
+    const viewport=(scope.querySelector('.td-draw-canvas')??scope).getBoundingClientRect();
+    const width=Math.min(DEFAULT_DIAGRAM_WIDTH,scope.clientWidth-16),height=Math.min(DEFAULT_DIAGRAM_HEIGHT,scope.clientHeight-16);
+    return {left:Math.max(viewport.left+8,viewport.right-width-12),top:viewport.top+12,width,height};
   }
   const host = floatingParameterDiagramHost(mount,false)?.getBoundingClientRect();
   const info = mount.querySelector('.cam-info-pane')?.getBoundingClientRect();
@@ -65,32 +76,34 @@ function initialDiagramRect(mount, panel, state, measured) {
   const library = !!panel.dataset.libraryFloatingDiagram;
   const width = Number.isFinite(state?.width) ? state.width : DEFAULT_DIAGRAM_WIDTH;
   const height = Number.isFinite(state?.height) ? state.height : DEFAULT_DIAGRAM_HEIGHT;
-  const legacyX = Number.isFinite(state?.x) ? state.x : (library ? Math.max(0, viewport.width - width) : 12);
-  const legacyY = Number.isFinite(state?.y) ? state.y : (library ? 145 : 120);
+  const initialX = library ? Math.max(0, viewport.width - width) : 12;
+  const initialY = library ? 145 : 120;
   return {
-    left: viewport.left + legacyX,
-    top: viewport.top + legacyY,
+    left: viewport.left + initialX,
+    top: viewport.top + initialY,
     width,
     height,
   };
 }
 
 export function moveFloatingParameterDiagramsToWorkspace(mount, view) {
-  const host = floatingParameterDiagramHost(mount);
-  if (!host) return null;
+  const workspaceHost = floatingParameterDiagramHost(mount);
   const panels = [...mount.querySelectorAll(PANEL_SELECTOR)];
   for (const panel of panels) {
+    const scope=panel.closest('[data-floating-parameter-diagram-scope]');
+    const host=scope?floatingParameterDiagramHost(mount,true,scope):workspaceHost;
+    if(!host)continue;
     const state = diagramState(view, panel);
     if (!state) continue;
     if (panel.parentElement === host) {
-      applyWorkspaceGeometry(panel, host, state);
+      applyWorkspaceGeometry(panel, host, state, state.coordinateSpace==='workbench'?null:initialDiagramRect(mount,panel,state,panel.getBoundingClientRect()));
       continue;
     }
     const fallbackRect = initialDiagramRect(mount,panel,state,panel.getBoundingClientRect());
     host.append(panel);
     applyWorkspaceGeometry(panel, host, state, fallbackRect);
   }
-  return host;
+  return workspaceHost;
 }
 export function diagramSizeStyle(state) {
   return Number.isFinite(state?.width) && Number.isFinite(state?.height)
@@ -109,48 +122,6 @@ export function libraryDiagramPositionStyle(view,key) {
   if(!Number.isFinite(position?.x)||!Number.isFinite(position?.y))return '';
   return diagramPositionStyle(position);
 }
-export function refreshFloatingParameterDiagram(mount,view,render) {
-  const host=floatingParameterDiagramHost(mount);if(!host)return;
-  const old=host.querySelector('[data-floating-parameter-diagram]');
-  const template=mount.ownerDocument.createElement('template');template.innerHTML=render(view);
-  const next=template.content.firstElementChild;
-  if(old&&next)patchDomNode(old,next);
-  else if(old)old.remove();else if(next){
-    // Render once in the viewport coordinate space so legacy/default positions
-    // are converted exactly, then move the panel to the workbench overlay in
-    // the same task before the browser paints it.
-    const viewport=mount.querySelector('.cam-viewport');
-    (viewport ?? host).append(next);
-  }
-  moveFloatingParameterDiagramsToWorkspace(mount,view);
-  mount.dispatchEvent(new CustomEvent('parameter-diagram-window-updated'));
-}
-export function bindFloatingParameterDiagram(mount, view, render) {
-  if (!mount) return;
-  moveFloatingParameterDiagramsToWorkspace(mount,view);
-  bindDiagramDragging(mount,view);
-  const existing=bindings.get(mount);
-  if(existing){ existing.view=view; existing.render=render; return; }
-  const binding={view,render};
-  bindings.set(mount,binding);
-  const update=()=>{
-    refreshFloatingParameterDiagram(mount,binding.view,binding.render);
-  };
-  mount.addEventListener('click',event=>{
-    const open=event.target.closest('[data-product-tool-diagram-open]');
-    const close=event.target.closest('[data-floating-diagram-close]');
-    if(!open&&!close)return;
-    const productId=String(binding.view.scene?.tubeDesigner?.product?.entityId ?? '');
-    if(open){
-      const previous=binding.view.tubeDesignerFloatingToolDiagram;
-      binding.view.tubeDesignerFloatingToolDiagram={
-        ...(previous?.productId===productId?previous:{}),productId,
-        fieldKey:open.dataset.productToolDiagramOpen,open:true};
-    }else if(binding.view.tubeDesignerFloatingToolDiagram){binding.view.tubeDesignerFloatingToolDiagram.open=false;}
-    update();
-  });
-}
-
 export function bindDiagramDragging(mount,view) {
   if(!mount)return;
   moveFloatingParameterDiagramsToWorkspace(mount,view);
@@ -161,16 +132,15 @@ export function bindDiagramDragging(mount,view) {
     const resize=event.target.closest('[data-diagram-resize]');
     const handle=resize ?? header;
     if(!handle||event.button!==0||event.target.closest('button'))return;
-    const panel=handle.closest(PANEL_SELECTOR), host=floatingParameterDiagramHost(mount,false);
+    const panel=handle.closest(PANEL_SELECTOR),scope=panel?.closest('[data-floating-parameter-diagram-scope]');
+    const host=floatingParameterDiagramHost(mount,false,scope);
     if(!panel||!host)return;
     if(panel.hidden)return;
     event.preventDefault(); event.stopPropagation();
     const start=panel.getBoundingClientRect(), parent=host.getBoundingClientRect();
     const pointer={id:event.pointerId,x:event.clientX,y:event.clientY};
     const library=panel.dataset.libraryFloatingDiagram;
-    const state=library
-      ? ((binding.view.tubeDesignerLibraryDiagramPositions ??= {})[library] ??= {})
-      : binding.view.tubeDesignerFloatingToolDiagram;
+    const state=((binding.view.tubeDesignerLibraryDiagramPositions ??= {})[library] ??= {});
     if(!state)return;
     const edge=resize?.dataset.diagramResize;
     handle.setPointerCapture(event.pointerId);

@@ -200,7 +200,7 @@ namespace
         bool m_bCommitted = false;
     };
 
-    void CreateVersion2Schema(IN sqlite3* pDatabase_)
+    void CreateCurrentSchema(IN sqlite3* pDatabase_)
     {
         Execute(pDatabase_,
             "CREATE TABLE IF NOT EXISTS user_records ("
@@ -284,30 +284,11 @@ struct iCAX::Application::CSqliteUserDataStore::CImpl final
             Execute(pDatabase, "PRAGMA synchronous=FULL;");
             Execute(pDatabase, "PRAGMA foreign_keys=ON;");
             const auto _SchemaVersion = ReadUserVersion(pDatabase);
-            if (_SchemaVersion > 2)
-                throw std::runtime_error("User data database was created by a newer iCAX version");
+            if (_SchemaVersion != 0 && _SchemaVersion != 2)
+                throw std::runtime_error("Unsupported user data database schema version");
 
-            if (_SchemaVersion == 1)
-            {
-                CTransaction _Transaction(pDatabase);
-                Execute(pDatabase, "ALTER TABLE user_records RENAME TO user_records_v1;");
-                CreateVersion2Schema(pDatabase);
-                Execute(pDatabase,
-                    "INSERT INTO user_records(product_id, feature_id, record_type, record_id, "
-                    "subject_type, subject_id, owner_scope, schema_version, payload, revision, "
-                    "created_at, updated_at, deleted_at) "
-                    "SELECT data_namespace, '_legacy', collection_name, record_id, 'product', "
-                    "data_namespace, owner_scope, 1, payload, revision, created_at, updated_at, deleted_at "
-                    "FROM user_records_v1;"
-                    "DROP TABLE user_records_v1;"
-                    "PRAGMA user_version=2;");
-                _Transaction.Commit();
-            }
-            else
-            {
-                CreateVersion2Schema(pDatabase);
-                if (_SchemaVersion == 0) Execute(pDatabase, "PRAGMA user_version=2;");
-            }
+            CreateCurrentSchema(pDatabase);
+            if (_SchemaVersion == 0) Execute(pDatabase, "PRAGMA user_version=2;");
         }
         catch (...)
         {

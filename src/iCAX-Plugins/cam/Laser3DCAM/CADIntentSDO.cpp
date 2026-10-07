@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "ToolpathSDOImplement.h"
@@ -30,13 +31,13 @@ namespace
         CCADIntentSDO()
             : CSDO("CADIntent")
         {
-            ExposeMethod("Recognize", &iCAX::CAM::SDO::HandleRecognizeCADIntent);
-            ExposeMethod("OpenEditorScene", &iCAX::CAM::SDO::HandleOpenCADIntentEditorScene);
+            ExposeMethod("Recognize", tube::license::ProtectProductMethod<11001, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleRecognizeCADIntent));
+            ExposeMethod("OpenEditorScene", tube::license::ProtectProductMethod<11002, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleOpenCADIntentEditorScene));
             ExposeMethod("CloseEditorScene", &iCAX::CAM::SDO::HandleCloseCADIntentEditorScene);
-            ExposeMethod("AddTool", &iCAX::CAM::SDO::HandleAddCADIntentTool);
-            ExposeMethod("PreviewParameters", &iCAX::CAM::SDO::HandlePreviewCADIntentParameters);
-            ExposeMethod("SetParameters", &iCAX::CAM::SDO::HandleSetCADIntentParameters);
-            ExposeMethod("SelectInterpretation", &iCAX::CAM::SDO::HandleSelectCADIntentInterpretation);
+            ExposeMethod("AddTool", tube::license::ProtectProductMethod<11003, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleAddCADIntentTool));
+            ExposeMethod("PreviewParameters", tube::license::ProtectProductMethod<11004, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandlePreviewCADIntentParameters));
+            ExposeMethod("SetParameters", tube::license::ProtectProductMethod<11005, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetCADIntentParameters));
+            ExposeMethod("SelectInterpretation", tube::license::ProtectProductMethod<11006, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSelectCADIntentInterpretation));
         }
     };
 

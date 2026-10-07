@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import {
-  handleNestingPartImportAction,
-  handleNestingPartImportRibbonCommand,
-  renderNestingPartImportDialog,
+  handleNestingPartImportRibbonCommand, buildNestingPartImportMetadata, importNestingParts,
 } from "../../apps/tube-designer/webpage/nestingPartImport.mjs";
 import {
   handleDesignerAreaAction,
@@ -14,6 +13,7 @@ import { buildAutomaticDimensionReport } from "../../apps/tube-designer/webpage/
 import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 
 const profile = {
+  sectionIdentity: nativeSectionIdentity("rect-40-20-t1.5"),
   id: "imported-rect-40-20-1.5", kind: "rect", displayName: "矩形管",
   specification: "40 × 20 × 壁厚 1.5 mm", width: 40, depth: 20, wallThickness: 1.5, hollow: true,
 };
@@ -35,7 +35,6 @@ const view = { activeAreaId: "nesting", pending: false, scene: { tubeDesigner: {
 const calls = [];
 const notices = [];
 const context = {
-  appProxy: { bridge: { async openFileDialog(options) { calls.push({ method: "openFileDialog", options }); return "D:\\cad\\横杆.IGES"; } } },
   sceneProxy: { async invoke(method, payload) {
     calls.push({ method, payload });
     return {
@@ -186,22 +185,51 @@ assert.equal(await handleDesignerRibbonCommand(
 assert.equal(noDisassemblyView.tubeDesignerDisassemblySelectorOpen, undefined);
 assert.match(noDisassemblyView.error, /没有可导入的已拆单产品.*产品页生成零件清单/);
 
-await handleNestingPartImportRibbonCommand(context, view, "nesting.import-part", ops);
-assert.deepEqual(calls[0].options.filters[0].extensions, ["step", "stp", "iges", "igs"]);
-assert.match(renderNestingPartImportDialog(view), /识别主方向、成品长度、截面形状与尺寸/);
-
-await handleNestingPartImportAction(context, view, "tube-designer-nesting-import-draft", {
-  dataset: { tubeDesignerNestingImportField: "material" }, value: "Q235B",
-}, ops);
-await handleNestingPartImportAction(context, view, "tube-designer-nesting-import-confirm", {}, ops);
-assert.equal(calls[1].method, "TubeDesigner.ImportNestingPart");
-assert.equal(calls[1].payload.sourcePath, "D:\\cad\\横杆.IGES");
-assert.equal(calls[1].payload.material, "Q235B");
+// The real application file browser is exercised by NestingPartDirectImport.browser.
+// This unit isolates the import state transition and metadata contract.
+await importNestingParts(context, view, ops, [buildNestingPartImportMetadata("D:/cad/横杆.IGES")]);
+assert.deepEqual(calls.map(({ method }) => method), ["TubeDesigner.ImportNestingPart"]);
+assert.deepEqual(calls[0].payload, { sourcePath: "D:/cad/横杆.IGES", name: "横杆", material: "", quantity: 1 });
+assert.equal(Object.hasOwn(view, "tubeDesignerNestingImportDraft"), false);
 assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["part-1"]);
 assert.equal(view.tubeDesignerActiveNestingPartId, "part-1");
 assert.equal(view.pending, false);
+assert.equal(view.tubeDesignerOperation, null);
 assert.match(notices[0], /40 × 20/);
 assert.match(renderNestingRightPane({}, view), /data-tube-designer-part-field="material"/);
+assert.match(renderNestingRightPane({}, view), /data-tube-designer-part-field="quantity"/);
+await assert.rejects(handlePartsAreaAction(context, view, "tube-designer-punch-open", {
+  dataset: { tubeDesignerPartId: "part-1" },
+}, ops), /请先选择下料区的冲孔件/, "Imported CAD cannot enter the punch editor through a direct action");
+
+for (const [fileName, name] of [
+  ["part.STEP", "part"], ["long.part.stp", "long.part"], ["开孔管.igs", "开孔管"],
+  ["型".repeat(70) + ".step", "型".repeat(53)],
+  ["\u{1F600}".repeat(50) + ".STEP", "\u{1F600}".repeat(40)], [".step", "导入零件"],
+]) {
+  const metadata = buildNestingPartImportMetadata(`D:/cad/${fileName}`);
+  assert.deepEqual(metadata, { sourcePath: `D:/cad/${fileName}`, name, material: "", quantity: 1 });
+}
+const rejectedView = { pending: false, scene: { tubeDesigner: {} } };
+let rejectedRenders = 0;
+await assert.rejects(importNestingParts({ sceneProxy: { async invoke(method, payload, options) {
+  assert.equal(method, "TubeDesigner.ImportNestingPart");
+  assert.equal(options.timeoutMs, 180000);
+  throw new Error("Native import rejected fixture");
+} } }, rejectedView, { renderProject() { rejectedRenders++; } }, [buildNestingPartImportMetadata("D:/cad/part.step")]), /Native import rejected fixture/);
+assert.equal(rejectedView.pending, false);
+assert.equal(rejectedView.tubeDesignerOperation, null);
+assert.equal(rejectedView.error, "part.step：Native import rejected fixture");
+assert.equal(rejectedRenders, 2);
+const malformedView = { pending: false };
+await assert.rejects(importNestingParts({ sceneProxy: { async invoke() { return {}; } } }, malformedView,
+  { renderProject() {} }, [buildNestingPartImportMetadata("D:/cad/part.step")]), /未返回有效的下料记录/);
+assert.equal(malformedView.pending, false);
+assert.equal(malformedView.tubeDesignerOperation, null);
+const busyView = { pending: true };
+assert.equal(await importNestingParts({ sceneProxy: { invoke() { throw Error("Busy import must not call native"); } } },
+  busyView, { renderProject() { throw Error("Busy import must not render"); } }, [buildNestingPartImportMetadata("D:/cad/part.step")]), null);
+assert.equal(await handleNestingPartImportRibbonCommand(context, view, "nesting.unrelated", ops), false);
 
 const geometryMeasurement = {
   available: true,
@@ -224,7 +252,7 @@ view.tubeDesignerPartMeasurementState = {
   key: "part-1@0", status: "ready", report: buildAutomaticDimensionReport({ geometryMeasurement }),
 };
 const detailHtml = renderNestingRightPane({}, view);
-assert.match(detailHtml, /自动复尺/);
+assert.doesNotMatch(detailHtml, /自动复尺/, "Removed measurement summary must stay hidden; feature details remain available");
 assert.match(detailHtml, /中心距首端/);
 assert.match(detailHtml, /⌀10/);
 

@@ -9,6 +9,28 @@ const tool={id:"branch-profile",version:"1",digest:"exact",target:"part",require
 const section={source:"library",profile:{contours:[{kind:"circle",radius:20}]},parameters:{diameter:40}};
 const state=createDrawingState({entityId:"drawing",length:500});installDrawingCatalogue(state,{tools:[tool]});
 
+const curveTool={...JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/curve-pocket/tool.json",import.meta.url),"utf8")),digest:"curve"};
+const curveSection={source:"recovered",name:"识别曲线",profile:{contours:[
+  {kind:"path",segments:[{kind:"bspline",degree:2,controlPoints:[[-10,0],[0,5],[10,0]],knots:[0,1],multiplicities:[3,3],startParameter:0,endParameter:1},
+    {kind:"line",start:[-10,0],end:[10,0],reversed:true}]},
+  {kind:"circle",center:[0,1],radius:0.5},
+]}};
+const curveState=createDrawingState({entityId:"curve-part",length:500});installDrawingCatalogue(curveState,{tools:[curveTool]});
+curveState.draft=normalizeDrawingFeature({section:curveSection,station:100});
+selectDrawingTool(curveState,curveState.draft,curveTool.id);
+assert.equal(curveState.draft.recordKind,"profile");assert.equal(curveState.draft.toolTarget,"side");
+assert.equal(curveState.draft.angle,undefined,"Side profile cuts do not acquire branch placement");
+assert.equal(curveState.draft.cutDepth,0.2);assert.equal(curveState.draft.blindHole,true);
+assert.equal(addDrawingFeature(curveState),true);editDrawingFeature(curveState,"edit",0);
+for(const [field,value] of [["cutDepth","0.4"],["face","bottom"],["rotation","25"],["station","115"]])
+  updateDrawingField(curveState,{value,dataset:{tubeDesignerPunchField:field}});
+assert.equal(addDrawingFeature(curveState),true);
+const curvePayload=getDrawingPayload(curveState).features[0];
+assert.equal(curvePayload.cutDepth,0.4);assert.equal(curvePayload.face,"bottom");assert.equal(curvePayload.rotation,25);
+assert.deepEqual(curvePayload.section,curveSection,"Exact curves and islands survive side-cut editing and transport");
+assert.deepEqual(curvePayload.toolParameters,{});
+curveState.features[0].section={};assert.match(validateDrawing(curveState),/切除轮廓/);
+
 const vNotch=JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/v-notch-sharp/tool.json",import.meta.url),"utf8"));
 vNotch.digest="auto-fill";
 vNotch.defaultParameters=Object.fromEntries(vNotch.parameters.map(parameter=>[parameter.key,parameter.defaultValue]));

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "certificateFormat": "TDLIC003",
+  "features": [
+    { "id": "page.product", "bit": 1, "label": "产品页", "parent": null },
+    { "id": "page.nesting", "bit": 2, "label": "下料页", "parent": null },
+    { "id": "page.machining", "bit": 4, "label": "加工页", "parent": null },
+    { "id": "page.simulation", "bit": 8, "label": "仿真页", "parent": null },
+    { "id": "product.design", "bit": 16, "label": "产品设计", "parent": "page.product" },
+    { "id": "product.breakdown", "bit": 32, "label": "产品拆单", "parent": "page.product" },
+    { "id": "product.export", "bit": 64, "label": "产品导出", "parent": "page.product" },
+    { "id": "nesting.edit", "bit": 128, "label": "下料零件编辑", "parent": "page.nesting" },
+    { "id": "nesting.calculate", "bit": 256, "label": "排样计算", "parent": "page.nesting" },
+    { "id": "nesting.export", "bit": 512, "label": "下料导出", "parent": "page.nesting" },
+    { "id": "machining.toolpath", "bit": 1024, "label": "加工刀路", "parent": "page.machining" },
+    { "id": "machining.export", "bit": 2048, "label": "加工导出", "parent": "page.machining" },
+    { "id": "simulation.run", "bit": 4096, "label": "运行仿真", "parent": "page.simulation" }
+  ]
+}

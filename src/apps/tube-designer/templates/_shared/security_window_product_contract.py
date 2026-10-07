@@ -29,7 +29,7 @@ def cross(a,b):
     return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
 
 
-def _logical_segment(item,parameters,frame_width=None):
+def _logical_segment(item,parameters):
     existing=item['properties'].get('assemblyFrame.member')
     if existing:
         frame=existing['sectionFrame']
@@ -46,10 +46,6 @@ def _logical_segment(item,parameters,frame_width=None):
     key=item['key']
     half=item['properties']['tubeDesigner.profile']['width']/2
     if parameters.get('faceType','single') != 'single' and key.startswith('outer_frame.vertical.'):
-        # Independent corner-post sections retain the frame centreline datum.
-        # Their own half-width does not move the three-way assembly node.
-        if _runtime('security_window_post_connections').active_route(parameters) and parameters.get('foldedPostJoint','weld') != 'weld':
-            half=float(frame_width)/2
         start[2],end[2]=half,float(parameters['height'])-half
     elif key.startswith(('outer_frame.','access_door.fixed_frame.','access_door.leaf.frame.')):
         if not (key.startswith('outer_frame.') and parameters.get('faceType','single')=='single'
@@ -83,14 +79,13 @@ def _design(parameters,context,core):
     layout.update(assemblyPlanningMode='builtin_rules',
                   frameManufacturingMode='segment_weld',frameCornerJoin='rail_miter',
                   frameJoinType='miter_45',doorFrameJoinType='miter_45',doorLeafFrameJoinType='miter_45',
-                  assemblyClearance=0.0)
-    layout['_foldedPostSectionEnabled'] = (
-        _runtime('security_window_post_connections').active_route(parameters)
-        and parameters.get('foldedPostJoint', 'weld') != 'weld')
-    layout['_foldedPostTerminalSectionEnabled'] = (
-        layout['_foldedPostSectionEnabled'] and parameters.get('frameManufacturingMode', 'segment_weld') == 'segment_weld')
-    post_section = (core._profile(parameters, 'foldedPost')
-                    if layout['_foldedPostSectionEnabled'] and parameters.get('faceType', 'single') == 'single' else None)
+                  assemblyClearance=0.0,
+                  outerFrameBendKFactor=0.0,outerFrameFoldBridge=1.0,outerFrameVGrooveMaleFemale=False,
+                  outerFrameVGrooveBottomStrategy='sharp',outerFrameVGrooveRoundRadius=2.0,
+                  doorFrameBendKFactor=0.0,doorFrameFoldBridge=1.0,doorFrameVGrooveMaleFemale=False,
+                  doorFrameVGrooveBottomStrategy='sharp',doorFrameVGrooveRoundRadius=2.0,
+                  doorLeafFrameBendKFactor=0.0,doorLeafFrameFoldBridge=1.0,doorLeafFrameVGrooveMaleFemale=False,
+                  doorLeafFrameVGrooveBottomStrategy='sharp',doorLeafFrameVGrooveRoundRadius=2.0)
     if parameters.get('faceType', 'single') != 'single':
         layout['assemblyPlanningMode'] = 'builtin_rules'
     # Manufacturing drafts cannot alter the product input or reject its layout.
@@ -104,23 +99,12 @@ def _design(parameters,context,core):
     model=NeutralModel(template_id=source['template']['id'],template_version=source['template']['version'],
                        package_digest=source['template']['packageDigest'],parameters=parameters)
     shared=core.SharedTubeGeometry(model)
-    logical_segments = {item['key']: _logical_segment(item, parameters, frame.width) for item in source['items']}
-    terminal_display_extensions = {}
-    if (layout['_foldedPostSectionEnabled']
-            and parameters.get('frameManufacturingMode', 'segment_weld') == 'segment_weld'):
-        post_keys = [key for key in logical_segments if key.startswith(
-            ('outer_frame.vertical.', 'outer_frame.left.', 'outer_frame.right.'))]
-        rails = {item['key']: item for item in source['items'] if item['key'].startswith(
-            ('outer_frame.top.', 'outer_frame.bottom.', 'outer_frame.back.'))}
-        for post in post_keys:
-            for post_end in ('start', 'end'):
-                point = logical_segments[post][post_end]
-                receivers = [key for key in rails if min(math.dist(point, logical_segments[key][end])
-                             for end in ('start', 'end')) < 1.e-6]
-                if len(receivers) == 1:
-                    receiver = receivers[0]
-                    end = min(('start', 'end'), key=lambda side: math.dist(point, logical_segments[receiver][side]))
-                    terminal_display_extensions[(receiver, end)] = rails[receiver]['properties']['tubeDesigner.profile']['width'] / 2
+    logical_segments = {item['key']: _logical_segment(item, parameters) for item in source['items']}
+    display_frames = _runtime('security_window_display_geometry')
+    support_interval = _runtime('assembly_stock_allowance')._support_interval
+    frame_ends = display_frames.frame_end_layout(logical_segments,
+        face=parameters.get('faceType', 'single'), layout=parameters.get('frameLayout', 'four_sides'),
+        support_interval=support_interval)
     members={}
     sections={}
     def generic_contours(contours):
@@ -158,21 +142,6 @@ def _design(parameters,context,core):
         if not any(key in item['properties'] for key in ('tubeDesigner.designSegment','assemblyFrame.member')):
             raise ValueError('成品管段缺少真实中心线与截面: '+item['key'])
         segment=deepcopy(logical_segments[item['key']])
-        if post_section is not None:
-            if item['key'].startswith(('outer_frame.left.', 'outer_frame.right.')):
-                item['properties']['tubeDesigner.profile'] = core._profile_properties(post_section)
-                segment['contours'] = post_section.contours()
-            elif item['key'].startswith('main_grid.horizontal.'):
-                # The thinner post moves the physical receiving wall, while
-                # its centreline remains at the established frame datum.
-                original = frame.width - reserve
-                actual = frame.width / 2 + post_section.width / 2 - reserve
-                for endpoint in ('start', 'end'):
-                    if abs(segment[endpoint][0] - original) < 1.e-7:
-                        segment[endpoint][0] = actual
-                    elif abs(segment[endpoint][0] - (float(parameters['width']) - original)) < 1.e-7:
-                        segment[endpoint][0] = float(parameters['width']) - actual
-                segment['placement']['origin'] = list(segment['start'])
         start,end=segment['start'],segment['end']
         axis=unit(sub(end,start))
         props={key:deepcopy(value) for key,value in item['properties'].items()
@@ -209,17 +178,16 @@ def _design(parameters,context,core):
                 'faceNormals':{'right':across,'left':[-v for v in across],
                                'top':normal,'bottom':[-v for v in normal]}}}
         display_start, display_end = list(start), list(end)
-        for endpoint in ('start', 'end'):
-            extension = terminal_display_extensions.get((item['key'], endpoint), 0.)
-            if extension:
-                target = display_start if endpoint == 'start' else display_end
-                sign = -1 if endpoint == 'start' else 1
-                target[:] = [value + sign * extension * direction for value, direction in zip(target, axis)]
         display_section = deepcopy(section)
         display_section['origin'] = display_start
-        solid=shared.emit_tube('design.'+item['key'],
-            profile_arguments={'placement':display_section,'contours':generic_contours(segment['contours'])},
-            extrude_arguments={'vector':sub(display_end,display_start)})
+        display_contours = generic_contours(segment['contours'])
+        if item['key'] in frame_ends:
+            solid = display_frames.emit_frame_member(model, shared, 'design.'+item['key'], segment,
+                display_contours, frame_ends[item['key']], support_interval)
+        else:
+            solid=shared.emit_tube('design.'+item['key'],
+                profile_arguments={'placement':display_section,'contours':display_contours},
+                extrude_arguments={'vector':sub(display_end,display_start)})
         props['tubeDesigner.profile']['sectionResource']=section_resource(props['tubeDesigner.profile']['contours'])
         model.item(item['key'],item['displayName'],representations={'display':solid},properties=props)
         members[item['key']]=props['assemblyFrame.member']

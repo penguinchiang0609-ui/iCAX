@@ -5,7 +5,7 @@ import { arcThroughPoints, curvePoint, editableSegments, nearestSegment, pathNod
 import { analyzeSectionDraft, breakEntityAtPoint, buildProfileFromSectionDraft, createInitialSketchState, entitiesFromProfile, finishCadCommand, handleCadPoint, handleSketchRibbonCommand, insertPointOnEntity, mergeSelectedEntities, updateEntityFromGrip } from "../../apps/tube-designer/webpage/sketchArea.mjs";
 
 const near=(a,b,tol=1e-7)=>assert.ok(Math.hypot(a[0]-b[0],a[1]-b[1])<tol,`${a} != ${b}`);
-const draftOf=(e)=>({...createInitialSketchState().section,entities:[e],selectedIds:[e.id],selectedId:e.id});
+const draftOf=(e)=>({...createInitialSketchState().section,entities:[e],selectedIds:[e.id]});
 const circle={id:"circle",kind:"circle",cx:3.125678,cy:-4.987654,radius:17.987654,closed:true};
 const rect={id:"rect",kind:"rectangle",x:0,y:0,width:60,height:40,radius:8,closed:true};
 const ellipse={id:"ellipse",kind:"ellipse",cx:7,cy:-3,radiusX:28,radiusY:6,rotation:.713,closed:true};

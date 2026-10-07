@@ -490,6 +490,11 @@ void iCAX::Project::CProjectScene::Start()
     }
 }
 
+bool iCAX::Project::CProjectScene::IsStopRequested() const noexcept
+{
+    return m_bStopRequested.load(std::memory_order_acquire);
+}
+
 void iCAX::Project::CProjectScene::Stop()
 {
     std::thread _ThreadToJoin;
@@ -664,6 +669,8 @@ void iCAX::Project::CProjectScene::WorkerMain()
             {
                 _Handler(*this, GetBackendSDOEndpoint());
             }
+
+            if (IsStopRequested()) break;
 
             Tick();
             PostSwapPDO();

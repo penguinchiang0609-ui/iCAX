@@ -45,7 +45,6 @@ def parameters(**updates):
                   accessDoorEnabled=False, accessDoorFace="front", doorUOffset=80.0,
                   doorVOffset=500.0, doorWidth=400.0, doorHeight=600.0,
                   doorClearWidth=400.0, doorClearHeight=600.0,
-                  doorHardwareClearance=0.0,
                   doorGap=3.0, doorHingeSide="left", doorHingeCount=2,
                   doorFrameJoinType="butt_90", doorLeafFrameJoinType="butt_90",
                   doorFrameButtWrapMode="side_wraps_horizontal", doorLeafFrameButtWrapMode="side_wraps_horizontal",
@@ -72,21 +71,26 @@ def parameters(**updates):
 
 
 def build(layout="three-face", purpose=None, **updates):
-    recorded = []
+    recorded = {}
     original = MODULE._append_part
+    original_tube = MODULE._emit_tube
 
     def emit(*args, **kwargs):
         part = original(*args, **kwargs)
-        recorded.append(part)
+        recorded[part.key] = part
         return part
+
+    def emit_tube(model, part, shared):
+        recorded[part.key] = part
+        return original_tube(model, part, shared)
 
     context = {"template": {}}
     if purpose is not None:
         context["geometryPurpose"] = purpose
-    with patch.object(MODULE, "_append_part", side_effect=emit):
+    with patch.object(MODULE, "_append_part", side_effect=emit), patch.object(MODULE, "_emit_tube", side_effect=emit_tube):
         document = MODULE._generate_multi_face_geometry(parameters(**updates), context,
                                                        template_id="test", template_version="1", layout=layout)
-    return document, recorded
+    return document, list(recorded.values())
 
 
 def bounds(part):
@@ -138,21 +142,40 @@ def clip_half_plane(polygon, first, second, sign=1.0):
 def manufactured_footprint(part, document):
     low, high = bounds(part)
     polygon = [(low[0], low[1]), (high[0], low[1]), (high[0], high[1]), (low[0], high[1])]
-    nodes = {node["key"]: node for node in document["geometry"]}
-    for end in ("start", "end"):
-        node = nodes.get(f"{part.key}.miter.{end}.profile")
-        if node is None:
-            continue
-        arguments = node["arguments"]
-        placement = arguments["placement"]
-        world = [tuple(placement["origin"][i] + placement["xAxis"][i] * point[0]
-                       + placement["yAxis"][i] * point[1] for i in range(2))
-                 for point in arguments["contours"][0]["points"]]
-        first, second = world[1:3]
-        cutter_side = cross2((second[0] - first[0], second[1] - first[1]),
-                             (world[0][0] - first[0], world[0][1] - first[1]))
-        polygon = clip_half_plane(polygon, first, second, -1.0 if cutter_side > 0 else 1.0)
+    for record in miter_records(part, document):
+        matrix = record['processInput']['parts']['stock']['matrix']
+        plane = record['result']['checks'][0]
+        local, normal = plane['origin'], plane['inwardNormal']
+        point = [sum(matrix[4*i+j]*local[j] for j in range(3))+matrix[4*i+3] for i in range(3)]
+        inward = [sum(matrix[4*i+j]*normal[j] for j in range(3)) for i in range(3)]
+        first = point[:2]
+        second = [first[0]+inward[1], first[1]-inward[0]]
+        polygon = clip_half_plane(polygon, first, second)
     return polygon
+
+
+def miter_records(part, document):
+    return [record for record in document.get('extensions', {}).get('tubeDesigner.assemblyGeometryProcesses', {}).get('instances', [])
+            if record['stockId'] == part.key and record['templateId'] == 'tube-end-joint'
+            and record['processInput']['geometry']['mode'] == 'miter']
+
+
+def manufacturing_nodes(part, document):
+    nodes = {node["key"]: node for node in document["geometry"]}
+    item = next(item for item in document["items"] if item["key"] == part.key)
+    root = item["representations"].get("result", item["representations"].get("export"))
+    reachable = {}
+
+    def visit(key):
+        if key in reachable:
+            return
+        node = nodes[key]
+        reachable[key] = node
+        for dependency in node.get("inputs", []):
+            visit(dependency)
+
+    visit(root)
+    return reachable
 
 
 def intersection_area(first, second):
@@ -183,7 +206,7 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
             frame = [part for part in parts if part.key.startswith("outer_frame.")]
             for first, second in combinations(frame, 2):
                 self.assertFalse(has_volume_overlap(first, second), (layout, first.key, second.key))
-            changed = {part.key: part for part in build(layout, horizontalBranchReserve=0.0)[1]}
+            changed = {part.key: part for part in build(layout, horizontalBranchReserve=2.0)[1]}
             for part in frame:
                 self.assertEqual((part.start, part.end), (changed[part.key].start, changed[part.key].end))
 
@@ -231,7 +254,8 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "内腔"):
             build(frameWallThickness=2.0)
         build(frameWallThickness=2.0, infillPattern="vertical")
-        build(frameWallThickness=2.0, horizontalBranchReserve=0.0)
+        with self.assertRaisesRegex(ValueError, "入榫深度必须大于0"):
+            build(frameWallThickness=2.0, horizontalBranchReserve=0.0)
 
     def test_no_insertion_produces_no_boundary_drill_holes(self):
         document, _ = build(horizontalBranchReserve=0.0, verticalBranchReserve=0.0,
@@ -300,6 +324,20 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
         self.assertIn("boolean", {node["operator"] for node in manufactured["geometry"]})
         transforms = [node for node in display["geometry"] if node["operator"] == "transform"]
         self.assertLess(len({node["inputs"][0] for node in transforms}), len(transforms))
+        nodes={node['key']:node for node in manufactured['geometry']}
+        records=manufactured['extensions']['tubeDesigner.assemblyGeometryProcesses']['instances']
+        local_tools={}
+        for record in records:
+            if record['templateId']!='tube-profile-aperture' or not record['result']['operations']:
+                continue
+            operation=nodes[record['resultGeometry']]
+            self.assertEqual('boolean',operation['operator'])
+            for tool in operation['arguments']['tools']:
+                placement=nodes[tool]
+                self.assertEqual('transform',placement['operator'])
+                local_tools.setdefault(placement['inputs'][0],set()).add(record['stockId'])
+        self.assertTrue(any(len(stocks)>1 for stocks in local_tools.values()),
+                        'Repeated exact local cutters must share a prototype across actual stocks')
         self.assertEqual({item["key"] for item in display["items"]},
                          {item["key"] for item in manufactured["items"]})
 
@@ -353,19 +391,25 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
             document, parts = build("five-face", purpose=purpose,
                                     frameCornerJoin="rail_miter", frameDepth=38.0)
             nodes = {node["key"]: node for node in document["geometry"]}
-            cut_profiles = [node for key, node in nodes.items() if ".miter." in key and key.endswith(".profile")]
-            self.assertEqual(0 if purpose == "display" else 16, len(cut_profiles))
+            cuts = [record for part in parts for record in miter_records(part, document)]
             if purpose == "display":
+                self.assertEqual([], cuts)
                 self.assertNotIn("boolean", {node["operator"] for node in nodes.values()})
             else:
+                applied_cuts = 0
                 for part in parts:
                     if part.start_miter is None and part.end_miter is None:
                         continue
-                    end_cut = nodes[f"{part.key}.solid.miter"]
-                    self.assertEqual("subtract", end_cut["arguments"]["operation"])
-                    self.assertEqual(part.key + ".solid", end_cut["arguments"]["target"])
-                    target = nodes[end_cut["arguments"]["target"]]
-                    self.assertEqual("transform", target["operator"])
+                    dependencies = manufacturing_nodes(part, document)
+                    records = miter_records(part, document)
+                    expected_cuts = int(part.start_miter is not None) + int(part.end_miter is not None)
+                    self.assertEqual(expected_cuts, len(records))
+                    applied_cuts += len(records)
+                    for record in records:
+                        self.assertIn(record['resultGeometry'], dependencies)
+                        self.assertEqual('subtract', record['result']['operations'][0]['operation'])
+                    target = next(node for node in dependencies.values() if node['operator']=='transform'
+                                  and nodes[node['inputs'][0]]['operator']=='extrude')
                     extrusion = nodes[target["inputs"][0]]
                     profile = nodes[extrusion["inputs"][0]]
                     self.assertEqual(2, len(profile["arguments"]["contours"]))
@@ -374,6 +418,8 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                     outer = profile["arguments"]["contours"][0]
                     self.assertEqual("path", outer["kind"])
                     self.assertTrue(any(edge["kind"] == "arc" for edge in outer["segments"]))
+                self.assertEqual(16, applied_cuts)
+                self.assertEqual(16, len(cuts))
             for item in document["items"]:
                 if item["key"].startswith(("outer_frame.top.", "outer_frame.bottom.", "outer_frame.back.")):
                     self.assertEqual("uncut_miter_stock", item["properties"]["tubeDesigner.displayApproximation"])
@@ -395,8 +441,19 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
         inserted = next(part for part in parts if part.key.startswith("cap_grid.horizontal.") and part.face_index == 4)
         shifted = replace(inserted, start=(inserted.start[0], -30.0, inserted.start[2]),
                           end=(inserted.end[0], -30.0, inserted.end[2]))
-        with self.assertRaisesRegex(ValueError, "进入45°斜切端面"):
-            MODULE._validate_miter_hole_margin(receiver, shifted, 0.1)
+        machining=MODULE._frame_geometry._machining
+        stock=machining.actual_part(None,receiver,MODULE._profile_arguments)
+        planes=[]
+        runtime=machining._load('assembly_geometry_process_runtime')
+        for end,station,adjacent in MODULE._miter_ends(receiver):
+            result=runtime.evaluate('tube-end-joint',machining.input_of({'stock':stock},
+                {'mode':'miter','end':end,'station':station,'mateDirection':adjacent}),{})
+            planes.extend({'origin':c['origin'],'inwardNormal':c['inwardNormal']} for c in result['checks'])
+        result=runtime.evaluate('tube-profile-aperture',machining.input_of({'stock':stock,
+            'branch':machining.actual_part(None,shifted,MODULE._profile_arguments)}, {'keepPlanes':planes}),
+            {'clearance':0.1,'checkFit':True})
+        self.assertFalse(result['applicable'])
+        self.assertRegex(result['reason'], '进入斜切端面')
 
     def test_insertion_depth_is_always_validated(self):
         for key in ("horizontalBranchReserve", "verticalBranchReserve"):

@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 import authority
+from feature_catalog import validate_mask
 
 
 def canonical(value):
@@ -87,6 +88,9 @@ class Issuer:
 
     def issue(self, request_path: Path, password: bytes, *, customer: str,
               kind: int, features: int, min_major: int, max_major: int, days: int = 30):
+        validate_mask(features)
+        if kind == 2:
+            raise ValueError("TDLIC003 trials require a TPM NV enrollment request; software test requests cannot issue trials")
         body, pub, request_hash = read_request(request_path)
         if not isinstance(customer, str) or not customer.strip() or len(customer) > 256:
             raise ValueError("Customer name is required (maximum 256 characters)")

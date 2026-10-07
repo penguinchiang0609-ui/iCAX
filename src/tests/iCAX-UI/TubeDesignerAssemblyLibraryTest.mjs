@@ -14,8 +14,6 @@ import {
   renderAssemblyLibraryRightPane,
   renderAssemblyLibraryViewportOverlay,
 } from "../../apps/tube-designer/webpage/assemblyLibrary.mjs";
-import { productAssemblyConnectionIdentity } from "../../apps/tube-designer/webpage/productAssemblyConnections.mjs";
-import { handleProductAssemblyBindingAction, productAssemblyBindingDraft, productAssemblyBindingIdentity } from "../../apps/tube-designer/webpage/productAssemblyBindings.mjs";
 import { assemblyProcessInput, createFinishedProduct, finishedProductInput, finishedProductKey } from "../../apps/tube-designer/webpage/finishedProductModel.mjs";
 
 const root = fileURLToPath(new URL("../../apps/tube-designer/templates/assembly/", import.meta.url));
@@ -122,58 +120,35 @@ const editorContext = { sceneProxy: { resources: {}, async invoke(method, payloa
   };
   throw new Error(`unexpected editor ${method}`);
 } } };
-const view = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: templates,
+const grantedLicense = { featureSchemaVersion: 1, capabilities: { "product.design": true } };
+const view = { activeAreaId: "assemblies", tubeDesignerLicense: grantedLicense, tubeDesignerAssemblyTemplates: templates,
   tubeDesignerAssemblyLibrary: { selectedId: "bend" } };
-const productView = { tubeDesignerAssemblyTemplates: templates, scene: { tubeDesigner: { activeProductId: "product-a", generationRun: { entityId: "run-a" } } } };
-assert.equal(assemblyLibraryState(productView).workMode, "product");
-const defaultProductTemplate = templates.find((item) => item.productBinding?.mode === "incremental-cut");
-assert.equal(assemblyLibraryState(productView).selectedId, defaultProductTemplate.id,
-  "产品模式默认选第一个可绑定模板，不依赖特定模板 ID");
+const productView = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: templates,
+  scene: { tubeDesigner: { activeProductId: "product-a", generationRun: { entityId: "run-a" } } } };
+const defaultExample = templates.find((item) => item.exampleInput?.shapeId);
+assert.equal(assemblyLibraryState(productView).selectedId, defaultExample.id,
+  "资源库始终选择独立工艺示例，不依赖当前产品节点");
+assert.equal(Object.hasOwn(assemblyLibraryState(productView), "workMode"), false,
+  "装配资源库不再有产品节点工作模式");
+assert.match(renderAssemblyLibraryLeftPane({}, productView), /data-tube-assembly-id="mechanical-fastener"/);
+assert.match(renderAssemblyLibraryRightPane({}, productView), /data-finished-product-editor/);
+for (const html of [renderAssemblyLibraryLeftPane({}, productView), renderAssemblyLibraryRightPane({}, productView),
+  renderAssemblyLibraryViewportOverlay({}, productView)]) {
+  assert.doesNotMatch(html, /当前产品连接|选择连接节点|产品节点|工艺示例|tube-designer-binding-|tube-designer-assembly-work-mode|产品生成模型/);
+}
 const generatedLater = { tubeDesignerAssemblyTemplates: templates, scene: { tubeDesigner: {} } };
-assert.equal(assemblyLibraryState(generatedLater).workMode, "example");
+const selectedBeforeGeneration = assemblyLibraryState(generatedLater).selectedId;
 generatedLater.scene.tubeDesigner = { activeProductId: "product-later", generationRun: { entityId: "run-later" } };
-assert.equal(assemblyLibraryState(generatedLater).workMode, "product", "a generated product opens in product mode even after the example catalogue was visited");
-assert.equal(assemblyLibraryState(generatedLater).selectedId, defaultProductTemplate.id);
-assert.match(renderAssemblyLibraryLeftPane({}, productView), /当前产品连接/);
-assert.doesNotMatch(renderAssemblyLibraryLeftPane({}, productView), /data-tube-assembly-id="mechanical-fastener"/,
-  "未选真实节点前不能先展示产品工艺模板");
-const committedConnection = { key: "joint-ab", kind: "corner", participants: [
-  { memberEntityId: "member-a", name: "边框 A", manufacturingMappingStatus: "persisted" },
-  { memberEntityId: "member-b", name: "边框 B", manufacturingMappingStatus: "persisted" },
-] };
-productView.tubeDesignerAssemblyProductConnections = { key: productAssemblyConnectionIdentity(productView).key, status: "ready",
-  result: { productEntityId: "product-a", generationRunId: "run-a", modelOutdated: false, connections: [committedConnection] } };
-productView.tubeDesignerProductAssemblyBindings = { key: productAssemblyBindingIdentity(productView).key, productKey: "product-a/run-a", status: "ready", drafts: {},
-  result: { productEntityId: "product-a", generationRunId: "run-a", members: [
-    { memberEntityId: "member-a", name: "边框 A", length: 300 }, { memberEntityId: "member-b", name: "边框 B", length: 280 },
-  ], bindings: [], connections: [committedConnection], capabilities: { anchorKinds: ["end", "side"], templates: [
-    { templateId: "mechanical-fastener", supported: true }, { templateId: "bend", supported: false },
-  ] } } };
-await handleAssemblyLibraryAction({}, productView, "tube-designer-assembly-select-connection",
-  { dataset: { tubeConnectionKey: "joint-ab" } }, { renderProject() {} });
-const nodeFirstHtml = renderAssemblyLibraryLeftPane({}, productView);
-assert.match(nodeFirstHtml, /1 · 选择连接节点/);
-assert.match(nodeFirstHtml, /A：边框 A \+ B：边框 B/);
-assert.match(nodeFirstHtml, /可检查加工/);
-assert.match(nodeFirstHtml, /需一体下料生成/);
-assert.match(renderAssemblyLibraryRightPane({}, productView), /已选连接节点，请在左侧选择工艺/);
-await handleAssemblyLibraryAction({}, productView, "tube-designer-assembly-select",
-  { dataset: { tubeAssemblyId: "bend" } }, { renderProject() {} });
-assert.equal(assemblyLibraryState(productView).selectedId, "bend", "选中的一体成形模板仍保持独立身份");
-assert.match(renderAssemblyLibraryRightPane({}, productView), /当前产品已拆为两件，暂不能应用/);
-assert.doesNotMatch(renderAssemblyLibraryRightPane({}, productView), /tube-designer-binding-preview/,
-  "一体成形路线不能进入两件增量加工绑定表单");
-await handleAssemblyLibraryAction({}, productView, "tube-designer-assembly-select",
-  { dataset: { tubeAssemblyId: "mechanical-fastener" } }, { renderProject() {} });
-assert.match(renderAssemblyLibraryRightPane({}, productView), /A · 被连接件 · 边框 A/);
-assert.match(renderAssemblyLibraryRightPane({}, productView), /B · 基准件 · 边框 B/);
+assert.equal(assemblyLibraryState(generatedLater).selectedId, selectedBeforeGeneration,
+  "产品生成后资源库仍保留原工艺示例选择");
+assert.equal(renderAssemblyLibraryLeftPane({}, generatedLater), renderAssemblyLibraryLeftPane({}, productView));
+for (const action of ["tube-designer-assembly-work-mode", "tube-designer-assembly-select-connection", "tube-designer-assembly-product-part", "tube-designer-binding-preview"]) {
+  assert.equal((await handleAssemblyLibraryAction({}, productView, action,
+    { dataset: { tubeAssemblyMode: "product", tubeConnectionKey: "joint-ab" } }, { renderProject() {} })).handled, false,
+    "已删除的产品节点动作不能继续进入装配资源库");
+}
 assert.ok(templates.some((item) => item.id === "wrap-a-over-b"), "L 形包接必须保留独立工艺模板");
 assert.ok(!templates.some((item) => item.id === "wrap-b-over-a"), "主件和支件由角色映射选择，不能显示两张重复包接卡片");
-await handleAssemblyLibraryAction({}, productView, "tube-designer-assembly-select",
-  { dataset: { tubeAssemblyId: "wrap-a-over-b" } }, { renderProject() {} });
-const cornerWrap = renderAssemblyLibraryRightPane({}, productView);
-assert.match(cornerWrap, /主件/);
-assert.match(cornerWrap, /支件/);
 const wrapTemplate = templates.find((item) => item.id === "wrap-a-over-b");
 const wrapExampleView = { tubeDesignerAssemblyTemplates: templates,
   tubeDesignerAssemblyLibrary: { selectedId: wrapTemplate.id } };
@@ -205,24 +180,6 @@ assert.match(declarativeHtml,
   /value="11\.5" min="2"\s+max="40"\s+step="0\.25"[^>]*data-tube-assembly-parameter="tabWidth"/,
   "通用编辑器必须读取任意模板的名称、默认值、范围和步长");
 assert.doesNotMatch(declarativeHtml, /<summary><span>更多参数<\/span>/);
-productView.tubeDesignerProductAssemblyBindings.result.bindings = [{
-  bindingId: "old-wrap", templateId: "wrap-b-over-a", connectionKey: "joint-ab",
-  parameters: { maleFemale: true, pairCount: "four" }, processDrafts: {},
-  participants: [
-    { role: "memberA", memberEntityId: "member-a", anchor: { kind: "end", end: "start" } },
-    { role: "memberB", memberEntityId: "member-b", anchor: { kind: "side", face: "top", station: 120 } },
-  ],
-}];
-await handleProductAssemblyBindingAction({}, productView, "tube-designer-binding-edit",
-  { dataset: { tubeBindingId: "old-wrap" } }, { renderProject() {} }, () => ({ template: wrapTemplate }));
-assert.equal(assemblyLibraryState(productView).selectedId, wrapTemplate.id,
-  "修改旧 B 包 A 时应打开保留的包接模板");
-const migratedWrap = productAssemblyBindingDraft(productView, wrapTemplate);
-assert.equal(migratedWrap.replaceBindingId, "old-wrap");
-assert.equal(migratedWrap.participants.memberA.memberEntityId, "member-b", "旧侧壁角色要映射成主件");
-assert.equal(migratedWrap.participants.memberB.memberEntityId, "member-a", "旧端部角色要映射成支件");
-assert.equal(migratedWrap.participants.memberA.anchorId, "side:top");
-assert.equal(migratedWrap.participants.memberB.anchorId, "start");
 const state = assemblyLibraryState(view);
 assert.match(renderAssemblyLibraryLeftPane({}, view), /冷折弯/);
 assert.match(renderAssemblyLibraryLeftPane({}, view), /data-tube-assembly-shape="l"[^>]*><span>▾ L形<\/span>/);
@@ -360,6 +317,7 @@ assert.doesNotMatch(renderAssemblyLibraryViewportOverlay({}, view), /尺寸随�
 
 const previewView = {
   activeAreaId: "assemblies",
+  tubeDesignerLicense: grantedLicense,
   tubeDesignerAssemblyTemplates: templates,
   tubeDesignerAssemblyLibrary: { selectedId: "bend", showDiagram: false },
 };
@@ -556,7 +514,7 @@ const deferred = () => {
 };
 const lazyPreviewFixture = () => {
   const fixture = {
-    view: { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: templates,
+    view: { activeAreaId: "assemblies", tubeDesignerLicense: grantedLicense, tubeDesignerAssemblyTemplates: templates,
       tubeDesignerAssemblyLibrary: { selectedId: "bend" } },
     calls: [], nextFinishedGate: null, nextProcessGate: null, nextBlankGate: null,
     applicability: null, exampleProduct: null, nextCheckGate: null, nextExampleGate: null,

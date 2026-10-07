@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { placeSpecificationCallout } from '../../iCAX-UI/SDK/Viewport/specificationCalloutLayout.mjs';
+const callout={x:610,y:300,w:210,h:32};
+const occupied=[{x:505,y:284,w:210,h:32},{x:800,y:0,w:120,h:130}];
+const p=placeSpecificationCallout(callout,occupied,920,600);
+assert.ok(Math.hypot(p.x+105-callout.x,p.y+16-callout.y)<50,'Collision must be resolved close to the caption');
+assert.ok(!occupied.some(b=>p.x<b.x+b.w+4&&p.x+210+4>b.x&&p.y<b.y+b.h+4&&p.y+32+4>b.y));
+const free=placeSpecificationCallout({x:450,y:400,w:100,h:30},occupied,920,600);
+assert.deepEqual(free,{x:400,y:385});
+console.log('PASS callouts retain free anchors, resolve overlaps locally and avoid reserved controls');

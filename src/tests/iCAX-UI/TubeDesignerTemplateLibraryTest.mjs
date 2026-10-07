@@ -63,6 +63,7 @@ let appliedTemplateRows = [];
 let previewRequests = 0;
 const libraryView = {
   activeAreaId: "templates",
+  tubeDesignerLicense: { featureSchemaVersion: 1, capabilities: { "product.design": true } },
   scene: { tubeDesigner: { templates: [{ id: "builtin", name: "内置/示例", version: "1.0.0", available: true, parameters: [
     { key: "length", displayName: "长度", valueType: "number", defaultValue: 100, constraints: { minimum: 1, step: 1 } },
     { key: "railCount", valueType: "enum", defaultValue: 2, choices: [{ value: 2 }, { value: 3 }] },
@@ -73,10 +74,10 @@ const libraryView = {
   viewport: { applyViewSnapshot: async ({ rows }) => { appliedTemplateRows = rows; return { applied: true, entityIds: rows.map((row) => row.entityId) }; }, setStandardView() {}, fitViewToViewport() {} },
   sceneProxy: { resources: {}, async invoke(method) { assert.equal(method, "TubeDesigner.GenerateProductTemplatePreview"); previewRequests += 1; return { items: [{ entityId: "item-1", geometry: { url: "geometry", version: 1 }, transform: [1, 0, 0, 20, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], bounds: { min: [20, 0, 0], max: [30, 10, 10] } }], material: { url: "material", version: 1 } }; } },
 };
-assert.equal(productTemplateLibraryState(libraryView).selectedId, "builtin::style-a");
+assert.equal(productTemplateLibraryState(libraryView).selectedId, "builtin");
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /产品模板/);
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /tube-product-template-library-group/);
-assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /示例款式/);
+assert.doesNotMatch(renderProductTemplateLibraryLeftPane({}, libraryView), /示例款式/);
 assert.match(renderProductTemplateLibraryRightPane({}, libraryView), /预览参数/);
 assert.doesNotMatch(renderProductTemplateLibraryRightPane({}, libraryView), /tube-designer-template-manager-open|打开管理/);
 
@@ -152,24 +153,24 @@ assert.match(renderProductTemplateLibraryViewportOverlay(incompleteStartupView, 
 assert.match(renderProductTemplateLibraryRightPane({}, incompleteStartupView), /模板参数未在启动时载入/);
 let parameterRenders = 0;
 await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
-  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "length" }, value: "220",
+  dataset: { tubeTemplateLibraryId: "builtin", tubeTemplateLibraryParameter: "length" }, value: "220",
 }, { renderProject() { parameterRenders += 1; } });
 assert.equal(parameterRenders, 1);
-assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].length, 220);
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin"].length, 220);
 await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
-  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "railCount" }, value: "3",
+  dataset: { tubeTemplateLibraryId: "builtin", tubeTemplateLibraryParameter: "railCount" }, value: "3",
 }, { renderProject() {} });
-assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].railCount, 3,
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin"].railCount, 3,
   "数字枚举必须以模板声明的数字类型提交，而不是以下拉框字符串提交");
 await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
-  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "guardrailUse" }, value: "wall",
+  dataset: { tubeTemplateLibraryId: "builtin", tubeTemplateLibraryParameter: "guardrailUse" }, value: "wall",
 }, { renderProject() {} });
-assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].infillType, "bars",
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin"].infillType, "bars",
   "模板声明的参数约束应在修改参数时自动归一化");
 await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
-  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "infillType" }, value: "diamond",
+  dataset: { tubeTemplateLibraryId: "builtin", tubeTemplateLibraryParameter: "infillType" }, value: "diamond",
 }, { renderProject() {} });
-assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].infillType, "bars",
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin"].infillType, "bars",
   "违反模板约束的参数选择不能再次把预览置于不可生成状态");
 
 // Artwork belongs to each template package. The library only consumes the

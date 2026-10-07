@@ -178,7 +178,7 @@ export const punchReviewStyles=String.raw`
 .tube-designer-punch-source-cell > span { font-weight:600; color:#256b77; cursor:pointer; }
 .tube-designer-punch-source-cell > small { color:#6a8188; font-size:10px; }
 .tube-designer-punch-layout-overview-row td { padding:5px 10px; background:#f6faf9; }
-.tube-designer-punch-parameter-backdrop { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(12,25,31,.08); pointer-events:none; }
+.tube-designer-punch-parameter-backdrop { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:20px; background:transparent; pointer-events:none; }
 .tube-designer-punch-parameter-dialog { width:min(1120px,calc(100vw - 36px)); max-height:min(650px,calc(100vh - 32px)); display:flex; flex-direction:column; background:rgba(248,252,252,.86); border:0; border-radius:0; box-shadow:none; color:#294852; font-size:13px; pointer-events:auto; }
 .tube-designer-punch-parameter-dialog > header { display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid #c7d8dc; cursor:grab; touch-action:none; user-select:none; }
 .tube-designer-punch-parameter-dialog > header[data-dragging="true"] { cursor:grabbing; }

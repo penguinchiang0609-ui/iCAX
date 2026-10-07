@@ -11,6 +11,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import sys
 
 IDENTITY = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
 
@@ -29,10 +30,18 @@ def _fold_module():
 
 def _geometry_module():
     path = Path(__file__).with_name("assembly_geometry_process_runtime.py")
-    spec = importlib.util.spec_from_file_location("icax_assembly_geometry_process_runtime", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    source = path.read_bytes()
+    name = "icax_assembly_geometry_process_runtime_" + hashlib.sha256(source).hexdigest()
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            exec(compile(source, str(path), "exec"), module.__dict__)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
 
 
 def _raw_request(part):

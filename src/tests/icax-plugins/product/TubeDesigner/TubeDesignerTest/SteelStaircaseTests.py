@@ -1,7 +1,9 @@
 from copy import deepcopy
 from collections import Counter
 import unittest
+from unittest.mock import patch
 from WindowCatalogueTests import package
+from icax_template_sdk import NeutralModel
 
 class SteelStaircaseTests(unittest.TestCase):
     @classmethod
@@ -79,12 +81,20 @@ class SteelStaircaseTests(unittest.TestCase):
         self.assertTrue(any(i['key'].startswith('transition.') for i in r['items']))
         nodes={g['key']:g for g in r['geometry']}
         post='landing.1.guard.2.post.0'
-        cut=nodes[post+'.transition_cope']['arguments']
-        self.assertEqual(cut['tools'],[post+'.joint_envelope'])
+        records=r["extensions"]["tubeDesigner.assemblyGeometryProcesses"]["instances"]
+        record=next(entry for entry in records if entry["instanceId"]==post+".transition_cope")
+        cut=nodes[record["resultGeometry"]]["arguments"]
+        self.assertEqual(len(cut["tools"]),1)
         self.assertIn('keepConnectedTo',cut)
-        joint=nodes[post+'.joint_envelope']['arguments']
-        self.assertEqual(joint['operation'],'union')
-        self.assertIn('transition.2.1.envelope.cut.1',joint['tools'])
+        joint=nodes[cut["tools"][0]]
+        self.assertEqual(joint['arguments']['operation'],'union')
+        union=record["processInput"]["geometry"]["receivers"][0]["union"]
+        def source_ids(value):
+            if isinstance(value,dict):
+                return ([value["sourceMemberId"]] if "sourceMemberId" in value else [])+[member for child in value.values() for member in source_ids(child)]
+            if isinstance(value,list):return [member for child in value for member in source_ids(child)]
+            return []
+        self.assertIn("transition.2.1.network_envelope",source_ids(union))
         with self.assertRaisesRegex(ValueError,'井道间距'):
             self.build(stairRoute='u_turn',wellGap=0)
     def test_display_uses_assembly_solids_and_manufacturing_keeps_cuts(self):
@@ -110,4 +120,41 @@ class SteelStaircaseTests(unittest.TestCase):
             self.build(stringerWidth=25)
         with self.assertRaisesRegex(ValueError,"双梁间距"):
             self.build(stringerSystem="twin",stringerSpacing=100)
+
+    def test_display_never_constructs_manufacturing_cutters(self):
+        original = NeutralModel.geometry
+        for route in ("straight", "straight_landing", "l_turn", "u_turn"):
+            for construction in ("profile", "zigzag"):
+                constructed = []
+                def geometry(model, key, operator, **kwargs):
+                    self.assertNotEqual(operator, "boolean", key)
+                    for marker in (".keep", ".envelope", ".network_envelope", ".hole.", ".seat."):
+                        self.assertNotIn(marker, key)
+                    constructed.append(key)
+                    return original(model, key, operator, **kwargs)
+                with self.subTest(route=route, construction=construction), patch.object(NeutralModel, "geometry", geometry):
+                    result = self.build(stairRoute=route, stringerConstruction=construction,
+                                        totalRiserCount=6, floorHeight=1080, firstFlightRiserCount=3)
+                self.assertTrue(constructed)
+                self.assertLessEqual(len(result["geometry"]), len(constructed))
+
+    def test_repeated_tread_plates_share_one_exact_blank_prototype(self):
+        for purpose in ("display", "manufacturing"):
+            result = self.build(purpose)
+            graph = {node["key"]: node for node in result["geometry"]}
+            decks = [graph[item["key"] + ".solid"] for item in result["items"]
+                     if item["displayName"] == "踏板"]
+            self.assertEqual(len(decks), self.defaults["totalRiserCount"])
+            self.assertTrue(all(node["operator"] == "transform" for node in decks))
+            self.assertEqual(len({node["inputs"][0] for node in decks}), 1)
+            self.assertEqual(len({tuple(node["arguments"]["placement"]["origin"]) for node in decks}), len(decks))
+
+    def test_inner_radius_changes_only_the_profile_that_consumes_it(self):
+        base = self.build(stringerProfileType="rect", stringerInnerRadius=3)
+        changed = self.build(stringerProfileType="rect", stringerInnerRadius=4)
+        self.assertTrue(base["geometry"] != changed["geometry"])
+        for kind in ("channel", "round", "oval"):
+            base = self.build(stringerProfileType=kind)
+            changed = self.build(stringerProfileType=kind, stringerInnerRadius=-1)
+            self.assertEqual(base["geometry"], changed["geometry"])
 if __name__=="__main__":unittest.main()

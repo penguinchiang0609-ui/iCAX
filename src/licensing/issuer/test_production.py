@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import os
 from pathlib import Path
 import sqlite3
 import struct
@@ -15,6 +16,7 @@ from cryptography.hazmat.decrepit.ciphers.modes import CFB
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import authority
+from feature_catalog import ALL_FEATURES
 from enrollment import parse_request, field
 from production import ProductionIssuer
 from tpm_credential import Reader, kdfa, sha256_name
@@ -33,7 +35,9 @@ class ProductionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="td-production-test-only-")
         self.addCleanup(self.temp.cleanup)
         self.folder = Path(self.temp.name)
-        tool = Path(__file__).resolve().parents[3] / "Temp/licensing-build/Release/td-license-verify-ek.exe"
+        binary_directory = Path(os.environ.get("TD_LICENSE_TEST_BINARY_DIR",
+            str(Path(__file__).resolve().parents[3] / "Temp/licensing-build/Release")))
+        tool = binary_directory / "td-license-verify-ek.exe"
         if not tool.exists():
             self.skipTest("Build native EK verifier first")
         class TestAuthority(ProductionIssuer):
@@ -80,7 +84,7 @@ class ProductionTests(unittest.TestCase):
         request += struct.pack(">I", 1) + f(leaf) + f(attest) + f(signature)
         self.path = self.folder / "test.tdreq"
         self.path.write_bytes(request)
-        self.options = dict(customer="测试客户", kind=1, features=15, min_major=1, max_major=2)
+        self.options = dict(customer="测试客户", kind=1, features=ALL_FEATURES, min_major=1, max_major=2)
 
     def make_trial_request(self):
         original = self.path.read_bytes()
@@ -111,6 +115,7 @@ class ProductionTests(unittest.TestCase):
         credential = decryptor.update(blob[34:]) + decryptor.finalize()
         self.assertEqual(credential[:2], b"\0 ")
         certificate = AESGCM(credential[2:]).decrypt(nonce, encrypted, digest)
+        self.assertEqual(certificate[:8], b"TDLIC003")
         authority.verify_signature(pub, certificate)
         self.assertIn(request.device_public, certificate)
         with self.assertRaises(sqlite3.IntegrityError):
@@ -126,6 +131,12 @@ class ProductionTests(unittest.TestCase):
     def test_trial_not_silently_downgraded(self):
         with self.assertRaises(ValueError):
             self.issuer.issue(self.path, self.password, **(self.options | dict(kind=2)))
+        self.assertEqual(self.issuer.records(), [])
+
+    def test_orphan_operation_and_unknown_bits_leave_no_record(self):
+        for features in [16, 128, 1024, 4096, 8192, True]:
+            with self.subTest(features=features), self.assertRaises(ValueError):
+                self.issuer.issue(self.path, self.password, **(self.options | dict(features=features)))
         self.assertEqual(self.issuer.records(), [])
 
     def test_trial_issuance_requires_counter_and_one_per_device(self):

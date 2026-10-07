@@ -2985,6 +2985,15 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     }
 
     const SGeometryIndex _Index(Geometry_);
+    double _PartFirstX = (std::numeric_limits<double>::max)();
+    double _PartLastX = (std::numeric_limits<double>::lowest)();
+    for (const auto& _Vertex : Geometry_.Vertices)
+    {
+        _PartFirstX = std::min(_PartFirstX, _Vertex.Position.X);
+        _PartLastX = std::max(_PartLastX, _Vertex.Position.X);
+    }
+    const auto _PartAxialSpan = _PartLastX - _PartFirstX;
+    std::size_t _SkippedLocalCutWires = 0;
     std::unordered_map<std::uint64_t, std::tuple<const BRepEdge*, std::uint64_t, std::uint64_t>> _Sources;
     for (const auto& _Face : Geometry_.Faces)
     {
@@ -2993,8 +3002,46 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             continue;
         }
         _Result.SideFaceIds.push_back(_Face.Id);
+        std::vector<double> _WireAxialSpans;
+        _WireAxialSpans.reserve(_Face.WireIds.size());
         for (const auto _WireID : _Face.WireIds)
         {
+            const auto* _Wire = FindWire(_Index, _WireID);
+            double _FirstX = (std::numeric_limits<double>::max)();
+            double _LastX = (std::numeric_limits<double>::lowest)();
+            if (_Wire)
+            {
+                for (const auto& _Coedge : _Wire->Coedges)
+                {
+                    for (const auto _VertexID : { _Coedge.StartVertexId, _Coedge.EndVertexId })
+                    {
+                        const auto* _Vertex = FindVertex(_Index, _VertexID);
+                        if (!_Vertex) continue;
+                        _FirstX = std::min(_FirstX, _Vertex->Position.X);
+                        _LastX = std::max(_LastX, _Vertex->Position.X);
+                    }
+                }
+            }
+            _WireAxialSpans.push_back(_LastX >= _FirstX ? _LastX - _FirstX : 0.0);
+        }
+        const auto _LargestWireSpan = _WireAxialSpans.empty() ? 0.0
+            : *std::max_element(_WireAxialSpans.begin(), _WireAxialSpans.end());
+        // A hole drilled through a side wall adds local inner wires to that
+        // wall. Their intersection curves are machining boundaries, not the
+        // profile at a clean axial station. Only filter them when a separate
+        // wire on the same face demonstrably spans most of the tube length.
+        const bool _HasSpanningBoundary = _PartAxialSpan > Options_.dConnectionTolerance
+            && _LargestWireSpan >= 0.9 * _PartAxialSpan;
+        for (std::size_t _WireIndex = 0; _WireIndex < _Face.WireIds.size(); ++_WireIndex)
+        {
+            if (_HasSpanningBoundary
+                && _WireAxialSpans[_WireIndex] + Options_.dConnectionTolerance
+                    < 0.5 * _LargestWireSpan)
+            {
+                ++_SkippedLocalCutWires;
+                continue;
+            }
+            const auto _WireID = _Face.WireIds[_WireIndex];
             const auto* _Wire = FindWire(_Index, _WireID);
             if (!_Wire)
             {
@@ -3022,6 +3069,12 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
                 }
             }
         }
+    }
+    if (_SkippedLocalCutWires > 0)
+    {
+        _Result.Diagnostics.push_back(
+            "Ignored " + std::to_string(_SkippedLocalCutWires)
+            + " local side-face cut wires outside the spanning extrusion boundary");
     }
     if (_Result.SideFaceIds.empty())
     {

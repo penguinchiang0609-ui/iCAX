@@ -6,7 +6,7 @@ Product pages must not import another product directory.
 - `camWorkbench.mjs` opts into reusable machine, workpiece and machining capabilities for TubeOne and Laser3DCAM.
 - `createWorkbench.mjs` owns the existing layout, view lifecycle, selection and command dispatch. Features are injected per workbench instance; product context callbacks still own their pages.
 - State, formatting, view cube and styles are shared. Existing CSS classes and page layout are intentionally preserved.
-- The automation global `__icaxLaser3DCAM` is retained as a compatibility name for existing development scripts; it does not load the Laser3DCAM product.
+- The automation global `__icaxWorkbench` exposes the current shared workbench to development scripts.
 
 Native CAM capabilities are built as `CamRuntime.dll`. The C++ source project remains named `iCAX-Plugins/cam/Laser3DCAM` for source/build compatibility; it is consumed as a shared capability, not by starting the Laser3DCAM product.
 

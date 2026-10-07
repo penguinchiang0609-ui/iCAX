@@ -29,7 +29,7 @@ try {
     document.body.classList.add("tube-designer-workspace");
     document.body.innerHTML = '<div id="workspace"><main id="stage"><div id="scene"></div><div id="overlay"></div></main><aside id="right"></aside></div>';
     const part = id => ({ entityId: id, name: "程式圆管 Ø100 × 3 · 1000 mm", length: 1000, quantity: 1,
-      profile: { kind: "round", width: 100, depth: 100, diameter: 100, wallThickness: 3, displayName: "圆管", specification: "Ø100 × 3" },
+      profile: { sectionIdentity: JSON.stringify({ schema: "icax.nesting-section.v1", contours: ['{"edges":["round-100-t3"]}'] }), kind: "round", width: 100, depth: 100, diameter: 100, wallThickness: 3, displayName: "圆管", specification: "Ø100 × 3" },
       thumbnailGeometryResourceId: `icax-resource://${id}`, thumbnailGeometryResourceVersion: 1,
       manufacturingGeometryResourceVersion: 1, properties: { "manufacturing.partKind": "tube", "nesting.snapshot": { source: "standard-part" } } });
     const shape = new THREE.Shape();
@@ -100,6 +100,8 @@ try {
     debug: window.fixture.view.viewport.getDebugState({ samplePixels: true }),
     ids: [...window.fixture.view.viewport.visibleEntityIds], counters: { ...window.fixture.counters },
   }));
+  assert.equal((await inspect()).debug.dimensionAnnotationCount, 0, "new nesting parts initially hide every annotation");
+  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); });
   const first = await inspect();
   assert.equal(first.debug.visibleObjectCount, 1);
   assert.ok(first.debug.dimensionAnnotationCount > 0);
@@ -126,11 +128,14 @@ try {
   const second = await inspect();
   assert.deepEqual(second.ids, ["standard-2"]);
   assert.equal(second.debug.visibleObjectCount, 1);
-  await page.evaluate(() => { const f = window.fixture; f.view.tubeDesignerPartDimensionsVisible = false; f.render(); });
+  assert.equal(second.debug.dimensionAnnotationCount, 0, "a different part has independent hidden defaults");
+  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); });
+  assert.ok((await inspect()).debug.dimensionAnnotationCount > 0);
+  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); f.render(); });
   await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().dimensionAnnotationCount === 0);
   assert.equal((await inspect()).debug.visibleObjectCount, 1, "turning off annotations keeps tube surfaces visible");
   if (process.env.ICAX_ARTIFACT_DIR) {
-    await page.evaluate(() => { const f = window.fixture; f.view.tubeDesignerPartDimensionsVisible = true; f.render(); });
+    await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); f.render(); });
     await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().dimensionAnnotationCount > 0);
     mkdirSync(process.env.ICAX_ARTIFACT_DIR, { recursive: true });
     await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "nesting-standard-part-visible.png") });

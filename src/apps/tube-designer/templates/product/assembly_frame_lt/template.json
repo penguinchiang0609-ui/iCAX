@@ -2,70 +2,630 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "assembly-frame-lt",
-  "version": "1.0.0",
-  "displayName": { "zh-CN": "L＋T 装配组合原管验证框架" },
+  "version": "1.0.1",
+  "displayName": {
+    "zh-CN": "L＋T 装配组合原管验证框架"
+  },
   "description": "验证用框架：四根外框原管与一根中横档原管声明四个 L 节点、两个 T 节点。当前原管在节点处相交，不是已经核对配合的最终成品；节点加工须由独立装配工艺模板完成。",
   "extensions": {
-    "catalog": { "listed": false, "categoryPath": ["验证用框架"], "groupOrder": 990, "templateOrder": 10, "icon": "resource/icon.svg", "schematic": "resource/schematic.svg" },
-    "productIdentity": { "codeParameter": "productCode" },
-    "primaryDimensions": { "widthParameter": "width", "heightParameter": "height" },
+    "catalog": {
+      "listed": false,
+      "categoryPath": [
+        "验证用框架"
+      ],
+      "groupOrder": 990,
+      "templateOrder": 10,
+      "icon": "resource/icon.svg",
+      "schematic": "resource/schematic.svg"
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "width",
+      "heightParameter": "height"
+    },
     "resourceRoles": {
       "profiles": {
-        "frame": { "parameter": "frameProfileType" },
-        "middle": { "parameter": "middleProfileType" }
+        "frame": {
+          "parameter": "frameProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "frameWidth",
+              "depth": "frameDepth",
+              "wallThickness": "frameWallThickness",
+              "cornerRadius": "frameCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "frameWidth",
+            "frameDepth",
+            "frameWallThickness",
+            "frameCornerRadius",
+            "frameInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        },
+        "middle": {
+          "parameter": "middleProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "middleWidth",
+              "depth": "middleDepth",
+              "wallThickness": "middleWallThickness",
+              "cornerRadius": "middleCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "middleWidth",
+            "middleDepth",
+            "middleWallThickness",
+            "middleCornerRadius",
+            "middleInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
+        }
       }
     },
     "sceneSpecificationAnnotations": {
       "schemaVersion": 1,
       "annotations": [
-        { "parameter": "width", "axis": "x", "offset": [0, 0, -130], "label": { "zh-CN": "成品宽" }, "order": 10 },
-        { "parameter": "height", "axis": "z", "offset": [-130, 0, 0], "label": { "zh-CN": "成品高" }, "order": 20 },
-        { "parameter": "middleHeight", "axis": "z", "offset": [-75, 0, 0], "label": { "zh-CN": "横档中心高" }, "order": 30 }
+        {
+          "parameter": "width",
+          "axis": "x",
+          "offset": [
+            0,
+            0,
+            -130
+          ],
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "order": 10
+        },
+        {
+          "parameter": "height",
+          "axis": "z",
+          "offset": [
+            -130,
+            0,
+            0
+          ],
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "order": 20
+        },
+        {
+          "parameter": "middleHeight",
+          "axis": "z",
+          "offset": [
+            -75,
+            0,
+            0
+          ],
+          "label": {
+            "zh-CN": "横档中心高"
+          },
+          "order": 30
+        },
+        {
+          "parameter": "middleAxisAngle",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.25
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 103
+        }
       ]
     },
     "sceneParameterBindings": {
       "schemaVersion": 1,
       "groupSceneBindings": {
         "size": "all",
-        "frame": { "memberStableKeyPrefixes": ["frame.left.", "frame.right.", "frame.top.", "frame.bottom."] },
-        "middle": { "memberStableKeyPrefixes": ["frame.middle."] }
+        "frame": {
+          "memberStableKeyPrefixes": [
+            "frame.left.",
+            "frame.right.",
+            "frame.top.",
+            "frame.bottom."
+          ]
+        },
+        "middle": {
+          "memberStableKeyPrefixes": [
+            "frame.middle."
+          ]
+        }
       },
       "profileRoles": {
-        "frame": { "parameters": ["frameProfileType", "frameWidth", "frameDepth", "frameWallThickness", "frameCornerRadius", "frameInnerRadius"], "memberStableKeyPrefixes": ["frame.left.", "frame.right.", "frame.top.", "frame.bottom."] },
-        "middle": { "parameters": ["middleProfileType", "middleWidth", "middleDepth", "middleWallThickness", "middleCornerRadius", "middleInnerRadius"], "memberStableKeyPrefixes": ["frame.middle."] }
-      }
+        "frame": {
+          "parameters": [
+            "frameProfileType",
+            "frameWidth",
+            "frameDepth",
+            "frameWallThickness",
+            "frameCornerRadius",
+            "frameInnerRadius",
+            "frameMaterial"
+          ],
+          "memberStableKeyPrefixes": [
+            "frame.left.",
+            "frame.right.",
+            "frame.top.",
+            "frame.bottom."
+          ]
+        },
+        "middle": {
+          "parameters": [
+            "middleProfileType",
+            "middleWidth",
+            "middleDepth",
+            "middleWallThickness",
+            "middleCornerRadius",
+            "middleInnerRadius",
+            "middleMaterial"
+          ],
+          "memberStableKeyPrefixes": [
+            "frame.middle."
+          ]
+        }
+      },
+      "sceneBindings": {}
     },
     "parameterLayout": {
       "sections": [
-        { "key": "product", "displayName": { "zh-CN": "成品尺寸" }, "order": 10, "defaultOpen": true, "groups": ["size"] },
-        { "key": "material", "displayName": { "zh-CN": "管材" }, "order": 20, "allowPresets": true, "groups": ["frame", "middle"] }
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "成品尺寸"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "size"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "用料"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "frame",
+            "middle"
+          ]
+        }
       ]
+    },
+    "productControls": [],
+    "structureEditors": [],
+    "addDialog": {
+      "structureParameters": [
+        "width",
+        "height",
+        "middleHeight",
+        "middleAxisAngle"
+      ],
+      "parameterGroups": [
+        {
+          "key": "frame-size",
+          "displayName": {
+            "zh-CN": "框架"
+          },
+          "parameters": [
+            "width",
+            "height"
+          ]
+        },
+        {
+          "key": "frame-middle",
+          "displayName": {
+            "zh-CN": "中横档定位"
+          },
+          "parameters": [
+            "middleHeight",
+            "middleAxisAngle"
+          ]
+        }
+      ]
+    },
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "tubeDesignerToolBindings"
+      ],
+      "creationOnly": []
     }
   },
   "groups": [
-    { "key": "size", "displayName": { "zh-CN": "框架" } },
-    { "key": "frame", "displayName": { "zh-CN": "外框管" } },
-    { "key": "middle", "displayName": { "zh-CN": "中横档管" } }
+    {
+      "key": "size",
+      "displayName": {
+        "zh-CN": "框架"
+      }
+    },
+    {
+      "key": "frame",
+      "displayName": {
+        "zh-CN": "外框管"
+      }
+    },
+    {
+      "key": "middle",
+      "displayName": {
+        "zh-CN": "中横档管"
+      }
+    }
   ],
   "parameters": [
-    { "key": "productCode", "displayName": { "zh-CN": "产品编号" }, "valueType": "string", "defaultValue": "LT-FRAME-001", "group": "size" },
-    { "key": "width", "displayName": { "zh-CN": "成品宽" }, "valueType": "number", "defaultValue": 1200, "group": "size", "unit": "mm", "quantity": "length", "constraints": { "minimum": 160, "maximum": 10000 } },
-    { "key": "height", "displayName": { "zh-CN": "成品高" }, "valueType": "number", "defaultValue": 1500, "group": "size", "unit": "mm", "quantity": "length", "constraints": { "minimum": 160, "maximum": 10000 } },
-    { "key": "middleHeight", "displayName": { "zh-CN": "中横档中心离底" }, "valueType": "number", "defaultValue": 750, "group": "size", "unit": "mm", "quantity": "length", "constraints": { "minimum": 60, "maximum": 9940 } },
-    { "key": "middleAxisAngle", "displayName": { "zh-CN": "中横档与左边框轴线夹角" }, "valueType": "number", "defaultValue": 90, "group": "size", "unit": "°", "constraints": { "minimum": 60, "maximum": 120 } },
-    { "key": "frameProfileType", "displayName": { "zh-CN": "管型" }, "valueType": "enum", "defaultValue": "rect", "group": "frame", "presentation": { "editor": "profile-library", "resourceRole": "frame", "profileConstraints": { "hollow": true, "minimumContourCount": 2, "sectionKinds": ["rect"]} }, "choices": [{ "value": "rect", "displayName": { "zh-CN": "方矩管" } }], "readOnly": true },
-    { "key": "frameWidth", "displayName": { "zh-CN": "面宽" }, "valueType": "number", "defaultValue": 60, "group": "frame", "unit": "mm", "quantity": "length", "constraints": { "minimum": 10, "maximum": 300 } },
-    { "key": "frameDepth", "displayName": { "zh-CN": "深度" }, "valueType": "number", "defaultValue": 40, "group": "frame", "unit": "mm", "quantity": "length", "constraints": { "minimum": 10, "maximum": 300 } },
-    { "key": "frameWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2, "group": "frame", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0.5, "maximum": 20 } },
-    { "key": "frameCornerRadius", "displayName": { "zh-CN": "外圆角" }, "valueType": "number", "defaultValue": 3, "group": "frame", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0, "maximum": 50 } },
-    { "key": "frameInnerRadius", "displayName": { "zh-CN": "内圆角" }, "valueType": "number", "defaultValue": 1, "group": "frame", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0, "maximum": 50 } },
-    { "key": "frameMaterial", "displayName": { "zh-CN": "材质" }, "valueType": "string", "defaultValue": "Q235", "group": "frame" },
-    { "key": "middleProfileType", "displayName": { "zh-CN": "管型" }, "valueType": "enum", "defaultValue": "rect", "group": "middle", "presentation": { "editor": "profile-library", "resourceRole": "middle", "profileConstraints": { "hollow": true, "minimumContourCount": 2, "sectionKinds": ["rect"]} }, "choices": [{ "value": "rect", "displayName": { "zh-CN": "方矩管" } }], "readOnly": true },
-    { "key": "middleWidth", "displayName": { "zh-CN": "面宽" }, "valueType": "number", "defaultValue": 30, "group": "middle", "unit": "mm", "quantity": "length", "constraints": { "minimum": 10, "maximum": 300 } },
-    { "key": "middleDepth", "displayName": { "zh-CN": "深度" }, "valueType": "number", "defaultValue": 30, "group": "middle", "unit": "mm", "quantity": "length", "constraints": { "minimum": 10, "maximum": 300 } },
-    { "key": "middleWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2, "group": "middle", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0.5, "maximum": 20 } },
-    { "key": "middleCornerRadius", "displayName": { "zh-CN": "外圆角" }, "valueType": "number", "defaultValue": 3, "group": "middle", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0, "maximum": 50 } },
-    { "key": "middleInnerRadius", "displayName": { "zh-CN": "内圆角" }, "valueType": "number", "defaultValue": 1, "group": "middle", "unit": "mm", "quantity": "length", "constraints": { "minimum": 0, "maximum": 50 } },
-    { "key": "middleMaterial", "displayName": { "zh-CN": "材质" }, "valueType": "string", "defaultValue": "Q235", "group": "middle" }
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "LT-FRAME-001",
+      "group": "size"
+    },
+    {
+      "key": "width",
+      "displayName": {
+        "zh-CN": "成品宽"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 160,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "height",
+      "displayName": {
+        "zh-CN": "成品高"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 160,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "middleHeight",
+      "displayName": {
+        "zh-CN": "中横档中心离底"
+      },
+      "valueType": "number",
+      "defaultValue": 750,
+      "group": "size",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 60,
+        "maximum": 9940
+      }
+    },
+    {
+      "key": "middleAxisAngle",
+      "displayName": {
+        "zh-CN": "中横档与左边框轴线夹角"
+      },
+      "valueType": "number",
+      "defaultValue": 90,
+      "group": "size",
+      "unit": "°",
+      "constraints": {
+        "minimum": 60,
+        "maximum": 120
+      }
+    },
+    {
+      "key": "frameProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "frame",
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "frame",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "frameWidth",
+      "displayName": {
+        "zh-CN": "面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 60,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "frameDepth",
+      "displayName": {
+        "zh-CN": "深度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "frameWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "frameCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "frameInnerRadius",
+      "displayName": {
+        "zh-CN": "内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "frameMaterial",
+      "displayName": {
+        "zh-CN": "材质"
+      },
+      "valueType": "string",
+      "defaultValue": "Q235",
+      "group": "frame"
+    },
+    {
+      "key": "middleProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "middle",
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "middle",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      },
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "middleWidth",
+      "displayName": {
+        "zh-CN": "面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "middle",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "middleDepth",
+      "displayName": {
+        "zh-CN": "深度"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "middle",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 300
+      }
+    },
+    {
+      "key": "middleWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "middle",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "middleCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "middle",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "middleInnerRadius",
+      "displayName": {
+        "zh-CN": "内圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "middle",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 50
+      }
+    },
+    {
+      "key": "middleMaterial",
+      "displayName": {
+        "zh-CN": "材质"
+      },
+      "valueType": "string",
+      "defaultValue": "Q235",
+      "group": "middle"
+    }
   ]
 }

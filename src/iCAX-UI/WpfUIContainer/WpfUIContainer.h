@@ -12,7 +12,7 @@ namespace iCAX
         * @brief WPF UI 容器。
         * @details
         *   该类型是 native IUIContainer 的实现，内部通过 C++/CLI 启动 WPF 窗口。
-        *   它让 Application.exe 保持 native C++ 主体，同时把前端技术切换为 WPF。
+        *   它让 TubeDesigner.exe 保持 native C++ 主体，同时把前端技术切换为 WPF。
         */
         class CWpfUIContainer final : public IUIContainer
         {

@@ -5,11 +5,14 @@ const part = {
   entityId: "part-1",
   sourceMemberId: "scene-member-1",
   name: "外框立柱",
+  properties: { "manufacturing.sourceMembers": [{ itemKey: "outer_frame.left.0001", spans: [] }] },
 };
 const view = {
   pending: false,
+  activeAreaId: "view",
   scene: { tubeDesigner: {
     product: { entityId: "product-1", templateId: "single-face-security-window" },
+    members: [{ entityId: "scene-member-1", stableKey: "outer_frame.left.0001", manufacturingPartId: part.entityId }],
     manufacturingGroups: [{ productEntityId: "product-1", parts: [part] }],
   } },
 };

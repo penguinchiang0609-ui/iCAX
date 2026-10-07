@@ -1,3 +1,5 @@
+import { commandLicenseFeature, hasLicenseFeature, isLicenseWorkspaceReadOnly, licenseDenialMessage } from "./licensing.mjs";
+
 const allRibbonDefinition = {
   tabs: [
     {
@@ -15,13 +17,8 @@ const allRibbonDefinition = {
           title: "零件",
           commands: [
             command("designer.inspect-active-part", "复尺", "measure", { size: "large", iconTone: "blue" }),
+            command("designer.disassemble", "拆单", "merge", { size: "large", iconTone: "green" }),
             command("designer.export-active-product-parts", "导出清单", "report", { size: "large", iconTone: "green" }),
-          ],
-        },
-        {
-          title: "装配",
-          commands: [
-            command("designer.open-assembly-process", "装配工艺", "merge", { size: "large", iconTone: "green" }),
           ],
         },
         {
@@ -29,6 +26,7 @@ const allRibbonDefinition = {
           commands: [
             command("designer.excel.export-template", "导出模板", "excel", { size: "large", iconTone: "green" }),
             command("designer.import-excel", "导入产品", "excel", { size: "large", iconTone: "blue" }),
+            command("designer.excel.automation-settings", "自动处理设置", "base", { size: "large", iconTone: "green" }),
           ],
         },
       ],
@@ -61,7 +59,6 @@ const allRibbonDefinition = {
             command("nesting.start", "开始排样", "autonest", { size: "large", iconTone: "green" }),
             command("nesting.results", "查看排样结果", "report", { size: "large", iconTone: "blue" }),
             command("nesting.export-result", "导出排样结果", "export", { size: "large", iconTone: "green" }),
-            command("nesting.to-machining", "送入加工", "machine", { size: "large", iconTone: "orange" }),
           ],
         },
       ],
@@ -129,6 +126,12 @@ const allRibbonDefinition = {
             command("tools.refresh", "刷新工艺", "view-fit", { size: "large", iconTone: "green" }),
           ],
         },
+        {
+          title: "装配操作",
+          commands: [
+            command("assemblies.import-package", "导入", "new", { size: "large", iconTone: "green" }),
+          ],
+        },
       ],
     },
     {
@@ -176,20 +179,20 @@ const allRibbonDefinition = {
       id: "about",
       title: "关于",
       groups: [{ title: "授权", commands: [
-        command("licensing.status", "授权状态", "base", { size: "large" }),
         command("licensing.request", "导出授权申请", "save", { size: "large" }),
         command("licensing.request-trial", "导出试用申请", "save", { size: "large" }),
         command("licensing.activate", "导入激活文件", "new", { size: "large", iconTone: "green" }),
+        command("licensing.export-license", "导出授权文件", "save", { size: "large" }),
       ] }],
     },
   ],
 };
 
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
-// 下料使用当前 TubeDesigner.Nest 生产入口；加工、草图和关于暂不公开为顶级工作区。
+// 下料、加工工作区暂不公开；草图沿用资源编辑时的上下文入口。
 export const ribbonDefinition = {
   ...allRibbonDefinition,
-  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "nesting", "resources"].includes(tab.id)),
+  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "resources", "about"].includes(tab.id)),
 };
 
 export function getRibbonDefinition(options = {}) {
@@ -205,6 +208,7 @@ export function getRibbonDefinition(options = {}) {
     "产品模板": "products",
     "管型操作": "profiles",
     "单件工艺操作": "tools",
+    "装配操作": "assemblies",
   };
   return {
     ...ribbonDefinition,
@@ -218,7 +222,21 @@ export function getRibbonDefinition(options = {}) {
             ? { ...item, active: resourceCommandAreas[item.id] === resourceArea }
             : item),
         })),
-    })),
+    })).map(tab => {
+      const context = options.licenseContext ?? {};
+      const view = options.licenseView;
+      const describe = item => {
+        const feature = commandLicenseFeature(item.id, tab.id);
+        const blocked = (!item.id.startsWith("licensing.") && isLicenseWorkspaceReadOnly(context, view))
+          || !hasLicenseFeature(context, view, feature);
+        return { ...item, authorizationRequired: blocked,
+          unavailableReason: blocked ? licenseDenialMessage(context, view, feature || "page.product") : "",
+          menuItems: item.menuItems?.map(describe) };
+      };
+      return { ...tab, authorizationRequired: false,
+        unavailableReason: "",
+        groups: tab.groups.map(group => ({ ...group, commands: group.commands.map(describe) })) };
+    }),
   };
 }
 

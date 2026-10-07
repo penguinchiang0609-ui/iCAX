@@ -68,4 +68,18 @@ assert.equal(view.scene.tubeDesigner.templates[0].extensions.productDiagram.kind
 assert.match(renderDesignerRightPane({}, view), /结构参数/);
 assert.doesNotMatch(renderDesignerRightPane({}, view), /正在载入产品参数/);
 
+let fullStartupDetailCalls = 0;
+const fullStartupContext = { sceneProxy: { async invoke(method) {
+  if (method === "TubeDesigner.List") return { tubeDesigner: {
+    ...snapshot().tubeDesigner, templates: [structuredClone(descriptor)],
+  } };
+  if (method === "TubeDesigner.GetTemplateDescriptor") fullStartupDetailCalls += 1;
+  throw new Error(`Unexpected request: ${method}`);
+} } };
+const fullStartupView = { activeAreaId: "view", scene: {} };
+await refreshDesignerState(fullStartupContext, fullStartupView, ops);
+assert.equal(fullStartupDetailCalls, 0,
+  "启动快照已包含完整参数时不能再发逐模板描述请求");
+assert.match(renderDesignerRightPane({}, fullStartupView), /结构参数/);
+
 console.log("Product parameter descriptors survive lightweight catalogue refreshes.");

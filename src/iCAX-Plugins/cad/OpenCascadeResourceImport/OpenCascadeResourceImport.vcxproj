@@ -55,6 +55,7 @@
     <ClInclude Include="OpenCascadeTaskExecution.h" />
     <ClInclude Include="OpenCascadeResourceImportExport.h" />
     <ClInclude Include="OpenCascadeTubeCSGConverter.h" />
+    <ClInclude Include="OpenCascadeCancellation.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
@@ -63,6 +64,7 @@
     <ClCompile Include="OpenCascadeBRepBuilder.cpp" />
     <ClCompile Include="OpenCascadeNeutralModelEvaluator.cpp" />
     <ClCompile Include="OpenCascadeTubeCSGConverter.cpp" />
+    <ClCompile Include="OpenCascadeCancellation.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

@@ -36,7 +36,8 @@ class ProductWindowGrooveTests(unittest.TestCase):
     def test_removed_product_local_join_values_are_rejected(self):
         for style in ("sharp_v", "rounded_v", "left_arc", "right_arc"):
             with self.subTest(style=style), self.assertRaises(ValueError):
-                generate(frameLayout="four_sides", frameJoinType=f"v_groove_90:{style}")
+                generate(frameLayout="four_sides", frameManufacturingMode="segment_weld",
+                         frameJoinType=f"v_groove_90:{style}")
 
 
 if __name__ == "__main__":

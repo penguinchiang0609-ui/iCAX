@@ -15,7 +15,7 @@ namespace iCAX
         /*
         * @brief UI 容器启动配置。
         * @details
-        *   Application.exe 从配置文件读取这些字段，再交给 CUIContainerFactory 创建真实容器。
+        *   TubeDesigner.exe 从配置文件读取这些字段，再交给 CUIContainerFactory 创建真实容器。
         *   ContainerType 为 headless 时使用内置无窗口容器；其他类型通常由 ModulePath 指向的 DLL
         *   静态注册到 CUIContainerFactory。
         */
@@ -33,7 +33,7 @@ namespace iCAX
         /*
         * @brief UI 容器接口。
         * @details
-        *   UIContainer 是 Application.exe 看到的唯一 UI 抽象。CEF、WPF、QT、Headless
+        *   UIContainer 是 TubeDesigner.exe 看到的唯一 UI 抽象。CEF、WPF、QT、Headless
         *   都可以实现该接口；它们负责启动前端运行环境，并通过 IFrontendBridge 连接 Engine。
         */
         class _UI_CONTAINER_EXP IUIContainer
@@ -75,6 +75,7 @@ namespace iCAX
         using UIContainerCreateFunction = IUIContainer* (__cdecl*)();
         using UIContainerDestroyFunction = void (__cdecl*)(IUIContainer*);
         using UIContainerExecuteSubProcessFunction = int (__cdecl*)(void*);
+        using UIContainerShutdownRuntimeFunction = void (__cdecl*)();
 
         /*
         * @brief UI 容器静态注册项。
@@ -85,6 +86,7 @@ namespace iCAX
             UIContainerCreateFunction pCreateFunction = nullptr; //!< 创建函数。
             UIContainerDestroyFunction pDestroyFunction = nullptr; //!< 销毁函数。
             UIContainerExecuteSubProcessFunction pExecuteSubProcessFunction = nullptr; //!< 可选子进程入口。
+            UIContainerShutdownRuntimeFunction pShutdownRuntimeFunction = nullptr; //!< 主线程显式关闭运行环境。
         };
 
         /*
@@ -151,7 +153,7 @@ namespace iCAX
             * @param [in] Config_ UI 容器配置。
             * @param [in] pNativeInstanceHandle_ 原生进程实例句柄，Windows 下为 HINSTANCE。
             * @return 子进程返回码；当前进程不是 UI 子进程时返回 -1。
-            * @details CEF 要求在主程序逻辑之前调用 CefExecuteProcess，因此 Application.exe
+            * @details CEF 要求在主程序逻辑之前调用 CefExecuteProcess，因此 TubeDesigner.exe
             *   必须先调用本方法，再启动 Engine。
             */
             static int ExecuteSubProcessIfNeeded(
@@ -165,6 +167,10 @@ namespace iCAX
             * @details 如果类型尚未注册且配置指定了 ModulePath，工厂会先加载该 DLL，触发其静态注册。
             */
             static CUIContainerInstance Create(const CUIContainerConfig& Config_);
+
+            // Call after Stop has closed all windows, on the thread which
+            // initialized the UI runtime. Never invoke from DLL teardown.
+            static void ShutdownRuntime(const CUIContainerConfig& Config_);
         };
 
         /*
@@ -191,6 +197,12 @@ namespace iCAX
     ICAX_REGISTER_UI_CONTAINER_WITH_SUBPROCESS_IMPL(containerTypeLiteral, containerClass, nullptr, uniqueID)
 
 #define ICAX_REGISTER_UI_CONTAINER_WITH_SUBPROCESS_IMPL(containerTypeLiteral, containerClass, subProcessFunction, uniqueID) \
+    ICAX_REGISTER_UI_CONTAINER_WITH_LIFECYCLE_IMPL(containerTypeLiteral, containerClass, subProcessFunction, nullptr, uniqueID)
+
+#define ICAX_REGISTER_UI_CONTAINER_WITH_LIFECYCLE(containerTypeLiteral, containerClass, subProcessFunction, shutdownFunction) \
+    ICAX_REGISTER_UI_CONTAINER_WITH_LIFECYCLE_IMPL(containerTypeLiteral, containerClass, subProcessFunction, shutdownFunction, __COUNTER__)
+
+#define ICAX_REGISTER_UI_CONTAINER_WITH_LIFECYCLE_IMPL(containerTypeLiteral, containerClass, subProcessFunction, shutdownFunction, uniqueID) \
     namespace \
     { \
         iCAX::Frontend::IUIContainer* __cdecl ICAX_UI_CONTAINER_DETAIL_CONCAT(_CreateICAXUIContainer_, uniqueID)() \
@@ -206,6 +218,7 @@ namespace iCAX
                 containerTypeLiteral, \
                 &ICAX_UI_CONTAINER_DETAIL_CONCAT(_CreateICAXUIContainer_, uniqueID), \
                 &ICAX_UI_CONTAINER_DETAIL_CONCAT(_DestroyICAXUIContainer_, uniqueID), \
-                subProcessFunction }); \
+                subProcessFunction, \
+                shutdownFunction }); \
     }
 

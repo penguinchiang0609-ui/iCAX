@@ -228,10 +228,10 @@ def envelope(contours):
             else:
                 raise ValueError("该曲线尚未提供包络计算，不能静默忽略")
         if ordinary:converted.append({"kind":"path","segments":ordinary})
-    return _legacy_envelope(converted)
+    return _primitive_envelope(converted)
 
 
-def _legacy_envelope(contours):
+def _primitive_envelope(contours):
     points=[]
     for c in contours:
         kind=c["kind"]

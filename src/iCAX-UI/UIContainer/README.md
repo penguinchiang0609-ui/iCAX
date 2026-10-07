@@ -10,9 +10,9 @@
 
 ## 运行方式
 
-`Application.exe` 先启动后端 `ApplicationRuntime`，再读取 `Setting/UIContainer.Setting`，通过 `CUIContainerFactory` 创建真实 UI 容器。
+`TubeDesigner.exe` 先启动后端 `ApplicationRuntime`，再读取 `Setting/UIContainer.Setting`，通过 `CUIContainerFactory` 创建真实 UI 容器。
 
-默认没有配置文件时，`Application.exe` 使用 CEF/H5 容器。需要无窗口验收时，可显式配置 `type=headless`；它不创建窗口，只模拟前端初始化流程：获取 application channel，发送 `App.GetState`，等待后端响应。WPF/QT 等其他前端容器只要实现同一契约，也可以通过配置切换。
+默认没有配置文件时，`TubeDesigner.exe` 使用 CEF/H5 容器。需要无窗口验收时，可显式配置 `type=headless`；它不创建窗口，只模拟前端初始化流程：获取 application channel，发送 `App.GetState`，等待后端响应。WPF/QT 等其他前端容器只要实现同一契约，也可以通过配置切换。
 
 ## 配置示例
 

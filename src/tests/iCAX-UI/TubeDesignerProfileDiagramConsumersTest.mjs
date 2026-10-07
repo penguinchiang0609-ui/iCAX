@@ -39,10 +39,9 @@ assert.deepEqual(annotation("width").to, [32, -20]);
 assert.deepEqual(annotation("thickness").from, [32, -20]);
 assert.deepEqual(annotation("thickness").to, [32, -12]);
 const savedFeature = structuredClone(state.csgDraft.features[0]);
-delete savedFeature.profile.snapshot.parameterDiagram;
 const contoursBefore = structuredClone(savedFeature.profile.snapshot.contours);
 openComponentCSGEditor(view, { scope: "user", modelType: "csg", csgDefinition: { features: [savedFeature] } });
-assert.deepEqual(snapshot().contours, contoursBefore, "Legacy annotation migration must not change stored geometry");
+assert.deepEqual(snapshot().contours, contoursBefore, "Current recipe reopen preserves stored geometry and annotations");
 assert.deepEqual(annotation("thickness").to, [32, -12]);
 
 const profileSnapshot = structuredClone(snapshot());
@@ -97,7 +96,7 @@ html = renderNestingPunchPartDialog(punchView);
 assert.match(html, /data-punch-parameter-dialog/);
 assert.match(html, /支管参数示意图/);
 assert.match(html, /data-profile-parameter-key="thickness"/);
-await punchAct("parameters-cancel");
+await punchAct("parameters-close");
 await punchAct("main-profile-parameter", { value: "80", dataset: { tubeDesignerMainProfileParameter: "width", tubeDesignerMainProfileValueType: "number" } });
 assert.equal(evaluations.length, 1);
 assert.equal(punchView.tubeDesignerNestingPunchPartDraft.diagramProfile.parameters.width, 80);
@@ -136,4 +135,4 @@ await handleNestingPunchPartAction(failureContext,failureView,"tube-designer-nes
 assert.equal(failedStagePreviewCalls,0,"A failed section stage must not send a second invalid request for 3D geometry");
 assert.match(failureView.tubeDesignerNestingPunchPartDraft.diagramError,/参数不合法/);
 assert.equal(failureView.pending,false);assert.equal(failureView.tubeDesignerOperation,null);
-console.log("Profile diagram consumers: built-in dimensions, legacy CSG reopen, isolated main/branch sections, DXF exclusion and punch parameter refresh passed.");
+console.log("Profile diagram consumers: built-in dimensions, current CSG reopen, isolated main/branch sections, DXF exclusion and punch parameter refresh passed.");

@@ -30,6 +30,9 @@
     <ClInclude Include="ChangeSet.h">
       <Filter>extern\class</Filter>
     </ClInclude>
+    <ClInclude Include="ChangeSetKeys.h">
+      <Filter>inner</Filter>
+    </ClInclude>
     <ClInclude Include="framework.h">
       <Filter>头文件</Filter>
     </ClInclude>

@@ -25,6 +25,10 @@
     "profileRef": {
       "scope": "system",
       "id": "rect"
+    },
+    "section": {
+      "profileRef": { "scope": "system", "id": "rect" },
+      "parameters": { "width": 30, "depth": 20, "wallThickness": 2 }
     }
   },
   "illustration": {
@@ -104,6 +108,13 @@
       "valueType": "boolean",
       "defaultValue": false,
       "level": "advanced"
+    },
+    {
+      "key": "allowSideOpening",
+      "displayName": "承接侧缘加工许可",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "presentation": { "visible": false }
     }
   ],
   "parameterDiagram": {

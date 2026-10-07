@@ -22,6 +22,12 @@
       "M26.39 18 H36 A6 6 0 0 1 36 30 H26.39 A12 12 0 1 1 26.39 18 Z"
     ]
   },
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    }
+  },
   "parameters": [
     {
       "key": "headDiameter",

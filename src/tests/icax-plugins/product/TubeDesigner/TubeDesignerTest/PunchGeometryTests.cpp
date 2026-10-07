@@ -94,6 +94,18 @@ ObjectMap templateRequest(ObjectMap input, bool missingTools=false,const std::st
         {"parameters",input},{"context",ObjectMap{}}});
 }
 ObjectMap testBounds() { return {{"min",VariantArray{0.,-20.,-10.}},{"max",VariantArray{1000.,20.,10.}}}; }
+ObjectMap rectangularSection(double halfWidth=20.,double halfDepth=10.,double wall=2.) {
+    const auto contour=[](double width,double depth) {
+        const std::vector<VariantArray> points{{-width,-depth},{width,-depth},{width,depth},{-width,depth}};
+        VariantArray edges;
+        for(size_t i=0;i<points.size();++i)edges.emplace_back(ObjectMap{
+            {"kind",std::string("line")},{"start",points[i]},{"end",points[(i+1)%4]}});
+        return ObjectMap{{"kind",std::string("path")},{"closed",true},{"segments",edges}};
+    };
+    const ObjectMap profile{{"contours",VariantArray{
+        contour(halfWidth,halfDepth),contour(halfWidth-wall,halfDepth-wall)}}};
+    return {{"profile",profile}};
+}
 TopoDS_Shape templateShape(const ObjectMap& snapshot) {
     auto g=snapshot.at("geometry").To<ObjectMap>();
     if(g.at("mode").To<std::string>()=="profile") {
@@ -139,15 +151,16 @@ SPunchEnd templateEnd(const std::string& id,bool start,ObjectMap parameters={},d
     }
     return e;
 }
-SPunchFeature partTool(const std::string& id,ObjectMap parameters={},double station=500,double radius=6,ObjectMap bounds={},ObjectMap placement={}) {
+SPunchFeature partTool(const std::string& id,ObjectMap parameters={},double station=500,double radius=6,ObjectMap bounds={},ObjectMap placement={},ObjectMap suppliedSection={}) {
     const auto circle=[](double r) {
         const VariantArray segments{
         ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{r,0.}},{"middle",VariantArray{0.,r}},{"end",VariantArray{-r,0.}}},
         ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{-r,0.}},{"middle",VariantArray{0.,-r}},{"end",VariantArray{r,0.}}}};
         return ObjectMap{{"kind",std::string("path")},{"closed",true},{"segments",segments}};
     };
-    const ObjectMap section{{"profile",ObjectMap{{"contours",VariantArray{
+    const ObjectMap circularSection{{"profile",ObjectMap{{"contours",VariantArray{
         circle(radius),circle(radius-1)}}}}};
+    const ObjectMap section=suppliedSection.empty()?circularSection:suppliedSection;
     ObjectMap feature{{"id",std::string("part-tool")},{"toolTarget",std::string("part")},
             {"station",station},{"reference",std::string("start")},{"section",section},
             {"toolRef",ObjectMap{{"id",id}}},{"toolParameters",parameters}};
@@ -708,6 +721,61 @@ TEST(PunchEnds, RectangularMaleAndFemaleAreComplementaryMatingSolids) {
     EXPECT_NEAR(mass(BRepAlgoAPI_Common(a,clear).Shape()),0,1e-5);
     EXPECT_FALSE(inside(a,10,5.25,9));EXPECT_FALSE(inside(clear,10,5.25,9));
     EXPECT_FALSE(inside(clear,-.5,0,9));
+}
+TEST(PunchEnds, PairedRoundTabsAndSideSocketsCutTheActualTubeWalls) {
+    const auto base=rectTube();
+    const auto section=rectangularSection();
+    for(int count:{2,4}) {
+        SCOPED_TRACE(count);
+        const ObjectMap maleParameters{{"pairCount",count},{"tabWidth",4.},
+            {"tabLength",8.}};
+        SPunchEnds ends;
+        ends.End=templateEnd("paired-end-tabs",false,maleParameters,0,section);
+        const auto male=BuildPunchGeometry(base,{},ends);
+        EXPECT_LT(mass(male),mass(base));
+        // At the tip, the standard pair occupies opposite walls of the end
+        // section.  Four means one ear on each of its four walls.
+        for(double z:{-9.,9.}) {
+            EXPECT_TRUE(inside(male,995,0,z));
+            EXPECT_FALSE(inside(male,995,-4,z));
+            EXPECT_FALSE(inside(male,995,4,z));
+        }
+        for(double y:{-19.,19.})EXPECT_EQ(inside(male,995,y,0),count==4);
+        EXPECT_FALSE(inside(male,995,0,0));
+        EXPECT_TRUE(inside(male,990,0,9));
+
+        const ObjectMap femaleParameters{{"pairCount",count},{"tabWidth",4.},
+            {"tabLength",8.},{"sideClearance",.2}};
+        const auto slot=partTool("paired-side-slots",femaleParameters,500,6,{},
+            {{"face",std::string("top")},{"offset",0.}},section);
+        const auto host=BuildPunchGeometry(base,{slot});
+        EXPECT_LT(mass(host),mass(base));
+        for(double y:{-9.,9.}) {
+            EXPECT_FALSE(inside(host,500,y,9));
+            EXPECT_TRUE(inside(host,496,y,9));
+            EXPECT_TRUE(inside(host,504,y,9));
+            EXPECT_TRUE(inside(host,500,y,-9));
+        }
+        for(double x:{481.,519.})EXPECT_EQ(inside(host,x,0,9),count!=4);
+        EXPECT_TRUE(inside(host,500,0,9));
+    }
+}
+TEST(PunchEnds, EndOpeningSideSocketCutsTheActualTerminalWall) {
+    const auto base=rectTube();
+    const auto section=rectangularSection();
+    const ObjectMap params{{"pairCount",4},{"tabWidth",8.},
+        {"tabLength",8.},{"sideClearance",.2}};
+    const ObjectMap face{{"face",std::string("top")},{"offset",0.}};
+    EXPECT_ANY_THROW(partTool("paired-side-slots",params,980,6,{},face,section));
+    auto opened=params;
+    opened["allowEndOpening"]=true;
+    const auto feature=partTool("paired-side-slots",opened,980,6,{},face,section);
+    const auto cut=BuildPunchGeometry(base,{feature});
+    EXPECT_LT(mass(cut),mass(base));
+    EXPECT_TRUE(inside(base,999.8,0,9));
+    EXPECT_FALSE(inside(cut,999.8,0,9)) << "The socket must open through the terminal edge";
+    EXPECT_TRUE(inside(cut,996,0,9)) << "Only the local terminal socket is removed";
+    EXPECT_TRUE(inside(cut,999.8,0,-9)) << "The opposite wall remains intact";
 }
 TEST(PunchEnds, SingleStepZHasExplicitHandAndIndependentEnds) {
     for(const auto* hand:{"positive","negative"}) {

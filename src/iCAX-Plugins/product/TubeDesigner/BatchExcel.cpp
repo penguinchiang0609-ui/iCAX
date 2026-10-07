@@ -167,7 +167,13 @@ namespace
         return _Result;
     }
 
-    std::vector<std::vector<std::string>> ReadWorksheet(
+    struct SWorksheetRow final
+    {
+        std::uint64_t SourceRow;
+        std::vector<std::string> Cells;
+    };
+
+    std::vector<SWorksheetRow> ReadWorksheet(
         const std::filesystem::path& Path_, const std::string& WorksheetEntry_ = "xl/worksheets/sheet1.xml")
     {
         const auto _Archive = ReadText(Path_);
@@ -176,15 +182,30 @@ namespace
         if (_Sheet == _Index.end()) throw std::invalid_argument("Excel 模板缺少工作表：" + WorksheetEntry_);
         const auto _Shared = SharedStrings(_Index, _Archive);
         const auto _Xml = InflateZipEntry(_Archive, _Sheet->second);
-        const std::regex _RowPattern("<row(?: [^>]*)?>([\\s\\S]*?)</row>");
+        const std::regex _RowPattern("<row\\b([^>]*?)(?:/>|>([\\s\\S]*?)</row>)");
+        const std::regex _RowNumberPattern("(?:^|\\s)r=\"([^\"]+)\"");
         const std::regex _CellPattern("<c r=\"([^\"]+)\"([^>]*)>([\\s\\S]*?)</c>");
         const std::regex _TypePattern(" t=\"([^\"]+)\"");
         const std::regex _ValuePattern("<v>([\\s\\S]*?)</v>");
         const std::regex _InlinePattern("<t(?: [^>]*)?>([\\s\\S]*?)</t>");
-        std::vector<std::vector<std::string>> _Rows;
+        std::vector<SWorksheetRow> _Rows;
+        std::uint64_t _PreviousRow = 0;
         for (std::sregex_iterator _RowIt(_Xml.begin(), _Xml.end(), _RowPattern), _RowEnd; _RowIt != _RowEnd; ++_RowIt)
         {
-            const auto _RowXml = (*_RowIt)[1].str();
+            const auto _Attributes = (*_RowIt)[1].str();
+            std::smatch _RowNumberMatch;
+            std::uint64_t _SourceRow = _PreviousRow + 1;
+            if (std::regex_search(_Attributes, _RowNumberMatch, _RowNumberPattern))
+            {
+                const auto _Text = _RowNumberMatch[1].str();
+                const auto [_Pointer, _Error] = std::from_chars(_Text.data(), _Text.data() + _Text.size(), _SourceRow);
+                if (_Error != std::errc{} || _Pointer != _Text.data() + _Text.size())
+                    throw std::invalid_argument("Excel 工作表行号无效");
+            }
+            if (_SourceRow <= _PreviousRow || _SourceRow > 1'048'576)
+                throw std::invalid_argument("Excel 工作表行号必须按顺序位于 1 到 1048576 之间");
+            _PreviousRow = _SourceRow;
+            const auto _RowXml = (*_RowIt)[2].str();
             std::vector<std::string> _Row;
             for (std::sregex_iterator _CellIt(_RowXml.begin(), _RowXml.end(), _CellPattern), _CellEnd; _CellIt != _CellEnd; ++_CellIt)
             {
@@ -215,7 +236,9 @@ namespace
                 }
                 _Row[_Column] = std::move(_Value);
             }
-            _Rows.push_back(std::move(_Row));
+            // Excel omits unused physical rows. Store their numbers with the
+            // compact row data instead of allocating all intervening rows.
+            _Rows.push_back({ _SourceRow, std::move(_Row) });
         }
         return _Rows;
     }
@@ -371,11 +394,31 @@ namespace
     }
 }
 
+void iCAX::TubeDesigner::ValidateBatchExcelColumns(
+    const STemplateDescriptor& Descriptor_, const std::vector<SBatchExcelColumn>& Columns_)
+{
+    std::set<std::string> _ParameterKeys;
+    for (const auto& _Definition : Descriptor_.Parameters)
+    {
+        const auto _Visible = _Definition.Presentation.find("visible");
+        const bool _Exposed = _Visible == _Definition.Presentation.end()
+            || !_Visible->second.Is<bool>() || _Visible->second.To<bool>();
+        if (!_Definition.ReadOnly && _Exposed) _ParameterKeys.insert(_Definition.Key);
+    }
+    for (const auto& _Column : Columns_)
+    {
+        if (_Column.Key == "__instanceName" || _Column.Key == "__instanceQuantity") continue;
+        if (!_ParameterKeys.contains(_Column.Key))
+            throw std::invalid_argument("Excel 模板包含隐藏、不可编辑或不存在的参数：" + _Column.Key);
+    }
+}
+
 std::filesystem::path iCAX::TubeDesigner::WriteBatchExcelTemplate(
     const std::filesystem::path& TemplatePath_, const STemplateDescriptor& Descriptor_, const std::vector<SBatchExcelColumn>& Columns_)
 {
     if (TemplatePath_.empty() || TemplatePath_.extension() != ".xlsx") throw std::invalid_argument("Excel 导入工作簿必须使用 .xlsx 扩展名");
     if (Columns_.empty()) throw std::invalid_argument("Excel 导入模板至少需要一列");
+    ValidateBatchExcelColumns(Descriptor_, Columns_);
     if (std::filesystem::exists(TemplatePath_)) throw std::invalid_argument("Excel 导入模板已存在，不能覆盖");
     VariantArray _Columns;
     std::vector<std::string> _Headers;
@@ -454,9 +497,9 @@ iCAX::TubeDesigner::SBatchExcelDefinition iCAX::TubeDesigner::ReadBatchExcelDefi
 {
     if (WorkbookPath_.extension() != ".xlsx") throw std::invalid_argument("批量产品导入目前只支持 .xlsx 工作簿");
     const auto _MetadataSheet = ReadWorksheet(WorkbookPath_, "xl/worksheets/sheet2.xml");
-    if (_MetadataSheet.empty() || _MetadataSheet.front().empty() || _MetadataSheet.front().front().empty())
+    if (_MetadataSheet.empty() || _MetadataSheet.front().Cells.empty() || _MetadataSheet.front().Cells.front().empty())
         throw std::invalid_argument("Excel 文件不是由 TubeDesigner 批量导入工作簿生成，缺少内置列定义");
-    const auto _Definition = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_MetadataSheet.front().front());
+    const auto _Definition = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_MetadataSheet.front().Cells.front());
     if (!_Definition.Is<ObjectMap>()) throw std::invalid_argument("Excel 内置列定义格式无效");
     const auto _Object = _Definition.To<ObjectMap>();
     if (OptionalText(_Object, "schema") != "icax.tube-designer.batch-excel") throw std::invalid_argument("不是 TubeDesigner Excel 导入模板");
@@ -482,17 +525,22 @@ iCAX::TubeDesigner::SBatchExcelImport iCAX::TubeDesigner::ReadBatchExcelImport(
     const auto& _ExpectedVersion = _Definition.TemplateVersion;
     if (!_ExpectedVersion.empty() && _ExpectedVersion != Descriptor_.Version)
         throw std::invalid_argument("Excel 导入定义对应的产品模板版本已变化，请重新导出模板");
+    ValidateBatchExcelColumns(Descriptor_, _Definition.Columns);
     std::unordered_map<std::string, const iCAX::TemplateRuntime::SParameterDefinition*> _Parameters;
     for (const auto& _Parameter : Descriptor_.Parameters) _Parameters.emplace(_Parameter.Key, &_Parameter);
     const auto _Sheet = ReadWorksheet(WorkbookPath_);
-    if (_Sheet.size() < 2) throw std::invalid_argument("Excel 工作簿缺少标题行和列标题");
+    const auto _Header = std::find_if(_Sheet.begin(), _Sheet.end(), [](const SWorksheetRow& Row_) { return Row_.SourceRow == 2; });
+    if (_Sheet.empty() || _Sheet.front().SourceRow != 1 || _Header == _Sheet.end())
+        throw std::invalid_argument("Excel 工作簿缺少标题行和列标题");
     std::unordered_map<std::string, std::size_t> _HeaderIndex;
-    for (std::size_t _Index = 0; _Index < _Sheet[1].size(); ++_Index) if (!_Sheet[1][_Index].empty()) _HeaderIndex.emplace(_Sheet[1][_Index], _Index);
+    for (std::size_t _Index = 0; _Index < _Header->Cells.size(); ++_Index)
+        if (!_Header->Cells[_Index].empty()) _HeaderIndex.emplace(_Header->Cells[_Index], _Index);
     for (const auto& _Column : _Definition.Columns) if (!_HeaderIndex.contains(_Column.Title)) throw std::invalid_argument("Excel 缺少列：" + _Column.Title);
     SBatchExcelImport _Result{ _Definition.TemplateID, _Definition.TemplateVersion, _Definition.TemplateName };
-    for (std::size_t _Index = 2; _Index < _Sheet.size(); ++_Index)
+    for (const auto& _WorksheetRow : _Sheet)
     {
-        const auto& _Cells = _Sheet[_Index]; const auto _RowNumber = static_cast<std::uint64_t>(_Index + 1);
+        if (_WorksheetRow.SourceRow <= 2) continue;
+        const auto& _Cells = _WorksheetRow.Cells; const auto _RowNumber = _WorksheetRow.SourceRow;
         bool _HasData = false; for (const auto& _Cell : _Cells) if (! _Cell.empty()) { _HasData = true; break; }
         if (!_HasData) continue;
         SBatchExcelImportRow _Row; _Row.SourceRow = _RowNumber;

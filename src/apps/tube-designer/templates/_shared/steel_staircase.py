@@ -148,7 +148,7 @@ def generate(parameters,context):
     beam_top_offset=-deck-frame.depth
     if not zigzag and R/2-deck-frame.depth-slope*frame.width/2<=plate_t+2:
         raise ValueError("首级支架无法落在梯梁上：请减小踏板/支撑高度或增加级高")
-    model=NeutralModel(template_id="straight-steel-staircase",template_version="2.1.0",
+    model=NeutralModel(template_id="straight-steel-staircase",template_version="2.1.1",
         package_digest=str(context.get("template",{}).get("packageDigest","")),parameters=deepcopy(p))
     shared_tubes=geometry_rules.SharedTubeGeometry(model)
     display=[];export=[];rows=[];placement={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
@@ -238,7 +238,7 @@ def generate(parameters,context):
             placed=model.geometry(key+".placed","transform",inputs=[solid],arguments={"placement":deepcopy(placement)})
         props={"partNumber":p["productCode"]+"-"+key,"quantity":1,"group":key.split(".")[0]+"."+key.split(".")[1],
                "manufacturing.partKind":kind,"manufacturing.sourcing":"purchased" if purchased else "made",
-               "manufacturing.material":p["treadMaterial"] if purchased else p["materialGrade"],
+               "manufacturing.material":p["treadMaterial"] if purchased else "",
                "manufacturing.categoryKey":"stair."+name,"manufacturing.categoryName":name,
                "length":max(dimensions),"manufacturing.operations":operations or [],
                "stair.assemblyTransform":deepcopy(placement)}
@@ -247,11 +247,13 @@ def generate(parameters,context):
             props["tubeDesigner.endProcess"]={"startCut":"geometry","endCut":"geometry","cutSource":"finished_geometry",
                    "lengthBasis":"blank_axial_extent","connection":"weld"}
         else:props["manufacturing.plate"]={"width":dimensions[0],"height":dimensions[1],"thickness":dimensions[2],"areaMm2":dimensions[0]*dimensions[1]}
-        rep={"display":display_placed}
-        if not purchased:rep["export"]=placed
+        if purchased:props["manufacturing.process"]="purchased"
+        # Procurement objects remain part of the real product source mapping.
+        # Their sourcing/partKind keeps them out of tube cutting workflows.
+        rep={"display":display_placed,"export":placed}
         k=model.item(key,name,representations=rep,properties=props)
         display.append(k)
-        if not purchased:export.append(k)
+        export.append(k)
         signature=json.dumps([kind,props["manufacturing.material"],[round(v,6) for v in dimensions],pf.properties() if pf else None,operations or []],sort_keys=True)
         signatures.setdefault(signature,[]).append(k)
         rows.append({"key":key,"values":{"name":name,"kind":kind,"length":round(max(dimensions),3),"quantity":1,"sourcing":props["manufacturing.sourcing"]}})

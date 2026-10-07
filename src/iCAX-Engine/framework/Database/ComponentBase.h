@@ -168,6 +168,20 @@ namespace iCAX
             void TriggerComponentChanged(IN const ComponentEventArgs::EventType& nEventType_, IN const PropertySet& Previous_, IN const PropertySet& New_);
 
         private:
+            friend class CRepository;
+            // Transaction intents are consumed at commit; their changed field
+            // values can become the notification snapshot without a copy.
+            [[nodiscard]] bool SetPropertiesOwned(
+                IN PropertySet&& Properties_, OUT std::string& strError_);
+            [[nodiscard]] bool SetPropertiesImpl(IN const PropertySet& Properties_,
+                IN PropertySet* pOwnedProperties_, OUT std::string& strError_);
+            [[nodiscard]] bool TryTriggerComponentChangedOwned(
+                IN PropertySet&& Previous_, IN PropertySet&& New_);
+            // Only for a component owned by a newly created entity that will be
+            // discarded in full if initialization fails. The repository records
+            // the resulting add event after all properties have been applied.
+            [[nodiscard]] bool InitializeNewComponentProperties(
+                IN const PropertySet& Properties_, OUT std::string& strError_);
             std::list<std::weak_ptr<IComponentEventListener>> m_Observers;      //!< 观察者
             bool m_bEnable;                                                     //!< 是否启用
             bool m_bDeleted;                                                    //!< 标记删除

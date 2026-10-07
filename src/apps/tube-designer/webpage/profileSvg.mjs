@@ -110,6 +110,18 @@ function renderSvgPath(segments, className) {
 
 function renderSvgPathSegment(segment) {
   const kind = String(segment?.kind ?? "");
+  // Traversal belongs to the edge. Change only this display copy; keep saved
+  // curve definitions (especially spline knots and trim intervals) untouched.
+  if (segment?.reversed === true) {
+    if (kind === "line" || kind === "arc")
+      segment = { ...segment, start: segment.end, end: segment.start };
+    else if (kind === "ellipseArc")
+      segment = { ...segment, startAngle: segment.endAngle, endAngle: segment.startAngle };
+    else if (kind === "bezier")
+      segment = { ...segment, reversed: false,
+        controlPoints: Array.isArray(segment.controlPoints) ? [...segment.controlPoints].reverse() : [],
+        ...(Array.isArray(segment.weights) ? { weights: [...segment.weights].reverse() } : {}) };
+  }
   if (kind === "line") {
     const start = point(segment?.start);
     const end = point(segment?.end);
@@ -226,6 +238,7 @@ function renderSvgBezier(segment) {
 function renderSvgSpline(segment) {
   const samples = sampleSpline(segment);
   if (samples.length < 2) return null;
+  if (segment?.reversed === true) samples.reverse();
   const rendered = smoothSampledCurve(samples);
   return {
     start: samples[0],

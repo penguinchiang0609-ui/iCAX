@@ -1,0 +1,723 @@
+{
+  "schema": "icax.manufacturing-model",
+  "schemaVersion": 2,
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "resources": [
+    {
+      "key": "frame.section",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "contours": [
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -19.0,
+                  17.0
+                ],
+                "end": [
+                  -19.0,
+                  -17.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -19.0,
+                  -17.0
+                ],
+                "middle": [
+                  -18.414213562373096,
+                  -18.414213562373096
+                ],
+                "end": [
+                  -17.0,
+                  -19.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -17.0,
+                  -19.0
+                ],
+                "end": [
+                  17.0,
+                  -19.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  17.0,
+                  -19.0
+                ],
+                "middle": [
+                  18.414213562373096,
+                  -18.414213562373096
+                ],
+                "end": [
+                  19.0,
+                  -17.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  19.0,
+                  -17.0
+                ],
+                "end": [
+                  19.0,
+                  17.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  19.0,
+                  17.0
+                ],
+                "middle": [
+                  18.414213562373096,
+                  18.414213562373096
+                ],
+                "end": [
+                  17.0,
+                  19.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  17.0,
+                  19.0
+                ],
+                "end": [
+                  -17.0,
+                  19.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -17.0,
+                  19.0
+                ],
+                "middle": [
+                  -18.414213562373096,
+                  18.414213562373096
+                ],
+                "end": [
+                  -19.0,
+                  17.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -17.8,
+                  16.8
+                ],
+                "end": [
+                  -17.8,
+                  -16.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -17.8,
+                  -16.8
+                ],
+                "middle": [
+                  -17.507106781186547,
+                  -17.507106781186547
+                ],
+                "end": [
+                  -16.8,
+                  -17.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -16.8,
+                  -17.8
+                ],
+                "end": [
+                  16.8,
+                  -17.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  16.8,
+                  -17.8
+                ],
+                "middle": [
+                  17.507106781186547,
+                  -17.507106781186547
+                ],
+                "end": [
+                  17.8,
+                  -16.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  17.8,
+                  -16.8
+                ],
+                "end": [
+                  17.8,
+                  16.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  17.8,
+                  16.8
+                ],
+                "middle": [
+                  17.507106781186547,
+                  17.507106781186547
+                ],
+                "end": [
+                  16.8,
+                  17.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  16.8,
+                  17.8
+                ],
+                "end": [
+                  -16.8,
+                  17.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -16.8,
+                  17.8
+                ],
+                "middle": [
+                  -17.507106781186547,
+                  17.507106781186547
+                ],
+                "end": [
+                  -17.8,
+                  16.8
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "frame.continuous",
+      "displayName": "连续折弯外框",
+      "children": [],
+      "properties": {
+        "partNumber": "EXAMPLE-FRAME-001",
+        "quantity": 1,
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "kind": "rect",
+          "profileForm": "parametric",
+          "width": 38.0,
+          "depth": 38.0,
+          "wallThickness": 1.2,
+          "cornerRadius": 2.0,
+          "hollow": true,
+          "sectionResource": "frame.section"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "frame.section",
+        "path": {
+          "vertices": [
+            {
+              "key": "seam",
+              "point": [
+                600,
+                0,
+                19
+              ]
+            },
+            {
+              "key": "corner.br",
+              "point": [
+                1181,
+                0,
+                19
+              ]
+            },
+            {
+              "key": "corner.tr",
+              "point": [
+                1181,
+                0,
+                1781
+              ]
+            },
+            {
+              "key": "corner.tl",
+              "point": [
+                19,
+                0,
+                1781
+              ]
+            },
+            {
+              "key": "corner.bl",
+              "point": [
+                19,
+                0,
+                19
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "bottom.right",
+              "from": "seam",
+              "to": "corner.br",
+              "sectionFrame": {
+                "origin": [
+                  600,
+                  0,
+                  19
+                ],
+                "xAxis": [
+                  0,
+                  1,
+                  0
+                ],
+                "yAxis": [
+                  0,
+                  0,
+                  1
+                ],
+                "zAxis": [
+                  1,
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "key": "right",
+              "from": "corner.br",
+              "to": "corner.tr",
+              "sectionFrame": {
+                "origin": [
+                  1181,
+                  0,
+                  19
+                ],
+                "xAxis": [
+                  0,
+                  1,
+                  0
+                ],
+                "yAxis": [
+                  -1,
+                  0,
+                  0
+                ],
+                "zAxis": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            },
+            {
+              "key": "top",
+              "from": "corner.tr",
+              "to": "corner.tl",
+              "sectionFrame": {
+                "origin": [
+                  1181,
+                  0,
+                  1781
+                ],
+                "xAxis": [
+                  0,
+                  1,
+                  0
+                ],
+                "yAxis": [
+                  0,
+                  0,
+                  -1
+                ],
+                "zAxis": [
+                  -1,
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "key": "left",
+              "from": "corner.tl",
+              "to": "corner.bl",
+              "sectionFrame": {
+                "origin": [
+                  19,
+                  0,
+                  1781
+                ],
+                "xAxis": [
+                  0,
+                  1,
+                  0
+                ],
+                "yAxis": [
+                  1,
+                  0,
+                  0
+                ],
+                "zAxis": [
+                  0,
+                  0,
+                  -1
+                ]
+              }
+            },
+            {
+              "key": "bottom.left",
+              "from": "corner.bl",
+              "to": "seam",
+              "sectionFrame": {
+                "origin": [
+                  19,
+                  0,
+                  19
+                ],
+                "xAxis": [
+                  0,
+                  1,
+                  0
+                ],
+                "yAxis": [
+                  0,
+                  0,
+                  1
+                ],
+                "zAxis": [
+                  1,
+                  0,
+                  0
+                ]
+              }
+            }
+          ],
+          "closed": true,
+          "startVertex": "seam",
+          "closure": "straight-mid-edge-seam"
+        },
+        "formingOrder": [
+          "corner.bl",
+          "corner.tl",
+          "corner.tr",
+          "corner.br"
+        ]
+      }
+    }
+  ],
+  "roots": [
+    "frame.continuous"
+  ],
+  "sourceMappings": [
+    {
+      "itemKey": "frame.continuous",
+      "sources": [
+        {
+          "itemKey": "outer_frame.bottom.0001",
+          "segments": [
+            {
+              "segmentKey": "bottom.right",
+              "sourceRange": [
+                0.5,
+                1
+              ]
+            },
+            {
+              "segmentKey": "bottom.left",
+              "sourceRange": [
+                0,
+                0.5
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.right.0001",
+          "segments": [
+            {
+              "segmentKey": "right",
+              "sourceRange": [
+                0,
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.top.0001",
+          "segments": [
+            {
+              "segmentKey": "top",
+              "sourceRange": [
+                1,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.left.0001",
+          "segments": [
+            {
+              "segmentKey": "left",
+              "sourceRange": [
+                1,
+                0
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "processes": [
+    {
+      "key": "frame.fold.corner.br",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "frame.continuous",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "corner.br",
+              "incomingSegment": "bottom.right",
+              "outgoingSegment": "right"
+            },
+            "angle": 90,
+            "axisDirection": [
+              0,
+              -1,
+              0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "frame.continuous"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "frame.fold.corner.tr",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "frame.continuous",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "corner.tr",
+              "incomingSegment": "right",
+              "outgoingSegment": "top"
+            },
+            "angle": 90,
+            "axisDirection": [
+              0,
+              -1,
+              0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "frame.continuous"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "frame.fold.corner.tl",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "frame.continuous",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "corner.tl",
+              "incomingSegment": "top",
+              "outgoingSegment": "left"
+            },
+            "angle": 90,
+            "axisDirection": [
+              0,
+              -1,
+              0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "frame.continuous"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "frame.fold.corner.bl",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "frame.continuous",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "corner.bl",
+              "incomingSegment": "left",
+              "outgoingSegment": "bottom.left"
+            },
+            "angle": 90,
+            "axisDirection": [
+              0,
+              -1,
+              0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "frame.continuous"
+        },
+        "dependencies": []
+      }
+    }
+  ]
+}

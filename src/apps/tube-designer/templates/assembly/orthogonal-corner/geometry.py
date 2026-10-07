@@ -38,6 +38,12 @@ def check_sizes(a, b, c, lengths, parameters, contact_requirements=None):
         # weld gaps. This is not a full planar-contact or weld-strength check.
         queries.require(footprint <= a["depth"] + 1e-6,
                         "C 贴焊端口超出 A / B 共同角面外包络")
+    elif parameters["cJoint"] == "tabs" and parameters["abJoint"] == "continuous":
+        # The body stops at the near wall; only the retained two Z skins enter.
+        # An equal-size skin pair needs shallow edge sockets, not an opening
+        # large enough to insert the complete C section through the cavity.
+        queries.require(c["depth"] <= a["depth"] + 1e-6,
+                        "C 插舌壁面超出 A / B 共同角面外包络")
     elif parameters["cJoint"] != "weld":
         queries.require(footprint < min(a["flatDepth"], a["innerDepth"]) - 2 * EPS,
                         "C 端口须小于 A / B 共同角面及内孔，保留连续平直壁料")
@@ -74,7 +80,8 @@ def check_sizes(a, b, c, lengths, parameters, contact_requirements=None):
             # crossing the seam would have no continuous retaining wall.
             queries.require(min(c["width"], c["depth"]) - c["wall"] > width + 2 * opening + 2 * EPS,
                             "公母槽与 A / B 斜接缝冲突，应增大 C 深度或减小插舌宽度及间隙")
-    result = {"extension": extension, "near": near, "insertion": insertion, "gap": gap}
+    result = {"extension": extension, "near": near, "insertion": insertion, "gap": gap,
+              "allowSideOpening": parameters["abJoint"] == "continuous" and parameters["cJoint"] == "tabs"}
     if contact_requirements:
         result["contactRequirements"] = contact_requirements
     return result

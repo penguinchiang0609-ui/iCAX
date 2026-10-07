@@ -117,7 +117,8 @@ class WindowManufacturingInputTests(unittest.TestCase):
         self.assertEqual(definition['outputs'],{'manufacturing':{'kind':'manufacturing-set','key':'window.manufacturing'}})
         self.assertEqual(definition['processInput']['schemaVersion'],3)
         self.assertEqual(definition['processInput']['parts'],{'members':{'scope':'design','itemKeys':design['roots']}})
-        self.assertEqual(set(definition['processInput']['geometry']),{'layout'})
+        self.assertEqual(set(definition['processInput']['geometry']),{'layout','mergeIdenticalParts'})
+        self.assertIs(definition['processInput']['geometry']['mergeIdenticalParts'],True)
         self.assertEqual(definition['dependencies'],[])
         return result
 
@@ -210,13 +211,14 @@ class WindowManufacturingInputTests(unittest.TestCase):
                         self.assertEqual(executed['extensions']['tubeDesigner.manufacturingPartCount'],len(executed['items']))
 
     def test_compensation_is_resolved_downstream_and_not_assumed_zero(self):
-        draft = {'bottomStrategy':'rounded','bendCompensation':True,'kFactor':.35}
+        # The current product owns these explicit fields; an old binding draft
+        # cannot override a public zero K. Compensation applies to edge arc.
         changes = {'frameManufacturingMode':'plane_v_notch',
-            'tubeDesignerToolBindings':{'outerFrameGroove':{'ref':{'scope':'system','id':'v-notch-sharp'},'parameters':draft}}}
+            'outerFrameGrooveTool': 'system:edge-arc-groove', 'outerFrameBendKFactor': .35}
         result = self.build(changes)
         plan = next(iter(allocate(result,design_for(changes))['allocationPlans'].values()))
         self.assertGreater(load('security_window_process_adapter').bend_allowance(plan),0)
-        self.assertEqual(plan['targetSpanCheck']['status'],'not-performed')
+        self.assertEqual(plan['targetSpanCheck']['status'], 'pass')
 
     def test_default_allocation_preserves_legacy_lengths_and_material_categories(self):
         descriptor,defaults,core = package('single_face_security_window')

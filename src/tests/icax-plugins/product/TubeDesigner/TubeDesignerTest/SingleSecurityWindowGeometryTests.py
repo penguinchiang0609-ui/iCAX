@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from copy import deepcopy
 import json
 import math
 from pathlib import Path
@@ -74,7 +75,221 @@ def graph(document):
     return {node["key"]: node for node in document["geometry"]}
 
 
+def apertures(document, prefix):
+    return [record for record in document.get('extensions', {}).get('tubeDesigner.assemblyGeometryProcesses', {}).get('instances', [])
+            if record['templateId']=='tube-profile-aperture' and record['stockId'].startswith(prefix)]
+
+
+def aperture_geometry(record):
+    return {node['key']:node for node in record['result']['geometry']}
+
+
+def dependencies(document, root):
+    nodes=graph(document)
+    seen=set()
+    def visit(key):
+        if key in seen: return
+        seen.add(key)
+        for dependency in nodes[key]['inputs']: visit(dependency)
+    visit(root)
+    return seen
+
+
 class SingleSecurityWindowGeometryTests(unittest.TestCase):
+    def test_external_allocation_kernel_emits_uncut_stock_and_l_t_nodes(self):
+        for pattern in ("horizontal", "vertical"):
+            with self.subTest(pattern=pattern):
+                values = parameters(assemblyPlanningMode="external_templates",
+                                    frameLayout="four_sides", infillPattern=pattern,
+                                    accessDoorEnabled=False)
+                original = deepcopy(values)
+                document = SUBJECT._generate_manufacturing_geometry(values, {"template": {}, "geometryPurpose": "manufacturing"})
+                self.assertEqual(original, values)
+                self.assertEqual(original, document["parameters"])
+                self.assertFalse(any(node["operator"] == "boolean" for node in document["geometry"]))
+                items = {item["key"]: item for item in document["items"]}
+                self.assertEqual(4 + (4 if pattern == "horizontal" else 9), len(items))
+                self.assertTrue(all(item["properties"]["tubeDesigner.assemblyPlanning"] ==
+                                    {"stockState": "uncut", "ready": False}
+                                    for item in items.values()))
+                geometry = graph(document)
+                for item in items.values():
+                    properties = item["properties"]
+                    frame = properties["assemblyFrame.member"]
+                    interval = frame["stockInterval"]
+                    self.assertLess(interval["startStation"], 0)
+                    self.assertGreater(interval["endStation"], frame["axisLength"])
+                    self.assertAlmostEqual(properties["length"],
+                                           interval["endStation"]-interval["startStation"], places=3)
+                    solid = geometry[item["representations"]["result"]]
+                    extrusion = geometry[solid["inputs"][0]]
+                    self.assertAlmostEqual(math.dist([0,0,0],extrusion["arguments"]["vector"]),
+                                           interval["endStation"]-interval["startStation"])
+                    section = frame["sectionFrame"]
+                    x_axis, y_axis = section["xAxis"], section["yAxis"]
+                    axis = properties["tubeDesigner.manufacturingStartToEnd"]
+                    cross = [x_axis[1]*y_axis[2]-x_axis[2]*y_axis[1],
+                             x_axis[2]*y_axis[0]-x_axis[0]*y_axis[2],
+                             x_axis[0]*y_axis[1]-x_axis[1]*y_axis[0]]
+                    for coordinate in range(3):
+                        self.assertAlmostEqual(cross[coordinate], axis[coordinate])
+                        self.assertAlmostEqual(
+                            section["originAtStart"][coordinate]
+                            + x_axis[coordinate]*section["centerlineUV"][0]
+                            + y_axis[coordinate]*section["centerlineUV"][1],
+                            frame["start"][coordinate])
+                        self.assertAlmostEqual(
+                            section["originAtStart"][coordinate]
+                            + axis[coordinate]*interval["startStation"],
+                            solid["arguments"]["placement"]["origin"][coordinate])
+                self.assertEqual(items["outer_frame.left.0001"]["properties"]
+                                 ["tubeDesigner.profile"]["contours"],
+                                 items["outer_frame.bottom.0001"]["properties"]
+                                 ["tubeDesigner.profile"]["contours"])
+                nodes = document["relationships"]
+                corners = [node for node in nodes if node["properties"]["topology"] == "L"]
+                junctions = [node for node in nodes if node["properties"]["topology"] == "T"]
+                self.assertEqual(4, len(corners))
+                self.assertEqual(2 * (len(items) - 4), len(junctions))
+                self.assertTrue(all([anchor["kind"] for anchor in node["properties"]["participantAnchors"]]
+                                    == ["end", "end"] for node in corners))
+                self.assertTrue(all([anchor["kind"] for anchor in node["properties"]["participantAnchors"]]
+                                    == ["side", "end"] for node in junctions))
+                for node in nodes:
+                    point = node["properties"]["centerlinePoint"]
+                    self.assertEqual(node["items"], [anchor["itemKey"]
+                                   for anchor in node["properties"]["participantAnchors"]])
+                    for anchor in node["properties"]["participantAnchors"]:
+                        self.assertEqual(point, anchor["centerlinePoint"])
+                        if anchor["kind"] == "end":
+                            end = anchor["end"]
+                            frame = items[anchor["itemKey"]]["properties"]["assemblyFrame.member"]
+                            self.assertEqual(anchor["localAxialStation"],
+                                             0.0 if end == "start" else frame["axisLength"])
+                            interval = frame["stockInterval"]
+                            self.assertAlmostEqual(anchor["anchor"]["stockAllowance"],
+                                -interval["startStation"] if end == "start" else
+                                interval["endStation"]-frame["axisLength"])
+                            if node["properties"]["topology"] == "L":
+                                self.assertAlmostEqual(anchor["anchor"]["contactInset"],
+                                                       anchor["anchor"]["stockAllowance"])
+                        else:
+                            station = anchor["localAxialStation"]
+                            self.assertGreater(station, 0)
+                            self.assertLess(station, items[anchor["itemKey"]]["properties"]["length"])
+                            section = (items[anchor["itemKey"]]["properties"]
+                                       ["assemblyFrame.member"]["sectionFrame"])
+                            self.assertEqual(section["faceNormals"][anchor["face"]],
+                                             anchor["faceNormal"])
+                self.assertGreaterEqual(sum("outer_frame.left.0001" in node["items"]
+                                            for node in nodes), 2)
+                self.assertEqual("external_templates", document["extensions"]
+                                 ["tubeDesigner.securityWindowReview"]["outerFrameManufacturing"]["mode"])
+
+    def test_external_assembly_does_not_consume_legacy_process_values(self):
+        base = parameters(assemblyPlanningMode="external_templates", frameLayout="four_sides",
+                          infillPattern="horizontal", accessDoorEnabled=False)
+        changed = dict(base, frameManufacturingMode="segment_weld", frameJoinType="butt_90",
+                       frameButtWrapMode="horizontal_wraps_side", horizontalBranchReserve=0,
+                       verticalBranchReserve=0, assemblyClearance=100)
+        expected = SUBJECT.generate(base, {"template": {}, "geometryPurpose": "manufacturing"})
+        actual = SUBJECT.generate(changed, {"template": {}, "geometryPurpose": "manufacturing"})
+        self.assertEqual(expected["geometry"], actual["geometry"])
+        self.assertEqual(expected["items"], actual["items"])
+        self.assertEqual(expected["relationships"], actual["relationships"])
+        self.assertEqual(changed, actual["parameters"])
+
+    def test_external_supplied_offset_rectangle_keeps_profile_identity(self):
+        def rectangle(width, depth):
+            points = [[-width/2, 3-depth/2], [width/2, 3-depth/2],
+                      [width/2, 3+depth/2], [-width/2, 3+depth/2]]
+            return {"kind": "path", "closed": True, "segments": [
+                {"kind": "line", "start": points[i], "end": points[(i+1) % 4]}
+                for i in range(4)]}
+        contours = [rectangle(38, 25), rectangle(35.6, 22.6)]
+        profile = {"schema": "icax.imported-tube-profile", "schemaVersion": 1,
+                   "kind": "fixed-section", "profileForm": "fixed",
+                   "sectionKind": "rect", "name": "偏置矩形管", "specification": "38×25×1.2",
+                   "contentDigest": "offset-rect-test", "width": 38, "depth": 25,
+                   "wallThickness": 1.2, "geometrySource": "providedBoundary",
+                   "contours": contours}
+        values = parameters(assemblyPlanningMode="external_templates",
+                            frameLayout="four_sides", infillPattern="horizontal",
+                            accessDoorEnabled=False,
+                            tubeDesignerProfileOverrides={"frame": profile})
+        original = deepcopy(values)
+        document = SUBJECT.generate(values, {"template": {}, "geometryPurpose": "display"})
+        self.assertEqual(values, original)
+        self.assertEqual(document["parameters"], original)
+        frames = {item["key"]: item["properties"] for item in document["items"]
+                  if item["key"].startswith("outer_frame.")}
+        self.assertTrue(all(item["tubeDesigner.profile"]["contours"] == contours
+                            for item in frames.values()))
+        self.assertEqual(frames["outer_frame.bottom.0001"]["assemblyFrame.member"]
+                         ["sectionFrame"]["centerlineUV"], [0.0, 6.0])
+        self.assertEqual(frames["outer_frame.top.0001"]["assemblyFrame.member"]
+                         ["sectionFrame"]["centerlineUV"], [0.0, 6.0])
+        stock = SUBJECT.generate(values, {"template": {}, "geometryPurpose": "manufacturing"})
+        for item in stock['items']:
+            if item['key'] not in frames:
+                continue
+            span=item['properties']['manufacturing.sourceMembers'][0]['spans'][0]
+            placement=span['placement']
+            section=frames[item['key']]['assemblyFrame.member']['sectionFrame']
+            origin=section['originAtStart']
+            mapped=[sum(origin[i]*placement[axis][j]
+                        for i,axis in enumerate(('xAxis','yAxis','zAxis')))+placement['origin'][j]
+                    for j in range(3)]
+            self.assertAlmostEqual(span['stockStart'], mapped[0], places=7)
+            self.assertAlmostEqual(0.0, mapped[1], places=7)
+            self.assertAlmostEqual(0.0, mapped[2], places=7)
+
+    def test_external_assembly_rejects_unimplemented_product_topologies(self):
+        cases = (
+            ({"faceType": "two"}, "单面"),
+            ({"frameLayout": "left_right"}, "四边框"),
+            ({"accessDoorEnabled": True}, "开启口"),
+            ({"infillPattern": "grid"}, "交叉节点"),
+        )
+        for overrides, message in cases:
+            with self.subTest(overrides=overrides), self.assertRaisesRegex(ValueError, message):
+                values = parameters(assemblyPlanningMode="external_templates",
+                                    frameLayout="four_sides", infillPattern="horizontal",
+                                    accessDoorEnabled=False)
+                values.update(overrides)
+                SUBJECT.generate(values, {"template": {}})
+
+    def test_inactive_infill_profiles_never_load_or_change_geometry(self):
+        descriptor = json.loads((PACKAGE / "template.json").read_text(encoding="utf-8"))
+        defaults = {field["key"]: field["defaultValue"] for field in descriptor["parameters"]}
+        real_profile = SUBJECT._profile
+        for pattern, inactive in (("vertical", ("horizontal", "doorHorizontal")),
+                                  ("horizontal", ("vertical", "doorVertical"))):
+            for opening in (False, True):
+                for purpose in ("display", "manufacturing"):
+                    with self.subTest(pattern=pattern, opening=opening, purpose=purpose):
+                        values = dict(defaults, infillPattern=pattern, accessDoorEnabled=opening)
+                        context = {"template": descriptor, "geometryPurpose": purpose}
+                        expected = SUBJECT.generate(deepcopy(values), context)
+                        for prefix in inactive:
+                            for key in list(values):
+                                if key.startswith(prefix):
+                                    values[key] = "inactive" if isinstance(values[key], str) else -1
+                        original = deepcopy(values)
+                        def active_profile(parameters, prefix):
+                            self.assertNotIn(prefix, inactive)
+                            return real_profile(parameters, prefix)
+                        with patch.object(SUBJECT, "_profile", side_effect=active_profile):
+                            actual = SUBJECT.generate(values, context)
+                        self.assertEqual(values, original)
+                        self.assertEqual(actual["parameters"], original)
+                        self.assertEqual(actual["geometry"], expected["geometry"])
+                        self.assertEqual(actual["items"], expected["items"])
+
+    def test_active_crossing_profiles_still_require_through_clearance(self):
+        with self.assertRaisesRegex(ValueError, "无法安全穿管"):
+            generate(horizontalWallThickness=2)
+
     def test_public_style_generates_only_tube_grid(self):
         descriptor = json.loads((PACKAGE / "template.json").read_text(encoding="utf-8"))
         self.assertNotIn("presets", descriptor["extensions"]["catalog"])
@@ -89,10 +304,7 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
     def test_default_spacing_and_existing_side_frame_piercings(self):
         document = generate()
         self.assertEqual(15, len(document["items"]))
-        profiles = [node for node in document["geometry"]
-                    if node["key"].startswith("outer_frame.") and ".through." in node["key"]
-                    and node["operator"] == "profile2d"]
-        self.assertEqual(8, len(profiles))
+        self.assertEqual(8, len(apertures(document,'outer_frame.')))
         step = (1200.0 - 2 * 38.0 - 110.0 - 110.0) / 8
         self.assertAlmostEqual(103.5, step - 19.0 / 2)
         self.assertAlmostEqual(94.0, step - 19.0)
@@ -150,73 +362,89 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
 
     def test_continuous_outer_frame_has_all_four_side_piercings(self):
         document = generate(frameLayout="four_sides")
-        nodes = graph(document)
-        prefix = "outer_frame.continuous.0001.export.through."
-        profiles = [node for node in nodes.values()
-                    if node["key"].startswith(prefix) and node["operator"] == "profile2d"]
+        records=apertures(document,'outer_frame.continuous.0001')
+        prefix = "outer_frame.continuous.0001.aperture."
         # 26 physical apertures; the middle bottom aperture is split by the closing seam.
-        counts = {side: sum(node["key"].startswith(prefix + side + ".") for node in profiles)
+        counts = {side: sum(record['instanceId'].startswith(prefix + side + ".") for record in records)
                   for side in ("bottom", "right", "top", "left")}
         self.assertEqual({"bottom": 10, "right": 4, "top": 9, "left": 4}, counts)
-        final = nodes["outer_frame.continuous.0001.export.final"]
-        for profile in profiles:
-            tool = nodes[profile["key"].removesuffix("profile") + "solid"]
-            self.assertIn(tool["key"], final["arguments"]["tools"])
+        frame=next(i for i in document['items'] if i['key']=='outer_frame.continuous.0001')
+        final=dependencies(document,frame['representations']['result'])
+        for record in records:
+            nodes=aperture_geometry(record)
+            profile,tool=nodes['aperture.profile'],nodes['aperture.solid']
+            self.assertIn(record['resultGeometry'],final)
             placement = profile["arguments"]["placement"]
             start = placement["origin"][2]
             end = start + tool["arguments"]["vector"][2]
             # Piercing reaches the inside face (+19), preserving the outside wall (-19).
             self.assertLess(min(start, end), 17.8)
             self.assertGreater(max(start, end), 19.0)
-            self.assertGreater(min(start, end) - 1.1, -17.8)
+            self.assertGreater(min(start, end) - tool['arguments']['extendStart'], -17.8)
+            cut=record['result']['checks'][0]['bounds']
+            self.assertGreater(cut['min'][2],-17.8)
+            self.assertAlmostEqual(19.0,cut['max'][2])
             self.assertAlmostEqual(0.0, tool["arguments"]["vector"][0])
             self.assertAlmostEqual(0.0, tool["arguments"]["vector"][1])
 
     def test_unfolded_holes_fold_back_to_the_assembled_bar_centers(self):
-        nodes = graph(generate(frameLayout="four_sides"))
-        width, height, wall = 1200.0, 1800.0, 1.2
-        h, v = width - 2 * wall, height - 2 * wall
-        bend = 0.0
-        length = 2 * h + 2 * v + 4 * bend
-        prefix = "outer_frame.continuous.0001.export.through."
-        for node in nodes.values():
-            if not node["key"].startswith(prefix) or node["operator"] != "profile2d":
-                continue
-            side, _, _, number, _ = node["key"][len(prefix):].removesuffix(".profile").split(".")
+        document = generate(frameLayout="four_sides")
+        frame = next(item for item in document['items']
+                     if item['key'] == 'outer_frame.continuous.0001')
+        spans = frame['properties']['tubeDesigner.sourceSpans']
+        prefix = "outer_frame.continuous.0001.aperture."
+        checked = 0
+        for record in apertures(document,'outer_frame.continuous.0001'):
+            node=aperture_geometry(record)['aperture.profile']
+            side, _, _, number, _ = record['instanceId'][len(prefix):].split('.')
             index = int(number)
-            u = node["arguments"]["placement"]["origin"][0]
-            if side == "bottom":
-                assembled = width / 2 + (u if u < length / 2 else u - length)
-            elif side == "top":
-                assembled = width - wall - (u - (h / 2 + v + 2 * bend))
-            elif side == "right":
-                assembled = wall + u - (h / 2 + bend)
-            else:
-                assembled = height - wall - (u - (1.5 * h + v + 3 * bend))
-            expected = (148 + 113 * (index - 1) if side in {"top", "bottom"}
-                        else 200 + (1400 / 3) * (index - 1))
-            self.assertAlmostEqual(expected, assembled, places=7, msg=node["key"])
+            point = node['arguments']['placement']['origin']
+            matched = []
+            for span in spans:
+                if span['itemKey'] != 'outer_frame.' + side + '.0001':
+                    continue
+                low = span['stockStart']
+                high = low + span['startReserve'] + math.dist(span['start'], span['end']) + span['endReserve']
+                if not low-1e-7 <= point[0] <= high+1e-7:
+                    continue
+                placement = span['placement']
+                axes = [placement[name] for name in ('xAxis','yAxis','zAxis')]
+                world = [sum((point[j]-placement['origin'][j])*axes[i][j] for j in range(3))
+                         for i in range(3)]
+                matched.append(world)
+            self.assertTrue(matched, record['instanceId'])
+            expected = (148 + 113*(index-1) if side in {'top','bottom'}
+                        else 200 + (1400/3)*(index-1))
+            for world in matched:
+                assembled = world[0] if side in {'top','bottom'} else world[2]
+                self.assertAlmostEqual(expected, assembled, places=7, msg=record['instanceId'])
+            checked += 1
+        self.assertEqual(27, checked)  # one physical aperture is split at the seam
 
     def test_center_aperture_is_preserved_on_both_ends_of_the_stock(self):
         document = generate(frameLayout="four_sides")
-        nodes = graph(document)
-        profiles = [node for node in nodes.values()
-                    if ".through.bottom.main_grid.vertical.0005." in node["key"]
-                    and node["operator"] == "profile2d"]
+        profiles = [aperture_geometry(record)['aperture.profile'] for record in apertures(document,'outer_frame.')
+                    if '.aperture.bottom.main_grid.vertical.0005.' in record['instanceId']]
         self.assertEqual(2, len(profiles))
         origins = sorted(node["arguments"]["placement"]["origin"][0] for node in profiles)
         frame = next(item for item in document["items"] if item["key"].startswith("outer_frame."))
         self.assertAlmostEqual(0.0, origins[0])
         self.assertAlmostEqual(frame["properties"]["length"], origins[1], places=3)
         self.assertEqual(profiles[0]["arguments"]["contours"], profiles[1]["arguments"]["contours"])
-        self.assertAlmostEqual(9.6, profiles[0]["arguments"]["contours"][0]["radius"])
+        contour = profiles[0]["arguments"]["contours"][0]
+        self.assertEqual(contour["kind"], "path")
+        self.assertTrue(contour["closed"])
+        self.assertEqual(len(contour["segments"]), 4)
+        for segment in contour["segments"]:
+            self.assertEqual(segment["kind"], "arc")
+            for point in (segment["start"], segment["middle"], segment["end"]):
+                self.assertAlmostEqual(9.6, math.hypot(*point))
 
     def test_continuous_leaf_has_vertical_piercings_but_fixed_butt_joints_do_not(self):
         document = generate(accessDoorEnabled=True)
-        profiles = [node for node in document["geometry"]
-                    if ".export.through." in node["key"] and node["operator"] == "profile2d"]
-        self.assertEqual(3, len(profiles))  # Bottom seam has two halves, plus the top hole.
-        self.assertTrue(all(node["key"].startswith("access_door.leaf.frame.") for node in profiles))
+        records=apertures(document,('access_door.fixed_frame.','access_door.leaf.frame.'))
+        self.assertEqual(3, len(records))  # Bottom seam has two halves, plus the top hole.
+        self.assertTrue(all(record['stockId'].startswith('access_door.leaf.frame.') for record in records))
 
     def test_display_does_not_construct_manufacturing_operators(self):
         original = NeutralModel.geometry

@@ -178,14 +178,13 @@ await test("fixed library profiles do not retain parameters from the previous pr
   assert.equal(Object.keys(h.creations()[0].payload.parameters ?? {}).length, 0);
 });
 
-await test("local DXF remains an embedded section until the part is confirmed", async () => {
+// The real custom picker, SVG preview, cancellation and product import are
+// exercised by TubeDesignerNestingStandardPart.browser.mjs.
+await test("a chosen DXF remains embedded until confirmation and never writes the profile library", async () => {
   const h = harness();
   await h.open();
-  await h.act("profile-select", { value: "__dxf__" });
-  const dialogCall = h.calls.find((call) => call.method === "openFileDialog");
-  assert.deepEqual(dialogCall.options.filters[0].extensions, ["dxf"]);
-  const importCall = h.calls.find((call) => call.method === "TubeDesigner.ImportProfileDxf");
-  assert.equal(importCall.payload.sourcePath, "D:\\Profiles\\local-section.dxf");
+  const importedProfile = { ...rectangleProfile(60, 24), name: '本地 DXF 截面', sourceFileName: 'local-section.dxf' };
+  Object.assign(h.view.tubeDesignerNestingStandardPartDraft, { profileKey:'__dxf__', importedProfile, profile:importedProfile, parameters:{} });
   assert.match(renderNestingStandardPartDialog(h.view), /本地 DXF 截面|local-section.dxf/);
   assert.equal(h.creations().length, 0);
   assert.equal(h.calls.some((call) => call.method === "TubeDesigner.SaveImportedProfile"), false);

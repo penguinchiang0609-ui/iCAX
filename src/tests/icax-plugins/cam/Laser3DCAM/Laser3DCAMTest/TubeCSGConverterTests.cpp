@@ -1,6 +1,11 @@
 #include "pch.h"
 
 #include <OpenCascadeResourceImport/OpenCascadeTubeCSGConverter.h>
+#include <OpenCascadeResourceImport/OpenCascadeCancellation.h>
+#include <Task/TaskStatus.h>
+#include <BRepAlgoAPI_Common.hxx>
+#include <NCollection_List.hxx>
+#include <atomic>
 #include <IntentToolpath/TubeMachiningIntent.h>
 
 #include <Data/uuid.h>
@@ -15,9 +20,17 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
@@ -28,11 +41,52 @@
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Trsf.hxx>
 #include <GProp_GProps.hxx>
 #include <STEPControl_Writer.hxx>
+#include <STEPControl_Reader.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 
 namespace
 {
+    TEST(OpenCascadeShutdown, CancelsInsideBooleanAndRestoresCallerScope)
+    {
+        using iCAX::OpenCascade::COpenCascadeCancellationScope;
+        const auto _Left = BRepPrimAPI_MakeBox(100, 100, 100).Shape();
+        const auto _Right = BRepPrimAPI_MakeBox(gp_Pnt(50, 50, 50), 100, 100, 100).Shape();
+        BRepAlgoAPI_Common _Common;
+        NCollection_List<TopoDS_Shape> _Arguments, _Tools;
+        _Arguments.Append(_Left); _Tools.Append(_Right);
+        _Common.SetArguments(_Arguments); _Common.SetTools(_Tools);
+        std::atomic_uint _Checks = 0;
+        {
+            // Build's only own checks are before and after OCC. Reaching three
+            // calls proves UserBreak was queried inside the boolean algorithm.
+            COpenCascadeCancellationScope _Cancellation([&] { return ++_Checks >= 3; });
+            EXPECT_THROW(COpenCascadeCancellationScope::Build(_Common), iCAX::Tasks::TaskCanceledException);
+            EXPECT_GE(_Checks.load(), 3u);
+            EXPECT_FALSE(_Common.IsDone());
+        }
+        EXPECT_FALSE(static_cast<bool>(COpenCascadeCancellationScope::Capture()));
+        EXPECT_NO_THROW(COpenCascadeCancellationScope::Build(_Common));
+        EXPECT_TRUE(_Common.IsDone());
+        EXPECT_TRUE(BRepCheck_Analyzer(_Common.Shape()).IsValid());
+    }
+
+    TEST(OpenCascadeShutdown, ConversionHonorsCancellationBeforeProducingResult)
+    {
+        iCAX::OpenCascade::COpenCascadeCancellationScope _Cancellation([] { return true; });
+        iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+        EXPECT_THROW(iCAX::OpenCascade::ConvertBRepToTubeCSG({}, _Options),
+            iCAX::Tasks::TaskCanceledException);
+        iCAX::OpenCascade::STubeCSGEvaluationOptions _ReplayOptions;
+        EXPECT_THROW(iCAX::OpenCascade::EvaluateTubeCSG({}, _ReplayOptions),
+            iCAX::Tasks::TaskCanceledException);
+        EXPECT_THROW(iCAX::OpenCascade::ValidateTubeCSGReplay({}, {}, _ReplayOptions),
+            iCAX::Tasks::TaskCanceledException);
+    }
+
     TopoDS_Wire MakeRectangleWire(
         IN double dMinX_,
         IN double dMinY_,
@@ -79,6 +133,22 @@ namespace
         BRepAlgoAPI_Cut _Cut(_Outer, _Inner);
         EXPECT_TRUE(_Cut.IsDone());
         return _Cut.Shape();
+    }
+
+    TopoDS_Shape MakeShortXAngleBlank()
+    {
+        BRepBuilderAPI_MakePolygon _Polygon;
+        for (const auto& _Point : {
+            gp_Pnt(0.0, 0.0, 0.0), gp_Pnt(0.0, 50.0, 0.0),
+            gp_Pnt(0.0, 50.0, 5.0), gp_Pnt(0.0, 5.0, 5.0),
+            gp_Pnt(0.0, 5.0, 40.0), gp_Pnt(0.0, 0.0, 40.0) })
+        {
+            _Polygon.Add(_Point);
+        }
+        _Polygon.Close();
+        return BRepPrimAPI_MakePrism(
+            BRepBuilderAPI_MakeFace(_Polygon.Wire()).Face(),
+            gp_Vec(12.0, 0.0, 0.0)).Shape();
     }
 
     TopoDS_Shape CutRoundTubeWithSteppedWrappedEnd()
@@ -165,6 +235,612 @@ namespace
         BRepGProp::VolumeProperties(Shape_, _Properties);
         return std::abs(_Properties.Mass());
     }
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankRetainsShortExtrusionAxisAndReplaysHole)
+{
+    const auto _Blank = MakeShortXAngleBlank();
+    const auto _Hole = BRepPrimAPI_MakeCylinder(
+        gp_Ax2(gp_Pnt(6.0, 30.0, -1.0), gp_Dir(0.0, 0.0, 1.0)),
+        2.0, 7.0).Shape();
+    BRepAlgoAPI_Cut _Cut(_Blank, _Hole);
+    ASSERT_TRUE(_Cut.IsDone());
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Cut.Shape(), _Blank, 12.0);
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent)
+        << (_Result.ReplayValidation.Diagnostics.empty()
+            ? "" : _Result.ReplayValidation.Diagnostics.front());
+    EXPECT_EQ("verified-known-extrusion", _Result.Geometry.Metadata.at("baseSource"));
+    EXPECT_EQ("1", _Result.Geometry.Metadata.at("baseSectionSampleCount"));
+    const auto& _Base = GetBaseNode(_Result.Geometry);
+    EXPECT_NEAR(1.0, _Base.Frame.ZDirection.X, 1.0e-12);
+    EXPECT_NEAR(0.0, _Base.First, 1.0e-12);
+    EXPECT_NEAR(12.0, _Base.Last, 1.0e-12);
+    EXPECT_LT(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-8);
+    EXPECT_GT(ShapeVolume(_Blank) - ShapeVolume(_Cut.Shape()), 0.0);
+    EXPECT_GT(std::stod(_Result.Geometry.Metadata.at("removalVolume")), 0.0);
+
+    auto _Tampered = _Result.Geometry;
+    for (auto& _Node : _Tampered.SolidNodes)
+    {
+        if (_Node.ID == _Tampered.BaseNodeID)
+        {
+            std::get<iCAX::GeometryData::Tube::SExtrudedRegionNode>(
+                _Node.Data).Frame.Location.Y += 1.0;
+        }
+    }
+    EXPECT_FALSE(iCAX::OpenCascade::ValidateTubeCSGReplay(
+        _Cut.Shape(), _Tampered).bEquivalent);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankReplaysManufacturedChannelWithReflectedArcsAndFourHoles)
+{
+    auto _Root = std::filesystem::path(__FILE__).parent_path();
+    for (int _Index = 0; _Index < 6; ++_Index)
+        _Root = _Root.parent_path();
+    const auto _Path = _Root
+        / "samples/structural-steel/vendors-angle-channel/unistrut-P1044-c-fitting.step";
+    ASSERT_TRUE(std::filesystem::is_regular_file(_Path)) << _Path.string();
+    STEPControl_Reader _Reader;
+    ASSERT_EQ(IFSelect_RetDone, _Reader.ReadFile(_Path.string().c_str()));
+    ASSERT_GT(_Reader.TransferRoots(), 0);
+    const auto _Source = _Reader.OneShape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Source).IsValid());
+
+    // The original manufacturing model has five coplanar, unperforated end
+    // faces. Extrude every piece to preserve its exact bend radii and thickness.
+    TopoDS_Shape _Blank;
+    std::size_t _EndFaceCount = 0;
+    for (TopExp_Explorer _Explorer(_Source, TopAbs_FACE);
+        _Explorer.More(); _Explorer.Next())
+    {
+        const auto _Face = TopoDS::Face(_Explorer.Current());
+        const BRepAdaptor_Surface _Surface(_Face, true);
+        if (_Surface.GetType() != GeomAbs_Plane
+            || std::abs(_Surface.Plane().Axis().Direction().X()) < 0.999999
+            || std::abs(_Surface.Plane().Location().X()) > 1.0e-5)
+            continue;
+        ++_EndFaceCount;
+        BRepPrimAPI_MakePrism _Prism(_Face, gp_Vec(40.0, 0.0, 0.0));
+        ASSERT_TRUE(_Prism.IsDone());
+        if (_Blank.IsNull())
+            _Blank = _Prism.Shape();
+        else
+        {
+            BRepAlgoAPI_Fuse _Fuse(_Blank, _Prism.Shape());
+            ASSERT_TRUE(_Fuse.IsDone());
+            _Blank = _Fuse.Shape();
+        }
+    }
+    ASSERT_EQ(5u, _EndFaceCount);
+    ShapeUpgrade_UnifySameDomain _Unify(_Blank, true, true, true);
+    _Unify.Build();
+    _Blank = _Unify.Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Blank).IsValid());
+    // Four diameter-14 holes cross 5 mm of material each.
+    EXPECT_NEAR(4.0 * std::acos(-1.0) * 7.0 * 7.0 * 5.0,
+        ShapeVolume(_Blank) - ShapeVolume(_Source), 1.0e-5);
+
+    iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+    _Options.Tolerance = 1.0e-6;
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Source, _Blank, 40.0, _Options);
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent)
+        << (_Result.ReplayValidation.Diagnostics.empty()
+            ? "" : _Result.ReplayValidation.Diagnostics.front());
+    EXPECT_LT(_Result.ReplayValidation.RelativeVolumeError, 1.0e-10);
+    EXPECT_LT(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-10);
+    EXPECT_LT(std::stod(_Result.Geometry.Metadata.at("additionVolume")), 1.0e-8);
+    EXPECT_NEAR(4.0 * std::acos(-1.0) * 7.0 * 7.0 * 5.0,
+        std::stod(_Result.Geometry.Metadata.at("removalVolume")), 1.0e-5);
+
+    std::size_t _ReflectedArcs = 0;
+    for (const auto& _Loop : GetBaseNode(_Result.Geometry).Section.Boundaries)
+        for (const auto& _Curve : _Loop.Curves)
+            if (const auto* _Circle = std::get_if<iCAX::GeometryData::Circle2>(
+                &_Curve.Segment.Curve))
+            {
+                const auto& _Placement = _Circle->Placement;
+                if (_Placement.XDirection.X * _Placement.YDirection.Y
+                    - _Placement.XDirection.Y * _Placement.YDirection.X < 0.0)
+                    ++_ReflectedArcs;
+            }
+    EXPECT_EQ(4u, _ReflectedArcs);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankRecoversOriginalP1026LetteringWithExactCurvesAndIslands)
+{
+    namespace Tube = iCAX::GeometryData::Tube;
+    auto _Root = std::filesystem::path(__FILE__).parent_path();
+    for (int _Index = 0; _Index < 6; ++_Index)
+        _Root = _Root.parent_path();
+    const auto _Path = _Root
+        / "samples/structural-steel/vendors-angle-channel/unistrut-P1026-two-hole-angle.step";
+    ASSERT_TRUE(std::filesystem::is_regular_file(_Path)) << _Path.string();
+    STEPControl_Reader _Reader;
+    ASSERT_EQ(IFSelect_RetDone, _Reader.ReadFile(_Path.string().c_str()));
+    ASSERT_GT(_Reader.TransferRoots(), 0);
+    const auto _Original = _Reader.OneShape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Original).IsValid());
+
+    // Original end faces, including the bend, directly define the uncut blank.
+    // Rotate the supplied Y extrusion into the editor's +X convention.
+    TopoDS_Shape _OriginalBlank;
+    for (TopExp_Explorer _Explorer(_Original, TopAbs_FACE);
+        _Explorer.More(); _Explorer.Next())
+    {
+        const auto _Face = TopoDS::Face(_Explorer.Current());
+        const BRepAdaptor_Surface _Surface(_Face, true);
+        if (_Surface.GetType() != GeomAbs_Plane
+            || std::abs(_Surface.Plane().Axis().Direction().Y()) < 0.999999
+            || std::abs(_Surface.Plane().Location().Y()) > 1.0e-5)
+            continue;
+        BRepPrimAPI_MakePrism _Prism(_Face, gp_Vec(0.0, 40.0, 0.0));
+        ASSERT_TRUE(_Prism.IsDone());
+        if (_OriginalBlank.IsNull())
+            _OriginalBlank = _Prism.Shape();
+        else
+        {
+            BRepAlgoAPI_Fuse _Fuse(_OriginalBlank, _Prism.Shape());
+            ASSERT_TRUE(_Fuse.IsDone());
+            _OriginalBlank = _Fuse.Shape();
+        }
+    }
+    ASSERT_FALSE(_OriginalBlank.IsNull());
+    ShapeUpgrade_UnifySameDomain _Unify(_OriginalBlank, true, true, true);
+    _Unify.Build();
+    gp_Trsf _ToEditor;
+    _ToEditor.SetValues(0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+    const auto _Source = BRepBuilderAPI_Transform(_Original, _ToEditor, true).Shape();
+    const auto _Blank = BRepBuilderAPI_Transform(_Unify.Shape(), _ToEditor, true).Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Blank).IsValid());
+    iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+    _Options.Tolerance = 1.0e-6;
+    _Options.SourceBRepResourceID = "test://original-p1026";
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Source, _Blank, 40.0, _Options);
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent)
+        << (_Result.ReplayValidation.Diagnostics.empty()
+            ? "" : _Result.ReplayValidation.Diagnostics.front());
+    EXPECT_TRUE(_Result.RemovalShape.IsNull());
+    EXPECT_LT(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-10);
+    EXPECT_LT(_Result.ReplayValidation.RelativeVolumeError, 1.0e-10);
+
+    std::size_t _Pockets = 0, _Islands = 0, _Splines = 0, _Lines = 0;
+    auto _Edited = _Result.Geometry;
+    std::string _EditedID;
+    for (auto& _Node : _Edited.SolidNodes)
+    {
+        const auto _SourceTag = _Node.Metadata.find("source");
+        if (_SourceTag == _Node.Metadata.end()
+            || _SourceTag->second != "occ.planar-cap-extrusion")
+            continue;
+        ++_Pockets;
+        auto& _Extrusion = std::get<Tube::SExtrudedRegionNode>(_Node.Data);
+        EXPECT_NEAR(0.2, _Extrusion.Last - _Extrusion.First, 1.0e-8);
+        _Islands += _Extrusion.Section.Boundaries.size() - 1;
+        for (const auto& _Loop : _Extrusion.Section.Boundaries)
+            for (const auto& _Curve : _Loop.Curves)
+            {
+                const auto& _Data = _Curve.Segment.Curve;
+                _Splines += std::holds_alternative<iCAX::GeometryData::BSpline2>(_Data)
+                    || std::holds_alternative<iCAX::GeometryData::NURBS2>(_Data);
+                _Lines += std::holds_alternative<iCAX::GeometryData::Segment2>(_Data);
+                EXPECT_FALSE(std::holds_alternative<iCAX::GeometryData::Polyline2>(_Data));
+            }
+        ASSERT_TRUE(_Node.Relations.has_value());
+        ASSERT_EQ(1u, _Node.Relations->MaterialSpans.size());
+        const auto& _Span = _Node.Relations->MaterialSpans.front();
+        EXPECT_EQ(Tube::EMaterialSpanEndpointKind::HostBoundary, _Span.Start.Kind);
+        EXPECT_EQ(Tube::EMaterialSpanEndpointKind::FeatureTermination, _Span.End.Kind);
+        EXPECT_NEAR(0.2, _Span.End.Station.Value - _Span.Start.Station.Value, 1.0e-8);
+        EXPECT_TRUE(std::any_of(_Node.Relations->SurfaceEvidence.begin(),
+            _Node.Relations->SurfaceEvidence.end(), [](const auto& _Evidence) {
+                return _Evidence.Role == Tube::ESurfaceEvidenceRole::GeneratedTermination
+                    && _Evidence.SourceResourceID == "test://original-p1026"
+                    && _Evidence.SourceShapeID != 0;
+            }));
+        if (_EditedID.empty())
+        {
+            _EditedID = _Node.ID;
+            _Extrusion.Last += 0.1;
+        }
+    }
+    EXPECT_EQ(5u, _Pockets);
+    EXPECT_EQ(3u, _Islands);
+    EXPECT_EQ(51u, _Splines);
+    EXPECT_EQ(26u, _Lines);
+    ASSERT_FALSE(_EditedID.empty());
+    iCAX::OpenCascade::STubeCSGEvaluationOptions _ReplayOptions;
+    _ReplayOptions.Tolerance = _Options.Tolerance;
+    const auto _Changed = iCAX::OpenCascade::EvaluateTubeCSG(_Edited, _ReplayOptions);
+    ASSERT_TRUE(_Changed.bOK);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Changed.Shape).IsValid());
+    const auto _Difference = iCAX::OpenCascade::ValidateTubeCSGReplay(
+        _Source, _Edited, _ReplayOptions);
+    EXPECT_TRUE(_Difference.bEvaluated);
+    EXPECT_FALSE(_Difference.bEquivalent);
+    EXPECT_GT(_Difference.MissingVolume, 0.01);
+    for (auto& _Node : _Edited.SolidNodes)
+        if (_Node.ID == _EditedID)
+            std::get<Tube::SExtrudedRegionNode>(_Node.Data).Last -= 0.1;
+    EXPECT_TRUE(iCAX::OpenCascade::ValidateTubeCSGReplay(
+        _Source, _Edited, _ReplayOptions).bEquivalent);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankRecoversOriginalTekSpan60235ResidualEndTriangles)
+{
+    namespace Tube = iCAX::GeometryData::Tube;
+    auto _Root = std::filesystem::path(__FILE__).parent_path();
+    for (int _Index = 0; _Index < 6; ++_Index)
+        _Root = _Root.parent_path();
+    const auto _Path = _Root / "samples/structural-steel/recovery/report/solids"
+        / "vendors-angle-channel__tekspan-60235-saddle-bracket.step-85659452/solid-1.step";
+    ASSERT_TRUE(std::filesystem::is_regular_file(_Path)) << _Path.string();
+    STEPControl_Reader _Reader;
+    ASSERT_EQ(IFSelect_RetDone, _Reader.ReadFile(_Path.string().c_str()));
+    ASSERT_GT(_Reader.TransferRoots(), 0);
+    const auto _Original = _Reader.OneShape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Original).IsValid());
+
+    // Measured supplier-to-editor rigid placement. The source end is cut,
+    // so its end face cannot define the blank. Prepare the independently
+    // verified channel: 6 mm wall, 12/6 mm outer/inner bends, 230 mm length.
+    gp_Trsf _ToEditor;
+    _ToEditor.SetValues(0.0, 1.0, -4.6888593636700982e-16, -736.6740053122594,
+        0.0, 4.6888593636700982e-16, 1.0, -1261.3618555210098,
+        1.0, 0.0, 0.0, -695.66891869732001);
+    const auto _Source = BRepBuilderAPI_Transform(_Original, _ToEditor, true).Shape();
+    BRepBuilderAPI_MakeWire _Wire;
+    const auto _Line = [&](double Y0_, double Z0_, double Y1_, double Z1_) {
+        _Wire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0.0, Y0_, Z0_), gp_Pnt(0.0, Y1_, Z1_)).Edge());
+    };
+    const auto _Arc = [&](double Y0_, double Z0_, double YM_, double ZM_, double Y1_, double Z1_) {
+        const auto _Curve = GC_MakeArcOfCircle(gp_Pnt(0.0, Y0_, Z0_),
+            gp_Pnt(0.0, YM_, ZM_), gp_Pnt(0.0, Y1_, Z1_)).Value();
+        _Wire.Add(BRepBuilderAPI_MakeEdge(_Curve).Edge());
+    };
+    const double _OuterDiagonal = 12.0 / std::sqrt(2.0);
+    const double _InnerDiagonal = 6.0 / std::sqrt(2.0);
+    _Line(78.0, -51.0, 78.0, -57.0);
+    _Line(78.0, -57.0, -66.0, -57.0);
+    _Arc(-66.0, -57.0, -66.0 - _OuterDiagonal, -45.0 - _OuterDiagonal, -78.0, -45.0);
+    _Line(-78.0, -45.0, -78.0, 45.0);
+    _Arc(-78.0, 45.0, -66.0 - _OuterDiagonal, 45.0 + _OuterDiagonal, -66.0, 57.0);
+    _Line(-66.0, 57.0, 78.0, 57.0);
+    _Line(78.0, 57.0, 78.0, 51.0);
+    _Line(78.0, 51.0, -66.0, 51.0);
+    _Arc(-66.0, 51.0, -66.0 - _InnerDiagonal, 45.0 + _InnerDiagonal, -72.0, 45.0);
+    _Line(-72.0, 45.0, -72.0, -45.0);
+    _Arc(-72.0, -45.0, -66.0 - _InnerDiagonal, -45.0 - _InnerDiagonal, -66.0, -51.0);
+    _Line(-66.0, -51.0, 78.0, -51.0);
+    ASSERT_TRUE(_Wire.IsDone());
+    BRepPrimAPI_MakePrism _Prism(BRepBuilderAPI_MakeFace(_Wire.Wire()).Face(), gp_Vec(230.0, 0.0, 0.0));
+    ASSERT_TRUE(_Prism.IsDone());
+    const auto _Blank = _Prism.Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Blank).IsValid());
+    EXPECT_NEAR(ShapeVolume(_Blank), 560658.5807575857, 1.0e-5);
+    EXPECT_NEAR(ShapeVolume(_Source), 407163.45024704293, 1.0e-5);
+
+    iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+    _Options.SourceBRepResourceID = "test://original-tekspan60235";
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Source, _Blank, 230.0, _Options);
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent)
+        << (_Result.ReplayValidation.Diagnostics.empty() ? "" : _Result.ReplayValidation.Diagnostics.front());
+    EXPECT_LE(_Result.ReplayValidation.RelativeVolumeError, 1.0e-8);
+    EXPECT_LE(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-8);
+    EXPECT_TRUE(_Result.RemovalShape.IsNull());
+    EXPECT_LE(std::stod(_Result.Geometry.Metadata.at("additionVolume")), 1.0e-8);
+    EXPECT_FALSE(std::any_of(_Result.Geometry.SolidNodes.begin(), _Result.Geometry.SolidNodes.end(),
+        [](const auto& Node_) {
+            return std::holds_alternative<Tube::SCompositeVolumeNode>(Node_.Data)
+                || std::holds_alternative<Tube::SResidualBRepNode>(Node_.Data);
+        }));
+
+    std::vector<std::string> _Triangles;
+    bool _TopTriangle = false, _BottomTriangle = false;
+    for (const auto& _Node : _Result.Geometry.SolidNodes)
+    {
+        const auto _Mode = _Node.Metadata.find("recognitionMode");
+        if (_Mode == _Node.Metadata.end() || _Mode->second != "exact-residual-section")
+            continue;
+        _Triangles.push_back(_Node.ID);
+        ASSERT_TRUE(std::holds_alternative<Tube::SExtrudedRegionNode>(_Node.Data));
+        const auto& _Cut = std::get<Tube::SExtrudedRegionNode>(_Node.Data);
+        EXPECT_EQ(_Node.Metadata.at("source"), "occ.removal-extrusion");
+        EXPECT_EQ(_Node.Metadata.at("independentReplay"), "complete-removal");
+        ASSERT_TRUE(_Node.RemovalSemantics.has_value());
+        EXPECT_EQ(_Node.RemovalSemantics->Extent, Tube::ERemovalExtentKind::Through);
+        ASSERT_TRUE(_Node.Relations.has_value());
+        ASSERT_TRUE(_Node.Relations->MaterialEffect.has_value());
+        EXPECT_EQ(_Node.Relations->MaterialEffect->Role, Tube::EFeatureMaterialRole::Penetration);
+        EXPECT_TRUE(_Node.Relations->MaterialSpans.empty());
+        EXPECT_NEAR(_Cut.Last - _Cut.First, 6.0, 1.0e-7);
+        EXPECT_NEAR(std::abs(_Cut.Frame.ZDirection.Z), 1.0, 1.0e-8);
+        ASSERT_EQ(_Cut.Section.Boundaries.size(), 1u);
+        ASSERT_EQ(_Cut.Section.Boundaries.front().Curves.size(), 3u);
+        for (const auto& _Edge : _Cut.Section.Boundaries.front().Curves)
+            EXPECT_TRUE(std::holds_alternative<iCAX::GeometryData::Segment2>(_Edge.Segment.Curve));
+        const auto _Preview = _Result.PreviewShapes.find(_Node.ID);
+        ASSERT_NE(_Preview, _Result.PreviewShapes.end());
+        ASSERT_TRUE(BRepCheck_Analyzer(_Preview->second).IsValid());
+        EXPECT_NEAR(ShapeVolume(_Preview->second), 300.0, 1.0e-5);
+        Bnd_Box _Bounds;
+        BRepBndLib::AddOptimal(_Preview->second, _Bounds, false, false);
+        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+        _Bounds.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        EXPECT_NEAR(_X0, 220.0, 1.0e-6);
+        EXPECT_NEAR(_X1, 230.0, 1.0e-6);
+        EXPECT_NEAR(_Y0, -62.0, 1.0e-6);
+        EXPECT_NEAR(_Y1, -52.0, 1.0e-6);
+        EXPECT_NEAR(_Z1 - _Z0, 6.0, 1.0e-6);
+        _TopTriangle |= std::abs(_Z0 - 51.0) <= 1.0e-6 && std::abs(_Z1 - 57.0) <= 1.0e-6;
+        _BottomTriangle |= std::abs(_Z0 + 57.0) <= 1.0e-6 && std::abs(_Z1 + 51.0) <= 1.0e-6;
+    }
+    ASSERT_EQ(_Triangles.size(), 2u);
+    EXPECT_TRUE(_TopTriangle);
+    EXPECT_TRUE(_BottomTriangle);
+
+    // Reevaluate with no external BRep map: saved residual geometry cannot
+    // masquerade as an editable construction, even if its volume is small.
+    iCAX::OpenCascade::STubeCSGEvaluationOptions _ReplayOptions;
+    _ReplayOptions.Tolerance = 1.0e-6;
+    _ReplayOptions.EvaluateAllConstructionBodies = false;
+    const auto _Independent = iCAX::OpenCascade::ValidateTubeCSGReplay(_Source, _Result.Geometry, _ReplayOptions);
+    ASSERT_TRUE(_Independent.bEvaluated);
+    ASSERT_TRUE(_Independent.bEquivalent);
+    EXPECT_LE(_Independent.RelativeVolumeError, 1.0e-8);
+    auto _Edited = _Result.Geometry;
+    auto _Triangle = std::find_if(_Edited.SolidNodes.begin(), _Edited.SolidNodes.end(),
+        [&](const auto& Node_) { return Node_.ID == _Triangles.front(); });
+    ASSERT_NE(_Triangle, _Edited.SolidNodes.end());
+    auto& _Cut = std::get<Tube::SExtrudedRegionNode>(_Triangle->Data);
+    _Cut.Frame.Location.X -= 1.0;
+    const auto _Changed = iCAX::OpenCascade::EvaluateTubeCSG(_Edited, _ReplayOptions);
+    ASSERT_TRUE(_Changed.bOK);
+    ASSERT_TRUE(BRepCheck_Analyzer(_Changed.Shape).IsValid());
+    const auto _ChangedDifference = iCAX::OpenCascade::ValidateTubeCSGReplay(_Source, _Edited, _ReplayOptions);
+    EXPECT_TRUE(_ChangedDifference.bEvaluated);
+    EXPECT_FALSE(_ChangedDifference.bEquivalent);
+    EXPECT_GT(_ChangedDifference.MissingVolume + _ChangedDifference.UnexpectedVolume, 0.01);
+    _Cut.Frame.Location.X += 1.0;
+    const auto _Restored = iCAX::OpenCascade::ValidateTubeCSGReplay(_Source, _Edited, _ReplayOptions);
+    EXPECT_TRUE(_Restored.bEvaluated);
+    EXPECT_TRUE(_Restored.bEquivalent);
+    EXPECT_LE(_Restored.RelativeVolumeError, 1.0e-8);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, OriginalP1033RecoversExactEndStepsButRejectsInconsistentSourcePCurves)
+{
+    namespace Tube = iCAX::GeometryData::Tube;
+    auto _Root = std::filesystem::path(__FILE__).parent_path();
+    for (int _Index = 0; _Index < 6; ++_Index)
+        _Root = _Root.parent_path();
+    const auto _Path = _Root
+        / "samples/structural-steel/vendors-angle-channel/unistrut-P1033-three-hole-t-angle.step";
+    ASSERT_TRUE(std::filesystem::is_regular_file(_Path)) << _Path.string();
+    STEPControl_Reader _Reader;
+    ASSERT_EQ(IFSelect_RetDone, _Reader.ReadFile(_Path.string().c_str()));
+    ASSERT_GT(_Reader.TransferRoots(), 0);
+    const auto _Original = _Reader.OneShape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Original).IsValid());
+
+    // Four unperforated section pieces from the supplied STEP define the blank:
+    // three at the central foot end and one at the full-width upright end.
+    TopoDS_Shape _Blank;
+    std::size_t _EndFaces = 0;
+    for (TopExp_Explorer _Explorer(_Original, TopAbs_FACE);
+        _Explorer.More(); _Explorer.Next())
+    {
+        const auto _Face = TopoDS::Face(_Explorer.Current());
+        const BRepAdaptor_Surface _Surface(_Face, true);
+        if (_Surface.GetType() != GeomAbs_Plane
+            || std::abs(_Surface.Plane().Axis().Direction().X()) < 0.999999)
+            continue;
+        const auto _X = _Surface.Plane().Location().X();
+        if (std::abs(_X + 21.0) > 1.0e-5 && std::abs(_X + 69.0) > 1.0e-5)
+            continue;
+        ++_EndFaces;
+        gp_Trsf _MoveSection;
+        _MoveSection.SetTranslation(gp_Vec(-_X, 0.0, 0.0));
+        const auto _Section = BRepBuilderAPI_Transform(_Face, _MoveSection, true).Shape();
+        BRepPrimAPI_MakePrism _Prism(_Section, gp_Vec(138.0, 0.0, 0.0));
+        ASSERT_TRUE(_Prism.IsDone());
+        if (_Blank.IsNull())
+            _Blank = _Prism.Shape();
+        else
+        {
+            BRepAlgoAPI_Fuse _Fuse(_Blank, _Prism.Shape());
+            ASSERT_TRUE(_Fuse.IsDone());
+            _Blank = _Fuse.Shape();
+        }
+    }
+    ASSERT_EQ(4u, _EndFaces);
+    ShapeUpgrade_UnifySameDomain _Unify(_Blank, true, true, true);
+    _Unify.Build();
+    _Blank = _Unify.Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Blank).IsValid());
+    gp_Trsf _ToEditor;
+    _ToEditor.SetTranslation(gp_Vec(69.0, 0.0, 0.0));
+    const auto _Source = BRepBuilderAPI_Transform(_Original, _ToEditor, true).Shape();
+
+    // Capture the two physical endpoint removals before conversion. Their bend
+    // cylinders belong to the blank, and do not describe cylindrical cutters.
+    BRepAlgoAPI_Cut _Missing(_Blank, _Source);
+    ASSERT_TRUE(_Missing.IsDone());
+    std::map<bool, TopoDS_Shape> _EndRemovals;
+    for (TopExp_Explorer _Explorer(_Missing.Shape(), TopAbs_SOLID);
+        _Explorer.More(); _Explorer.Next())
+    {
+        GProp_GProps _Properties;
+        BRepGProp::VolumeProperties(_Explorer.Current(), _Properties);
+        if (std::abs(_Properties.Mass()) < 10000.0)
+            continue;
+        EXPECT_NEAR(11897.097335529, std::abs(_Properties.Mass()), 1.0e-5);
+        _EndRemovals.emplace(_Properties.CentreOfMass().X() < 69.0,
+            _Explorer.Current());
+    }
+    ASSERT_EQ(2u, _EndRemovals.size());
+
+    iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+    _Options.Tolerance = 0.001;
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Source, _Blank, 138.0, _Options);
+    // The supplied STEP has inconsistent curves on surfaces. Exact recovered
+    // features must not turn an invalid final comparison into claimed support.
+    EXPECT_FALSE(_Result.ReplayValidation.bEquivalent);
+    EXPECT_TRUE(std::any_of(_Result.ReplayValidation.Diagnostics.begin(),
+        _Result.ReplayValidation.Diagnostics.end(), [](const auto& Diagnostic_) {
+            return Diagnostic_ == "Replay comparison produced an invalid BRep";
+        }));
+    EXPECT_TRUE(_Result.RemovalShape.IsNull());
+    EXPECT_LT(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-10);
+    EXPECT_LT(std::stod(_Result.Geometry.Metadata.at("additionVolume")), 1.0e-8);
+
+    std::size_t _EndSteps = 0, _Pockets = 0;
+    for (const auto& _Node : _Result.Geometry.SolidNodes)
+    {
+        EXPECT_FALSE(std::holds_alternative<Tube::SWrappedVolumeNode>(_Node.Data));
+        const auto _Tag = _Node.Metadata.find("source");
+        if (_Tag == _Node.Metadata.end())
+            continue;
+        _Pockets += _Tag->second == "occ.planar-cap-extrusion";
+        if (_Tag->second != "occ.removal-extrusion")
+            continue;
+        SCOPED_TRACE(_Node.ID);
+        ++_EndSteps;
+        ASSERT_EQ("complete-removal", _Node.Metadata.at("independentReplay"));
+        const auto& _Extrusion = std::get<Tube::SExtrudedRegionNode>(_Node.Data);
+        EXPECT_NEAR(1.0, std::abs(_Extrusion.Frame.ZDirection.X), 1.0e-12);
+        EXPECT_NEAR(48.0, _Extrusion.Last - _Extrusion.First, 1.0e-8);
+        ASSERT_EQ(1u, _Extrusion.Section.Boundaries.size());
+        std::size_t _Arcs = 0;
+        for (const auto& _Curve : _Extrusion.Section.Boundaries.front().Curves)
+        {
+            EXPECT_FALSE(std::holds_alternative<iCAX::GeometryData::Polyline2>(
+                _Curve.Segment.Curve));
+            _Arcs += std::holds_alternative<iCAX::GeometryData::Circle2>(
+                _Curve.Segment.Curve);
+        }
+        EXPECT_EQ(2u, _Arcs);
+        Tube::CTubeNeutralGeometry _Independent;
+        _Independent.BaseNodeID = _Node.ID;
+        _Independent.RootNodeID = _Node.ID;
+        _Independent.SolidNodes.push_back(_Node);
+        iCAX::OpenCascade::STubeCSGEvaluationOptions _ReplayOptions;
+        _ReplayOptions.Tolerance = _Options.Tolerance;
+        _ReplayOptions.EvaluateAllConstructionBodies = false;
+        const auto _AtStart = _Extrusion.Frame.Location.X < 69.0;
+        const auto _Replay = iCAX::OpenCascade::ValidateTubeCSGReplay(
+            _EndRemovals.at(_AtStart), _Independent, _ReplayOptions);
+        EXPECT_TRUE(_Replay.bEquivalent);
+        EXPECT_LT(_Replay.RelativeVolumeError, 1.0e-10);
+    }
+    EXPECT_EQ(2u, _EndSteps);
+    EXPECT_EQ(13u, _Pockets);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, ExactPlanarCapPreservesRationalCurvesAndInnerIsland)
+{
+    namespace Tube = iCAX::GeometryData::Tube;
+    const auto _Blank = MakeShortXAngleBlank();
+    const gp_Ax2 _Placement(gp_Pnt(6.0, 30.0, 4.8), gp_Dir(0.0, 0.0, 1.0));
+    const auto _MakeRationalWire = [&_Placement](double Radius_) {
+        const auto _Wire = BRepBuilderAPI_MakeWire(
+            BRepBuilderAPI_MakeEdge(gp_Circ(_Placement, Radius_)).Edge()).Wire();
+        BRepBuilderAPI_NurbsConvert _Convert(_Wire, true);
+        EXPECT_TRUE(_Convert.IsDone());
+        return TopoDS::Wire(_Convert.Shape());
+    };
+    auto _Face = BRepBuilderAPI_MakeFace(gp_Pln(_Placement), _MakeRationalWire(3.0), true);
+    auto _Inner = _MakeRationalWire(1.0);
+    _Inner.Reverse();
+    _Face.Add(_Inner);
+    ASSERT_TRUE(_Face.IsDone());
+    const auto _Cutter = BRepPrimAPI_MakePrism(_Face.Face(), gp_Vec(0.0, 0.0, 0.4)).Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Cutter).IsValid());
+    BRepAlgoAPI_Cut _Cut(_Blank, _Cutter);
+    ASSERT_TRUE(_Cut.IsDone());
+    iCAX::OpenCascade::STubeCSGConversionOptions _Options;
+    _Options.Tolerance = 1.0e-6;
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Cut.Shape(), _Blank, 12.0, _Options);
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent);
+    EXPECT_TRUE(_Result.RemovalShape.IsNull());
+    const auto _Pocket = std::find_if(_Result.Geometry.SolidNodes.begin(),
+        _Result.Geometry.SolidNodes.end(), [](const auto& _Node) {
+            const auto _Source = _Node.Metadata.find("source");
+            return _Source != _Node.Metadata.end()
+                && _Source->second == "occ.planar-cap-extrusion";
+        });
+    ASSERT_NE(_Result.Geometry.SolidNodes.end(), _Pocket);
+    const auto& _Extrusion = std::get<Tube::SExtrudedRegionNode>(_Pocket->Data);
+    ASSERT_EQ(2u, _Extrusion.Section.Boundaries.size());
+    for (const auto& _Loop : _Extrusion.Section.Boundaries)
+    {
+        ASSERT_FALSE(_Loop.Curves.empty());
+        for (const auto& _Curve : _Loop.Curves)
+            EXPECT_TRUE(std::holds_alternative<iCAX::GeometryData::NURBS2>(
+                _Curve.Segment.Curve));
+    }
+    EXPECT_NEAR(0.2, _Extrusion.Last - _Extrusion.First, 1.0e-8);
+    const auto _PreciseVolume = [](const TopoDS_Shape& Shape_) {
+        GProp_GProps _Properties;
+        BRepGProp::VolumeProperties(Shape_, _Properties, 1.0e-10);
+        return std::abs(_Properties.Mass());
+    };
+    // OCC mass integration on the NURBS annulus differs slightly from its analytic area;
+    // the replay equivalence above is the strict geometry check.
+    EXPECT_NEAR(8.0 * std::acos(-1.0) * 0.2,
+        _PreciseVolume(_Blank) - _PreciseVolume(_Cut.Shape()), 1.0e-2);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, DoesNotMisclassifyTaperedPocketAsExactPlanarCapExtrusion)
+{
+    const auto _Blank = MakeShortXAngleBlank();
+    const auto _Cutter = BRepPrimAPI_MakeCone(
+        gp_Ax2(gp_Pnt(6.0, 30.0, 4.0), gp_Dir(0.0, 0.0, 1.0)),
+        2.0, 3.0, 1.5).Shape();
+    BRepAlgoAPI_Cut _Cut(_Blank, _Cutter);
+    ASSERT_TRUE(_Cut.IsDone());
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Cut.Shape(), _Blank, 12.0);
+    EXPECT_TRUE(std::none_of(_Result.Geometry.SolidNodes.begin(),
+        _Result.Geometry.SolidNodes.end(), [](const auto& _Node) {
+            const auto _Source = _Node.Metadata.find("source");
+            return _Source != _Node.Metadata.end()
+                && _Source->second == "occ.planar-cap-extrusion";
+        }));
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankRejectsIncorrectAxialExtent)
+{
+    const auto _Blank = MakeShortXAngleBlank();
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Blank, _Blank, 13.0);
+    EXPECT_EQ(iCAX::GeometryData::Tube::ERecognitionStatus::Failed,
+        _Result.Geometry.RecognitionStatus);
+    EXPECT_FALSE(_Result.ReplayValidation.bEquivalent);
+    ASSERT_FALSE(_Result.Geometry.Diagnostics.empty());
+    EXPECT_EQ("known-blank-not-extrusion", _Result.Geometry.Diagnostics.front().Code);
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, KnownBlankRejectsLocalCutAwayFromCentralSection)
+{
+    const auto _Blank = MakeShortXAngleBlank();
+    const auto _Notch = BRepPrimAPI_MakeBox(
+        gp_Pnt(1.0, 20.0, -1.0), 2.0, 5.0, 7.0).Shape();
+    BRepAlgoAPI_Cut _Cut(_Blank, _Notch);
+    ASSERT_TRUE(_Cut.IsDone());
+    const auto _Result = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
+        _Cut.Shape(), _Cut.Shape(), 12.0);
+    EXPECT_EQ(iCAX::GeometryData::Tube::ERecognitionStatus::Failed,
+        _Result.Geometry.RecognitionStatus);
+    EXPECT_FALSE(_Result.ReplayValidation.bEquivalent);
+    ASSERT_FALSE(_Result.Geometry.Diagnostics.empty());
+    EXPECT_EQ("known-blank-not-extrusion", _Result.Geometry.Diagnostics.front().Code);
 }
 
 TEST(OpenCascadeTubeCSGConverterTest, RecognizesDoubleCavityWithoutProfileBranches)
@@ -258,6 +934,48 @@ TEST(OpenCascadeTubeCSGConverterTest, ChangedCavityRebuildsFinalSolid)
     EXPECT_GT(ShapeVolume(_Evaluation.Shape), ShapeVolume(_Source));
     EXPECT_TRUE(_Evaluation.SectionPrimitiveShapes.contains(
         "base/section/cavity-1"));
+}
+
+TEST(OpenCascadeTubeCSGConverterTest, ReplayRejectsShiftedCavityDespiteEqualVolume)
+{
+    const auto _Source = MakeDoubleCavityExtrusion();
+    auto _Conversion = iCAX::OpenCascade::ConvertBRepToTubeCSG(_Source);
+    ASSERT_TRUE(_Conversion.ReplayValidation.bEquivalent)
+        << (_Conversion.ReplayValidation.Diagnostics.empty()
+            ? "" : _Conversion.ReplayValidation.Diagnostics.front());
+
+    auto& _Geometry = _Conversion.Geometry;
+    auto _BaseIter = std::find_if(
+        _Geometry.SolidNodes.begin(),
+        _Geometry.SolidNodes.end(),
+        [&_Geometry](IN const auto& Node_) {
+            return Node_.ID == _Geometry.BaseNodeID;
+        });
+    ASSERT_NE(_Geometry.SolidNodes.end(), _BaseIter);
+    auto& _Base = std::get<iCAX::GeometryData::Tube::SExtrudedRegionNode>(
+        _BaseIter->Data);
+    ASSERT_GE(_Base.Section.Boundaries.size(), 2u);
+    for (auto& _Curve : _Base.Section.Boundaries[1].Curves)
+    {
+        auto* _pSegment = std::get_if<iCAX::GeometryData::Segment2>(
+            &_Curve.Segment.Curve);
+        ASSERT_NE(nullptr, _pSegment);
+        _pSegment->Start.X += 3.0;
+        _pSegment->End.X += 3.0;
+    }
+
+    const auto _Evaluation = iCAX::OpenCascade::EvaluateTubeCSG(_Geometry);
+    ASSERT_TRUE(_Evaluation.bOK);
+    EXPECT_NEAR(ShapeVolume(_Source), ShapeVolume(_Evaluation.Shape), 1.0e-4);
+
+    const auto _Replay = iCAX::OpenCascade::ValidateTubeCSGReplay(
+        _Source, _Geometry);
+    ASSERT_TRUE(_Replay.bEvaluated)
+        << (_Replay.Diagnostics.empty() ? "" : _Replay.Diagnostics.front());
+    EXPECT_FALSE(_Replay.bEquivalent);
+    EXPECT_GT(_Replay.MissingVolume, 0.0);
+    EXPECT_GT(_Replay.UnexpectedVolume, 0.0);
+    EXPECT_GT(_Replay.RelativeVolumeError, 1.0e-4);
 }
 
 TEST(OpenCascadeTubeCSGConverterTest, PreservesCircularInnerLoopAsTubeCavity)
@@ -408,7 +1126,12 @@ TEST(OpenCascadeTubeCSGConverterTest, RecognizesSteppedEndAsStableUVNormalTrunca
     EXPECT_NEAR(0.0, std::get<double>(_WrappedData.UpperNormalOffset), 1.0e-9);
     EXPECT_GT(std::stod(_Wrapped->Metadata.at("normalRayCoverage")), 0.98);
     EXPECT_TRUE(_Result.RemovalShape.IsNull());
-    EXPECT_LT(_Result.Geometry.RelativeVolumeError, 1.0e-8);
+    EXPECT_TRUE(_Result.ReplayValidation.bEvaluated);
+    EXPECT_FALSE(_Result.ReplayValidation.bEquivalent);
+    EXPECT_GT(_Result.Geometry.RelativeVolumeError, 0.1);
+    EXPECT_EQ(
+        iCAX::GeometryData::Tube::ERecognitionStatus::Failed,
+        _Result.Geometry.RecognitionStatus);
     const auto _Reevaluation = iCAX::OpenCascade::EvaluateTubeCSG(
         _Result.Geometry);
     ASSERT_TRUE(_Reevaluation.bOK)
@@ -986,7 +1709,12 @@ TEST(OpenCascadeTubeCSGConverterTest, DecomposesBlindHoleClippedByObliqueEndTrim
                 Node_.Data);
         }));
     EXPECT_TRUE(_Result.RemovalShape.IsNull());
-    EXPECT_LT(_Result.Geometry.RelativeVolumeError, 1.0e-8);
+    EXPECT_TRUE(_Result.ReplayValidation.bEvaluated);
+    EXPECT_FALSE(_Result.ReplayValidation.bEquivalent);
+    EXPECT_GT(_Result.Geometry.RelativeVolumeError, 0.01);
+    EXPECT_EQ(
+        iCAX::GeometryData::Tube::ERecognitionStatus::Failed,
+        _Result.Geometry.RecognitionStatus);
     EXPECT_LT(_Result.Geometry.RelativeUnparameterizedVolume, 1.0e-8);
 }
 
@@ -1122,6 +1850,30 @@ TEST(OpenCascadeTubeCSGConverterTest, UsesEditableCompositeBeforeOpaqueResidual)
         }));
     EXPECT_GT(_Result.Geometry.RelativeUnparameterizedVolume, 0.0);
     EXPECT_LT(_Result.Geometry.RelativeOpaqueResidualVolume, 1.0e-12);
+
+    ASSERT_TRUE(_Result.ReplayValidation.bEquivalent)
+        << (_Result.ReplayValidation.Diagnostics.empty()
+            ? "" : _Result.ReplayValidation.Diagnostics.front());
+    ASSERT_FALSE(_Result.RemovalShape.IsNull());
+    auto _MissingResourceGeometry = _Result.Geometry;
+    auto _MutableComposite = std::find_if(
+        _MissingResourceGeometry.SolidNodes.begin(),
+        _MissingResourceGeometry.SolidNodes.end(),
+        [](IN const auto& Node_) {
+            return std::holds_alternative<iCAX::GeometryData::Tube::SCompositeVolumeNode>(
+                Node_.Data);
+        });
+    ASSERT_NE(_MissingResourceGeometry.SolidNodes.end(), _MutableComposite);
+    std::get<iCAX::GeometryData::Tube::SCompositeVolumeNode>(
+        _MutableComposite->Data).BRepResourceID.clear();
+    iCAX::OpenCascade::STubeCSGEvaluationOptions _ReplayOptions;
+    _ReplayOptions.ExternalBRepShapes.emplace(
+        _Options.RemovalBRepResourceID, _Result.RemovalShape);
+    const auto _MissingResourceReplay = iCAX::OpenCascade::ValidateTubeCSGReplay(
+        _Cut.Shape(), _MissingResourceGeometry, _ReplayOptions);
+    EXPECT_FALSE(_MissingResourceReplay.bEquivalent);
+    EXPECT_FALSE(_MissingResourceReplay.bEvaluated);
+    EXPECT_FALSE(_MissingResourceReplay.Diagnostics.empty());
 
     const auto _Intent = iCAX::CAM::Intent::Tube::CompileTubeMachiningIntent(
         _Result.Geometry);

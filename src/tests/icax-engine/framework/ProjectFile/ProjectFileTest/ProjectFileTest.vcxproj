@@ -41,13 +41,14 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="ProjectFileTests.cpp" /></ItemGroup>
+  <ItemGroup><ClCompile Include="ProjectFileTests.cpp" /><ClCompile Include="ProjectFileCapturedRecipeDiagnostic.cpp" /></ItemGroup>
   <ItemGroup><None Include="packages.config" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\ProjectFile\ProjectFile.vcxproj"><Project>{069A3406-81B1-49F1-9C58-E814C96498E0}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Database\Database.vcxproj"><Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Resources\Resources.vcxproj"><Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Data\Data.vcxproj"><Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\TemplateRuntime\TemplateRuntime.vcxproj"><Project>{60BC73CA-D444-48E9-984F-B3960D374795}</Project></ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

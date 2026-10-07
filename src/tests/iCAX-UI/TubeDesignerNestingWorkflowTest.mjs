@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import { deserializeVariantText } from "../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import {
   buildProfileGroups,
@@ -16,8 +17,8 @@ import {
   restoreSavedNestingTask,
 } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
 
-const rect = { id: "rect", kind: "rect", displayName: "矩形管", specification: "40 × 20 × R2 × 1.5", width: 40, depth: 20, wallThickness: 1.5, cornerRadius: 2 };
-const round = { id: "round", kind: "round", displayName: "圆管", specification: "⌀19 × 1", width: 19, depth: 19, wallThickness: 1 };
+const rect = { sectionIdentity: nativeSectionIdentity("rect-40-20-r2-t1.5"), id: "rect", kind: "rect", displayName: "矩形管", specification: "40 × 20 × R2 × 1.5", width: 40, depth: 20, wallThickness: 1.5, cornerRadius: 2 };
+const round = { sectionIdentity: nativeSectionIdentity("round-19-t1"), id: "round", kind: "round", displayName: "圆管", specification: "⌀19 × 1", width: 19, depth: 19, wallThickness: 1 };
 const clone = (value) => structuredClone(value);
 const partsIn = (view) => view.scene.tubeDesigner.manufacturingGroups.flatMap((group) => group.parts);
 
@@ -229,10 +230,60 @@ await test("Success stores native plans and selects first result in 3D", async (
   assert.doesNotMatch(result.plans.map((plan) => plan.name).join("\n"), /^母材 /m);
   h.view.tubeDesignerLockedNestingPlanIds = [result.plans[0].id];
   const rerunRequest = buildNestingRequest(h.view);
-  assert.equal(rerunRequest.lockedPlans.length, 1);
-  assert.equal(rerunRequest.lockedPlans[0].id, result.plans[0].id);
-  assert.deepEqual(rerunRequest.lockedPlans[0].placements.map((placement) => placement.instanceId),
-    result.plans[0].placements.map((placement) => placement.instanceId));
+  assert.deepEqual(rerunRequest.lockedPlanIds, [result.plans[0].id]);
+  assert.equal(rerunRequest.resultRevision, result.revision ?? "");
+});
+
+await test("Completion notification loads the catalog, then only the opened stock", async () => {
+  let saved;
+  const h = harness({ invoke: async (method, request, view) => {
+    if (method === "TubeDesigner.Nest") {
+      saved = completeResult(request, view);
+      return { ready: true, revision: "revision-1", planCount: saved.plans.length,
+        status: saved.status, unplaced: [], metrics: { placedPartCount: 3 } };
+    }
+    assert.equal(method, "TubeDesigner.ReadNestingResult");
+    assert.equal(request.revision, "revision-1");
+    if (request.planId) return clone(saved.plans.find(plan => plan.id === request.planId));
+    const profileKeys = [...new Set(saved.plans.map(plan => plan.profileKey))];
+    const stockTypeIds = [...new Set(saved.plans.map(plan => plan.stockTypeId))];
+    return { revision: "revision-1", profileKeys, stockTypeIds,
+      rows: saved.plans.map(plan => [plan.id, profileKeys.indexOf(plan.profileKey),
+        stockTypeIds.indexOf(plan.stockTypeId), plan.stockLength, plan.usedLength,
+        plan.remainingLength, 0, plan.placements.length, 0.2]) };
+  } });
+  await h.run();
+  assert.equal(h.view.error, "");
+  assert.deepEqual(h.calls.map(call => [call.method, call.request.planId ?? ""]), [
+    ["TubeDesigner.Nest", ""], ["TubeDesigner.ReadNestingResult", ""],
+    ["TubeDesigner.ReadNestingResult", "plan-stock-0"],
+  ]);
+  const [first, second] = h.view.tubeDesignerNestingResult.plans;
+  assert.equal(first.detailsLoaded, true);
+  assert.equal(second.detailsLoaded, false);
+  assert.equal(second.placements.length, 0);
+  assert.equal(second.partCount, 1);
+  await handlePartsAreaAction(h.context, h.view, "tube-designer-select-nesting-plan",
+    { dataset: { tubeDesignerNestingPlanId: second.id } }, h.ops);
+  assert.equal(second.detailsLoaded, true);
+  assert.equal(second.placements.length, 1);
+  assert.equal(h.calls.length, 4);
+  h.view.tubeDesignerLockedNestingPlanIds = [second.id];
+  const request = buildNestingRequest(h.view, h.context);
+  assert.deepEqual(request.lockedPlanIds, [second.id]);
+  assert.equal(request.resultRevision, "revision-1");
+  assert.equal(Object.hasOwn(request, "lockedPlans"), false);
+});
+
+await test("Malformed catalog is rejected without accepting a partial result", async () => {
+  const h = harness({ invoke: async (method, request) => method === "TubeDesigner.Nest"
+    ? { ready: true, revision: "revision-1", planCount: 1, unplaced: [] }
+    : { revision: request.revision, profileKeys: ["profile"], stockTypeIds: ["stock"],
+      rows: [["duplicate", 0, 0, 6000, 100, 5900, 100, 1, .1],
+        ["duplicate", 0, 0, 6000, 100, 5900, 100, 1, .1]] } });
+  await h.run();
+  assert.equal(h.view.tubeDesignerNestingResult, undefined);
+  assert.match(h.view.error, /排样结果列表格式无效/);
 });
 
 for (const partGap of [0, 1, 5]) {
@@ -608,7 +659,7 @@ await test("Active nesting result restores or centers in one scroll assignment",
 });
 
 for (const scenario of ["unchanged", "generation", "stocks", "invalid-stocks"]) {
-  await test(`Saved nesting task restores safely: ${scenario}`, () => {
+  await test(`Saved nesting task restores safely: ${scenario}`, async () => {
     const h = harness();
     h.view.scene.tubeDesigner.manufacturingGroups[0].generationRunId = "run-1";
     const request = buildNestingRequest(h.view);
@@ -621,7 +672,7 @@ for (const scenario of ["unchanged", "generation", "stocks", "invalid-stocks"]) 
     if (scenario === "generation") h.view.scene.tubeDesigner.manufacturingGroups[0].generationRunId = "run-2";
     if (scenario === "stocks") h.view.tubeDesignerNestingSettings.stocks[0].rows[0].length = 6500;
     if (scenario === "invalid-stocks") for (const stock of h.view.tubeDesignerNestingSettings.stocks) stock.rows[0].quantity = 0;
-    restoreSavedNestingTask(h.view, h.context);
+    await restoreSavedNestingTask(h.view, h.context);
     if (scenario === "generation") {
       assert.equal(h.view.tubeDesignerNestingResult, null);
       assert.deepEqual(h.view.tubeDesignerSelectedPartIds, []);
@@ -631,7 +682,7 @@ for (const scenario of ["unchanged", "generation", "stocks", "invalid-stocks"]) 
     }
     assert.equal(h.calls.length, 0, "restoring a saved task must not invoke the solver");
     delete h.view.scene.tubeDesigner.nestingTask;
-    restoreSavedNestingTask(h.view, h.context);
+    await restoreSavedNestingTask(h.view, h.context);
     assert.equal(h.view.tubeDesignerNestingResult, null, "undoing the saved task clears its result");
     assert.deepEqual(h.view.tubeDesignerLockedNestingPlanIds, []);
   });

@@ -63,12 +63,13 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
     const auto productID=product.at("entityId").To<std::string>();
     const auto runID=product.at("activeGenerationRunId").To<std::string>();
     const ObjectMap identity{{"productEntityId",productID},{"generationRunId",runID}};
+    invoke(scene,"DisassembleSelected",ObjectMap{{"productEntityIds",VariantArray{productID}}});
     const auto planned=invoke(scene,"GetProductAssemblyBindings",identity);
     std::size_t plannedOuter=0;
     for(const auto& value:planned.at("manufacturingPlan").To<ObjectMap>().at("stocks").To<VariantArray>())
-        if(value.To<ObjectMap>().at("itemKey").To<std::string>().starts_with("outer_frame."))++plannedOuter;
+        if(value.To<ObjectMap>().at("itemKey").To<std::string>().starts_with("outer_frame."))
+            plannedOuter+=value.To<ObjectMap>().at("sourceStockIds").To<VariantArray>().size();
     ASSERT_EQ(plannedOuter,3u);
-    invoke(scene,"DisassembleSelected",ObjectMap{{"productEntityIds",VariantArray{productID}}});
     const auto listed=invoke(scene,"List",{}).at("tubeDesigner").To<ObjectMap>();
     std::map<std::string,std::string> ids;
     std::map<std::string,std::pair<std::string,unsigned long long>> originalRefs;
@@ -77,7 +78,7 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
         const auto row=value.To<ObjectMap>();
         const auto id=row.at("entityId").To<std::string>();const auto component=part(scene,id);
         if(!component->GetStableKey().starts_with("outer_frame."))continue;
-        ++manufacturingOuter;ids[component->GetStableKey()]=id;
+        manufacturingOuter+=component->GetQuantity();ids[component->GetStableKey()]=id;
         const auto solid=shape(scene,component);
         ASSERT_TRUE(BRepCheck_Analyzer(solid).IsValid());
         std::size_t count=0;for(TopExp_Explorer e(solid,TopAbs_SOLID);e.More();e.Next())++count;
@@ -105,8 +106,8 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
     ASSERT_TRUE(run);
     const auto native=run->GetManufacturingModel().at("extensions").To<ObjectMap>().at("tubeDesigner.assemblyProcessNative").To<ObjectMap>();
     const auto plan=native.at("plan").To<ObjectMap>();
-    ASSERT_EQ(plan.at("manufacturingParts").To<VariantArray>().size(),listed.at("parts").To<VariantArray>().size());
-    ASSERT_EQ(native.at("stocks").To<ObjectMap>().size(),listed.at("parts").To<VariantArray>().size());
+    ASSERT_EQ(plan.at("manufacturingParts").To<VariantArray>().size(),disassemblyCountUnitQuantity(listed));
+    ASSERT_EQ(native.at("stocks").To<ObjectMap>().size(),disassemblyCountUnitQuantity(listed));
     ASSERT_EQ(plan.at("nativeContactChecks").To<VariantArray>().size(),8u);
     for(const auto& value:plan.at("nativeContactChecks").To<VariantArray>()) {
         const auto check=value.To<ObjectMap>();
@@ -222,8 +223,22 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
     const auto reopenedRun=std::dynamic_pointer_cast<iCAX::TubeDesigner::CGenerationRunComponent>(
         reopened.Database().GetEntity(iCAX::Data::uuid::from_string(runID).value())->GetComponent(iCAX::TubeDesigner::CGenerationRunComponent::S_ClassName));
     const auto frozen=reopenedRun->GetManufacturingModel();
+    const auto committedCount=reopenedRun->GetPartCount();
     auto disconnected=frozen;
     auto extensions=disconnected.at("extensions").To<ObjectMap>();
+    const auto raw=extensions.at("tubeDesigner.identicalManufacturingSource").To<ObjectMap>();
+    // Contact validation consumes the complete physical stocks, before any
+    // aggregation. Exercise that owned source document, rather than deleting
+    // the frozen stock evidence required to validate an aggregated snapshot.
+    for(const auto* key:{"items","outputs"})disconnected[key]=raw.at(key);
+    for(const auto* key:{"roots","tables"}) {
+        if(raw.contains(key))disconnected[key]=raw.at(key);
+        else disconnected.erase(key);
+    }
+    extensions["tubeDesigner.manufacturingPartCount"]=raw.at("partCount");
+    if(raw.contains("assemblyOutputSets"))extensions["tubeDesigner.assemblyOutputSets"]=raw.at("assemblyOutputSets");
+    else extensions.erase("tubeDesigner.assemblyOutputSets");
+    extensions.erase("tubeDesigner.identicalManufacturingSource");
     extensions.erase("tubeDesigner.assemblyProcessNative");disconnected["extensions"]=extensions;
     auto items=disconnected.at("items").To<VariantArray>();
     const auto requiredPost=plan.at("contactRequirements").To<VariantArray>().front().To<ObjectMap>()
@@ -247,13 +262,18 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
         properties["manufacturing.sourceMembers"]=sources;item["properties"]=properties;itemValue=item;
     }
     ASSERT_TRUE(shifted);disconnected["items"]=items;
+    const auto rawCount=raw.at("partCount").To<unsigned long long>();
+    ASSERT_TRUE(reopenedRun->SetPartCount(rawCount));
     ASSERT_TRUE(reopenedRun->SetManufacturingModel(disconnected));
     try {
         invoke(reopened,"DisassembleSelected",ObjectMap{{"productEntityIds",VariantArray{productID}}});
         FAIL()<<"disconnected material incorrectly satisfied positive-area contact";
     } catch(const std::exception& error) {
         EXPECT_NE(std::string(error.what()).find("实际节点接触不适用"),std::string::npos)<<error.what();
+        EXPECT_NE(std::string(error.what()).find("memberC: " + requiredPost),std::string::npos)<<error.what();
     }
+    EXPECT_EQ(reopenedRun->GetPartCount(),rawCount);
+    EXPECT_EQ(reopenedRun->GetManufacturingModel(),disconnected);
     for(const auto& [key,id]:ids) {
         const auto component=part(reopened,id);
         EXPECT_EQ(component->GetManufacturingGeometryResourceID(),beforeFailureRefs.at(key).first);
@@ -262,6 +282,7 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
         EXPECT_EQ(persistedShapeBytes(reopened,component),beforeFailureBytes.at(key));
     }
     ASSERT_TRUE(reopenedRun->SetManufacturingModel(frozen));
+    ASSERT_TRUE(reopenedRun->SetPartCount(committedCount));
     auto updated=product.at("parameters").To<ObjectMap>();updated["frameManufacturingMode"]=std::string("plane_v_notch");
     invoke(reopened,"DisassembleSelected",ObjectMap{{"productEntityIds",VariantArray{productID}},
         {"productParametersByEntityId",ObjectMap{{productID,updated}}}});
@@ -270,7 +291,8 @@ TEST(ProductGeneratedAssemblyProcessSDO, ThreeFaceSpatialKeepsTenLogicalMembersA
     EXPECT_EQ(updatedRun->GetNeutralModel(),run->GetNeutralModel());
     const auto updatedStocks=invoke(reopened,"GetProductAssemblyBindings",identity).at("manufacturingPlan").To<ObjectMap>().at("stocks").To<VariantArray>();
     std::size_t newOuter=0;
-    for(const auto& value:updatedStocks)if(value.To<ObjectMap>().at("itemKey").To<std::string>().starts_with("outer_frame."))++newOuter;
+    for(const auto& value:updatedStocks)if(value.To<ObjectMap>().at("itemKey").To<std::string>().starts_with("outer_frame."))
+        newOuter+=value.To<ObjectMap>().at("sourceStockIds").To<VariantArray>().size();
     EXPECT_EQ(newOuter,6u);
 }
 
@@ -290,7 +312,7 @@ TEST(ProductGeneratedAssemblyProcessSDO, UnequalRectangularPlaneStockUsesAuthori
         if(!component->GetStableKey().starts_with("outer_frame."))continue;
         const auto solid=shape(scene,component);ASSERT_TRUE(BRepCheck_Analyzer(solid).IsValid());
         std::size_t solids=0;for(TopExp_Explorer e(solid,TopAbs_SOLID);e.More();e.Next())++solids;
-        EXPECT_EQ(solids,1u);++count;
+        EXPECT_EQ(solids,1u);count+=component->GetQuantity();
         if(component->GetStableKey().find("post")!=std::string::npos) {
             Bnd_Box box;BRepBndLib::AddOptimal(solid,box,false,false);box.SetGap(0.0);
             double x0,y0,z0,x1,y1,z1;box.Get(x0,y0,z0,x1,y1,z1);
@@ -341,7 +363,7 @@ TEST(ProductGeneratedAssemblyProcessSDO, AllFaceModesUseNativeDescriptorsAndKeep
                 const auto solid=shape(scene,component);ASSERT_TRUE(BRepCheck_Analyzer(solid).IsValid());
                 std::size_t solids=0;for(TopExp_Explorer e(solid,TopAbs_SOLID);e.More();e.Next())++solids;
                 EXPECT_EQ(solids,1u);EXPECT_GT(volume(solid),0.0);
-                if(component->GetStableKey().starts_with("outer_frame."))++outer;
+                if(component->GetStableKey().starts_with("outer_frame."))outer+=component->GetQuantity();
             }
             const std::size_t expectedStock=std::string(mode)=="segment_weld"?expected
                 :face=="single"?1u:face=="two"?(std::string(mode)=="plane_v_notch"?5u:2u)
@@ -354,7 +376,8 @@ TEST(ProductGeneratedAssemblyProcessSDO, AllFaceModesUseNativeDescriptorsAndKeep
             for(const auto& value:bindings.at("manufacturingPlan").To<ObjectMap>().at("stocks").To<VariantArray>()) {
                 const auto stock=value.To<ObjectMap>();
                 if(!stock.at("itemKey").To<std::string>().starts_with("outer_frame."))continue;
-                ++mappedStocks;EXPECT_EQ(stock.at("partMappingStatus").To<std::string>(),"persisted");
+                mappedStocks+=stock.at("sourceStockIds").To<VariantArray>().size();
+                EXPECT_EQ(stock.at("partMappingStatus").To<std::string>(),"persisted");
                 EXPECT_FALSE(stock.at("stockEntityId").To<std::string>().empty());
                 for(const auto& source:stock.at("sourceMembers").To<VariantArray>())
                     logicalSources.insert(source.To<ObjectMap>().at("itemKey").To<std::string>());

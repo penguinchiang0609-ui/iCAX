@@ -13,6 +13,16 @@ namespace
         return _Mutex;
     }
 
+    void TraceGenerationRegistration(
+        const iCAX::Database::CMetaRegistrationCatalog::RegistrationRecord& Registration_)
+    {
+        if (GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) == 0) return;
+        const std::string_view type = Registration_.Replay.target_type().name();
+        if (type.find("CGenerationRunComponent") != std::string_view::npos)
+            std::fprintf(stderr, "Disassembly/meta-registration %s %s\n",
+                Registration_.ModulePath.c_str(), type.data());
+    }
+
     std::string NormalizeModulePath(IN const std::string& strPath_)
     {
         if (strPath_.empty())
@@ -128,6 +138,7 @@ size_t iCAX::Database::CMetaRegistrationCatalog::ReplayFrom(IN size_t nFirstInde
 
     for (const auto& _Registration : _Registrations)
     {
+        TraceGenerationRegistration(_Registration);
         _Registration.Replay(Registry_);
     }
     return nFirstIndex_;
@@ -153,6 +164,7 @@ void iCAX::Database::CMetaRegistrationCatalog::ReplayByModulePaths(
     {
         if (std::find(_ModulePaths.begin(), _ModulePaths.end(), _Registration.ModulePath) != _ModulePaths.end())
         {
+            TraceGenerationRegistration(_Registration);
             _Registration.Replay(Registry_);
         }
     }

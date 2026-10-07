@@ -1,0 +1,71 @@
+{
+  "schema": "icax.deferred-product-reference",
+  "schemaVersion": 1,
+  "status": "archived",
+  "preparedAt": "2026-10-05T00:34:11.965071+00:00",
+  "templateId": "aluminium-window",
+  "version": "1.1.0",
+  "originalDirectory": "src/apps/tube-designer/templates/product/aluminium_window",
+  "referenceDirectory": "src/apps/tube-designer/docs/deferred-products/aluminium-window/reference",
+  "nonCacheFileCount": 6,
+  "parameterCount": 35,
+  "cachePolicy": "Moved intact; cache bytes inventoried separately, excluded from source count.",
+  "files": [
+    {
+      "path": "profile_system.py",
+      "bytes": 6556,
+      "sha256": "e8e7f29469b38bff0e66cd0b93ec116f935133e44f43f23f3d5216ae886fdd92",
+      "cache": false
+    },
+    {
+      "path": "README.md",
+      "bytes": 7899,
+      "sha256": "a0bff0217f01e47d73d739737c8930a4a4f19e443149d358ce5a5c2b05c926bc",
+      "cache": false
+    },
+    {
+      "path": "resource/icon.svg",
+      "bytes": 354,
+      "sha256": "d0d8fb110d51e8b6a0f3d1a8c717e970a81e187c5245c4b6e179b9d52b14baaa",
+      "cache": false
+    },
+    {
+      "path": "systems/demonstration.json",
+      "bytes": 31283,
+      "sha256": "4146ef4cb2ad2f643f531ebd8e5e830e581cb53a7774127c31c2a463aec8ca26",
+      "cache": false
+    },
+    {
+      "path": "template.json",
+      "bytes": 315689,
+      "sha256": "9d180f0643f331ce479fe031d902601937289d20926c6fdbeacb286da75c66cd",
+      "cache": false
+    },
+    {
+      "path": "template.py",
+      "bytes": 40509,
+      "sha256": "28ee56e54a5ce9b2acb9b100811bac58e4582bf47523881ebe79827d5f543f83",
+      "cache": false
+    }
+  ],
+  "retainedCacheFiles": [
+    {
+      "path": "__pycache__/profile_system.cpython-312.pyc",
+      "bytes": 12415,
+      "sha256": "8361e02b1af380aa922aeff9c2be0e0e30af8d5d7710570ca1bce8866d79d78c",
+      "cache": true
+    },
+    {
+      "path": "__pycache__/template.cpython-312.pyc",
+      "bytes": 53815,
+      "sha256": "cd70f37d9a6d68b4c23adcf76fa8e0faaf60b07f7ce5d01897e9042ff5c1a761",
+      "cache": true
+    }
+  ],
+  "verifiedAt": "2026-10-05T00:35:47.736339+00:00",
+  "verification": {
+    "allFilesAndCacheSha256Equal": true,
+    "completeParameterDeclarationsEqual": true,
+    "originalDirectoryAbsent": true
+  }
+}

@@ -2,7 +2,10 @@ import { renderParameterLevels } from './parameterPresentation.mjs';
 import { parameterVisible } from './parameterConditions.mjs';
 import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
+import { restoreProductResources, restoreProductUserData, rememberProductResources, invalidateProductResources, isProductResourceSessionCurrent } from "./productResourceSession.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 
 import { buildPunchPreviewRows } from "./punchEditor.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
@@ -64,6 +67,7 @@ export function toolLibraryState(view) {
   state.branchProfileDrafts ??= {};
   state.profileSnapshots ??= {};
   state.profileKeysByTool ??= {};
+  state.branchProfileKeysByTool ??= {};
   state.mainTubeCollapsed ??= true;
   if (!["idle", "loading", "ready", "error"].includes(state.catalogueStatus)) state.catalogueStatus = "idle";
   // A view can survive a cancelled navigation without its in-flight promise;
@@ -149,7 +153,7 @@ function sources(view) {
 export function libraryTools(view) {
   const result = new Map();
   for (const source of sources(view)) {
-    if (!source?.id || source.hidden === true || source.legacy === true) continue;
+    if (!source?.id || source.hidden === true) continue;
     const scope = scopeOf(source);
     const tool = { ...source, libraryScope: scope, kind: typeOf(source) };
     const key = keyOf(tool, scope);
@@ -266,17 +270,24 @@ function ensureToolTubeProfile(view, role = "main", tool = null) {
   const stateKey = role === "branch" ? "branchProfileKey" : "profileKey";
   // Do not commit the temporary round fallback as a tool's initial choice
   // before the asynchronous profile catalogue can resolve its declared default.
-  if (role === "main" && libraryProfiles(view).length) {
+  if (libraryProfiles(view).length) {
     tool ??= visibleLibraryTools(view).find(item => item.libraryKey === state.selectedKey);
     const owner = tool ? (tool.libraryKey ?? keyOf(tool)) : "";
-    if (owner && owner !== state.profileOwnerKey) {
-      if (state.profileOwnerKey) state.profileKeysByTool[state.profileOwnerKey] = state.profileKey;
-      const declared = tool.preview?.profileRef;
+    const ownerKey = role === "branch" ? "branchProfileOwnerKey" : "profileOwnerKey";
+    const savedKeys = role === "branch" ? state.branchProfileKeysByTool : state.profileKeysByTool;
+    if (owner && owner !== state[ownerKey]) {
+      if (state[ownerKey]) savedKeys[state[ownerKey]] = state[stateKey];
+      const example = role === "branch" ? tool.preview?.section : tool.preview;
+      const declared = example?.profileRef;
       const preferred = declared && profiles.find(item =>
         profileScopeOf(item) === declared.scope && String(item.id) === declared.id);
-      state.profileKey = state.profileKeysByTool[owner]
-        ?? (preferred ? profileSelectionKey(preferred) : state.profileKey);
-      state.profileOwnerKey = owner;
+      state[stateKey] = savedKeys[owner]
+        ?? (preferred ? profileSelectionKey(preferred) : state[stateKey]);
+      if (preferred && !savedKeys[owner] && example.parameters) {
+        const drafts = role === "branch" ? state.branchProfileDrafts : state.profileDrafts;
+        drafts[profileSelectionKey(preferred)] ??= { ...example.parameters };
+      }
+      state[ownerKey] = owner;
     }
   }
   if (profiles.some((profile) => profileSelectionKey(profile) === state[stateKey])) return profiles.find((profile) => profileSelectionKey(profile) === state[stateKey]);
@@ -418,7 +429,7 @@ function renderToolTubeSection(view, role = "main") {
   const expanded = isBranch || !state.mainTubeCollapsed;
   const title = isBranch ? "刀具截面" : "目标管型";
   const fieldLabel = isBranch ? "截面管型" : "目标管型";
-  return `<section class="tube-profile-library-parameter-group tube-tool-library-tube-section${isBranch ? " tube-tool-library-branch-section" : ""}" data-profile-parameter-scope data-parameter-diagram-owner="tool-library-profile:${escapeAttr(role)}" data-tube-tool-library-tube-editor data-tube-tool-library-profile-role="${escapeAttr(role)}">
+  return `<section id="tube-tool-library-section-${escapeAttr(role)}" class="tube-profile-library-parameter-group tube-tool-library-tube-section${isBranch ? " tube-tool-library-branch-section" : ""}" data-profile-parameter-scope data-parameter-diagram-owner="tool-library-profile:${escapeAttr(role)}" data-tube-tool-library-tube-editor data-tube-tool-library-profile-role="${escapeAttr(role)}">
     ${isBranch ? `<div class="tube-tool-library-tube-summary"><strong>${title}</strong></div>` : `<button type="button" class="tube-tool-library-tube-summary" data-cam-action="tube-designer-tool-library-toggle-main-tube" aria-expanded="${expanded}" aria-controls="tube-tool-library-main-tube-content"><strong>${expanded ? "▾" : "▸"} ${title}</strong></button>`}
     <div class="tube-tool-library-tube-content" ${isBranch ? "" : 'id="tube-tool-library-main-tube-content"'} ${expanded ? "" : "hidden"}>
     <div class="tube-tool-library-subsection-actions"><button type="button" class="tube-profile-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="profile" aria-expanded="${!!state.showProfileDiagram}" aria-controls="tube-tool-scene-profile">显示${isBranch ? "刀具截面" : "目标管型"}示意图</button></div>
@@ -437,6 +448,19 @@ function emptyText(state) {
     system: ["没有可用的系统单件工艺", "请检查内置单件工艺资源是否完整。"],
     user: ["还没有我的单件工艺", "可从单件工艺库导入或保存自定义工艺。"],
   }[state.scope];
+}
+
+function renderToolApplicability(view, tool) {
+  const state = toolLibraryState(view);
+  const key = toolPreviewKey(view, tool);
+  if (state.applicability?.key !== key || state.applicability.result.applicable !== false) return "";
+  const recommendation = state.profileRecommendation?.key === key ? state.profileRecommendation.result : null;
+  return `<section id="tube-tool-library-applicability" class="tube-profile-library-parameter-section" data-tool-library-applicability>
+    <header><strong>当前输入检查</strong></header>
+    <p role="alert">${escapeText(state.applicability.result.reason || "当前输入无法生成工艺预览。")}</p>
+    ${recommendation?.available ? '<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-tool-library-use-recommended-profiles">使用建议管型</button>'
+      : recommendation ? `<p>${escapeText(recommendation.reason || "当前参数下没有可用的建议管型。")}</p>` : '<p>正在检查建议管型…</p>'}
+  </section>`;
 }
 
 export function renderToolLibraryLeftPane(_context, view) {
@@ -486,12 +510,14 @@ export function renderToolLibraryRightPane(_context, view) {
   // edited in the resource library.  The library owns the branch section;
   // placement remains in the punch wizard where it can be validated against
   // the selected operation.
-  const branchTool = tool?.target === "part" && tool?.requiresSection;
+  const branchTool = tool?.target === "part" && tool?.requiresSection && !allParameters.length;
   const parameters = branchTool ? [] : allParameters.filter((parameter) => toolParameterVisible(parameter, values));
   const programmatic = typeOf(tool) === "programmatic";
-  return `<div class="tube-designer-panel tube-tool-library-editor tube-profile-library-editor">
+  return `<div class="tube-designer-panel tube-tool-library-editor tube-profile-library-editor"
+    data-window-state-controls="[data-tube-tool-library-parameter],[data-tube-tool-library-operation-parameter],[data-tube-tool-library-profile-parameter],select[data-tube-tool-library-profile-role]">
     <div class="tube-tool-library-editor-body">
-      <section class="tube-profile-library-parameter-section tube-tool-library-parameter-section" data-tool-parameter-scope data-parameter-diagram-owner="tool-library-mould">
+      ${renderToolApplicability(view, tool)}
+      <section id="tube-tool-library-process-parameters" class="tube-profile-library-parameter-section tube-tool-library-parameter-section" data-tool-parameter-scope data-parameter-diagram-owner="tool-library-mould">
         <header><div><strong>工艺参数</strong><span>${escapeText(toolName(tool))} · 修改后自动更新场景</span></div><button type="button" class="tube-profile-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="tool" aria-expanded="${!!toolLibraryState(view).showToolDiagram}" aria-controls="tube-tool-scene-tool">显示工艺示意图</button></header>
         <div class="tube-profile-library-parameter-list">
           ${branchTool ? renderToolTubeSection(view, "branch") : parameters.length || operationParameters.length ? `<div class="tube-profile-library-field-grid">${programmatic ? renderParameterLevels(parameters, definition => renderToolParameterInput(view, tool, definition), {key:`tool:${tool.id}`,gridClass:"tube-profile-library-field-grid"}) : ""}${renderParameterLevels(operationParameters, definition => renderToolOperationParameterInput(view, tool, definition), {key:`tool-operation:${tool.id}`,gridClass:"tube-profile-library-field-grid"})}</div>` : `<p class="tube-profile-library-frozen-note">当前为定式工艺，参数由工艺定义固定。</p>`}
@@ -585,7 +611,7 @@ export function buildToolLibraryPreviewPayload(view, tool, options = {}) {
     toolTarget: tool.target === "part" ? "part" : undefined, face: "top", reference: "center",
     station: 0, layoutDatum: "base", offset: 0, rotation: 0, arrayCount: 1, arrayPitch: 50, rowCount: 1, rowPitch: 20,
     blindHole: !!operationValues.blindHole, cutDepth: Number(operationValues.cutDepth ?? 0), opposite: !!operationValues.opposite };
-  if (tool.target === "part") {
+  if (tool.requiresSection || tool.target === "part") {
     feature.section = { profile: branchProfileSnapshot };
     if (branchProfile) {
       feature.section.profileRef = profileRef(branchProfile);
@@ -661,9 +687,13 @@ function ensureToolLibraryPreview(context, view, tool) {
   const state = toolLibraryState(view);
   const key = toolPreviewKey(view, tool);
   if (state.preview?.key === key || state.previewRequest?.key === key || state.previewFailureKey === key) return;
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
   state.previewError = "";
+  state.applicability = null;
+  state.profileRecommendation = null;
   const request = { key, toolKey: tool.libraryKey, promise: null };
   request.promise = Promise.resolve().then(async () => {
+      if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
       const profile = ensureToolTubeProfile(view, "main");
       const branchProfile = tool?.requiresSection
         ? ensureToolTubeProfile(view, "branch") : null;
@@ -682,10 +712,41 @@ function ensureToolLibraryPreview(context, view, tool) {
         resolveProfile(profile, "main"),
         resolveProfile(branchProfile, "branch"),
       ]);
-      return context.sceneProxy.invoke("TubeDesigner.PreviewPunchWizard",
-        buildToolLibraryPreviewPayload(view, tool, { profileSnapshot: profileSnapshotValue, branchProfileSnapshot }), { timeoutMs: 120000 });
+      if (state.previewRequest !== request || toolPreviewKey(view, tool) !== key) return null;
+      if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
+      const payload = buildToolLibraryPreviewPayload(view, tool, { profileSnapshot: profileSnapshotValue, branchProfileSnapshot });
+      const check = await context.sceneProxy.invoke("TubeDesigner.CheckPunchToolApplicability", payload, { timeoutMs: 120000 });
+      if (check?.schema !== "icax.punch-tool-applicability" || check.toolId !== tool.id
+          || typeof check.applicable !== "boolean") throw new Error("工艺未返回有效的适用检查结果。");
+      if (state.previewRequest !== request || toolPreviewKey(view, tool) !== key) return null;
+      state.applicability = { key, result: check };
+      if (!check.applicable) {
+        state.preview = null;
+        if (check.preview) {
+          // The ordinary failed-preview path installs this request's blank
+          // and removes its invalid cutter, retaining the viewport and camera.
+          try { await applyToolLibraryPreview(context, view, tool, check.preview, key, request); }
+          catch (error) {
+            const expectedFailure = check.preview.resultError
+              || (check.preview.previewToolsComplete === false ? "工艺作用体未完整生成。" : "");
+            if (!expectedFailure || error?.message !== expectedFailure) throw error;
+          }
+        } else view.viewport?.setVisibleEntityIds?.(["punch-preview-blank"]);
+        if (state.previewRequest !== request || toolPreviewKey(view, tool) !== key) return null;
+        view.preserveCustomViewportEntities = true;
+        if (view.activeAreaId === "tools") view.tubeDesignerToolLibraryRenderProject?.();
+        if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
+        const recommendation = await context.sceneProxy.invoke("TubeDesigner.GetPunchToolProfileRecommendation", payload, { timeoutMs: 120000 });
+        if (recommendation?.schema !== "icax.punch-tool-profile-recommendation" || recommendation.toolId !== tool.id
+            || typeof recommendation.available !== "boolean") throw new Error("工艺未返回有效的建议管型结果。");
+        if (state.previewRequest !== request || toolPreviewKey(view, tool) !== key) return null;
+        state.profileRecommendation = { key, result: recommendation };
+        throw new Error(check.reason || "当前输入无法生成工艺预览。");
+      }
+      if (!check.preview) throw new Error("适用检查未返回有效工艺预览。");
+      return check.preview;
     })
-    .then((response) => applyToolLibraryPreview(context, view, tool, response, key, request))
+    .then((response) => response && applyToolLibraryPreview(context, view, tool, response, key, request))
     .then(() => {
       if (state.previewRequest === request) { state.previewRequest = null; state.previewFailureKey = ""; }
       if (view.activeAreaId === "tools") view.tubeDesignerToolLibraryRenderProject?.();
@@ -701,8 +762,16 @@ function ensureToolLibraryPreview(context, view, tool) {
 }
 
 export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
+  const session = restoreProductResources(context, view);
   const state = toolLibraryState(view);
   if (state.cataloguePromise) return state.cataloguePromise;
+  if (session?.toolsPromise) {
+    return session.toolsPromise.then(() => {
+      if (!isProductResourceSessionCurrent(context, view, session)) return;
+      restoreProductResources(context, view);
+      if (view.activeAreaId === "tools") ops?.renderProject?.(context, view);
+    });
+  }
   // A failed first request must not permanently brick the library.  Startup
   // can briefly contend with the scene/user-data SDO; opening 模具 again (or
   // pressing 重新读取) should get a fresh request instead of returning the
@@ -714,6 +783,8 @@ export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
   state.error = "";
   const requestToken = Number(state.catalogueRequestToken ?? 0) + 1;
   state.catalogueRequestToken = requestToken;
+  const toolsRevision = session?.resources.tools?.revision;
+  const userDataRevision = session?.resources.userData?.revision;
   const load = async (attempt = 0) => {
     try {
       // afterProjectRender can run during the first synchronous mount, before
@@ -763,6 +834,13 @@ export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
   };
   const request = load().then((response) => {
     const tools = Array.isArray(response?.tools) ? response.tools : [];
+    if (!isProductResourceSessionCurrent(context, view, session)) return;
+    if (session?.resources.tools?.revision !== toolsRevision) {
+      restoreProductResources(context, view);
+      return;
+    }
+    const userDataChanged = session?.resources.userData?.revision !== userDataRevision;
+    if (userDataChanged) restoreProductResources(context, view);
     if (state.catalogueRequestToken !== requestToken) return;
     view.tubeDesignerSystemPunchTools = tools
       .filter((tool) => scopeOf(tool) === "system")
@@ -773,32 +851,55 @@ export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
     const userTools = tools
       .filter((tool) => scopeOf(tool) === "user")
       .map((tool) => ({ ...tool, libraryScope: "user" }));
-    if (userTools.length) {
-      view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
-      const personal = view.tubeDesignerUserData.punchTools ??= [];
-      for (const tool of userTools) {
-        const index = personal.findIndex((item) => String(item?.id ?? "") === String(tool.id));
-        if (index >= 0) personal[index] = tool;
-        else personal.push(tool);
-      }
-    }
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
+    if (!userDataChanged) view.tubeDesignerUserData.punchTools = userTools;
     state.catalogueStatus = "ready";
     state.error = "";
+    rememberProductResources(view, "tools", session);
+    rememberProductResources(view, "userData", session);
     if (view.activeAreaId === "tools") ops?.renderProject?.(context, view);
   }).catch((error) => {
+    if (!isProductResourceSessionCurrent(context, view, session)) return;
     if (state.catalogueRequestToken !== requestToken) return;
     state.catalogueStatus = "error";
     state.error = error?.message ?? String(error);
     if (view.activeAreaId === "tools") ops?.renderProject?.(context, view);
   }).finally(() => {
     if (state.cataloguePromise === request) state.cataloguePromise = null;
+    if (session?.toolsPromise === request) session.toolsPromise = null;
   });
   state.cataloguePromise = request;
+  if (session) session.toolsPromise = request;
   return request;
 }
 
 export async function handleToolLibraryAction(context, view, action, target, ops) {
   const state = toolLibraryState(view);
+  if (action === "tube-designer-tool-library-use-recommended-profiles") {
+    const tool = visibleLibraryTools(view).find(item => item.libraryKey === state.selectedKey);
+    const recommendation = tool && state.profileRecommendation?.key === toolPreviewKey(view, tool)
+      ? state.profileRecommendation.result : null;
+    if (view.pending || state.previewRequest || !recommendation?.available) return { handled: true };
+    const choices = Object.entries(recommendation.profiles ?? {});
+    const resolved = choices.map(([role, choice]) => ({ role, choice, profile: toolTubeProfiles(view).find(item =>
+      profileScopeOf(item) === choice.profileRef?.scope && String(item.id) === choice.profileRef?.id) }));
+    if (!resolved.length || resolved.some(item => !item.profile)) {
+      state.previewError = "建议管型尚未进入管型库，请重新读取资源后重试。";
+      ops.renderProject(context, view);
+      return { handled: true };
+    }
+    for (const { role, choice, profile } of resolved) {
+      const branch = role === "branch";
+      const selectedKey = profileSelectionKey(profile);
+      state[branch ? "branchProfileKey" : "profileKey"] = selectedKey;
+      const drafts = branch ? state.branchProfileDrafts : state.profileDrafts;
+      drafts[selectedKey] = { ...(choice.parameters ?? {}) };
+    }
+    state.previewError = ""; state.previewFailureKey = ""; state.preview = null;
+    state.applicability = null; state.profileRecommendation = null;
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
   if (action === "tube-designer-tool-library-profile-change") {
     if (!view.pending) {
       const profileKey = String(target?.value ?? "");
@@ -966,6 +1067,7 @@ export async function handleToolLibraryRibbonCommand(context, view, commandId, o
     return true;
   }
   if (commandId !== "tools.refresh") return false;
+  invalidateProductResources(context, view, "tools");
   const state = toolLibraryState(view);
   state.catalogueStatus = "idle";
   state.error = "";
@@ -980,11 +1082,13 @@ function resolveToolBridge(context) {
 
 function upsertUserTool(view, tool) {
   if (!tool?.id) throw new Error("保存单件工艺后没有返回记录标识。");
+  restoreProductUserData(view);
   view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
   const tools = view.tubeDesignerUserData.punchTools ??= [];
   const index = tools.findIndex((item) => String(item?.id ?? "") === String(tool.id));
   if (index >= 0) tools[index] = { ...tool, libraryScope: "user" };
   else tools.push({ ...tool, libraryScope: "user" });
+  rememberProductResources(view, "userData");
   const state = toolLibraryState(view);
   state.scope = "user";
   state.type = typeOf(tool);

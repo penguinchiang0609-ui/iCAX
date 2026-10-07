@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  buildCatalogEntries, buildTemplateGroupTree, catalogText, getCatalogEntry, getCatalogEntryGroupKeys, getCatalogEntryId,
+  buildCatalogEntries, buildTemplateGroupTree, catalogText, getCatalogEntry, getCatalogEntryGroupKeys, getCatalogGroupKeys,
   getCatalogParameters, getTemplateVisualAsset, renderGuardrailSchematic,
 } from "../../apps/tube-designer/webpage/productCatalog.mjs";
 import { renderDesignerAddDialog, renderDesignerAddParameterContent, renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
@@ -44,20 +44,24 @@ const windowTemplate = { id: "window", name: "防盗窗/平面防盗窗", availa
 const stair = { id: "stair", name: "楼梯/钢楼梯/直跑钢楼梯", available: true, extensions: { catalog: { groupOrder: 30 } }, parameters: [] };
 const templates = [stair, guardrail, windowTemplate];
 
-await test("public ribbon exposes product, nesting and resource pages", () => {
+await test("public ribbon exposes product, nesting, machining, resource and about pages", () => {
   const ribbon = getRibbonDefinition();
-  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "nesting", "resources"]);
+  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "nesting", "machining", "resources", "about"]);
   assert.ok(ribbon.tabs.find((tab) => tab.id === "nesting").groups
     .flatMap((group) => group.commands)
     .some((command) => command.id === "nesting.start"));
-  assert.ok(!ribbon.tabs[0].groups.flatMap((group) => group.commands).some((item) => item.id === "designer.disassemble"));
+  const partCommands = ribbon.tabs[0].groups.find((group) => group.title === "零件").commands;
+  assert.deepEqual(partCommands.map((command) => [command.id, command.title]), [
+    ["designer.inspect-active-part", "复尺"], ["designer.disassemble", "拆单"],
+    ["designer.export-active-product-parts", "导出清单"],
+  ]);
 });
 
 await test("catalog groups security windows, guardrails and stairs independently", () => {
   const tree = buildTemplateGroupTree(templates);
   assert.deepEqual(tree.map((group) => group.title), ["防盗窗", "护栏", "楼梯"]);
   assert.equal(tree[1].children[0].title, "竖杆护栏");
-  assert.equal(tree[1].children[0].templates.length, 3);
+  assert.equal(tree[1].children[0].templates.length, 1);
   assert.equal(tree[0].templates[0].templateId, "window");
 });
 
@@ -72,48 +76,50 @@ await test("template-owned catalog artwork resolves from host data or package re
   assert.equal(packageAsset, "data:image/svg+xml;base64,PHN2Zy8+");
 });
 
-await test("the add catalogue uses expandable groups and opens the selected card path", async () => {
-  const ids = getCatalogEntryGroupKeys(templates, windowTemplate.id);
-  assert.deepEqual(ids, ["template-path:防盗窗"]);
+await test("the add catalogue defaults all groups open and keeps manual collapse", async () => {
+  assert.deepEqual(getCatalogEntryGroupKeys(templates, windowTemplate.id), ["template-path:防盗窗"]);
+  const ids = getCatalogGroupKeys(templates);
+  assert.deepEqual(ids, ["template-path:防盗窗", "template-path:护栏", "template-path:护栏/竖杆护栏", "template-path:楼梯", "template-path:楼梯/钢楼梯"]);
   const html = renderDesignerAddDialog({ templates }, {
     tubeDesignerAddTemplateId: windowTemplate.id,
     tubeDesignerAddInstanceName: "新防盗窗",
   });
   assert.match(html, /data-tube-designer-template-group-id="template-path:防盗窗" aria-expanded="true"/);
+  for (const id of ids) assert.ok(html.includes(`data-tube-designer-template-group-id="${id}" aria-expanded="true"`));
   assert.match(html, /data-tube-designer-template-id="window"[^>]*aria-pressed="true"/);
   const { view, act } = harness();
   await act("open-add");
   assert.deepEqual(view.tubeDesignerExpandedTemplateGroupIds, ids);
   const draftBeforeToggle = view.tubeDesignerAddDraft;
   await act("toggle-template-group", { tubeDesignerTemplateGroupId: "template-path:护栏" });
-  assert.ok(view.tubeDesignerExpandedTemplateGroupIds.includes("template-path:护栏"));
+  assert.ok(!view.tubeDesignerExpandedTemplateGroupIds.includes("template-path:护栏"));
   assert.equal(view.tubeDesignerAddTemplateId, windowTemplate.id);
-  assert.equal(view.tubeDesignerAddDraft, draftBeforeToggle, "expanding a group only changes the catalogue browser");
+  assert.equal(view.tubeDesignerAddDraft, draftBeforeToggle, "collapsing a group only changes the catalogue browser");
+  await act("toggle-template-group", { tubeDesignerTemplateGroupId: "template-path:防盗窗" });
+  assert.match(renderDesignerAddDialog({ templates }, view), /data-tube-designer-template-group-id="template-path:防盗窗" aria-expanded="false"/);
 });
 
-await test("presets become distinct cards without changing native template identities", () => {
+await test("a descriptor owns exactly one card and historical presets are ignored", () => {
   const cards = buildCatalogEntries([guardrail]);
-  assert.equal(cards.length, 3);
-  assert.equal(new Set(cards.map((card) => card.catalogEntryId)).size, 3);
+  assert.equal(cards.length, 1);
   assert.ok(cards.every((card) => card.id === "modular-guardrail" && card.templateId === "modular-guardrail"));
-  assert.equal(cards[1].displayName, "三横档左转 L 型");
-  assert.equal(cards[1].catalogParameters.layout, "left_l");
-  assert.equal(getCatalogEntry([guardrail], guardrail.id).presetId, "r2-straight");
-  assert.equal(getCatalogEntry([guardrail], guardrail.id, "missing"), null);
-  assert.notEqual(getCatalogEntryId("a:b", "c"), getCatalogEntryId("a", "b:c"));
+  assert.equal(cards[0].catalogEntryId, guardrail.id);
+  assert.equal(cards[0].displayName, "组合式竖杆护栏");
+  assert.equal(cards[0].catalogParameters.layout, "straight");
+  assert.equal(getCatalogEntry([guardrail], guardrail.id).presetId, undefined);
+  assert.equal(getCatalogEntry([guardrail], "missing"), null);
 });
 
-await test("one generator can expose separate truthful categories without duplicating template identities", () => {
+await test("historical preset categories do not add phantom product families", () => {
   const descriptor = structuredClone(guardrail);
   descriptor.extensions.catalog.presets.push({ id: "wall", displayName: "围墙直式", categoryPath: ["护栏", "围墙栏杆"], parameters: {} });
   const tree = buildTemplateGroupTree([descriptor]);
-  assert.deepEqual(tree[0].children.map((group) => group.title), ["竖杆护栏", "围墙栏杆"]);
-  assert.equal(tree[0].children[1].templates[0].templateId, guardrail.id);
+  assert.deepEqual(tree[0].children.map((group) => group.title), ["竖杆护栏"]);
 });
 
-await test("preset overlays cannot replace identity or mutate template defaults", () => {
-  const values = getCatalogParameters(guardrail, { parameters: { railCount: 2, templateId: "wrong", madeUp: 123 } });
-  assert.equal(values.railCount, 2);
+await test("catalog defaults are independent copies of declared parameters", () => {
+  const values = getCatalogParameters(guardrail);
+  assert.equal(values.railCount, 3);
   assert.equal(values.guardHeight, 1200);
   assert.equal(values.templateId, undefined);
   assert.equal(values.madeUp, undefined);
@@ -126,18 +132,18 @@ await test("unavailable categories and invalid or duplicate presets do not add f
   altered.extensions.catalog.presets.push(presets[0], { id: "missing-parameters" }, { id: "hidden", available: false, parameters: {} });
   const result = buildTemplateGroupTree([altered, { id: "fake", name: "幕墙/未实现", available: false }]);
   assert.equal(result.length, 1);
-  assert.equal(result[0].children[0].templates.length, 3);
+  assert.equal(result[0].children[0].templates.length, 1);
 });
 
 await test("active card stays unique across rerenders and input edits", () => {
   const view = {
-    tubeDesignerAddTemplateId: guardrail.id, tubeDesignerAddCatalogPresetId: "r3-left",
+    tubeDesignerAddTemplateId: guardrail.id,
     tubeDesignerAddInstanceName: "项目 A 左侧护栏", tubeDesignerAddDraft: { ...fields, layout: "right_l", sideLength1: 4200 },
   };
   const html = renderDesignerAddDialog({ templates }, view);
   assert.equal((html.match(/tube-designer-template-card selected/g) ?? []).length, 1);
-  assert.match(html, /data-tube-designer-catalog-preset-id="r3-left"[^>]*aria-pressed="true"/);
-  assert.match(html, /5 款可用/);
+  assert.doesNotMatch(html, /data-tube-designer-catalog-preset-id=/);
+  assert.match(html, /3 款可用/);
   assert.doesNotMatch(html, /\[object Object\]/);
   const summary = renderDesignerAddParameterContent({ templates }, view);
   assert.doesNotMatch(summary, /4200|4,200/);
@@ -184,27 +190,28 @@ function harness() {
   return { view, context, cards, act, inputs };
 }
 
-await test("selecting a preset loads its parameters and highlights only that card", async () => {
+await test("selecting a descriptor loads its defaults and highlights one card", async () => {
   const { view, cards, act } = harness();
   await act("open-add");
-  await act("select-template", { tubeDesignerTemplateId: guardrail.id, tubeDesignerCatalogPresetId: "r3-right-double" });
+  await act("select-template", { tubeDesignerTemplateId: guardrail.id });
   assert.equal(view.tubeDesignerAddTemplateId, guardrail.id);
-  assert.equal(view.tubeDesignerAddDraft.layout, "right_l");
-  assert.equal(view.tubeDesignerAddDraft.cornerPostMode, "double");
-  assert.match(view.tubeDesignerAddInstanceName, /^三横档右转双立柱 /);
+  assert.equal(view.tubeDesignerAddDraft.layout, "straight");
+  assert.equal(view.tubeDesignerAddDraft.cornerPostMode, "shared");
+  assert.match(view.tubeDesignerAddInstanceName, /^组合式竖杆护栏 /);
   assert.equal(cards.filter((card) => card.selected).length, 1);
   assert.equal(cards.find((card) => card.selected).attributes["aria-pressed"], "true");
   view.tubeDesignerAddDraft.sideLength1 = 4175;
-  await act("select-template", { tubeDesignerTemplateId: guardrail.id, tubeDesignerCatalogPresetId: "r3-right-double" });
+  await act("select-template", { tubeDesignerTemplateId: guardrail.id });
   assert.equal(view.tubeDesignerAddDraft.sideLength1, 4175, "same card must not reset user dimensions");
   await act("select-template", { tubeDesignerTemplateId: guardrail.id, tubeDesignerCatalogPresetId: "nonexistent" });
   assert.equal(view.tubeDesignerAddDraft.sideLength1, 4175);
 });
 
-await test("create sends the real template ID and edited preset parameters", async () => {
+await test("create sends the descriptor ID and edited parameters", async () => {
   const { view, context, act, inputs } = harness();
   await act("open-add");
-  await act("select-template", { tubeDesignerTemplateId: guardrail.id, tubeDesignerCatalogPresetId: "r3-left" });
+  await act("select-template", { tubeDesignerTemplateId: guardrail.id });
+  view.tubeDesignerAddDraft.layout = "left_l";
   view.tubeDesignerAddDraft.sideLength1 = 4250;
   const profileSnapshot = {
     schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "profile-package",
@@ -318,9 +325,14 @@ await test("security windows use one template and face type is a parameter", () 
     });
     assert.doesNotMatch(html, /封板|mainInfillMode|centerPlate/);
     assert.ok(html.includes("确定结构"));
-    assert.ok(html.includes("结构参数"));
+    const creationGroups = ["产品外形", "外框", "逃生窗框", "窗扇", "形态选项"];
+    const positions = creationGroups.map((title) => html.indexOf(`<summary><span>${title}`));
+    assert.ok(positions.every((position) => position >= 0));
+    assert.ok(positions.every((position, index) => index === 0 || position > positions[index - 1]));
     for (const title of ["尺寸参数", "管材与材料", "加工与装配工艺", "加工清单"]) assert.equal(html.includes(title), false);
-    assert.match(html, /<details[^>]* open>\s*<summary><span>结构参数/);
+    for (const title of creationGroups) {
+      assert.match(html, new RegExp(`<details[^>]* open>\\s*<summary><span>${title}`));
+    }
   }
 });
 
@@ -333,20 +345,22 @@ await test("all registered products render the same four semantic parameter clas
     ["modular-guardrail-glass-straight", "modular_guardrail_glass-straight"],
     ["single-face-security-window", "single_face_security_window"],
     ["minimal-protective-grille", "minimal_protective_grille"],
+    ["assembly-frame-lt", "assembly_frame_lt"],
     ["straight-steel-staircase", "straight_steel_staircase"],
-    ["decorative-door", "decorative_door"],
-    ["aluminium-window", "aluminium_window"],
-    ["louver-window", "louver_window"],
   ]);
   for (const registration of manifest.capabilities.tubeDesigner.templates) {
     const folder = folders.get(registration.templateId);
     assert.ok(folder, registration.templateId);
     const raw = JSON.parse(readFileSync(new URL(
       `../../apps/tube-designer/templates/product/${folder}/template.json`, import.meta.url)));
+    if (raw.extensions?.catalog?.listed === false) {
+      assert.equal(buildCatalogEntries([presentationDescriptor(raw)]).length, 0,
+        "Registered verification templates keep their explicit hidden catalog policy");
+      continue;
+    }
     const sections = raw.extensions?.parameterLayout?.sections ?? [];
-    assert.deepEqual(sections.map((section) => catalogText(section.displayName)), [
-      "产品规格", "管材与材料", "加工与装配工艺",
-    ], registration.templateId);
+    assert.deepEqual(sections.map((section) => catalogText(section.displayName)),
+      ["产品规格", "用料", "装配"], registration.templateId);
     const childrenByParent = new Map();
     for (const group of raw.groups) {
       if (!group.parentKey) continue;
@@ -381,10 +395,16 @@ await test("all registered products render the same four semantic parameter clas
     }
     {
       const html = rightHtml;
-      const positions = ["structure", "dimensions", "materials", "process"]
+      // All products fix structure at creation and edit dimensions in scene.
+      // Their sidebar owns only material and assembly sections.
+      for (const key of ["structure", "specifications", "dimensions"]) {
+        assert.equal(html.includes(`data-tube-designer-parameter-group="section:${key}"`), false,
+          `${registration.templateId}: right must not duplicate creation or annotation fields`);
+      }
+      const positions = ["materials", "process"]
         .map((key) => html.indexOf(`data-tube-designer-parameter-group="section:${key}"`));
       assert.ok(positions.every((position) => position >= 0), `${registration.templateId}: right missing section`);
-      assert.ok(positions[0] < positions[1] && positions[1] < positions[2] && positions[2] < positions[3],
+      assert.ok(positions.every((position, index) => index === 0 || position > positions[index - 1]),
         `${registration.templateId}: right section order`);
     }
     const libraryHtml = renderProductTemplateLibraryRightPane({}, {
@@ -423,20 +443,20 @@ await test("material and process presets render inside their owning sections", (
   for (const html of [rightHtml]) {
     const materialSection = html.indexOf('data-tube-designer-parameter-group="section:materials"');
     const materialPresetBar = html.indexOf('data-tube-designer-preset-scope="materials"');
-    const firstMaterialGroup = html.indexOf('data-tube-designer-parameter-group="group:material"');
+    const firstMaterialGroup = html.indexOf('data-tube-designer-parameter-group="section-group:main:group:outer_profile"');
     const processSection = html.indexOf('data-tube-designer-parameter-group="section:process"');
     const processPresetBar = html.indexOf('data-tube-designer-preset-scope="process"');
     assert.ok(materialSection >= 0 && materialPresetBar > materialSection && firstMaterialGroup > materialPresetBar);
     assert.ok(processSection > materialSection && processPresetBar > processSection);
     assert.equal((html.match(/tube-designer-user-preset-bar/g) ?? []).length, 2);
     assert.match(html, /常用材料方案/);
-    assert.match(html, /常用工艺方案/);
+    assert.match(html, /常用连接方案/);
   }
 });
 
 await test("applying a process preset cannot overwrite material or product parameters", async () => {
   const template = {
-    id: "scoped-presets", name: "分区方案测试", available: true,
+    id: "scoped-presets", version: "1.0.0", name: "分区方案测试", available: true,
     groups: [{ key: "size" }, { key: "profile" }, { key: "assembly" }],
     parameters: [
       { key: "width", groupKey: "size", defaultValue: 1000 },
@@ -455,7 +475,7 @@ await test("applying a process preset cannot overwrite material or product param
     tubeDesignerAddTemplateId: template.id,
     tubeDesignerAddDraft: { width: 1200, profileSize: 42, joinType: "insert" },
     tubeDesignerUserData: { customers: [], parameterPresets: [{
-      id: "process-1", name: "焊接工艺", templateId: template.id, scopeKey: "process",
+      id: "process-1", name: "焊接工艺", templateId: template.id, templateVersion: template.version, scopeKey: "process",
       values: { width: 9999, profileSize: 99, joinType: "weld" },
     }] },
   };
@@ -526,14 +546,17 @@ await test("opening processes share choices and hide all inactive fabrication fi
     assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
   }
   assert.doesNotMatch(render({ doorFrameJoinType: "miter_45", doorLeafFrameJoinType: "miter_45" }), /data-tube-designer-parameter="vGroove/);
-  const folded = render({ doorFrameJoinType: "v_groove_90:tool_library" });
-  assert.match(folded, /data-tube-designer-parameter="doorFrameGrooveTool"/);
+  const folded = render({ accessDoorEnabled: true, doorFrameJoinType: "v_groove_90:tool_library" });
+  assert.match(folded, /data-product-control-key="doorFrameConnection"/);
+  assert.match(folded, /data-tube-designer-parameter="doorFrameVGrooveMaleFemale"/);
+  assert.doesNotMatch(folded, /data-tube-designer-tool-field="doorFrameGrooveTool"/);
   assert.doesNotMatch(folded, /data-tube-designer-parameter="doorFrameButtWrapMode"/);
 });
 
 await test("JSON order sorts only fields within groups in add and edit, with stable ties and visibility", () => {
   const descriptor = presentationDescriptor({
     id: "ordering", displayName: "排序测试",
+    extensions: { parameterLayout: { sections: [{key: "materials", groups: ["a", "b"]}] } },
     groups: [{ key: "a", displayName: "A", order: 10 }, { key: "b", displayName: "B", order: 20 }],
     parameters: [
       { key: "missing1", group: "a" }, { key: "late", group: "a", order: 30 },

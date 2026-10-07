@@ -61,6 +61,34 @@ def _key(value, name):
     return value
 
 
+def validate_assembly_resource_ref(reference):
+    """Validate a scoped resource identity and its optional current package pins."""
+    if not isinstance(reference, dict) or reference.get('scope') not in ('system', 'user', 'template'):
+        raise ValueError('assembly resource requires a complete scoped reference')
+    required = {'scope', 'id'}
+    if reference['scope'] == 'template':
+        required.add('templateId')
+    if (not required <= set(reference) or set(reference) - required - {'version', 'digest'}
+            or any(not isinstance(reference[key], str) or not reference[key] for key in required)
+            or any(not isinstance(reference[key], str) or not reference[key]
+                   for key in ('version', 'digest') if key in reference)):
+        raise ValueError('assembly resource requires a complete scoped reference')
+    return reference
+
+
+def _validate_assembly_resources(process_input):
+    resources = process_input.get('resources', {})
+    if not isinstance(resources, dict):
+        raise ValueError('assembly resource slots must be an object')
+    for resource in resources.values():
+        if not isinstance(resource, dict) or 'ref' not in resource:
+            raise ValueError('assembly process resource requires a ref')
+        if process_input['schemaVersion'] == 3:
+            if set(resource) != {'ref'}:
+                raise ValueError('assembly resource requires a complete scoped reference')
+            validate_assembly_resource_ref(resource['ref'])
+
+
 def _pure(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -324,27 +352,7 @@ def validate_manufacturing_model(document: dict[str, Any]) -> dict[str, Any]:
                     _placement(binding["placement"], "assembly resource placement")
             else:
                 raise ValueError("unsupported assembly part scope")
-        if not isinstance(inp.get('resources', {}), dict):
-            raise ValueError('assembly resource slots must be an object')
-        for resource in inp.get("resources", {}).values():
-            if not isinstance(resource, dict) or "ref" not in resource:
-                raise ValueError("assembly process resource requires a ref")
-            if inp['schemaVersion'] == 3:
-                reference = resource['ref']
-                if (set(resource) != {'ref'} or not isinstance(reference, dict)
-                        or reference.get('scope') not in ('system', 'user', 'template')
-                        or not isinstance(reference.get('id'), str) or not reference['id']
-                        or set(reference) != ({'scope', 'id', 'templateId'} if reference['scope'] == 'template' else {'scope', 'id'})
-                        or reference['scope'] == 'template' and (not isinstance(reference['templateId'], str) or not reference['templateId'])):
-                    raise ValueError('assembly resource requires a complete scoped reference')
-            if inp['schemaVersion'] == 3:
-                reference = resource['ref']
-                if (set(resource) != {'ref'} or not isinstance(reference, dict)
-                        or reference.get('scope') not in ('system', 'user', 'template')
-                        or not isinstance(reference.get('id'), str) or not reference['id']
-                        or set(reference) != ({'scope', 'id', 'templateId'} if reference['scope'] == 'template' else {'scope', 'id'})
-                        or reference['scope'] == 'template' and (not isinstance(reference['templateId'], str) or not reference['templateId'])):
-                    raise ValueError('assembly resource requires a complete scoped reference')
+        _validate_assembly_resources(inp)
     visited, active = set(), set()
     def visit(key):
         if key in active:
@@ -629,6 +637,7 @@ def _validate_declarations(document):
             binding = inp['parts'].get(role, {})
             if binding.get('scope') != 'manufacturing' or binding.get('itemKey') != target:
                 raise ValueError('assembly process cannot target an observer or a different item')
+        _validate_assembly_resources(inp)
     visited, active = set(), set()
     def visit(key):
         if key in active:

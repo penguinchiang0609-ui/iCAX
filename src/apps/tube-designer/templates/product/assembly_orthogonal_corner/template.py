@@ -12,7 +12,7 @@ from icax_template_sdk import NeutralModel, to_resource_model, display_context, 
 from icax_template_sdk import manufacturing_context, manufacturing_declaration, to_manufacturing_model
 
 TEMPLATE_ID = "assembly-orthogonal-corner"
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.0.1"
 SHARED_ROOT = Path(__file__).resolve().parents[2] / "_shared"
 
 

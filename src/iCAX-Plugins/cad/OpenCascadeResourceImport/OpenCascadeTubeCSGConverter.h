@@ -27,9 +27,21 @@ namespace iCAX::OpenCascade
         std::string AdditionBRepResourceID;
     };
 
+    struct STubeCSGReplayValidationResult final
+    {
+        /* bEquivalent is the editability gate: evaluation, validity, resources and geometry must all pass. */
+        bool bEvaluated = false;
+        bool bEquivalent = false;
+        double RelativeVolumeError = 1.0;
+        double MissingVolume = 0.0;
+        double UnexpectedVolume = 0.0;
+        std::vector<std::string> Diagnostics;
+    };
+
     struct STubeCSGConversionResult final
     {
         iCAX::GeometryData::Tube::CTubeNeutralGeometry Geometry;
+        STubeCSGReplayValidationResult ReplayValidation;
         TopoDS_Shape BaseShape;
         TopoDS_Shape RemovalShape;
         TopoDS_Shape AdditionShape;
@@ -71,10 +83,34 @@ namespace iCAX::OpenCascade
         IN const STubeCSGConversionOptions& Options_ = {});
 
     /*
+    * @brief Recover features using a caller-supplied extrusion blank in editor coordinates.
+    * @details Shape_ and Blank_ must share coordinates; Blank_ must be an exact constant
+    *          section extrusion along +X over [0, Length_]. A single central blank section
+    *          is replayed and compared with Blank_ in both directions before it is trusted.
+    *          Invalid/non-extruded blanks fail closed, without falling back to unknown-axis
+    *          inference. Final source-shape replay validation remains mandatory.
+    */
+    _OPEN_CASCADE_TUBE_CSG_EXP STubeCSGConversionResult ConvertBRepToTubeCSGFromExtrudedBlank(
+        IN const TopoDS_Shape& Shape_,
+        IN const TopoDS_Shape& Blank_,
+        IN double Length_,
+        IN const STubeCSGConversionOptions& Options_ = {});
+
+    /*
     * @brief 对 Tube 中性 CSG 重新求值，生成最终 BRep 和各参数化构造体。
     * @details 求值失败不会返回旧 BRep 兜底；调用方应保持原模型不变并向用户报告诊断。
     */
     _OPEN_CASCADE_TUBE_CSG_EXP STubeCSGEvaluationResult EvaluateTubeCSG(
+        IN const iCAX::GeometryData::Tube::CTubeNeutralGeometry& Geometry_,
+        IN const STubeCSGEvaluationOptions& Options_ = {});
+
+    /*
+    * @brief Independently replay every root dependency and compare it with the source BRep.
+    * @details Missing external BRep resources and invalid solids fail closed. Both directed
+    *          differences are measured, so equal volumes alone cannot pass validation.
+    */
+    _OPEN_CASCADE_TUBE_CSG_EXP STubeCSGReplayValidationResult ValidateTubeCSGReplay(
+        IN const TopoDS_Shape& SourceShape_,
         IN const iCAX::GeometryData::Tube::CTubeNeutralGeometry& Geometry_,
         IN const STubeCSGEvaluationOptions& Options_ = {});
 }

@@ -8,7 +8,7 @@ if (!exportDirectory) throw new Error("export directory is required");
 const browser = await chromium.connectOverCDP(endpoint);
 const context = browser.contexts()[0];
 const page = context.pages()[0];
-await page.waitForFunction(() => window.__icaxLaser3DCAM?.getTubeDesignerState, null, { timeout: 60000 });
+await page.waitForFunction(() => window.__icaxWorkbench?.getTubeDesignerState, null, { timeout: 60000 });
 
 await page.evaluate(() => {
   const stage = document.createElement("div");
@@ -65,7 +65,7 @@ async function setParameter(key, value) {
 }
 async function waitForOperationToFinish() {
   await page.waitForFunction(() => !document.querySelector("[data-tube-designer-operation-wait]"), null, { timeout: 120000 });
-  await page.waitForFunction(() => window.__icaxLaser3DCAM.getTubeDesignerState()?.pending !== true, null, { timeout: 120000 });
+  await page.waitForFunction(() => window.__icaxWorkbench.getTubeDesignerState()?.pending !== true, null, { timeout: 120000 });
 }
 async function addTemplate(templateId, configure = async () => {}) {
   await click("[data-cam-action='tube-designer-open-add']");
@@ -110,10 +110,10 @@ await stage("左侧实例列表 · 点击即可切换场景", 900);
 const instanceButtons = page.locator("[data-cam-action='tube-designer-select-instance']");
 await pointAt("[data-cam-action='tube-designer-select-instance']");
 await instanceButtons.nth(0).click();
-await page.waitForFunction(() => window.__icaxLaser3DCAM.getTubeDesignerState()?.product?.templateId === "single-face-security-window");
+await page.waitForFunction(() => window.__icaxWorkbench.getTubeDesignerState()?.product?.templateId === "single-face-security-window");
 await pause(1000);
 await instanceButtons.nth(1).click();
-await page.waitForFunction(() => window.__icaxLaser3DCAM.getTubeDesignerState()?.product?.templateId === "two-face-security-window");
+await page.waitForFunction(() => window.__icaxWorkbench.getTubeDesignerState()?.product?.templateId === "two-face-security-window");
 await pause(1000);
 
 await stage("导出加工 · 选择需要拆单的实例", 800);
@@ -168,7 +168,7 @@ await inspectCategory(0, "打开外框零件复尺");
 await inspectCategory(1, "打开内部杆件复尺");
 
 await stage("选择目录并导出 STEP＋Excel", 700);
-await page.evaluate((directory) => window.__icaxLaser3DCAM.executeAreaAction(
+await page.evaluate((directory) => window.__icaxWorkbench.executeAreaAction(
   "tube-designer-export-selected",
   { dataset: { tubeDesignerExportDirectory: directory } },
 ), exportDirectory);

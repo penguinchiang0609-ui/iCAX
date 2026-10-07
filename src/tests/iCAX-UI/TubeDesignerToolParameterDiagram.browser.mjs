@@ -15,7 +15,8 @@ const tools = readdirSync(mouldRoot, { withFileTypes: true }).filter((entry) => 
   tool.defaultParameters = Object.fromEntries(tool.parameters.map((definition) => [definition.key, definition.defaultValue]));
   return [tool];
 });
-assert.equal(tools.length, 19);
+assert.ok(tools.length >= 21);
+assert.ok(["paired-side-slots", "paired-end-tabs"].every((id) => tools.some((tool) => tool.id === id)));
 assert.ok(tools.every((tool) => tool.parameterDiagram?.schemaVersion === 2));
 for (const tool of tools) {
   const parameters = new Set(tool.parameters.map((definition) => definition.key));
@@ -166,7 +167,7 @@ try {
     }
   }
   assert.deepEqual(errors, []);
-  console.log("Tool parameter diagrams: 19 built-ins, scoped focus/click, nested release-shape switching and conditional annotations passed in Edge.");
+  console.log(`Tool parameter diagrams: ${tools.length} built-ins, scoped focus/click, nested release-shape switching and conditional annotations passed in Edge.`);
 } finally {
   await browser.close();
 }

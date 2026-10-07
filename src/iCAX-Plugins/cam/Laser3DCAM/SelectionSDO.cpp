@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "MachineInstanceComponents.h"
@@ -15,9 +16,9 @@ namespace
         CSelectionSDO()
             : CSDO("Selection")
         {
-            ExposeMethod("Get", &iCAX::CAM::SDO::HandleGetSelection);
-            ExposeMethod("PickTopology", &iCAX::CAM::SDO::HandlePickTopology);
-            ExposeMethod("PickMachineObject", &iCAX::CAM::SDO::HandlePickMachineObject);
+            ExposeMethod("Get", tube::license::ProtectProductMethod<11034, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleGetSelection));
+            ExposeMethod("PickTopology", tube::license::ProtectProductMethod<11035, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandlePickTopology));
+            ExposeMethod("PickMachineObject", tube::license::ProtectProductMethod<11036, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandlePickMachineObject));
         }
     };
 

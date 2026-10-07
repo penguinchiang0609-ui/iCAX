@@ -1,2 +1,35 @@
+#include <winver.h>
+
 // The first icon resource is the executable/Explorer application icon.
-101 ICON "../../apps/branding/icax.ico"
+101 ICON "../../apps/tube-designer/webpage/assets/tube-designer.ico"
+
+1 VERSIONINFO
+ FILEVERSION 0,1,0,0
+ PRODUCTVERSION 0,1,0,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "TubeDesigner\0"
+            VALUE "FileVersion", "0.1.0.0\0"
+            VALUE "InternalName", "TubeDesigner\0"
+            VALUE "OriginalFilename", "TubeDesigner.exe\0"
+            VALUE "ProductName", "TubeDesigner\0"
+            VALUE "ProductVersion", "0.1.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

@@ -3,9 +3,6 @@
   "schemaVersion": 3,
   "profileForm": "parametric",
   "id": "polygon",
-  "pythonModulePaths": [
-    "../../_shared/profiles"
-  ],
   "version": "1.0.0",
   "displayName": {
     "zh-CN": "多边形管",

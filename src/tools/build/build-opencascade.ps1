@@ -1,8 +1,12 @@
+#requires -Version 7.0
 param(
     [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
     [string]$Configuration = "Debug",
 
-    [switch]$Clean
+    [switch]$Clean,
+
+    [ValidateRange(1, 64)]
+    [int]$Parallel = 4
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,18 +48,38 @@ $configureArgs = @(
     "-DUSE_DRACO=OFF",
     "-DUSE_GLES2=OFF",
     "-DUSE_D3D=OFF",
+    # The desktop uses the Debug kernel for interactive work. Keep its CRT,
+    # assertions and symbols, but optimize geometric algorithms instead of
+    # spending tens of seconds in unoptimized boolean and surface routines.
+    "-DCMAKE_CXX_FLAGS_DEBUG=/MDd /Zi /O2 /Ob2",
+    "-DCMAKE_C_FLAGS_DEBUG=/MDd /Zi /O2 /Ob2",
     "-DINSTALL_DIR=$installDir",
     "-DINSTALL_DIR_LAYOUT=Windows"
 )
 
-& cmake @configureArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "OCCT CMake configure failed with exit code $LASTEXITCODE"
+function Invoke-OCCTCMake([string[]]$Arguments) {
+    $start = [Diagnostics.ProcessStartInfo]::new((Get-Command cmake -CommandType Application).Source)
+    $start.UseShellExecute = $false
+    foreach ($argument in $Arguments) { [void]$start.ArgumentList.Add($argument) }
+    $start.Environment.Clear()
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+        if ($entry.Key -ine 'Path' -and $seen.Add([string]$entry.Key)) {
+            $start.Environment[[string]$entry.Key] = [string]$entry.Value
+        }
+    }
+    $start.Environment['Path'] = [Environment]::GetEnvironmentVariable('Path')
+    # Do not reuse MSBuild workers started by another host with a bad environment.
+    $start.Environment['MSBUILDDISABLENODEREUSE'] = '1'
+    $process = [Diagnostics.Process]::Start($start)
+    try {
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "OCCT CMake failed with exit code $($process.ExitCode)" }
+    } finally { $process.Dispose() }
 }
 
-& cmake --build $buildDir --config $Configuration --target INSTALL --parallel
-if ($LASTEXITCODE -ne 0) {
-    throw "OCCT build failed with exit code $LASTEXITCODE"
-}
+Invoke-OCCTCMake $configureArgs
+Invoke-OCCTCMake @('--build', $buildDir, '--config', $Configuration, '--target', 'INSTALL',
+    '--parallel', [string]$Parallel, '--', '/nr:false')
 
 Write-Host "OCCT $Configuration installed to $installDir"

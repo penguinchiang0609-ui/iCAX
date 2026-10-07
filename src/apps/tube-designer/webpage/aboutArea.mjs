@@ -1,6 +1,7 @@
 import { renderLicenseStatus } from "./licensing.mjs";
 import { tubeDesignerSvg } from "./branding.mjs";
 const ABOUT_VIEW_REVISION = "tube-designer-about:empty";
+const WECHAT_CONTACT_IMAGE = new URL("./assets/wechat-contact.jpg", import.meta.url).href;
 
 export function renderAboutLeftPane() {
   return `
@@ -8,15 +9,9 @@ export function renderAboutLeftPane() {
       <div class="tube-designer-about-mark">${tubeDesignerSvg()}</div>
       <div class="tube-designer-heading">
         <strong>TubeDesigner</strong>
-        <span>管材产品设计与下料准备</span>
+        <span>设计与拆单</span>
       </div>
-      <p>从产品参数化设计、拆单到锯切排样，在同一个工程里保持产品、制造零件与下料结果的关联。</p>
-      <dl>
-        <div><dt>产品</dt><dd>设计与管理产品实例</dd></div>
-        <div><dt>下料</dt><dd>零件清单、三维排样与结果</dd></div>
-        <div><dt>管型</dt><dd>维护截面与规格</dd></div>
-        <div><dt>草图</dt><dd>编辑截面和侧面切割图</dd></div>
-      </dl>
+      <p>参数化设计管材产品，生成制造零件清单。</p>
     </div>`;
 }
 
@@ -27,19 +22,18 @@ export function renderAboutRightPane(_context, view) {
       <dl>
         <div><dt>产品名称</dt><dd>TubeDesigner</dd></div>
         <div><dt>版本</dt><dd>0.1.0</dd></div>
-        <div><dt>下料策略</dt><dd>锯切优先</dd></div>
-        <div><dt>复杂端面</dt><dd>安全斜截近似</dd></div>
       </dl>
     </div>${renderLicenseStatus(view)}`;
 }
 
 export function renderAboutViewportOverlay(_context, view) {
   scheduleAboutViewportReset(view);
-  return `<div class="tube-designer-about-viewport">
-    <div class="tube-designer-about-symbol">${tubeDesignerSvg()}</div>
-    <strong>TubeDesigner</strong>
-    <span>产品设计 · 锯切下料 · 管型与草图</span>
-  </div>`;
+  return `<section class="tube-designer-about-viewport" data-tube-designer-contact tabindex="-1" aria-labelledby="tube-designer-contact-title">
+    <strong id="tube-designer-contact-title">联系我们</strong>
+    <div class="tube-designer-about-contact-image">
+      <img src="${WECHAT_CONTACT_IMAGE}" alt="CAXStudio1024 微信二维码，使用微信扫一扫添加好友">
+    </div>
+  </section>`;
 }
 
 function scheduleAboutViewportReset(view) {

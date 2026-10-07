@@ -344,7 +344,7 @@ src/tests/icax-engine/foundation/Task/TaskTest/
 
 ```powershell
 & 'C:\Program Files\PowerShell\7\pwsh.exe' -ExecutionPolicy Bypass -File src\tools\build\run_tests_debug_x64.ps1
-& 'C:\Program Files\PowerShell\7\pwsh.exe' -ExecutionPolicy Bypass -File src\tools\build\build_debug_x64.ps1
+& 'C:\Program Files\PowerShell\7\pwsh.exe' -ExecutionPolicy Bypass -File src\tools\build\build_solution_x64.ps1 -Configuration Debug
 ```
 
 当前验证结果：

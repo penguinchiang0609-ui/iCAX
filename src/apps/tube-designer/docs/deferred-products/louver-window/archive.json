@@ -1,0 +1,53 @@
+{
+  "schema": "icax.deferred-product-reference",
+  "schemaVersion": 1,
+  "status": "archived",
+  "preparedAt": "2026-10-05T00:34:11.965071+00:00",
+  "templateId": "louver-window",
+  "version": "2.1.0",
+  "originalDirectory": "src/apps/tube-designer/templates/product/louver_window",
+  "referenceDirectory": "src/apps/tube-designer/docs/deferred-products/louver-window/reference",
+  "nonCacheFileCount": 4,
+  "parameterCount": 35,
+  "cachePolicy": "Moved intact; cache bytes inventoried separately, excluded from source count.",
+  "files": [
+    {
+      "path": "resource/icon.svg",
+      "bytes": 367,
+      "sha256": "0fa058df22d3d8e4e6b4b43a34576e14401df54f583c32ace2a6f42cfdab3a00",
+      "cache": false
+    },
+    {
+      "path": "resource/schematic.svg",
+      "bytes": 367,
+      "sha256": "0fa058df22d3d8e4e6b4b43a34576e14401df54f583c32ace2a6f42cfdab3a00",
+      "cache": false
+    },
+    {
+      "path": "template.json",
+      "bytes": 19833,
+      "sha256": "6a5f059d1fc94b98e78e73ed48303ebfe9683ad98a636ad541fabe3a2def9947",
+      "cache": false
+    },
+    {
+      "path": "template.py",
+      "bytes": 42677,
+      "sha256": "2825c48103add3e576a554796f8d2f34dc64b1f4fc848c693ac1dadd5901fbd7",
+      "cache": false
+    }
+  ],
+  "retainedCacheFiles": [
+    {
+      "path": "__pycache__/template.cpython-312.pyc",
+      "bytes": 56839,
+      "sha256": "9c12744cefbeb46562660c0a7e310cc16663c3f82dedd5617b5930e4e3bb51a6",
+      "cache": true
+    }
+  ],
+  "verifiedAt": "2026-10-05T00:35:47.710896+00:00",
+  "verification": {
+    "allFilesAndCacheSha256Equal": true,
+    "completeParameterDeclarationsEqual": true,
+    "originalDirectoryAbsent": true
+  }
+}

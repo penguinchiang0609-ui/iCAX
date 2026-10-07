@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { matchesParameterCondition as matches, parameterVisible, parameterEnabled, availableParameterChoices, effectiveParameterChoice } from '../../apps/tube-designer/webpage/parameterConditions.mjs';
+import { matchesParameterCondition as matches, parameterExposed, parameterVisible, parameterEnabled, availableParameterChoices, effectiveParameterChoice } from '../../apps/tube-designer/webpage/parameterConditions.mjs';
 import { isAdvancedParameter, renderParameterLevels } from '../../apps/tube-designer/webpage/parameterPresentation.mjs';
 import { renderProductParameterDiagram } from '../../apps/tube-designer/webpage/productParameterDiagram.mjs';
 const demo={parameters:[{key:'width',presentation:{advanced:true}},{key:'height',presentation:{visible:false}}],extensions:{primaryDimensions:{widthParameter:'width',heightParameter:'height'}}};
@@ -9,6 +9,9 @@ assert.ok(demoDiagram.includes('data-product-diagram-parameter="width"'));
 assert.ok(demoDiagram.includes('data-parameter-level="advanced" style="display:none"'));
 assert.ok(!demoDiagram.includes('data-product-diagram-parameter="height"'));
 assert.equal(parameterVisible({}), true);
+assert.equal(parameterExposed({}), true);
+assert.equal(parameterExposed({presentation:{visible:false}}), false);
+assert.equal(parameterExposed({visibleWhen:{op:'eq',parameter:'x',value:1}}), true);
 assert.equal(parameterVisible({presentation:{visible:false}}), false);
 assert.equal(parameterVisible({presentation:{visible:true},visibleWhen:{op:'eq',parameter:'x',value:1}}, {x:2}), false);
 assert.equal(parameterVisible({presentation:{advanced:true}}, {}), true);
@@ -29,9 +32,13 @@ const root = new URL('../../apps/tube-designer/templates/', import.meta.url);
 const read = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
 const defaults = d => Object.fromEntries(d.parameters.map(p => [p.key, p.defaultValue]));
 const shown = (d, key, values) => matches(d.parameters.find(p => p.key === key).visibleWhen, values);
-for (const key of ['key', 'name', 'parameter']) {
+for (const key of ['parameter']) {
   assert.equal(matches({ op: 'eq', [key]: 'mode', value: 'a' }, { mode: 'a' }), true);
   assert.equal(matches({ op: 'ne', [key]: 'mode', value: 'a' }, { mode: 'a' }), false);
+}
+for (const key of ['key', 'name']) {
+  assert.equal(matches({ op: 'eq', [key]: 'mode', value: 'a' }, { mode: 'a' }), false, 'Historical leaf aliases are rejected');
+  assert.equal(matches({ op: 'ne', [key]: 'mode', value: 'a' }, { mode: 'b' }), false);
 }
 for (const c of [{ all: [{ parameter: 'x', op: 'eq', value: 2 }] }, { op: 'all', conditions: [{ parameter: 'x', op: 'eq', value: 2 }] }]) {
   assert.equal(matches(c, { x: 2 }), true);
@@ -39,7 +46,7 @@ for (const c of [{ all: [{ parameter: 'x', op: 'eq', value: 2 }] }, { op: 'all',
 }
 assert.equal(matches({ op: 'unknown' }, {}), false);
 assert.equal(matches({ op: 'ne', parameter: 'absent', value: 1 }, {}), false);
-assert.equal(parameterEnabled({ enabledWhen: { op: 'eq', key: 'on', value: true } }, { on: false }), false);
+assert.equal(parameterEnabled({ enabledWhen: { op: 'eq', parameter: 'on', value: true } }, { on: false }), false);
 assert.equal(parameterEnabled({ readOnly: true }, {}), false);
 
 let packages = 0;
@@ -53,7 +60,8 @@ for (const [kind, filename] of [['product', 'template.json'], ['profile', 'profi
     function check(c) {
       if (!c) return;
       assert.ok(['eq', 'ne', 'all', 'any', 'not'].includes(c.op));
-      const key = c.parameter ?? c.key ?? c.name;
+      const key = c.parameter;
+      assert.equal(Object.hasOwn(c, 'key') || Object.hasOwn(c, 'name'), false, `${d.id}: historical condition alias`);
       if (key) {
         assert.ok(keys.has(key), `${d.id}: missing ${key}`);
         const target = d.parameters.find(field => field.key === key);
@@ -167,6 +175,15 @@ for (const gender of ['male', 'female']) {
     assert.equal(effectiveParameterChoice(field,'spatial_v_notch',values),faceType==='five'?'plane_v_notch':'spatial_v_notch');
     assert.equal(d.parameters.some(p=>p.key==='spatialFrameMaximumStockLength'),false);
     assert.equal(values.frameManufacturingMode,'spatial_v_notch','choice fallback preserves draft');
+  }
+}
+{
+  const d = read('product/straight_steel_staircase/template.json');
+  for (const stringerProfileType of ['rect', 'channel', 'round', 'oval']) {
+    const values = { ...defaults(d), stringerProfileType, stringerConstruction: 'profile' };
+    assert.equal(shown(d, 'stringerInnerRadius', values), stringerProfileType === 'rect');
+    values.stringerConstruction = 'zigzag';
+    assert.equal(shown(d, 'stringerInnerRadius', values), false);
   }
 }
 console.log(`Parameter condition contracts and switching regressions passed: ${packages} packages`);

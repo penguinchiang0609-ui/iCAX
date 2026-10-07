@@ -28,7 +28,7 @@ SPEC.loader.exec_module(runtime)
 class PunchTools(unittest.TestCase):
     def test_end_resources_declare_actual_inputs_and_validate_pose_before_geometry(self):
         tools = [t for t in runtime.catalogue()['tools'] if t['target'] == 'end']
-        self.assertEqual(4, len(tools))
+        self.assertEqual(5, len(tools))
         for tool in tools:
             with self.subTest(tool=tool['id']):
                 self.assertTrue(tool['illustration']['paths'])
@@ -36,7 +36,10 @@ class PunchTools(unittest.TestCase):
                 operations = {p['key']: p['defaultValue'] for p in tool['operationParameters']}
                 item = {'type': 'template', 'toolRef': {'id': tool['id']}, **operations}
                 if tool.get('requiresSection'):
-                    item['section'] = {'profile': {'contours': [{'kind': 'circle', 'radius': 30}]}}
+                    item['section'] = {'profile': {'contours': [
+                        profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+                        if tool['id'] == 'paired-end-tabs' else
+                        {'contours': [{'kind': 'circle', 'radius': 30}]}}
                 for end in ('start', 'end'):
                     before = copy.deepcopy(item)
                     result = self.prepare(ends={end: item})['ends'][end]
@@ -104,6 +107,7 @@ class PunchTools(unittest.TestCase):
                 dict(reliefDepth=100, reliefLift=100, reliefSide='negative', bottomCutWidth=100, kFactor=1)),
             ('segmented-bend', dict(countMode='count', bendCompensation=False),
                 dict(maximumChordError=0.000001, kFactor=1)),
+            ('flexible-slit-bend', dict(slitMode='narrow'), dict(uSpan=100)),
         ]
         for tool, active, drafts in cases:
             with self.subTest(tool=tool, active=active):
@@ -212,6 +216,41 @@ class PunchTools(unittest.TestCase):
         self.assertEqual(3, len(set(geometries.values())))
         with self.assertRaisesRegex(ValueError, "筋宽不足"):
             self.v_geometry("flexible-slit-bend", bendRadius=5, slitCount=20, slitWidth=2)
+
+    def test_flexible_u_slot_checks_complete_envelope_and_blank_edges(self):
+        geometry = self.v_geometry("flexible-slit-bend", slitMode="u")
+        layout = geometry["calculation"]
+        self.assertEqual(6, layout["slitCount"])
+        self.assertAlmostEqual(40 * math.pi / 2 / 7, layout["slitPitch"])
+        self.assertAlmostEqual(7, layout["axialSlitEnvelope"])
+        self.assertAlmostEqual(layout["slitPitch"] - 7, layout["remainingLand"])
+        self.assertAlmostEqual(5 * layout["slitPitch"] + 7, layout["patternLength"])
+        self.assertLess(layout["patternLength"], layout["flexibleLength"])
+        profiles = [node for node in geometry["model"]["geometry"]
+                    if node["key"].startswith("u-") and node["operator"] == "profile2d"]
+        cutters = [node for node in geometry["model"]["geometry"]
+                   if node["key"].startswith("u-") and node["operator"] == "extrude"]
+        self.assertEqual(layout["slitCount"], len(profiles))
+        self.assertEqual(layout["slitCount"], len(cutters))
+        self.assertTrue(all(len(node["arguments"]["contours"][0]["segments"]) == 8
+                            for node in profiles))
+
+        # A U's bottom cross-cut spans both uprights. The old check used only
+        # slitWidth and accepted this overlapping default-width U pattern.
+        with self.assertRaisesRegex(ValueError, "剩余筋宽不足"):
+            self.v_geometry("flexible-slit-bend", slitMode="u", uSpan=8)
+        with self.assertRaisesRegex(ValueError, "U 槽底横缝超出主管顶部"):
+            self.v_geometry("flexible-slit-bend", slitMode="u", bendRadius=200,
+                            slitWidth=17, uSpan=18)
+
+        for reference, station in (("start", 5), ("end", 5), ("center", 0)):
+            bounds = {"min": [0, -20, -10], "max": [40 if reference == "center" else 1000, 20, 10]}
+            feature = {"toolTarget": "part", "toolRef": {"id": "flexible-slit-bend"},
+                       "toolParameters": {"slitMode": "u"},
+                       "reference": reference, "station": station}
+            with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, "超出下料件两端"):
+                runtime.prepare({"features": [feature], "bounds": bounds,
+                                 "targetSection": TARGET, "targetSectionAnalysis": TARGET_ANALYSIS})
 
     def test_segmented_bend_distinguishes_chord_and_tangent_spacing(self):
         chord = self.v_geometry("segmented-bend", spacingModel="chord", segmentCount=6)["calculation"]
@@ -478,7 +517,7 @@ class PunchTools(unittest.TestCase):
 
     def test_branch_auto_extension_tracks_axis_projection_not_fixed_world_dimension(self):
         bounds={"min":[10,-30,-15],"max":[1010,30,15]}
-        for angle,azimuth in ((90,0),(90,90),(90,45),(35,20),(145,200),(0,0),(180,0)):
+        for angle,azimuth in ((90,0),(90,90),(90,45),(35,20),(145,200),(.1,0),(179.9,0)):
             with self.subTest(angle=angle,azimuth=azimuth):
                 nodes={node["key"]:node for node in self.branch_geometry(bounds,angle=angle,azimuth=azimuth,
                     offsetY=70,offsetZ=-12)["model"]["geometry"]}
@@ -494,6 +533,11 @@ class PunchTools(unittest.TestCase):
                 self.assertAlmostEqual(span/2,low-start)
                 self.assertAlmostEqual(span/2,end-high)
                 self.assertAlmostEqual(2*span,length)
+        # The installed branch-profile descriptor excludes exactly parallel
+        # axes; its runtime must reject those poses before constructing tools.
+        for angle in (0, 180):
+            with self.assertRaises(ValueError):
+                self.branch_geometry(bounds, angle=angle, azimuth=0)
 
     def test_branch_fixed_length_directions_are_not_extended(self):
         bounds={"min":[0,-20,-20],"max":[1000,20,20]}
@@ -504,6 +548,47 @@ class PunchTools(unittest.TestCase):
                 vector=nodes["tool"]["arguments"]["vector"]
                 self.assertAlmostEqual(start,origin[2])
                 self.assertAlmostEqual(120,vector[2])
+
+    def test_branch_supplied_boundary_uses_verified_datum_and_outer_contour(self):
+        def shifted_box(low_u, high_u, low_v, high_v):
+            points = [[low_u, low_v], [high_u, low_v],
+                      [high_u, high_v], [low_u, high_v]]
+            return {"kind": "path", "closed": True, "segments": [
+                {"kind": "line", "start": points[i], "end": points[(i + 1) % 4]}
+                for i in range(4)]}
+        inner = shifted_box(1, 9, -4, 4)
+        outer = shifted_box(0, 10, -5, 5)
+        profile = {"geometrySource": "providedBoundary", "contours": [inner, outer],
+            "sectionFrame": {"verification": "committed-source-brep-replay",
+                "outerContourIndex": 1, "centerlineUV": [5, 0],
+                "xAxisToolPart": [0, 1, 0], "yAxisToolPart": [-1, 0, 0],
+                "nodeToolPart": [50, 0, 0]}}
+        feature = {"id": "branch-section", "toolTarget": "part", "station": 50,
+            "reference": "start", "face": "top", "section": {"profile": profile},
+            "toolRef": {"id": "branch-profile"}, "toolParameters": {},
+            "direction": "negative", "length": 20, "angle": 90, "azimuth": 0}
+        bounds = {"min": [0, -20, -20], "max": [100, 20, 20]}
+        result = runtime.prepare({"features": [feature], "bounds": bounds})
+        nodes = {node["key"]: node for node in
+                 result["features"][0]["toolSnapshot"]["geometry"]["model"]["geometry"]}
+        section = nodes["section"]["arguments"]
+        self.assertEqual(section["contours"], [outer])
+        self.assertEqual(section["placement"]["origin"], [50, -5, -20])
+        self.assertEqual(section["placement"]["xAxis"], [0, 1, 0])
+        self.assertEqual(section["placement"]["yAxis"], [-1, 0, 0])
+        for actual, expected in zip(nodes["tool"]["arguments"]["vector"], [0, 0, 20]):
+            self.assertAlmostEqual(actual, expected)
+        reversed_axis = copy.deepcopy(feature)
+        reversed_axis.update(direction="positive", azimuth=180)
+        reverse_nodes = {node["key"]: node for node in
+                         runtime.prepare({"features": [reversed_axis], "bounds": bounds})
+                         ["features"][0]["toolSnapshot"]["geometry"]["model"]["geometry"]}
+        for actual, expected in zip(reverse_nodes["tool"]["arguments"]["vector"], [0, 0, -20]):
+            self.assertAlmostEqual(actual, expected)
+        bad = copy.deepcopy(feature)
+        bad["section"]["profile"]["sectionFrame"]["nodeToolPart"][0] = 51
+        with self.assertRaisesRegex(ValueError, "方向与装配刀具方向不一致"):
+            runtime.prepare({"features": [bad], "bounds": bounds})
 
     def test_part_templates_and_section_snapshot(self):
         source={"id":"branch-1","toolTarget":"part","station":200,"reference":"start",
@@ -869,6 +954,69 @@ class PunchTools(unittest.TestCase):
         return runtime.generate({"action": "prepare", "features": features or [], "ends": ends or {},
             "bounds": {"min": [0, -20, -10], "max": [1000, 20, 10]}, "targetSection":TARGET,
             "targetSectionAnalysis":TARGET_ANALYSIS}, {})
+
+    def test_curve_pocket_preserves_exact_curves_islands_and_input_parameters(self):
+        contours = [
+            {"kind": "path", "closed": True, "segments": [
+                {"kind": "bspline", "degree": 2, "controlPoints": [[-10, 5], [0, 8], [10, 5]],
+                 "knots": [0, 1], "multiplicities": [3, 3], "periodic": False,
+                 "startParameter": 0, "endParameter": 1},
+                {"kind": "line", "start": [10, -5], "end": [10, 5], "reversed": True},
+                {"kind": "arc", "start": [10, -5], "middle": [0, -7], "end": [-10, -5]},
+                {"kind": "line", "start": [-10, -5], "end": [-10, 5]}]},
+            {"kind": "path", "closed": True, "segments": [
+                {"kind": "nurbs", "degree": 2, "controlPoints": [[-2, 0], [-2, 2], [0, 2]],
+                 "weights": [1, math.sqrt(0.5), 1], "knots": [0, 1], "multiplicities": [3, 3],
+                 "periodic": False, "startParameter": 0, "endParameter": 1},
+                {"kind": "line", "start": [0, 2], "end": [2, 0]},
+                {"kind": "line", "start": [2, 0], "end": [-2, 0]}]}]
+        section = {"source": "recovered", "name": "识别曲线", "profile": {"contours": contours}}
+        source = {"id": "recovered-pocket", "toolTarget": "side", "toolRef": {"id": "curve-pocket"},
+                  "toolParameters": {}, "section": section, "face": "bottom", "station": 41.5,
+                  "offset": 2, "rotation": 17, "blindHole": True, "cutDepth": 0.2, "opposite": False}
+        before = copy.deepcopy(source)
+        result = self.prepare([source])
+        self.assertEqual(before, source)
+        prepared = result["features"][0]
+        snapshot = prepared["toolSnapshot"]
+        self.assertEqual({}, snapshot["parameters"])
+        self.assertEqual({}, prepared["toolParameters"])
+        self.assertEqual({"mode": "profile", "contours": contours}, snapshot["geometry"])
+        self.assertEqual(section, snapshot["context"]["section"])
+        self.assertEqual(section, prepared["frozenTool"]["context"]["section"])
+        self.assertNotIn("placement", snapshot["context"])
+        self.assertNotIn("feature", snapshot["context"])
+        for key in ("section", "face", "station", "offset", "rotation", "blindHole", "cutDepth", "opposite"):
+            self.assertEqual(source[key], result["recipe"]["features"][0][key])
+        saved = json.loads(json.dumps(result["recipe"]["features"][0]))
+        for updates in ({"cutDepth": 0.4}, {"face": "right", "rotation": 30}, {"blindHole": False}):
+            edited = self.prepare([{**saved, **updates}])["features"][0]
+            self.assertEqual(snapshot["geometry"], edited["toolSnapshot"]["geometry"])
+            self.assertEqual(section, edited["section"])
+        previous = runtime.ROOT
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                runtime.ROOT = Path(folder)
+                replayed = self.prepare([saved])["features"][0]
+                self.assertEqual("frozen", replayed["toolSnapshot"]["resolution"])
+                self.assertEqual(snapshot["geometry"], replayed["toolSnapshot"]["geometry"])
+                with self.assertRaisesRegex(ValueError, "只读"):
+                    self.prepare([{**saved, "section": {"profile": {"contours": contours[:1]}}}])
+        finally:
+            runtime.ROOT = previous
+
+    def test_curve_pocket_requires_section_and_keeps_old_side_context_unchanged(self):
+        tool = next(item for item in runtime.catalogue()["tools"] if item["id"] == "curve-pocket")
+        self.assertEqual("side", tool["target"])
+        self.assertTrue(tool["requiresSection"])
+        self.assertEqual({"blindHole": True, "cutDepth": 0.2, "opposite": False}, tool["defaultOperationParameters"])
+        for section in (None, {}, {"profile": {"contours": []}}):
+            with self.assertRaisesRegex(ValueError, "截面|轮廓"):
+                self.prepare([{"toolRef": {"id": "curve-pocket"}, "section": section}])
+        old = self.prepare([{"toolRef": {"id": "circle"}}])["features"][0]
+        self.assertNotIn("section", old["toolSnapshot"]["context"])
+        replayed = self.prepare([old])["features"][0]
+        self.assertEqual(old["frozenTool"], replayed["frozenTool"])
 
     def test_catalogue_has_five_declarative_end_tools(self):
         catalogue = runtime.catalogue()
@@ -1241,6 +1389,163 @@ class PunchTools(unittest.TestCase):
             geometry = result["ends"]["start"]["toolSnapshot"]["geometry"]
             operations[mode] = geometry["model"]["geometry"][-1]["arguments"]["operation"]
         self.assertEqual({"male": "subtract", "female": "union"}, operations)
+
+    def test_paired_side_sockets_follow_short_tube_wall_and_selected_face(self):
+        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
+        for count in (2, 4):
+            for face in ('top', 'bottom'):
+                with self.subTest(count=count, face=face):
+                    result = runtime.prepare({'bounds': {'min': [0, -30, -20], 'max': [360, 30, 20]},
+                        'targetSection': host, 'features': [{
+                            'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                            'toolParameters': {'pairCount': count, 'tabWidth': 8, 'tabLength': 12,
+                                               'sideClearance': .2},
+                            'station': 100, 'reference': 'start', 'face': face, 'offset': 0,
+                            'section': {'profile': branch}}]})
+                    snapshot = result['features'][0]['toolSnapshot']
+                    self.assertEqual(face, snapshot['context']['feature']['face'])
+                    geometry = snapshot['geometry']['model']['geometry']
+                    slots = [node for node in geometry if node['key'].endswith('-profile')]
+                    self.assertEqual(count, len(slots))
+                    # One socket follows each of the short tube's two opposite
+                    # walls.  Four adds the two remaining perpendicular walls.
+                    locations = {(round(node['arguments']['placement']['origin'][0]),
+                                  round(node['arguments']['placement']['origin'][1]))
+                                 for node in slots}
+                    expected = {(100, -19), (100, 19)}
+                    if count == 4:
+                        expected |= {(81, 0), (119, 0)}
+                    self.assertEqual(expected, locations)
+                    for node in slots:
+                        placement = node['arguments']['placement']
+                        x, y = placement['origin'][:2]
+                        axis = placement['xAxis']
+                        if round(y) == 0:
+                            self.assertAlmostEqual(abs(axis[1]), 1)
+                        else:
+                            self.assertAlmostEqual(abs(axis[0]), 1)
+        # A 40 mm deep branch cannot fit its sockets inside the 40 mm high
+        # flat side of this host; that must be rejected, not clipped open.
+        with self.assertRaisesRegex(ValueError, '平直侧壁'):
+            runtime.prepare({'bounds': {'min': [0, -30, -20], 'max': [360, 30, 20]},
+                'targetSection': host, 'features': [{
+                    'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                    'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
+
+    def test_paired_side_sockets_open_at_one_end_only_when_requested(self):
+        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
+        bounds = {'min': [0, -30, -20], 'max': [360, 30, 20]}
+
+        def prepare(station, allow_end_opening=None, length=360, pair_count=4):
+            tool_parameters = {'pairCount': pair_count, 'tabWidth': 8,
+                               'tabLength': 12, 'sideClearance': .2}
+            if allow_end_opening is not None:
+                tool_parameters['allowEndOpening'] = allow_end_opening
+            actual_bounds = {'min': bounds['min'],
+                             'max': [length, *bounds['max'][1:]]}
+            return runtime.prepare({'bounds': actual_bounds, 'targetSection': host,
+                'features': [{'id': 'paired', 'toolTarget': 'part',
+                    'toolRef': {'id': 'paired-side-slots'},
+                    'toolParameters': tool_parameters,
+                    'station': station, 'reference': 'start', 'face': 'top',
+                    'section': {'profile': branch}}]})
+
+        # The outer socket of the four-wall group reaches 0.2 mm beyond the
+        # host end. Existing users retain the closed-socket default.
+        with self.assertRaisesRegex(ValueError, '母槽越过长管端部'):
+            prepare(340)
+        with self.assertRaisesRegex(ValueError, '母槽越过长管端部'):
+            prepare(340, False)
+        result = prepare(340, True)
+        saved = result['features'][0]
+        self.assertTrue(saved['toolParameters']['allowEndOpening'])
+        profiles = [node for node in saved['toolSnapshot']['geometry']['model']['geometry']
+                    if node['key'].endswith('-profile')]
+        self.assertEqual(4, len(profiles))
+        self.assertEqual([340, 340, 359, 321],
+                         [round(node['arguments']['placement']['origin'][0])
+                          for node in profiles])
+        self.assertEqual(4, len([node for node in prepare(20, True)['features'][0]
+                                 ['toolSnapshot']['geometry']['model']['geometry']
+                                 if node['key'].endswith('-profile')]))
+        with self.assertRaisesRegex(ValueError, '母槽中心须位于长管内'):
+            prepare(362, True, pair_count=2)
+        with self.assertRaisesRegex(ValueError, '不能贯通两端'):
+            prepare(4, True, length=8, pair_count=2)
+
+    def test_paired_end_tabs_use_one_or_both_real_flat_walls(self):
+        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
+        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+        for count in (2, 4):
+            result = runtime.prepare({'bounds': {'min': [0, -20, -20], 'max': [180, 20, 20]},
+                'targetSection': branch, 'ends': {'end': {'type': 'template',
+                    'toolRef': {'id': 'paired-end-tabs'}, 'trim': 10,
+                    'toolParameters': {'pairCount': count, 'tabWidth': 8, 'tabLength': 12},
+                    'section': {'profile': host}}}})
+            geometry = result['ends']['end']['toolSnapshot']['geometry']['model']['geometry']
+            ears = [node for node in geometry if node['key'].startswith('ear-')
+                    and node['key'].endswith('-profile')]
+            self.assertEqual(count, len(ears))
+            locations = [node['arguments']['placement']['origin'] for node in ears]
+            opposite = [point for point in locations if abs(point[1]) < .1]
+            self.assertEqual(2, len(opposite))
+            self.assertEqual({-1, 1}, {1 if point[2] > 0 else -1 for point in opposite})
+            remaining = [point for point in locations if abs(point[1]) >= 17.9]
+            self.assertEqual(2 if count == 4 else 0, len(remaining))
+            if remaining:
+                self.assertEqual({-1, 1}, {1 if point[1] > 0 else -1 for point in remaining})
+            self.assertEqual('subtract', geometry[-1]['arguments']['operation'])
+        with self.assertRaisesRegex(ValueError, '对侧壁'):
+            runtime.prepare({'bounds': {'min': [0, -20, -20], 'max': [180, 20, 20]},
+                'targetSection': branch, 'ends': {'end': {'type': 'template',
+                    'toolRef': {'id': 'paired-end-tabs'},
+                    'toolParameters': {'tabLength': 40}, 'section': {'profile': host}}}})
+
+    def test_paired_tools_resolve_actual_quarter_turned_product_stock(self):
+        section = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
+        bounds = {'min': [0, -20, -30], 'max': [360, 20, 30]}
+        ends = runtime.prepare({'bounds': bounds, 'targetSection': section,
+            'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
+                'section': {'profile': section}}}})
+        ear = next(node for node in ends['ends']['start']['toolSnapshot']['geometry']['model']['geometry']
+                   if node['key'] == 'ear-0-0-profile')
+        self.assertAlmostEqual(28, ear['arguments']['placement']['origin'][2], places=1)
+        slots = runtime.prepare({'bounds': bounds, 'targetSection': section,
+            'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
+        socket = next(node for node in slots['features'][0]['toolSnapshot']['geometry']['model']['geometry']
+                      if node['key'] == 'socket-0-profile')
+        self.assertAlmostEqual(-20.01, socket['arguments']['placement']['origin'][1], places=2)
+        self.assertAlmostEqual(19, socket['arguments']['placement']['origin'][2], places=1)
+        with self.assertRaisesRegex(ValueError, '平直侧壁'):
+            runtime.prepare({'bounds': bounds, 'targetSection': section,
+                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                    'station': 100, 'face': 'top', 'section': {'profile': branch}}]})
+        wrong = {'min': [0, -23.5, -30], 'max': [360, 23.5, 30]}
+        with self.assertRaisesRegex(ValueError, '不一致'):
+            runtime.prepare({'bounds': wrong, 'targetSection': section,
+                'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
+                    'section': {'profile': section}}}})
+        with self.assertRaisesRegex(ValueError, '不一致'):
+            runtime.prepare({'bounds': wrong, 'targetSection': section,
+                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                    'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
+
+    def test_paired_tools_reject_square_axis_ambiguity_when_wall_depth_differs(self):
+        ambiguous = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 17)]}
+        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
+        bounds = {'min': [0, -20, -20], 'max': [180, 20, 20]}
+        with self.assertRaisesRegex(ValueError, '歧义'):
+            runtime.prepare({'bounds': bounds, 'targetSection': ambiguous,
+                'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
+                    'section': {'profile': host}}}})
+        with self.assertRaisesRegex(ValueError, '歧义'):
+            runtime.prepare({'bounds': bounds, 'targetSection': ambiguous,
+                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
+                    'station': 100, 'face': 'top', 'section': {'profile': host}}]})
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,236 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "cross_host": {
+          "title": {
+            "zh-CN": "主管原管"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "cross_through": {
+          "title": {
+            "zh-CN": "贯穿管原管"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "size": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "host": {
+          "category": "materials",
+          "order": 20,
+          "defaultOpen": true,
+          "sectionGroup": "cross_host"
+        },
+        "through": {
+          "category": "materials",
+          "order": 30,
+          "defaultOpen": true,
+          "sectionGroup": "cross_through"
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 10,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "hostLength": {
+          "order": 20,
+          "category": "specifications",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughLength": {
+          "order": 30,
+          "category": "specifications",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "hostProfileType": {
+          "order": 40,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "hostWidth": {
+          "order": 50,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "hostDepth": {
+          "order": 60,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "hostWallThickness": {
+          "order": 70,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "hostCornerRadius": {
+          "order": 80,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "hostInnerRadius": {
+          "order": 90,
+          "category": "materials",
+          "sectionGroup": "cross_host",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughProfileType": {
+          "order": 100,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "throughWidth": {
+          "order": 110,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughDepth": {
+          "order": 120,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughWallThickness": {
+          "order": 130,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughCornerRadius": {
+          "order": 140,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "throughInnerRadius": {
+          "order": 150,
+          "category": "materials",
+          "sectionGroup": "cross_through",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "hostLength": {
+          "order": 0,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "throughLength": {
+          "order": 10,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "product_dimensions": {
+          "title": {
+            "zh-CN": "产品定位尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {}
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "主管 {hostLength} · 贯穿管 {throughLength} mm"
+        }
+      }
+    ]
+  }
+}

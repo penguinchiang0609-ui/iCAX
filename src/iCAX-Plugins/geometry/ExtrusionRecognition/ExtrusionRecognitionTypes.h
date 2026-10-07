@@ -118,6 +118,10 @@ namespace iCAX::ExtrusionRecognition
         double dSecondaryEvidenceWeight = 0.0;
         bool bUsedFaceNormalDisambiguation = false;
         std::vector<std::string> Diagnostics;
+        // The voted direction first, then existing unoriented clusters within
+        // dAmbiguousSecondToFirstRatio of the primary evidence weight.
+        // These are geometric alternatives, not generated profiles.
+        std::vector<iCAX::GeometryData::Direction3> CandidateDirections;
     };
 
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireOptions final

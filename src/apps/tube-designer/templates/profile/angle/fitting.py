@@ -9,7 +9,7 @@ def _fit_angle(loop,tolerance):
     edges=loop.get("edges",[])
     lines=[e for e in edges if e.get("kind")=="line"]
     arcs=[e for e in edges if e.get("kind")=="arc"]
-    if len(lines)!=6 or not 2<=len(arcs)<=4:return False
+    if len(lines)!=6 or len(arcs)>4:return False
 
     horizontal=[e for e in lines if abs(e["start"][1]-e["end"][1])<=tolerance]
     vertical=[e for e in lines if abs(e["start"][0]-e["end"][0])<=tolerance]
@@ -41,13 +41,31 @@ def _fit_angle(loop,tolerance):
     long_lines=long_horizontal+long_vertical
     root_arcs=[arc for arc in arcs if sum(adjacent(arc,line) for line in long_lines)==2]
     free_arcs=[arc for arc in arcs if arc not in root_arcs]
-    if len(root_arcs)!=2 or len(free_arcs)!=len(arcs)-2:return False
-    radii=sorted(float(e.get("radius",-1)) for e in root_arcs)
-    if radii[0]<0 or radii[1]<radii[0]-tolerance:return False
-    # The larger radius is the outside bend; unlike strip_axes this does not
-    # assume that its value is the inside radius plus the wall thickness.
-    outer_radius,inner_radius=radii[1],radii[0]
-    if outer_radius < inner_radius-tolerance:return False
+    if len(root_arcs)>2:return False
+    # Rolled angles often have a sharp outside corner and a rounded inside
+    # root. Identify each root by its adjoining walls, never by radius size.
+    # A missing arc means the two walls meet at a sharp corner.
+    outer_horizontal=min(long_horizontal,key=lambda e:e["start"][1])
+    inner_horizontal=max(long_horizontal,key=lambda e:e["start"][1])
+    outer_vertical=max(long_vertical,key=lambda e:abs(e["start"][0]-short_vertical[0]["start"][0]))
+    inner_vertical=next(e for e in long_vertical if e is not outer_vertical)
+    root_radii=[]
+    assigned=[]
+    for horizontal_wall,vertical_wall in ((outer_horizontal,outer_vertical),
+                                           (inner_horizontal,inner_vertical)):
+        matches=[arc for arc in root_arcs
+                 if adjacent(arc,horizontal_wall) and adjacent(arc,vertical_wall)]
+        if len(matches)>1:return False
+        if matches:
+            radius=float(matches[0].get("radius",-1))
+            if not math.isfinite(radius) or radius<0:return False
+            assigned.append(matches[0])
+        else:
+            if not adjacent(horizontal_wall,vertical_wall):return False
+            radius=0.0
+        root_radii.append(radius)
+    if len(assigned)!=len(root_arcs):return False
+    outer_radius,inner_radius=root_radii
     free_horizontal=next((arc for arc in free_arcs
                           if adjacent(arc,short_vertical[0])),None)
     free_vertical=next((arc for arc in free_arcs
@@ -80,6 +98,8 @@ def fitting(section,context):
     q,g,t=context['geometry'],context['curves'],context['tolerance']
     if len(section)!=1:return False
     for loops,pose in g.frames(section):
+        corners=q.polygon_corners(loops[0],t)
+        if not corners or len(corners)!=6:continue
         result=_fit_angle(loops[0],t)
         if result:
             parameters,origin=result

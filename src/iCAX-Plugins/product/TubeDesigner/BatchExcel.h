@@ -54,6 +54,10 @@ namespace iCAX::TubeDesigner
 
     // A standard .xlsx is both the user-facing blank workbook and the import
     // file. Its hidden metadata worksheet carries the product import contract.
+    _TUBE_DESIGNER_EXP void ValidateBatchExcelColumns(
+        const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,
+        const std::vector<SBatchExcelColumn>& Columns_);
+
     _TUBE_DESIGNER_EXP std::filesystem::path WriteBatchExcelTemplate(
         const std::filesystem::path& TemplatePath_,
         const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_,

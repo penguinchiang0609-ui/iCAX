@@ -12,6 +12,15 @@
     <ClCompile Include="$(MSBuildProjectDirectory)\..\..\..\..\pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader></ClCompile>
     <ClCompile Include="$(ICAXInspectionBridgeSource)">
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- This source embeds the real SDO fixtures and their inline component
+           metadata. Match the optimized Debug settings used by TubeDesignerTest
+           so unoptimized EXE registrations cannot replace the DLL handlers. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">Default</BasicRuntimeChecks>
+      <DebugInformationFormat Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
   </ItemGroup>
 </Project>

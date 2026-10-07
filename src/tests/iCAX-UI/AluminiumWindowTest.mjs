@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {matchesParameterCondition as matches} from '../../apps/tube-designer/webpage/parameterConditions.mjs';
 import {buildCatalogEntries} from '../../apps/tube-designer/webpage/productCatalog.mjs';
-const d=JSON.parse(readFileSync(new URL('../../apps/tube-designer/templates/product/aluminium_window/template.json',import.meta.url),'utf8'));
+const d=JSON.parse(readFileSync(new URL('../../apps/tube-designer/docs/deferred-products/aluminium-window/reference/template.json',import.meta.url),'utf8'));
 const defaults=Object.fromEntries(d.parameters.map(p=>[p.key,p.defaultValue]));
 const visible=(key,p)=>matches(d.parameters.find(p=>p.key===key).visibleWhen,{...defaults,...p});
 assert.deepEqual(buildCatalogEntries([{...d,available:true}])[0].catalogPath,['窗','普通铝合金窗']);
@@ -23,6 +23,6 @@ for(const columns of [1,2,3])for(const rows of [1,2,3])
 // Inactive cells must not expose another family's fields.
 assert.equal(visible('hingedCount',{windowType:'mixed',columns:1,rows:1,cell11:'fixed',cell33:'hinged'}),false);
 assert.equal(visible('hingedCount',{windowType:'mixed',columns:3,rows:3,cell11:'fixed',cell33:'hinged'}),true);
-console.log('Aluminium window catalogue, aperture and panel conditions passed.');
+console.log('Deferred aluminium reference descriptor conditions passed; not an active product.');
 assert.equal(visible('cell21',{windowType:'mixed',columns:2,rows:2,mergeTopLight:true}),false);
 assert.equal(visible('slidingCount',{windowType:'mixed',columns:2,rows:2,mergeTopLight:true,cell11:'fixed',cell12:'fixed',cell21:'sliding',cell22:'sliding'}),false);

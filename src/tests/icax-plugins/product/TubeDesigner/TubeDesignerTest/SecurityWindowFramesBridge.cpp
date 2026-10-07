@@ -15,6 +15,26 @@ namespace {
 using iCAX::Data::ObjectMap;
 using iCAX::Data::VariantArray;
 
+ObjectMap invokeLicensing(punch_persistence_acceptance::Scene& scene, const std::string& method,
+    const ObjectMap& payload) {
+    // This acceptance route dispatches to the registered handler in the loaded
+    // release DLL. It supplies neither test trust nor an alternate install path.
+    punch_persistence_acceptance::Application application;
+    iCAX::Interaction::CSDORegistry registry;
+    iCAX::Interaction::CSDORegistrationCatalog::ReplayAll(registry);
+    iCAX::Interaction::CInvocation request; request.nCallID=1;
+    request.Method=iCAX::Interaction::MakeSDOMethod("TubeDesignerLicensing",method);
+    const auto serialized=iCAX::Data::VariantSerializer::Serialize(payload);
+    request.Payload.assign(serialized.begin(),serialized.end());
+    const auto sdo=registry.Find(request.Method.nSDOCode);
+    if(!sdo || !sdo->HasMethod(request.Method.nMethodCode))
+        throw std::runtime_error("Missing real licensing SDO: "+method);
+    const auto response=sdo->Invoke(request,application,nullptr,nullptr,&scene);
+    if(!response.IsOK())throw std::runtime_error("TubeDesignerLicensing."+method+": "+response.strError);
+    return iCAX::Data::VariantSerializer::Deserialize(
+        std::string(response.Payload.begin(),response.Payload.end())).To<ObjectMap>();
+}
+
 TopoDS_Shape inspectManufacturingCoordinates(const TopoDS_Shape& source,const ObjectMap& actualProperties) {
     const auto kind=actualProperties.contains("manufacturing.partKind")
         ?actualProperties.at("manufacturing.partKind").To<std::string>()
@@ -92,7 +112,7 @@ VariantArray nativeBRepErrors(const TopoDS_Shape& solid,const BRepCheck_Analyzer
 }
 }
 
-int main() {
+int main(int argc,char** argv) {
     using namespace punch_persistence_acceptance;
     using iCAX::Data::Variant;
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
@@ -100,6 +120,12 @@ int main() {
     _set_error_mode(_OUT_TO_STDERR);
     _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
     logInvocations=false;
+    // Run registered SDO regressions in the freshly-built fixture rather
+    // than silently loading an older TubeDesignerTest executable.
+    if(argc>1) {
+        ::testing::InitGoogleTest(&argc,argv);
+        return RUN_ALL_TESTS();
+    }
     std::unique_ptr<Scene> scene=std::make_unique<Scene>();
     std::string line;
     while(std::getline(std::cin,line)) {
@@ -113,11 +139,24 @@ int main() {
                 "GeneratePreview","Disassemble","List","GetTemplateDescriptor",
                 "EvaluateAssemblyProcess","ResolveAssemblyProcessPlan","PreviewAssemblyProcessPlan",
                 "CommitAssemblyProcessPlan","GetAssemblyProcessPlans", "GetProductAssemblyBindings",
-                "GetProductAssemblyConnections", "UpdateProductParameters", "SaveAndReopen", "InspectNativeGeometry", "InspectNeutralModel", "InspectScriptResources", "ValidateSharedManufacturing"};
+                "GetProductAssemblyConnections", "UpdateProductParameters", "SaveAndReopen", "InspectNativeGeometry", "InspectNeutralModel", "InspectScriptResources", "ValidateSharedManufacturing", "MeasurePartGeometry", "GetRuntimeModules",
+                "Licensing.Status", "Licensing.Request", "Licensing.Activate"};
             if(!allowed.contains(method))throw std::invalid_argument("Unsupported acceptance method");
             const auto payload=input.contains("payload")?input.at("payload").To<ObjectMap>():ObjectMap{};
             ObjectMap result;
-            if (method=="SaveAndReopen") {
+            if (method=="Licensing.Status" || method=="Licensing.Request" || method=="Licensing.Activate") {
+                result=invokeLicensing(*scene,method.substr(std::string("Licensing.").size()),payload);
+            } else if (method=="GetRuntimeModules") {
+                ObjectMap modules;
+                for(const auto* name:{L"TubeDesigner.dll",L"TemplateRuntime.dll",L"Data.dll",L"OpenCascadeResourceImport.dll"}) {
+                    wchar_t path[32768]{};
+                    const auto handle=GetModuleHandleW(name);
+                    if(!handle || !GetModuleFileNameW(handle,path,static_cast<DWORD>(std::size(path))))
+                        throw std::runtime_error("Required native acceptance module is not loaded");
+                    modules[std::filesystem::path(name).string()]=std::filesystem::path(path).string();
+                }
+                result={{"modules",modules}};
+            } else if (method=="SaveAndReopen") {
                 const auto directory=std::filesystem::current_path()/"tmp/security-window-frames-native";
                 std::filesystem::create_directories(directory);
                 const auto path=directory/("bridge-project-"+iCAX::Data::to_string(scene->project)+".ictd");

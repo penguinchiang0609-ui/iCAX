@@ -9,7 +9,12 @@
   "inputs": [
     {"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}
   ],
-  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "rect"
+    }
+  },
   "displayName": "边弧槽",
   "kind": "programmatic",
   "target": "part",

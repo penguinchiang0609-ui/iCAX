@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ProjectFileCodec.h"
-#include "ProjectMigration.h"
 
 #include <filesystem>
 #include <memory>
@@ -34,8 +33,6 @@ namespace iCAX::ProjectFile
         EProjectFileEncoding DefaultEncoding =
             EProjectFileEncoding::Binary;
 
-        // 为空时回放当前进程中的全部迁移；多产品宿主可限制为本产品 DLL。
-        std::vector<std::string> MigrationModulePaths;
     };
 
     struct _PROJECT_FILE_EXP CProjectOpenResult final
@@ -43,14 +40,13 @@ namespace iCAX::ProjectFile
         CProjectDocumentInfo Info;
         EProjectFileEncoding SourceEncoding =
             EProjectFileEncoding::Binary;
-        std::vector<std::string> MigrationDiagnostics;
     };
 
     /*
-    * @brief 已完成读取、产品校验和版本升级的项目打开会话。
+    * @brief 已完成读取、产品和当前版本校验的项目打开会话。
     * @details
     *   上层可以先读取 Info，以文件中的稳定 ID 创建 Project/MainScene，随后再把同一份
-    *   已升级文档恢复到 Database 与 ResourceLibrary，避免重复读取及 TOCTOU 问题。
+    *   文档恢复到 Database 与 ResourceLibrary，避免重复读取及 TOCTOU 问题。
     */
     class _PROJECT_FILE_EXP CPreparedProjectOpen final
     {
@@ -76,7 +72,7 @@ namespace iCAX::ProjectFile
     * @brief 面向上层 target 的项目文件入口。
     * @details
     *   Save 自动从 Database 和 ResourceLibrary 采集持久化数据并原子落盘；
-    *   Open 自动读取、校验、升级，再完整填充两个空的运行时容器。
+    *   Open 自动读取、校验，再完整填充两个空的运行时容器。
     */
     class _PROJECT_FILE_EXP CProjectFile final
     {
@@ -86,8 +82,6 @@ namespace iCAX::ProjectFile
 
         CProjectFile(IN const CProjectFile&) = delete;
         CProjectFile& operator=(IN const CProjectFile&) = delete;
-
-        CProjectMigrationRegistry& Migrations() noexcept;
 
         CPreparedProjectOpen PrepareOpen(
             IN const std::filesystem::path& Path_) const;
@@ -117,6 +111,5 @@ namespace iCAX::ProjectFile
 
     private:
         CProjectFileDefinition m_Definition;
-        std::unique_ptr<CProjectMigrationRegistry> m_pMigrations;
     };
 }

@@ -237,8 +237,3 @@ def _section_contours(
         return {"kind": "polygon", "points": coordinates}
 
     return [output(outer), output(inner)]
-
-
-def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
-    from profile_fitting import fitter_for_profile
-    return fitter_for_profile(contours, "polygon", context)

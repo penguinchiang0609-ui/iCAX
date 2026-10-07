@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "assembly-orthogonal-corner",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": {
     "zh-CN": "三向直角装配原管验证件"
   },
@@ -22,20 +22,140 @@
     "resourceRoles": {
       "profiles": {
         "a": {
-          "parameter": "aProfileType"
+          "parameter": "aProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "aWidth",
+              "depth": "aDepth",
+              "wallThickness": "aWallThickness",
+              "cornerRadius": "aCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "aWidth",
+            "aDepth",
+            "aWallThickness",
+            "aCornerRadius",
+            "aInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
         },
         "b": {
-          "parameter": "bProfileType"
+          "parameter": "bProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "bWidth",
+              "depth": "bDepth",
+              "wallThickness": "bWallThickness",
+              "cornerRadius": "bCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 1,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "bWidth",
+            "bDepth",
+            "bWallThickness",
+            "bCornerRadius",
+            "bInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
         },
         "c": {
-          "parameter": "cProfileType"
+          "parameter": "cProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "cWidth",
+              "depth": "cDepth",
+              "wallThickness": "cWallThickness",
+              "cornerRadius": "cCornerRadius"
+            }
+          },
+          "fixedParametersBySectionKind": {
+            "rect": {
+              "innerRadius": 0,
+              "useInnerRadii": false
+            }
+          },
+          "managedParameters": [
+            "cWidth",
+            "cDepth",
+            "cWallThickness",
+            "cCornerRadius",
+            "cInnerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            }
+          }
         }
       }
     },
     "sceneParameterBindings": {
       "schemaVersion": 1,
       "groupSceneBindings": {
-        "size": "all",
+        "size": {},
         "a": {
           "memberStableKeyPrefixes": [
             "corner.a."
@@ -92,6 +212,23 @@
             "corner.c."
           ]
         }
+      },
+      "sceneBindings": {
+        "aLength": {
+          "memberStableKeyPrefixes": [
+            "corner.a."
+          ]
+        },
+        "bLength": {
+          "memberStableKeyPrefixes": [
+            "corner.b."
+          ]
+        },
+        "cLength": {
+          "memberStableKeyPrefixes": [
+            "corner.c."
+          ]
+        }
       }
     },
     "parameterLayout": {
@@ -108,9 +245,9 @@
           ]
         },
         {
-          "key": "material",
+          "key": "materials",
           "displayName": {
-            "zh-CN": "管材"
+            "zh-CN": "用料"
           },
           "order": 20,
           "allowPresets": true,
@@ -121,6 +258,91 @@
           ]
         }
       ]
+    },
+    "productControls": [],
+    "structureEditors": [],
+    "addDialog": {
+      "structureParameters": [
+        "aLength",
+        "bLength",
+        "cLength"
+      ],
+      "parameterGroups": [
+        {
+          "key": "corner-lengths",
+          "displayName": {
+            "zh-CN": "三向验证原管长度"
+          },
+          "parameters": [
+            "aLength",
+            "bLength",
+            "cLength"
+          ]
+        }
+      ]
+    },
+    "parameterDependencies": {
+      "manufacturingOnly": [
+        "productCode",
+        "tubeDesignerToolBindings"
+      ],
+      "creationOnly": []
+    },
+    "sceneSpecificationAnnotations": {
+      "annotations": [
+        {
+          "parameter": "aLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 100
+        },
+        {
+          "parameter": "bLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            80
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 101
+        },
+        {
+          "parameter": "cLength",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            160
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "size",
+          "order": 102
+        }
+      ],
+      "schemaVersion": 1
     }
   },
   "groups": [
@@ -188,8 +410,15 @@
         "profileConstraints": {
           "hollow": true,
           "minimumContourCount": 2,
-          "sectionKinds": ["rect"]
-        }
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -305,8 +534,15 @@
         "profileConstraints": {
           "hollow": true,
           "minimumContourCount": 2,
-          "sectionKinds": ["rect"]
-        }
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -422,8 +658,15 @@
         "profileConstraints": {
           "hollow": true,
           "minimumContourCount": 2,
-          "sectionKinds": ["rect"]
-        }
+          "sectionKinds": [
+            "rect"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {

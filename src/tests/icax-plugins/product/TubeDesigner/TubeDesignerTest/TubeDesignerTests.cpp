@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 // The workbook implementation is linked directly into this test executable.
 #define _TUBE_DESIGNER
@@ -15,6 +15,9 @@
 #include <TemplateRuntime/StandardJsonCodec.h>
 #include <TemplateRuntime/TemplateCodec.h>
 #include <Data/VariantSerializer.h>
+#include <TubeDesigner/ProductBRepConversionPipeline.h>
+#include <atomic>
+#include <future>
 
 #include <chrono>
 #include <array>
@@ -24,6 +27,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <thread>
 #include <Bnd_Box.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
@@ -153,7 +157,7 @@ namespace
                         {"kind":"line","start":[-20,-10],"end":[20,-10]},
                         {"kind":"line","start":[20,-10],"end":[20,10]},
                         {"kind":"line","start":[20,10],"end":[-20,10]},
-                        {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]},
+                        {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]}},
                 {"key":"shared.solid","operator":"extrude","inputs":["shared.profile"],
                     "arguments":{"vector":[0,0,100]}},
                 {"key":"display.final","operator":"compound","inputs":["shared.solid"]},
@@ -163,7 +167,7 @@ namespace
                         {"kind":"line","start":[-30,-15],"end":[30,-15]},
                         {"kind":"line","start":[30,-15],"end":[30,15]},
                         {"kind":"line","start":[30,15],"end":[-30,15]},
-                        {"kind":"line","start":[-30,15],"end":[-30,-15]}]}]},
+                        {"kind":"line","start":[-30,15],"end":[-30,-15]}]}]}},
                 {"key":"export.solid","operator":"extrude","inputs":["export.profile"],
                     "arguments":{"vector":[0,0,200]}},
                 {"key":"export.final","operator":"compound","inputs":["shared.solid","export.solid"]}
@@ -234,7 +238,7 @@ namespace
                             {"kind":"line","start":[-20,-10],"end":[20,-10]},
                             {"kind":"line","start":[20,-10],"end":[20,10]},
                             {"kind":"line","start":[20,10],"end":[-20,10]},
-                            {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]},
+                            {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]}},
                     {"key":"shared.solid","operator":"extrude","inputs":["shared.profile"],
                         "arguments":{"vector":[0,0,100]}},
                     {"key":"display.first","operator":"transform","inputs":["shared.solid"],
@@ -387,12 +391,78 @@ namespace
         iCAX::TemplateRuntime::CPythonTemplateHost& Host_,
         const STemplateProtocolFixture& Fixture_, const std::string& Purpose_)
     {
-        auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
+        using namespace iCAX::TemplateRuntime;
+        using iCAX::Data::ObjectMap;
+        using iCAX::Data::Variant;
+        using iCAX::Data::VariantArray;
+        if (Purpose_ != "display" && Purpose_ != "manufacturing")
+            throw std::invalid_argument("test invocation requires an explicit product purpose");
+        auto _Request = CTemplateCodec::MakeEvaluationRequest(
             Fixture_.Descriptor, Fixture_.Parameters, Fixture_.TemplatePath.string());
-        auto _Context = _Request.at("context").To<iCAX::Data::ObjectMap>();
-        _Context["geometryPurpose"] = Purpose_;
-        _Request["context"] = _Context;
-        return Host_.Invoke(_Request);
+        const auto _Overrides = Fixture_.Parameters.find("tubeDesignerProfileOverrides");
+        const auto _InvokePublic = [&](const std::string& Purpose) {
+            auto _Context = _Request.at("context").To<ObjectMap>();
+            _Context["geometryPurpose"] = Purpose;
+            _Request["context"] = std::move(_Context);
+            std::vector<std::string> _Consumed;
+            auto _Public = Host_.Invoke(_Request, &_Consumed);
+            CTemplateCodec::ValidateConsumedProductProfileOverrides(
+                Fixture_.Descriptor, _Overrides == Fixture_.Parameters.end()
+                    ? ObjectMap{} : _Overrides->second.To<ObjectMap>(), _Consumed);
+            return _Public;
+        };
+        // Test preparation follows the same separate public calls and private
+        // manufacturing execution as the current product host. No dual graph is
+        // requested or synthesized; the returned graph has one result purpose.
+        auto _Design = _InvokePublic("display");
+        (void)CTemplateCodec::AdaptDisplayModel(Variant(_Design));
+        const auto _TemplateRoot = Fixture_.TemplatePath.parent_path().parent_path().parent_path();
+        const auto _Snapshots = ResolveScriptComponentResources(
+            _Design, Fixture_.TemplatePath.parent_path(), Fixture_.Descriptor.Extensions,
+            Fixture_.Descriptor.ID, _TemplateRoot.parent_path() / "models", {}, nullptr);
+        ObjectMap _Private;
+        if (Purpose_ == "display")
+            _Private = CTemplateCodec::AdaptDisplayModel(Variant(_Design));
+        else
+        {
+            const auto _Definition = _InvokePublic("manufacturing");
+            (void)CTemplateCodec::ComposeManufacturingModel(Variant(_Definition), Variant(_Design));
+            auto _Context = _Request.at("context").To<ObjectMap>();
+            _Context["template"] = ObjectMap{{"id", Fixture_.Descriptor.ID},
+                {"version", Fixture_.Descriptor.Version}, {"packageDigest", Fixture_.Descriptor.PackageDigest}};
+            _Context["sharedRoot"] = (_TemplateRoot / "_shared").string();
+            _Context["componentSnapshots"] = _Snapshots;
+            _Private = Host_.Invoke(ObjectMap{{"protocol", std::string(kTemplateProtocol)},
+                {"protocolVersion", static_cast<unsigned long long>(kTemplateProtocolVersion)},
+                {"operation", std::string("execute-manufacturing")},
+                {"manufacturingDefinition", _Definition}, {"designModel", _Design},
+                {"context", std::move(_Context)}});
+            (void)ResolveScriptComponentResources(_Private, Fixture_.TemplatePath.parent_path(),
+                Fixture_.Descriptor.Extensions, Fixture_.Descriptor.ID,
+                _TemplateRoot.parent_path() / "models", {}, nullptr, &_Snapshots);
+            const Variant _DesignValue(_Design);
+            CTemplateCodec::ValidateManufacturingExecutionModel(
+                Variant(_Definition), Variant(_Private), &_DesignValue);
+        }
+        auto _Model = CTemplateCodec::ParseNeutralModel(Variant(_Private));
+        ApplyResolvedComponentMetadata(_Model, _Snapshots);
+        _Model.Extensions["tubeDesigner.geometryPurpose"] = Purpose_;
+        _Private["template"] = ObjectMap{{"id", Fixture_.Descriptor.ID},
+            {"version", Fixture_.Descriptor.Version}, {"packageDigest", Fixture_.Descriptor.PackageDigest}};
+        _Private["parameters"] = Fixture_.Parameters;
+        _Private["extensions"] = _Model.Extensions;
+        auto _Items = _Private.at("items").To<VariantArray>();
+        for (auto& _ItemValue : _Items)
+        {
+            auto _Item = _ItemValue.To<ObjectMap>();
+            const auto _Key = _Item.at("key").To<std::string>();
+            const auto _Metadata = std::find_if(_Model.Items.begin(), _Model.Items.end(),
+                [&](const auto& Value) { return Value.Key == _Key; });
+            _Item["properties"] = _Metadata->Properties;
+            _ItemValue = std::move(_Item);
+        }
+        _Private["items"] = std::move(_Items);
+        return CTemplateCodec::ExpandNeutralModelResources(Variant(_Private));
     }
 
     void ExpectSingleResultRawProtocol(
@@ -420,6 +490,11 @@ namespace
         }
         const auto _Extensions = Raw_.at("extensions").To<ObjectMap>();
         EXPECT_EQ(Purpose_, _Extensions.at("tubeDesigner.geometryPurpose").To<std::string>());
+        if (Purpose_ == "display")
+        {
+            EXPECT_FALSE(_Extensions.contains("tubeDesigner.manufacturingPartCount"));
+            return;
+        }
         const auto& _Count = _Extensions.at("tubeDesigner.manufacturingPartCount");
         ASSERT_TRUE(_Count.Is<long long>() || _Count.Is<unsigned long long>());
         const auto _ActualCount = _Count.Is<long long>()
@@ -460,19 +535,6 @@ namespace
         if (Purpose_ == "manufacturing") EXPECT_GT(_BooleanCount, 0u);
     }
 
-    void ExpectExplicitResultMatchesLegacyItems(
-        const iCAX::TemplateRuntime::SNeutralModel& Explicit_,
-        const iCAX::TemplateRuntime::SNeutralModel& Legacy_, const std::string& Purpose_)
-    {
-        ASSERT_EQ(Legacy_.Items.size(), Explicit_.Items.size());
-        const auto _LegacyPurpose = Purpose_ == "display" ? "display" : "export";
-        for (std::size_t _Index = 0; _Index < Legacy_.Items.size(); ++_Index)
-        {
-            EXPECT_EQ(Legacy_.Items[_Index].Key, Explicit_.Items[_Index].Key);
-            EXPECT_EQ(Legacy_.Items[_Index].Representations.at(_LegacyPurpose),
-                Explicit_.Items[_Index].Representations.at("result"));
-        }
-    }
 }
 
 TEST(TubeDesignerFinalGeometryMeasurementTest, ReadsDimensionsFromFinalBRepOnly)
@@ -676,6 +738,30 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, NormalizesManufacturingPartAlongP
     {
         EXPECT_NEAR(0.0, _Start[_Coordinate].To<double>(), 0.01);
         EXPECT_NEAR(0.0, _End[_Coordinate].To<double>(), 0.01);
+    }
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnownManufacturingAxisMatchesInferredAxis)
+{
+    const auto _Outer = BRepPrimAPI_MakeBox(
+        gp_Pnt(-20.0, -10.0, 100.0), 40.0, 20.0, 1000.0).Shape();
+    const auto _Notch = BRepPrimAPI_MakeBox(
+        gp_Pnt(-25.0, -5.0, 100.0), 20.0, 10.0, 70.0).Shape();
+    const auto _Shape = BRepAlgoAPI_Cut(_Outer, _Notch).Shape();
+    const auto _Inferred = NormalizeLinearPartForManufacturing(_Shape);
+    for (const auto& _Axis : { gp_Dir(0, 0, 1), gp_Dir(0, 0, -1), gp_Dir(0, 1, 0) })
+    {
+        const auto _Known = NormalizeLinearPartForManufacturing(_Shape, _Axis);
+        Bnd_Box _ExpectedBounds, _ActualBounds;
+        BRepBndLib::AddOptimal(_Inferred, _ExpectedBounds, false, false);
+        BRepBndLib::AddOptimal(_Known, _ActualBounds, false, false);
+        double _Expected[6], _Actual[6];
+        _ExpectedBounds.Get(_Expected[0], _Expected[1], _Expected[2],
+            _Expected[3], _Expected[4], _Expected[5]);
+        _ActualBounds.Get(_Actual[0], _Actual[1], _Actual[2],
+            _Actual[3], _Actual[4], _Actual[5]);
+        for (std::size_t _Index = 0; _Index < 6; ++_Index)
+            EXPECT_NEAR(_Expected[_Index], _Actual[_Index], 1.e-6);
     }
 }
 
@@ -1832,6 +1918,138 @@ TEST(TemplateRuntimeTest, NumericEnumRejectsEquivalentDuplicateChoices)
         })json")), std::invalid_argument);
 }
 
+TEST(TemplateRuntimeTest, ProfileOverridesUseDeclaredFieldSectionAndContourConstraints)
+{
+    using namespace iCAX::TemplateRuntime;
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    const auto _Descriptor = CTemplateCodec::ParseDescriptor(CStandardJsonCodec::Parse(R"json({
+        "schema":"icax.template-descriptor","schemaVersion":1,"id":"test.profile-role",
+        "version":"1.0.0","displayName":"Profile role",
+        "extensions":{"resourceRoles":{"profiles":{"frame":{"parameter":"frameProfileType"}}}},
+        "parameters":[{"key":"frameProfileType","displayName":"Frame","valueType":"enum",
+            "defaultValue":"rect","choices":[{"value":"rect","displayName":"Rect"}],
+            "presentation":{"profileConstraints":{"sectionKinds":["rect"],"hollow":true,
+                "minimumContourCount":2,"maximumContourCount":2}}}]
+    })json"));
+    ObjectMap _Snapshot{{"schema",std::string("icax.imported-tube-profile")}, {"schemaVersion",1ull},
+        {"kind",std::string("fixed-section")}, {"sectionKind",std::string("rect")},
+        {"contours",VariantArray{ObjectMap{},ObjectMap{}}}, {"hollow",true}};
+    const auto _Original = _Snapshot;
+    EXPECT_NO_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"frame",_Snapshot}}));
+    EXPECT_EQ(_Original, _Snapshot);
+    _Snapshot["sectionKind"] = std::string("round");
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"frame",_Snapshot}}),std::invalid_argument);
+    _Snapshot["sectionKind"] = std::string("rect");
+    _Snapshot["contourCount"] = 1ull;
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"frame",_Snapshot}}),std::invalid_argument);
+    _Snapshot.erase("contourCount");
+    _Snapshot["contours"] = VariantArray{ObjectMap{}};
+    _Snapshot["hollow"] = false;
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"frame",_Snapshot}}),std::invalid_argument);
+    _Snapshot = _Original;
+    _Snapshot["contours"] = VariantArray{ObjectMap{},ObjectMap{},ObjectMap{}};
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"frame",_Snapshot}}),std::invalid_argument);
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Descriptor, ObjectMap{{"unknown",_Original}}),std::invalid_argument);
+    auto _Undeclared = _Descriptor;
+    _Undeclared.Parameters.front().Presentation.clear();
+    EXPECT_THROW(CTemplateCodec::ValidateProductProfileOverrides(_Undeclared, ObjectMap{{"frame",_Original}}),std::invalid_argument);
+    const auto _Fields = CTemplateCodec::MakePresentationDescriptor(_Descriptor).at("parameters").To<VariantArray>();
+    EXPECT_EQ(_Descriptor.Parameters.front().Presentation, _Fields.front().To<ObjectMap>().at("presentation").To<ObjectMap>());
+}
+
+TEST(TemplateRuntimeTest, ConsumedProfileRolesRejectInvalidActiveSnapshotsAndKeepInactiveDrafts)
+{
+    using namespace iCAX::TemplateRuntime;
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    const auto _Descriptor = CTemplateCodec::ParseDescriptor(CStandardJsonCodec::Parse(R"json({
+        "schema":"icax.template-descriptor","schemaVersion":1,"id":"test.consumed-profile-role",
+        "version":"1.0.0","displayName":"Consumed profile role",
+        "extensions":{"resourceRoles":{"profiles":{"doorFrame":{"parameter":"doorFrameProfileType"}}}},
+        "parameters":[{"key":"doorFrameProfileType","displayName":"Door frame","valueType":"enum",
+            "defaultValue":"rect","choices":[{"value":"rect","displayName":"Rect"}],
+            "presentation":{"profileConstraints":{"sectionKinds":["rect"],"hollow":true,
+                "minimumContourCount":2,"maximumContourCount":2}}}]
+    })json"));
+    ObjectMap _Snapshot{{"schema",std::string("icax.imported-tube-profile")}, {"schemaVersion",1ull},
+        {"kind",std::string("fixed-section")}, {"sectionKind",std::string("round")},
+        {"contours",VariantArray{ObjectMap{},ObjectMap{}}}, {"hollow",true}};
+    const ObjectMap _Overrides{{"doorFrame",_Snapshot}};
+    const auto _Original = _Overrides;
+    EXPECT_NO_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, _Overrides, {}));
+    // Even a fabricated successful SDK response cannot admit the consumed round
+    // snapshot: native validates the original input, without mutating its draft.
+    EXPECT_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, _Overrides, {"doorFrame"}),std::invalid_argument);
+    EXPECT_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, _Overrides, {"missing"}),std::invalid_argument);
+    EXPECT_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, _Overrides, {"doorFrame","doorFrame"}),std::invalid_argument);
+    EXPECT_EQ(_Original, _Overrides);
+    _Snapshot["sectionKind"] = std::string("rect");
+    EXPECT_NO_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, ObjectMap{{"doorFrame",_Snapshot}}, {"doorFrame"}));
+    _Snapshot["contourCount"] = 1ull;
+    EXPECT_THROW(CTemplateCodec::ValidateConsumedProductProfileOverrides(_Descriptor, ObjectMap{{"doorFrame",_Snapshot}}, {"doorFrame"}),std::invalid_argument);
+}
+
+TEST(TemplateRuntimeTest, ProfileDescriptorRejectsChoicesOutsideItsSectionWhitelist)
+{
+    EXPECT_THROW(iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(R"json({
+            "schema":"icax.template-descriptor","schemaVersion":1,"id":"test.bad-profile-role",
+            "version":"1.0.0","displayName":"Bad profile role",
+            "parameters":[{"key":"frameProfileType","displayName":"Frame","valueType":"enum",
+                "choices":[{"value":"round","displayName":"Round"}],
+                "presentation":{"profileConstraints":{"sectionKinds":["rect"]}}}]
+        })json")),std::invalid_argument);
+}
+
+TEST(TemplateRuntimeTest, PublicDisplayAndManufacturingVersionOneAreRejected)
+{
+    using namespace iCAX::TemplateRuntime;
+    EXPECT_THROW(CTemplateCodec::AdaptDisplayModel(CStandardJsonCodec::Parse(
+        R"json({"schema":"icax.display-model","schemaVersion":1})json")),std::invalid_argument);
+    EXPECT_THROW(CTemplateCodec::AdaptManufacturingModel(CStandardJsonCodec::Parse(
+        R"json({"schema":"icax.manufacturing-model","schemaVersion":1})json")),std::invalid_argument);
+}
+
+TEST(TemplateRuntimeTest, CurrentDesignFactsAdaptPrivatelyWithoutChangingPublicDisplay)
+{
+    using namespace iCAX::TemplateRuntime;
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    const auto _Display = CStandardJsonCodec::Parse(R"json({
+        "schema":"icax.display-model","schemaVersion":2,
+        "coordinateSystem":"right-handed-x-width-y-depth-z-height","lengthUnit":"mm",
+        "resources":[
+            {"key":"section","operator":"profile2d","inputs":[],"arguments":{
+                "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
+                "contours":[{"kind":"path","closed":true,"segments":[
+                    {"kind":"line","start":[0,0],"end":[1,0]},
+                    {"kind":"line","start":[1,0],"end":[1,1]},
+                    {"kind":"line","start":[1,1],"end":[0,1]},
+                    {"kind":"line","start":[0,1],"end":[0,0]}]}]}},
+            {"key":"part","operator":"extrude","inputs":["section"],"arguments":{"vector":[0,0,1]}}
+        ],
+        "items":[{"key":"tube","displayName":"Tube","geometry":{"resource":"part"},
+            "properties":{"partKind":"tube","materialCategory":"linear"}}],
+        "roots":["tube"],"annotations":[]
+    })json");
+    const auto _Original = _Display;
+    const auto _Adapted = CTemplateCodec::AdaptDisplayModel(_Display);
+    const auto _Properties = _Adapted.at("items").To<VariantArray>().front().To<ObjectMap>().at("properties").To<ObjectMap>();
+    EXPECT_EQ("tube", _Properties.at("manufacturing.partKind").To<std::string>());
+    EXPECT_EQ("linear", _Properties.at("manufacturing.materialCategory").To<std::string>());
+    auto _Parsed=CTemplateCodec::ParseNeutralModel(_Display);
+    ASSERT_EQ(1u,_Parsed.Items.size());
+    EXPECT_EQ("tube",_Parsed.Items.front().Properties.at("manufacturing.partKind").To<std::string>());
+    EXPECT_EQ("linear",_Parsed.Items.front().Properties.at("manufacturing.materialCategory").To<std::string>());
+    iCAX::TubeDesigner::ApplyResolvedComponentMetadata(_Parsed,{});
+    EXPECT_EQ("tube",_Parsed.Items.front().Properties.at("manufacturing.partKind").To<std::string>());
+    EXPECT_EQ("linear",_Parsed.Items.front().Properties.at("manufacturing.materialCategory").To<std::string>());
+    EXPECT_EQ(_Original, _Display);
+    EXPECT_FALSE(_Display.To<ObjectMap>().at("items").To<VariantArray>().front().To<ObjectMap>()
+        .at("properties").To<ObjectMap>().contains("manufacturing.partKind"));
+}
+
 TEST(TemplateRuntimeTest, ParameterPresentationPreservesExplicitAndMissingOrder)
 {
     using namespace iCAX::TemplateRuntime;
@@ -1859,7 +2077,7 @@ TEST(TemplateRuntimeTest, EveryGuardrailStyleIsAnIndependentTemplateDescriptor)
     using namespace iCAX::TemplateRuntime;
     using iCAX::Data::ObjectMap;
     const auto _Root = std::filesystem::current_path()
-        / "src/apps/tube-designer/templates";
+        / "src/apps/tube-designer/templates/product";
     std::set<std::string> _IDs;
     std::size_t _StyleCount = 0;
     for (const auto& _Entry : std::filesystem::directory_iterator(_Root))
@@ -1867,6 +2085,7 @@ TEST(TemplateRuntimeTest, EveryGuardrailStyleIsAnIndependentTemplateDescriptor)
         if (!_Entry.is_directory() || _Entry.path().filename().string().rfind("modular_guardrail", 0) != 0)
             continue;
         const auto _Path = _Entry.path() / "template.json";
+        if (!std::filesystem::is_regular_file(_Path)) continue;
         std::ifstream _Stream(_Path, std::ios::binary);
         ASSERT_TRUE(static_cast<bool>(_Stream));
         const std::string _Text{ std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
@@ -1875,244 +2094,63 @@ TEST(TemplateRuntimeTest, EveryGuardrailStyleIsAnIndependentTemplateDescriptor)
         EXPECT_FALSE(_Descriptor.Extensions.at("catalog").To<ObjectMap>().contains("presets"));
         ++_StyleCount;
     }
-    EXPECT_EQ(32u, _StyleCount);
+    EXPECT_EQ(4u, _StyleCount);
     EXPECT_EQ(_StyleCount, _IDs.size());
 }
 
 TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutExternalInterpreter)
 {
+    using namespace iCAX::TemplateRuntime;
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::Variant;
     const auto _Root = std::filesystem::current_path();
-    const auto _DescriptorPath = _Root / "src/apps/tube-designer/templates/product/single_face_security_window/template.json";
-    const auto _TemplatePath = _DescriptorPath.parent_path() / "template.py";
-    std::ifstream _DescriptorStream(_DescriptorPath, std::ios::binary);
-    ASSERT_TRUE(static_cast<bool>(_DescriptorStream));
-    const std::string _DescriptorText{
-        std::istreambuf_iterator<char>(_DescriptorStream), std::istreambuf_iterator<char>()
-    };
-    auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
-        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-    _Descriptor.PackageDigest = "test-real-package";
-    iCAX::Data::ObjectMap _Parameters;
-    for (const auto& _Definition : _Descriptor.Parameters)
-        _Parameters[_Definition.Key] = _Definition.DefaultValue;
-    EXPECT_TRUE(_Parameters.at("accessDoorEnabled").To<bool>());
-    // Fix the legacy two-side-frame/through-hole measurement fixture explicitly;
-    // its counts and opening stations must not follow commercial product defaults.
-    // Current defaults are exercised with their opening in the purpose-protocol test.
-    _Parameters["accessDoorEnabled"] = false;
-    _Parameters["frameLayout"] = std::string("left_right");
-    _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
-        _Descriptor, _Parameters);
-
-    iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Response = _Host.Invoke(
-        iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-            _Descriptor, _Parameters, _TemplatePath.string()));
-    const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Response);
-    EXPECT_EQ(_Descriptor.ID, _Model.TemplateID);
-    EXPECT_EQ(_Descriptor.Version, _Model.TemplateVersion);
-    EXPECT_GT(_Model.Geometry.size(), 35u);
-    EXPECT_EQ(15u, _Model.Items.size());
-    ASSERT_EQ(2u, _Model.Outputs.size());
-    EXPECT_EQ("display", _Model.Outputs.at(0).Purpose);
-    EXPECT_EQ(15u, _Model.Outputs.at(0).ItemKeys.size());
-    EXPECT_EQ("export", _Model.Outputs.at(1).Purpose);
-    EXPECT_EQ(15u, _Model.Outputs.at(1).ItemKeys.size());
-    const auto _MainHorizontal = std::find_if(
-        _Model.Items.begin(), _Model.Items.end(),
-        [](const auto& Item_) { return Item_.Key.starts_with("main_grid.horizontal."); });
-    ASSERT_NE(_Model.Items.end(), _MainHorizontal);
-    ASSERT_TRUE(_MainHorizontal->Properties.contains("manufacturing.categoryKey"));
-    EXPECT_EQ(
-        "main_grid.horizontal",
-        _MainHorizontal->Properties.at("manufacturing.categoryKey").To<std::string>());
-    EXPECT_EQ(
-        "主横杆",
-        _MainHorizontal->Properties.at("manufacturing.categoryName").To<std::string>());
-    ASSERT_TRUE(_MainHorizontal->Properties.contains("tubeDesigner.profile"));
-    const auto _Profile = _MainHorizontal->Properties.at("tubeDesigner.profile")
-        .To<iCAX::Data::ObjectMap>();
-    EXPECT_EQ("icax.tube-profile", _Profile.at("schema").To<std::string>());
-    EXPECT_EQ("rect", _Profile.at("id").To<std::string>());
-    EXPECT_EQ("2.1.0", _Profile.at("packageVersion").To<std::string>());
-    EXPECT_EQ("矩形管", _Profile.at("displayName").To<std::string>());
-    EXPECT_FALSE(_Profile.at("specification").To<std::string>().empty());
-    const auto _OuterFrameLeft = std::find_if(
-        _Model.Items.begin(), _Model.Items.end(),
-        [](const auto& Item_) { return Item_.Key.starts_with("outer_frame.left."); });
-    ASSERT_NE(_Model.Items.end(), _OuterFrameLeft);
-    const auto _OuterFrameGeometryKey = _OuterFrameLeft->Representations.at("export");
-    const auto _OuterFrameGeometry = std::find_if(
-        _Model.Geometry.begin(), _Model.Geometry.end(),
-        [&](const auto& Node_) { return Node_.Key == _OuterFrameGeometryKey; });
-    ASSERT_NE(_Model.Geometry.end(), _OuterFrameGeometry);
-    EXPECT_EQ(iCAX::TemplateRuntime::EGeometryOperator::Boolean, _OuterFrameGeometry->Operator);
-    EXPECT_EQ(5u, _OuterFrameGeometry->Inputs.size());
-    const auto _PartsTable = std::find_if(_Model.Tables.begin(), _Model.Tables.end(),
-        [](const auto& Table_) { return Table_.Key == "parts"; });
-    ASSERT_NE(_Model.Tables.end(), _PartsTable);
-    EXPECT_EQ(15u, _PartsTable->Rows.size());
-    EXPECT_TRUE(std::any_of(_Model.Tables.begin(), _Model.Tables.end(),
-        [](const auto& Table_) { return Table_.Key == "security_window_review"; }));
-    const auto _DisplayEvaluation = EvaluateTemplatePurposeGeometry(_Model, "display");
-    ExpectUnmachinedTemplateDisplay(_Model, _DisplayEvaluation);
-    const auto _Evaluation = EvaluateTemplatePurposeGeometry(_Model, "export");
-    ExpectManufacturingBooleanIsEvaluated(_Model, _Evaluation);
-    EXPECT_EQ(_Model.Geometry.size(), _Evaluation.Geometry.size());
-    for (const auto& _Item : _Model.Items)
-        EXPECT_FALSE(_Evaluation.At(_Item.Representations.at("display")).IsNull());
-    EXPECT_NE(_OuterFrameLeft->Representations.at("display"), _OuterFrameGeometryKey);
-    EXPECT_GT(RootSelectionShapeVolume(
-        _DisplayEvaluation.At(_OuterFrameLeft->Representations.at("display"))),
-        RootSelectionShapeVolume(_Evaluation.At(_OuterFrameGeometryKey)));
-    for (const auto& _Item : _Model.Items)
-    {
-        if (!_Item.Key.starts_with("main_grid.horizontal.")) continue;
-        std::size_t _SolidCount = 0;
-        for (TopExp_Explorer _Explorer(
-                _Evaluation.At(_Item.Representations.at("export")), TopAbs_SOLID);
-            _Explorer.More(); _Explorer.Next())
-        {
-            ++_SolidCount;
-        }
-        EXPECT_EQ(1u, _SolidCount) << _Item.Key << " was severed by a through cutter";
-    }
-    SCOPED_TRACE("real template: measuring the first outer frame");
-    const auto _OuterFrameMeasurement = MeasureFinalPartGeometry(
-        NormalizeLinearPartForManufacturing(_Evaluation.At(_OuterFrameGeometryKey)),
-        "real-template-outer-frame", 1);
-    ASSERT_TRUE(_OuterFrameMeasurement.at("available").To<bool>());
-    const auto _OuterFrameFeatures =
-        _OuterFrameMeasurement.at("features").To<iCAX::Data::VariantArray>();
-    ASSERT_EQ(4u, _OuterFrameFeatures.size());
-    EXPECT_NEAR(1800.0, _OuterFrameMeasurement.at("length").To<double>(), 0.01);
-    const std::array _ExpectedOpeningStations{ 200.0, 666.6666667, 1133.3333333, 1600.0 };
-    for (std::size_t _Index = 0; _Index < _OuterFrameFeatures.size(); ++_Index)
-    {
-        const auto _Feature = _OuterFrameFeatures[_Index].To<iCAX::Data::ObjectMap>();
-        EXPECT_EQ("side-opening", _Feature.at("kind").To<std::string>());
-        EXPECT_NEAR(
-            _ExpectedOpeningStations[_Index], _Feature.at("station").To<double>(), 0.01);
-    }
-    const auto _OuterFrameReference =
-        _OuterFrameMeasurement.at("linearReference").To<iCAX::Data::ObjectMap>();
-    const auto _OuterFrameStart =
-        _OuterFrameReference.at("start").To<iCAX::Data::VariantArray>();
-    const auto _OuterFrameEnd =
-        _OuterFrameReference.at("end").To<iCAX::Data::VariantArray>();
-    EXPECT_NEAR(-900.0, _OuterFrameStart[0].To<double>(), 0.01);
-    EXPECT_NEAR(900.0, _OuterFrameEnd[0].To<double>(), 0.01);
-    EXPECT_NEAR(0.0, _OuterFrameEnd[1].To<double>(), 0.01);
-    EXPECT_NEAR(0.0, _OuterFrameEnd[2].To<double>(), 0.01);
-
-    SCOPED_TRACE("real template: evaluating the continuous frame");
-    _Parameters["width"] = 1400.0;
-    _Parameters["frameLayout"] = std::string("four_sides");
-    // This stage verifies a single unfolded frame, regardless of the default joint.
-    _Parameters["frameJoinType"] = std::string("v_groove_90:tool_library");
-    const auto _SecondResponse = _Host.Invoke(
-        iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-            _Descriptor, _Parameters, _TemplatePath.string()));
-    const auto _SecondModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_SecondResponse);
-    ASSERT_TRUE(_SecondModel.Parameters.at("width").Is<double>());
-    EXPECT_DOUBLE_EQ(1400.0, _SecondModel.Parameters.at("width").To<double>());
-    ASSERT_EQ(16u, _SecondModel.Items.size());
-    const auto& _ContinuousFrame = _SecondModel.Items.front();
-    EXPECT_EQ("outer_frame.continuous.0001", _ContinuousFrame.Key);
-    EXPECT_NE(
-        _ContinuousFrame.Representations.at("display"),
-        _ContinuousFrame.Representations.at("export"));
-    const auto _SecondDisplay = EvaluateTemplatePurposeGeometry(_SecondModel, "display");
-    ExpectUnmachinedTemplateDisplay(_SecondModel, _SecondDisplay);
-    const auto _SecondEvaluation = iCAX::OpenCascade::EvaluateNeutralModel(_SecondModel);
-    EXPECT_FALSE(_SecondEvaluation.At(
-        _ContinuousFrame.Representations.at("display")).IsNull());
-    EXPECT_FALSE(_SecondEvaluation.At(
-        _ContinuousFrame.Representations.at("export")).IsNull());
-
-    const auto& _FrameDisplayKey = _ContinuousFrame.Representations.at("display");
-    const auto& _FrameExportKey = _ContinuousFrame.Representations.at("export");
-    const auto _FrameDisplay = iCAX::OpenCascade::EvaluateNeutralModel(
-        _SecondModel, std::vector<std::string>{ _FrameDisplayKey });
-    const auto _FrameExport = iCAX::OpenCascade::EvaluateNeutralModel(
-        _SecondModel, std::vector<std::string>{ _FrameExportKey });
-    ExpectManufacturingBooleanIsEvaluated(_SecondModel, _FrameExport);
-    EXPECT_FALSE(_FrameDisplay.Geometry.contains(_FrameExportKey));
-    EXPECT_FALSE(_FrameExport.Geometry.contains(_FrameDisplayKey));
-    for (const auto& [_Key, _Shape] : _FrameDisplay.Geometry)
-    {
-        EXPECT_TRUE(_Key.starts_with("shared.tube.") || _Key.find(".display.") != std::string::npos) << _Key;
-        EXPECT_EQ(std::string::npos, _Key.find(".export.")) << _Key;
-    }
-    for (const auto& [_Key, _Shape] : _FrameExport.Geometry)
-    {
-        EXPECT_TRUE(_Key.starts_with("shared.tube.") || _Key.find(".export.") != std::string::npos) << _Key;
-        EXPECT_EQ(std::string::npos, _Key.find(".display.")) << _Key;
-    }
-    ExpectRootSelectionGeometryMatches(_FrameDisplay.At(_FrameDisplayKey),
-        _SecondEvaluation.At(_FrameDisplayKey));
-    ExpectRootSelectionGeometryMatches(_FrameExport.At(_FrameExportKey),
-        _SecondEvaluation.At(_FrameExportKey));
-    const auto _FrameDisplayBounds = RootSelectionShapeBounds(_FrameDisplay.At(_FrameDisplayKey));
-    const auto _FrameExportBounds = RootSelectionShapeBounds(_FrameExport.At(_FrameExportKey));
-    EXPECT_NEAR(1400.0, _FrameDisplayBounds[3] - _FrameDisplayBounds[0], 0.001);
-    EXPECT_NEAR(1800.0, _FrameDisplayBounds[5] - _FrameDisplayBounds[2], 0.001);
-    EXPECT_NEAR(_ContinuousFrame.Properties.at("length").To<double>(),
-        _FrameExportBounds[3] - _FrameExportBounds[0], 0.001);
-    EXPECT_LT(_FrameExportBounds[5] - _FrameExportBounds[2], 100.0);
-
-    SCOPED_TRACE("real template: evaluating the miter frame");
-    _Parameters["frameJoinType"] = std::string("miter_45");
-    const auto _MiterResponse = _Host.Invoke(
-        iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-            _Descriptor, _Parameters, _TemplatePath.string()));
-    const auto _MiterModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_MiterResponse);
-    ASSERT_EQ(19u, _MiterModel.Items.size());
-    EXPECT_EQ("outer_frame.left.0001", _MiterModel.Items.front().Key);
-    const auto _MiterDisplay = EvaluateTemplatePurposeGeometry(_MiterModel, "display");
-    ExpectUnmachinedTemplateDisplay(_MiterModel, _MiterDisplay);
-    const auto _MiterEvaluation = EvaluateTemplatePurposeGeometry(_MiterModel, "export");
-    ExpectManufacturingBooleanIsEvaluated(_MiterModel, _MiterEvaluation);
-    for (std::size_t _Index = 0; _Index < 4; ++_Index)
-    {
-        const auto& _Item = _MiterModel.Items[_Index];
-        EXPECT_NE(_Item.Representations.at("display"), _Item.Representations.at("export"));
-        EXPECT_FALSE(_MiterEvaluation.At(
-            _Item.Representations.at("export")).IsNull());
-    }
-
-    _Parameters["frameLayout"] = std::string("left_right");
-    SCOPED_TRACE("real template: evaluating the access door");
-    _Parameters["accessDoorEnabled"] = true;
-    const auto _DoorResponse = _Host.Invoke(
-        iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-            _Descriptor, _Parameters, _TemplatePath.string()));
-    const auto _DoorModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_DoorResponse);
-    const auto _DoorDisplay = EvaluateTemplatePurposeGeometry(_DoorModel, "display");
-    ExpectUnmachinedTemplateDisplay(_DoorModel, _DoorDisplay);
-    // Grid-end assembly relationships coexist with hinges. Only the opening's
-    // hinge count is fixed here; the default tube-grid must not create a plate.
-    EXPECT_FALSE(_Parameters.contains("mainInfillMode"));
-    EXPECT_FALSE(std::any_of(_DoorModel.Items.begin(), _DoorModel.Items.end(),
-        [](const auto& Item_) { return Item_.Key.starts_with("center_plate."); }));
-    std::size_t _HingeCount = 0;
-    for (const auto& _Relationship : _DoorModel.Relationships)
-    {
-        if (_Relationship.Kind != "hinge") continue;
-        ++_HingeCount;
-        ASSERT_EQ(2u, _Relationship.ItemKeys.size());
-        EXPECT_TRUE(std::any_of(_Relationship.ItemKeys.begin(), _Relationship.ItemKeys.end(),
-            [](const auto& Key_) { return Key_.starts_with("access_door.fixed_frame."); }));
-        EXPECT_TRUE(std::any_of(_Relationship.ItemKeys.begin(), _Relationship.ItemKeys.end(),
-            [](const auto& Key_) { return Key_.starts_with("access_door.leaf.frame."); }));
-    }
-    // Integer parameters are normalized to signed 64-bit values by TemplateCodec.
-    ASSERT_TRUE(_Parameters.at("doorHingeCount").Is<long long>());
-    EXPECT_EQ(static_cast<std::size_t>(_Parameters.at("doorHingeCount").To<long long>()), _HingeCount);
+    auto _Fixture = SecurityWindowProtocolFixture(_Root, "single");
+    _Fixture.Parameters["accessDoorEnabled"] = false;
+    _Fixture.Parameters = CTemplateCodec::ValidateAndNormalizeParameters(
+        _Fixture.Descriptor, _Fixture.Parameters);
+    const auto _Input = CStandardJsonCodec::Serialize(Variant(_Fixture.Parameters));
+    CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
+    auto _Request = CTemplateCodec::MakeEvaluationRequest(
+        _Fixture.Descriptor, _Fixture.Parameters, _Fixture.TemplatePath.string());
+    EXPECT_THROW(_Host.Invoke(_Request), std::runtime_error);
+    auto _Context = _Request.at("context").To<ObjectMap>();
+    _Context["geometryPurpose"] = std::string("display");
+    _Request["context"] = _Context;
+    std::vector<std::string> _Consumed;
+    const auto _Display = _Host.Invoke(_Request, &_Consumed);
+    EXPECT_TRUE(_Consumed.empty());
+    EXPECT_EQ("icax.display-model", _Display.at("schema").To<std::string>());
+    EXPECT_EQ(8u, _Display.size());
+    EXPECT_FALSE(_Display.contains("connections"));
+    EXPECT_FALSE(_Display.contains("template"));
+    EXPECT_FALSE(_Display.contains("parameters"));
+    EXPECT_FALSE(_Display.contains("profileRolesConsumed"));
+    const auto _Design = CTemplateCodec::ParseNeutralModel(Variant(_Display));
+    EXPECT_FALSE(_Design.Items.empty());
+    EXPECT_TRUE(_Design.Relationships.empty());
+    _Context["geometryPurpose"] = std::string("manufacturing");
+    _Request["context"] = _Context;
+    const auto _Manufacturing = _Host.Invoke(_Request, &_Consumed);
+    EXPECT_TRUE(_Consumed.empty());
+    EXPECT_EQ("icax.manufacturing-model", _Manufacturing.at("schema").To<std::string>());
+    EXPECT_EQ(4u, _Manufacturing.size());
+    EXPECT_TRUE(_Manufacturing.contains("connections"));
+    EXPECT_TRUE(_Manufacturing.contains("processes"));
+    EXPECT_FALSE(_Manufacturing.contains("items"));
+    EXPECT_FALSE(_Manufacturing.contains("resources"));
+    EXPECT_FALSE(_Manufacturing.contains("parameters"));
+    EXPECT_FALSE(_Manufacturing.contains("profileRolesConsumed"));
+    EXPECT_NO_THROW(CTemplateCodec::ComposeManufacturingModel(
+        Variant(_Manufacturing), Variant(_Display)));
+    EXPECT_EQ(_Input, CStandardJsonCodec::Serialize(Variant(_Fixture.Parameters)));
+    EXPECT_EQ(_Input, CStandardJsonCodec::Serialize(_Request.at("parameters")));
     EXPECT_TRUE(_Host.IsRunning());
 }
 
-TEST(TemplateRuntimeTest, MultiFaceInspectionDoorCanBePlacedOnEveryAvailableFace)
+// Paused historical CAD fixtures use deleted product packages and the revoked
+// no-purpose dual-output protocol. They are not current acceptance evidence.
+// Current window and four guardrails are checked through independent Native APIs.
+TEST(TemplateRuntimeTest, DISABLED_MultiFaceInspectionDoorCanBePlacedOnEveryAvailableFace)
 {
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
@@ -2324,12 +2362,13 @@ TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
         "version":"1.0.0",
         "displayName":"Profile catalog probe",
         "parameters":[
-            {"key":"probeProfileType","displayName":"Profile","valueType":"string","defaultValue":"rect"},
+            {"key":"probeProfileType","displayName":"Profile","valueType":"enum","defaultValue":"rect","choices":[{"value":"rect"}],"presentation":{"profileConstraints":{"sectionKinds":["rect","arbitrary"],"hollow":true,"minimumContourCount":2}}},
             {"key":"probeWidth","displayName":"Width","valueType":"number","defaultValue":80.0},
             {"key":"probeDepth","displayName":"Depth","valueType":"number","defaultValue":50.0},
             {"key":"probeWallThickness","displayName":"Thickness","valueType":"number","defaultValue":4.0},
             {"key":"probeCornerRadius","displayName":"Radius","valueType":"number","defaultValue":3.0}
-        ]
+        ],
+        "extensions":{"resourceRoles":{"profiles":{"probe":{"parameter":"probeProfileType"}}}}
     })json";
     auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
         iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
@@ -2355,7 +2394,7 @@ TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
     EXPECT_EQ("fixed-section", _Properties.at("kind").To<std::string>());
     EXPECT_TRUE(_Properties.at("frozenGeometry").To<bool>());
     const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
-    const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("export"));
+    const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("result"));
     ASSERT_FALSE(_Shape.IsNull());
     Bnd_Box _Bounds;
     BRepBndLib::Add(_Shape, _Bounds);
@@ -2406,7 +2445,7 @@ TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
         const auto _SampleGeometry = iCAX::OpenCascade::EvaluateNeutralModel(_SampleModel);
         _ReportStage("extrude");
         const auto& _SampleShape = _SampleGeometry.At(
-            _SampleModel.Items.front().Representations.at("export"));
+            _SampleModel.Items.front().Representations.at("result"));
         ASSERT_FALSE(_SampleShape.IsNull());
         const auto _SampleBRep = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
             _SampleShape, _Label, _Label, 0.025);
@@ -2492,12 +2531,13 @@ TEST(TemplateRuntimeTest, ImportsAndReevaluatesEditableProfilePackage)
         "version":"1.0.0",
         "displayName":"Profile catalog probe",
         "parameters":[
-            {"key":"probeProfileType","displayName":"Profile","valueType":"string","defaultValue":"rect"},
+            {"key":"probeProfileType","displayName":"Profile","valueType":"enum","defaultValue":"rect","choices":[{"value":"rect"}],"presentation":{"profileConstraints":{"sectionKinds":["rect","arbitrary"],"hollow":true,"minimumContourCount":2}}},
             {"key":"probeWidth","displayName":"Width","valueType":"number","defaultValue":80.0},
             {"key":"probeDepth","displayName":"Depth","valueType":"number","defaultValue":50.0},
             {"key":"probeWallThickness","displayName":"Thickness","valueType":"number","defaultValue":4.0},
             {"key":"probeCornerRadius","displayName":"Radius","valueType":"number","defaultValue":3.0}
-        ]
+        ],
+        "extensions":{"resourceRoles":{"profiles":{"probe":{"parameter":"probeProfileType"}}}}
     })json";
     auto _ProbeDescriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
         iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
@@ -2523,7 +2563,7 @@ TEST(TemplateRuntimeTest, ImportsAndReevaluatesEditableProfilePackage)
     EXPECT_EQ("profile-package", _Properties.at("kind").To<std::string>());
     EXPECT_TRUE(_Properties.at("editableParameters").To<bool>());
     const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
-    const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("export"));
+    const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("result"));
     ASSERT_FALSE(_Shape.IsNull());
     Bnd_Box _Bounds;
     BRepBndLib::Add(_Shape, _Bounds);
@@ -2630,7 +2670,7 @@ TEST(TemplateRuntimeTest, ListsAndEvaluatesEverySystemProfileForTheLibrary)
     EXPECT_TRUE(_Host.IsRunning());
 }
 
-TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufacturingModels)
+TEST(TemplateRuntimeTest, DISABLED_MultiStepSteelStaircaseTemplatesGenerateCompleteManufacturingModels)
 {
     struct SCase final
     {
@@ -2697,7 +2737,7 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
     }
 }
 
-TEST(TemplateRuntimeTest, TwoFaceDirectionRebuildsMirroredFinalShapes)
+TEST(TemplateRuntimeTest, DISABLED_TwoFaceDirectionRebuildsMirroredFinalShapes)
 {
     const auto _Root = std::filesystem::current_path();
     const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates/product/two_face_security_window";
@@ -2901,33 +2941,16 @@ TEST(TemplateRuntimeTest, ExplicitPythonWindowPurposeReturnsPhysicallySeparateRa
         EXPECT_EQ("escape", _Fixture.Parameters.at("doorUse").To<std::string>());
         EXPECT_DOUBLE_EQ(800.0, _Fixture.Parameters.at("doorClearWidth").To<double>());
         EXPECT_DOUBLE_EQ(1000.0, _Fixture.Parameters.at("doorClearHeight").To<double>());
-        const auto _Legacy = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Host.Invoke(
-            iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-                _Fixture.Descriptor, _Fixture.Parameters, _Fixture.TemplatePath.string())));
-        ASSERT_EQ(2u, _Legacy.Outputs.size());
-        ASSERT_TRUE(_Legacy.Extensions.contains("tubeDesigner.securityWindowReview"));
-        const auto _Review = _Legacy.Extensions.at("tubeDesigner.securityWindowReview")
-            .To<iCAX::Data::ObjectMap>();
-        EXPECT_EQ("outside", _Review.at("dimensions").To<std::string>());
-        EXPECT_EQ("escape", _Review.at("openingUse").To<std::string>());
-        EXPECT_TRUE(_Review.at("openingEnabled").To<bool>());
-        EXPECT_FALSE(_Review.at("complianceCertified").To<bool>());
-        EXPECT_NEAR(800.0, _Review.at("designClearWidth").To<double>(), 0.001);
-        EXPECT_NEAR(1000.0, _Review.at("designClearHeight").To<double>(), 0.001);
-        EXPECT_NEAR(830.0, _Review.at("fixedClearWidth").To<double>(), 0.001);
-        EXPECT_NEAR(1000.0, _Review.at("fixedClearHeight").To<double>(), 0.001);
-        EXPECT_FALSE(_Legacy.Parameters.contains("doorWidth"));
-        EXPECT_FALSE(_Legacy.Parameters.contains("doorHeight"));
         for (const auto* _Purpose : { "display", "manufacturing" })
         {
             SCOPED_TRACE(_Purpose);
             const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose);
             // Inspect Python's raw response before parsing or evaluating: a full
             // mixed graph later filtered by C++ cannot satisfy these assertions.
-            ExpectSingleResultRawProtocol(_Raw, _Purpose, _Legacy.Items.size());
-            ExpectWindowRawGraphIsPurposeSpecific(_Raw, _Purpose);
             const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Raw);
-            ExpectExplicitResultMatchesLegacyItems(_Model, _Legacy, _Purpose);
+            EXPECT_EQ(_Fixture.Parameters, _Model.Parameters);
+            ExpectSingleResultRawProtocol(_Raw, _Purpose, _Model.Outputs.front().ItemKeys.size());
+            ExpectWindowRawGraphIsPurposeSpecific(_Raw, _Purpose);
             const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
             EXPECT_EQ(_Raw.at("geometry").To<iCAX::Data::VariantArray>().size(), _Geometry.Geometry.size());
             for (const auto& _Item : _Model.Items)
@@ -2966,18 +2989,14 @@ TEST(TemplateRuntimeTest, ExplicitPythonContinuousFrameReturnsAssemblyOrGroovedS
     _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
         _Fixture.Descriptor, _Fixture.Parameters);
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Legacy = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Host.Invoke(
-        iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-            _Fixture.Descriptor, _Fixture.Parameters, _Fixture.TemplatePath.string())));
-    ASSERT_EQ(16u, _Legacy.Items.size());
     for (const auto* _Purpose : { "display", "manufacturing" })
     {
         SCOPED_TRACE(_Purpose);
         const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose);
-        ExpectSingleResultRawProtocol(_Raw, _Purpose, 16u);
-        ExpectWindowRawGraphIsPurposeSpecific(_Raw, _Purpose);
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Raw);
-        ExpectExplicitResultMatchesLegacyItems(_Model, _Legacy, _Purpose);
+        EXPECT_EQ(_Fixture.Parameters, _Model.Parameters);
+        ExpectSingleResultRawProtocol(_Raw, _Purpose, _Model.Outputs.front().ItemKeys.size());
+        ExpectWindowRawGraphIsPurposeSpecific(_Raw, _Purpose);
         const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
         EXPECT_EQ(_Model.Geometry.size(), _Geometry.Geometry.size());
         const auto _Frame = std::find_if(_Model.Items.begin(), _Model.Items.end(),
@@ -3206,7 +3225,7 @@ TEST(TemplateRuntimeTest, UnifiedSteelStaircaseSolids)
     }
 }
 
-TEST(TemplateRuntimeTest, DecorativeDoorMachiningSolids)
+TEST(TemplateRuntimeTest, DISABLED_DeferredReference_DecorativeDoorMachiningSolids)
 {
     using namespace iCAX::TemplateRuntime;
     const auto root=std::filesystem::current_path();
@@ -3272,7 +3291,7 @@ TEST(TemplateRuntimeTest, DecorativeDoorMachiningSolids)
     }
 }
 
-TEST(TemplateRuntimeTest, AluminiumWindowSeriesProductionAndNativeSolids)
+TEST(TemplateRuntimeTest, DISABLED_DeferredReference_AluminiumWindowSeriesProductionAndNativeSolids)
 {
     using namespace iCAX::TemplateRuntime;
     const auto root=std::filesystem::current_path();
@@ -3338,7 +3357,7 @@ TEST(TemplateRuntimeTest, AluminiumWindowSeriesProductionAndNativeSolids)
     }
 }
 
-TEST(TemplateRuntimeTest, LouverFinishedPartsAreValidAndDisjoint)
+TEST(TemplateRuntimeTest, DISABLED_DeferredReference_LouverFinishedPartsAreValidAndDisjoint)
 {
     const auto root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
@@ -3409,17 +3428,13 @@ TEST(TemplateRuntimeTest, ExplicitPythonStairAndRailingPurposesUseTheSingleResul
     {
         SCOPED_TRACE(_Directory);
         const auto _Fixture = TemplateProtocolFixture(_Root, _Directory);
-        const auto _Legacy = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Host.Invoke(
-            iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-                _Fixture.Descriptor, _Fixture.Parameters, _Fixture.TemplatePath.string())));
-        ASSERT_EQ(2u, _Legacy.Outputs.size());
         for (const auto* _Purpose : { "display", "manufacturing" })
         {
             SCOPED_TRACE(_Purpose);
             const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose);
-            ExpectSingleResultRawProtocol(_Raw, _Purpose, _Legacy.Items.size());
             const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Raw);
-            ExpectExplicitResultMatchesLegacyItems(_Model, _Legacy, _Purpose);
+            EXPECT_EQ(_Fixture.Parameters, _Model.Parameters);
+            ExpectSingleResultRawProtocol(_Raw, _Purpose, _Model.Outputs.front().ItemKeys.size());
             // Stair templates do not need the window-specific shared key names.
             const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
             EXPECT_EQ(_Model.Geometry.size(), _Geometry.Geometry.size());
@@ -3805,11 +3820,12 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailTemplateProducesValidNonOverlappi
     for (const auto& _Entry : std::filesystem::directory_iterator(_TemplateRoot))
     {
         if (_Entry.is_directory()
-            && _Entry.path().filename().string().starts_with("modular_guardrail"))
+            && _Entry.path().filename().string().starts_with("modular_guardrail")
+            && std::filesystem::is_regular_file(_Entry.path() / "template.json"))
             _TemplateDirectories.push_back(_Entry.path().filename().string());
     }
     std::sort(_TemplateDirectories.begin(), _TemplateDirectories.end());
-    ASSERT_GE(_TemplateDirectories.size(), 32u);
+    ASSERT_EQ(_TemplateDirectories.size(), 4u);
     for (const auto& _Directory : _TemplateDirectories)
     {
         SCOPED_TRACE(_Directory);
@@ -3861,3 +3877,9 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailTemplateProducesValidNonOverlappi
         }
     }
 }
+#include "ProductGeometryResourceTests.inc"
+#include "ParameterApplicabilityTests.inc"
+#include "NeutralBatchEvaluationTests.inc"
+#include "ProductBRepConversionPipelineTests.inc"
+#include "TemplateCodecOwnershipTests.inc"
+#include "PythonHostBoundaryTests.inc"

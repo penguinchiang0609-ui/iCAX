@@ -2,6 +2,16 @@
 
 每种装配工艺独占一个目录和一份 `assembly.json`，例如 `bend/assembly.json`。目录名必须等于文件中的 `id`。资源库通过扫描 `assembly/*/assembly.json` 发现模板；新增目录或删除目录后，点击装配工艺列表上的“刷新模板”重新读取。无效模板不会进入列表，错误会由模板目录名和校验信息指出。
 
+## 扩展工艺的导入包
+
+资源库的“装配 → 导入”接收 `.itat`。一个文件只包含一种装配工艺，使用与其他 TubeDesigner 资源包相同的 ZIP 固定密码 `ICAX_TUBE_DESIGNER`。包内根目录至少包含 `assembly.json`、`applicability.py`、`example.py`；需要同目录求解时也包含 `assembly.py` 和它引用的本目录 `.py` 文件。附属 `.json`、`.svg`、`.png`、`.jpg`、`.jpeg`、`.webp` 资源可放在包内相对路径中。压缩包及解压总量各最多 16 MB，单文件最多 4 MB。
+
+`assembly.json` 沿用下文当前模板描述，`schema` 为 `icax.assembly-template`、`schemaVersion` 为 `1`。ID 使用小写字母开头，后接小写字母、数字、下划线或连字符，最长 80 字符。使用新的唯一 ID；已存在的内置或“我的”ID 会拒绝导入。包不得包含 `_shared`、`mold`、`assembly` 或 `finished-product` 根目录，不可替换宿主运行时及其他模板。不可使用链接、绝对路径、上级路径或不受支持的文件类型。
+
+导入先用现有描述符校验与示例适用检查验证，再原子提交至用户目录 `icax.tube-designer/template/assembly/<id>`。导入成功后进入“我的”装配列表，重启仍从此目录读取；原始 `.itat` 保留。所有预览、适用检查及产品绑定使用同一套 ID 解析和校验，不增加旧模板映射。接口是产品通道的 `TubeDesigner.ImportAssemblyTemplatePackage({sourcePath})`，返回 `{template}`；场景通道的 `GetAssemblyTemplates` 返回条目的 `libraryScope` 为 `builtin` 或 `user`。
+
+同目录脚本可用 `__file__` 查找包内资源；宿主额外提供 `TEMPLATE_ROOT`，指向当前安装的 `templates` 目录，可读取 `_shared` 的公共几何函数和声明依赖的内置单件工艺。不要在包中复制整套运行时或管型库，也不要硬编码开发机路径。用户根目录下的公共 SDK 及成品造型声明随宿主刷新，用于现有模板示例函数的相对导入。装配包引用当前宿主支持的单件工艺，不在此包内新增另一种资源。
+
 示例场景的工艺列表按连接形态折叠分组。折叠分组只改变列表显示；选择工艺卡片时检查当前成品，不适用时保留成品并显示原因。成品造型和尺寸在独立成品区编辑；只有用户点击“载入示例成品”才使用模板提供的示例替换当前成品。选择工艺默认只显示成品，点击“下料件”后才计算工艺方案和下料几何。同一成品输入与管型版本共用成品缓存，工艺切换或工艺参数变化不会重新生成成品。产品节点模式继续按实际连接提供工艺模板。
 
 冷折弯使用 `bend` 模板；开槽折弯不再通过其中的“折弯方式”或“槽口工艺”切换，而是由 `segmented-bend`、`node-v-notch-integrated`、`node-embedded-arc-integrated`、`node-edge-arc-integrated`、`flexible-slit-bend-integrated` 五份并列模板分别声明。删除任一目录，即从资源库移除该具体工艺。它们的单件槽口工具通过各自 `partProcesses[].resource.id` 引用，仍可复用模具模板中的具体参数。

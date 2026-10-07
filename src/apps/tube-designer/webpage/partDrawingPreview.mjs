@@ -1,4 +1,5 @@
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
+import { bindPartDrawingLayout, disposePartDrawingLayout } from "./partDrawingLayout.mjs";
 
 // A drawing owns its viewport and resource lifetime. It never subscribes to the
 // main scene, invokes a modelling command, or refreshes the project workbench.
@@ -35,7 +36,7 @@ function fitDrawingBase(viewport, preview) {
   // the stock. In the default broadside view the width calculation dominates.
   const radius = camera.projectionMode === "orthographic"
     ? Math.max(planarRadius, extent(toward) * 1.001) : planarRadius + extent(toward);
-  // Keep the current direction/projection for a resized stock or a manual fit.
+  // Keep the current direction/projection when the stock dimensions change.
   // The centred row transforms place the stock centre at the origin.
   if (viewport.camera) {
     viewport.camera.near = Math.max(0.001, radius / 10000);
@@ -189,13 +190,6 @@ function mountController(controller, host, mount) {
     viewport.setStandardView(String(target.dataset.camView ?? "iso"));
   };
   host.addEventListener("click", controller.cubeClick, true);
-  host.querySelector("[data-part-drawing-preview-controls]")?.remove();
-  const nav = host.ownerDocument.createElement("nav");
-  nav.dataset.partDrawingPreviewControls = ""; nav.className = "td-draw-view-controls";
-  nav.setAttribute("aria-label", "三维观察方向");
-  const fit = host.ownerDocument.createElement("button"); fit.type = "button"; fit.textContent = "适合窗口";
-  fit.addEventListener("click", event => { event.stopPropagation(); setPartDrawingPreviewView(mount, "fit"); });
-  nav.append(fit); host.append(nav);
 }
 
 function stillOwned(controller) {
@@ -211,7 +205,7 @@ async function ensureViewport(controller) {
       ?? (await import("../../../iCAX-UI/SDK/Viewport/threeViewport.mjs")).createThreeViewport;
     if (!stillOwned(controller)) return null;
     const viewport = await create({ backgroundColor: 0x13252d, continuousRender: false, constrainOrbit: false, projectionMode: "orthographic",
-      showProjectionToggle: true, pickingEnabled: false, antialias: true, pixelRatioCap: 2 });
+      showProjectionToggle: true, pickingEnabled: false, blankDoubleClickFitEnabled: true, antialias: true, pixelRatioCap: 2 });
     if (!stillOwned(controller)) { viewport?.dispose(); return null; }
     controller.viewport = viewport; mountController(controller, controller.host, controller.mount);
     updateStatus(controller);
@@ -240,6 +234,9 @@ export function attachPartDrawingPreview(context, view, mount, ops = {}) {
   }
   controller.context = context; controller.ops = ops;
   mountController(controller, host, mount);
+  bindPartDrawingLayout(view, mount, { resizeViewport: () => {
+    if (stillOwned(controller)) controller.viewport?.resize?.();
+  } });
   const desired = desiredPresentation(controller); controller.desired = desired;
   keepUnchangedVisible(controller, desired);
   if (controller.flight && controller.requestKey === desired.key) { updateStatus(controller); return controller.flight; }
@@ -314,20 +311,19 @@ export async function waitForPartDrawingPreview(mount) {
 export function setPartDrawingPreviewView(mount, name) {
   const controller = controllers.get(mount), viewport = controller?.viewport;
   if (!viewport) return false;
-  if (name === "fit") fitDrawingBase(viewport, controller.desired?.preview);
-  else if (["iso", "top", "bottom", "front", "back", "left", "right"].includes(name)) viewport.setStandardView(name);
+  if (["iso", "top", "bottom", "front", "back", "left", "right"].includes(name)) viewport.setStandardView(name);
   else return false;
   return true;
 }
 
 export function disposePartDrawingPreview(mount) {
+  disposePartDrawingLayout(mount);
   const controller = controllers.get(mount);
   if (!controller) return;
   controllers.delete(mount); controller.sequence++; controller.state.previewRenderPending = false;
   stopViewCubeAnimation(controller.cubeView);
   if (controller.host && controller.cubeClick) controller.host.removeEventListener("click", controller.cubeClick, true);
   controller.host?.querySelector("[data-part-drawing-preview-notice]")?.remove();
-  controller.host?.querySelector("[data-part-drawing-preview-controls]")?.remove();
   controller.viewport?.renderer?.forceContextLoss?.();
   controller.viewport?.axisRenderer?.forceContextLoss?.();
   controller.viewport?.dispose();

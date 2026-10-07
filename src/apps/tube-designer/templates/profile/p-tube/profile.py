@@ -83,8 +83,13 @@ def _shape(parameters):
     if parameters["useIndependentInnerRadii"]:
         inner_radii = [float(parameters[f"innerRadius{index}"]) for index in range(1, 5)]
     else:
-        inner_radii = [0.0, max(outer_radii[0] - wall, 0.0),
-                       max(outer_radii[1] - wall, 0.0), max(outer_radii[2] - wall, 0.0)]
+        # Equal radii/thickness measured after a coordinate transform can
+        # differ by a few floating-point steps. Keep the resulting sharp
+        # inner corner sharp instead of emitting an unrepresentable arc.
+        # This is a machine-rounding bound, not the recognition tolerance.
+        rounding_bound = 16 * math.ulp(max(width, height, flange_length, wall, *outer_radii))
+        inner_radii = [0.0] + [radius - wall if radius - wall > rounding_bound else 0.0
+                             for radius in outer_radii]
     if any(not math.isfinite(value) or value < 0 for value in inner_radii):
         raise ValueError("独立内 R 必须为非负有限数值")
 

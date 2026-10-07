@@ -1,20 +1,17 @@
-import { availableParameterChoices, matchesParameterCondition, parameterEnabled, parameterVisible } from "./parameterConditions.mjs";
+import { availableParameterChoices, parameterEnabled, parameterVisible } from "./parameterConditions.mjs";
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
 import { renderToolParameterDiagram } from "./toolParameterDiagram.mjs";
 import { bindParameterDiagramScopes } from "./parameterDiagramBinding.mjs";
 import { libraryDiagramPositionStyle, renderDiagramResizeHandles } from "./floatingParameterDiagram.mjs";
-import { productAssemblyConnectionsState, productAssemblyConnectionIdentity, renderProductAssemblyConnections } from "./productAssemblyConnections.mjs";
-import { handleProductAssemblyBindingAction, invalidateProductAssemblyCandidate, productAssemblyBindingDraft,
-  productAssemblyBindingIdentity, productAssemblyBindingsState, renderProductAssemblyBindingOverview,
-  renderProductAssemblyBindings } from "./productAssemblyBindings.mjs";
 import { createThreeViewport } from "../../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
 import { buildIntegratedFormedPreview } from "./integratedFormedPreview.mjs";
 import { buildAssemblyFinishedShapePreview } from "./assemblyFinishedShape.mjs";
 import { buildAssemblyPreviewDimensionAnnotations } from "./assemblyPreviewAnnotations.mjs";
 import { renderAssemblyCatalogueIllustration } from "./assemblyCatalogueIllustration.mjs";
-import { assemblyBindingAngleDefinition, assemblyBindingAxisAngle, assemblyBindingParameterValues,
-  assemblyProcessInput, assemblyProcessWithInput, finishedProductInput, finishedProductKey, finishedProductShape,
+import { assemblyProcessInput, assemblyProcessWithInput, finishedProductInput, finishedProductKey, finishedProductShape,
   finishedProductState } from "./finishedProductModel.mjs";
 import { handleStockProcessAction, markStockProcessEdited, renderStockProcessEditor, restoreStockProcessPlan,
   selectedStockOperation, stockOperationSettings, stockProcessPayload, stockProcessState,
@@ -23,9 +20,6 @@ import { bindFinishedProductEditor, handleFinishedProductAction, renderFinishedP
 import { libraryProfiles, profileName, profileRef, profileScope, profileSelectionKey, profileSnapshot } from "./profileLibrary.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
-import { assemblyProductIdentity, assemblyProductSceneState, ensureAssemblyProductScene, stopAssemblyProductScene,
-  ensureAssemblyProductResources, stopAssemblyProductResourceHydration,
-  assemblyProductRows, assemblyProductParts, assemblyProductPartRows } from "./assemblyProductScene.mjs";
 import {
   assemblyLayoutShapeLabel,
   assemblyParameterDefaults,
@@ -66,51 +60,34 @@ export function assemblyLibraryState(view) {
   state.showDiagram ??= false;
   state.processInputMode ??= "local-parts";
   state.diagramMode ??= "product";
-  const designer = view.scene?.tubeDesigner ?? {};
-  const productId = String(designer.activeProductId || designer.product?.entityId || "");
-  const runId = String(designer.generationRun?.entityId || designer.product?.activeGenerationRunId || "");
-  const hasGeneratedProduct = !!productId && !!runId;
-  const productKey = hasGeneratedProduct ? `${productId}/${runId}` : "";
-  if (state.selectedProductConnectionProductKey !== productKey) {
-    state.selectedProductConnectionProductKey = productKey;
-    state.selectedProductConnectionKey = "";
-    state.selectedProductTemplateConnectionKey = "";
-    state.selectedProductTemplateId = "";
-  }
-  state.workMode ??= hasGeneratedProduct ? "product" : "example";
-  state.workModeUserSelected ??= false;
-  state.templateUserSelected ??= false;
-  if (!hasGeneratedProduct && state.workMode === "product") state.workMode = "example";
-  if (hasGeneratedProduct && !state.workModeUserSelected && state.workMode !== "product") {
-    state.workMode = "product";
-    if (!state.templateUserSelected) state.selectedId = "";
-  }
   // The assembly scene is the source of truth: always show the whole result.
   // Part-isolation controls duplicated that information and made the workflow
   // look like a relation inspector instead of an assembly editor.
   state.focusRole = "";
   const templates = assemblyTemplates(view);
-  const selectable = state.workMode === "example" ? templates.filter(supportsExampleScene) : templates;
-  if (!assemblyTemplateById(selectable, state.selectedId)) state.selectedId = defaultAssemblyTemplate(selectable, state)?.id ?? "";
+  const selectable = templates.filter(supportsExampleScene);
+  if (!assemblyTemplateById(selectable, state.selectedId)) state.selectedId = selectable[0]?.id ?? "";
   const selectedShape = assemblyTemplateById(templates, state.selectedId)?.exampleInput?.shapeId;
   if (selectedShape) {
     finishedProductState(view, selectedShape);
   }
-  if (state.workMode === "product" && state.selectedProductConnectionKey && state.selectedId) {
-    const draft = productAssemblyBindingDraft(view, { id: state.selectedId });
-    if (!draft.connectionKey) draft.connectionKey = state.selectedProductConnectionKey;
-  }
   return state;
-}
-
-function defaultAssemblyTemplate(templates, state) {
-  return state.workMode === "product"
-    ? templates.find((item) => item.productBinding?.mode === "incremental-cut") ?? templates[0]
-    : templates[0];
 }
 
 export function assemblyTemplates(view) {
   return normalizeAssemblyCatalogue(view?.tubeDesignerAssemblyTemplates, view);
+}
+
+export function addImportedAssemblyTemplate(view, template) {
+  const imported = normalizeAssemblyCatalogue([{ ...template, libraryScope: "user" }], view)[0];
+  if (!imported) throw new Error("导入装配工艺后没有返回有效的模板记录。");
+  view.tubeDesignerAssemblyTemplates = [
+    ...assemblyTemplates(view).filter((item) => item.id !== imported.id), imported,
+  ];
+  const state = assemblyLibraryState(view);
+  state.catalogueStatus = "ready";
+  state.catalogueError = "";
+  return imported;
 }
 
 export function selectedAssemblyTemplate(view) {
@@ -121,7 +98,7 @@ export function selectedAssemblyTemplate(view) {
 export function assemblyParameterValues(view, template = selectedAssemblyTemplate(view)) {
   template = assemblyProcessWithInput(template, view);
   const state = assemblyLibraryState(view);
-  if (state.workMode === "example" && state.processInputMode === "stock-operation" && supportsStockOperations(template)) {
+  if (state.processInputMode === "stock-operation" && supportsStockOperations(template)) {
     const row = selectedStockOperation(view, template);
     return { ...stockOperationSettings(view, template).parameters, angle: row?.angle, planeRotation: row?.rotation };
   }
@@ -130,12 +107,6 @@ export function assemblyParameterValues(view, template = selectedAssemblyTemplat
     .filter(([key]) => declaredKeys.has(key)));
   const values = { ...assemblyParameterDefaults(template), ...drafts };
   if (!template) return values;
-  if (state.workMode === "product") {
-    const connection = selectedProductAssemblyConnection(view, state);
-    const definition = assemblyBindingAngleDefinition(template);
-    if (definition) values[definition.key] = assemblyBindingAxisAngle(template, connection);
-    return values;
-  }
   const shared = template.exampleInput
     ? finishedProductInput(view).parameters
     : state.sceneParameterDrafts?.[assemblySceneSignature(template)] ?? {};
@@ -331,7 +302,7 @@ export function ensureAssemblyLibraryCatalogue(context, view, ops) {
       state.catalogueStatus = "ready";
       state.catalogueError = "";
       state.catalogueWarnings = Array.isArray(response?.errors) ? response.errors.filter(Boolean).map(String) : [];
-      if (!assemblyTemplateById(templates, state.selectedId)) state.selectedId = defaultAssemblyTemplate(templates, state).id;
+      if (!assemblyTemplateById(templates, state.selectedId)) state.selectedId = templates.find(supportsExampleScene)?.id ?? "";
       if (view.activeAreaId === "assemblies") ops?.renderProject?.(context, view);
     })
     .catch((error) => {
@@ -347,58 +318,25 @@ export function ensureAssemblyLibraryCatalogue(context, view, ops) {
 export function renderAssemblyLibraryLeftPane(_context, view) {
   const state = assemblyLibraryState(view);
   const templates = assemblyTemplates(view);
-  const product = state.workMode === "product";
-  const connection = product ? selectedProductAssemblyConnection(view, state) : null;
-  const compatibleTemplates = connection ? templates.filter((item) => item.participants.length === connection.participants?.length)
-    : product ? [] : templates.filter(supportsExampleScene);
+  const compatibleTemplates = templates.filter(supportsExampleScene);
   const search = state.search.trim().toLocaleLowerCase("zh-CN");
   const visible = compatibleTemplates.filter((item) => !search || assemblySearchText(item).includes(search));
   const shapeGroups = assemblyShapeOrder(compatibleTemplates.filter((item) => !supportsStockOperations(item)));
   if (compatibleTemplates.some(supportsStockOperations)) shapeGroups.push(["fold-processing", "折弯加工"]);
   const groups = shapeGroups.map(([id, label]) => {
-    if (!product && id === "straight") label = "共线形";
+    if (id === "straight") label = "共线形";
     const items = visible.filter((item) => (supportsStockOperations(item) ? "fold-processing" : assemblyPresentationShape(item)) === id);
     if (!items.length) return "";
     const collapsed = state.collapsed.includes(id);
-    return `<section class="tube-connection-library-group"><button type="button" class="tube-connection-library-group-heading" data-cam-action="tube-designer-assembly-toggle-shape" data-tube-assembly-shape="${attr(id)}" aria-expanded="${!collapsed}"><span>${collapsed ? "▸" : "▾"} ${text(label)}</span><small>${items.length}</small></button><div class="tube-connection-library-cards"${collapsed ? " hidden" : ""}>${items.map((item) => assemblyCard(item, product && (state.selectedProductTemplateConnectionKey !== connection?.key || state.selectedProductTemplateId !== item.id) ? "" : state.selectedId, assemblyParameterValues(view, item), product ? productTemplateSupport(view, item) : null)).join("")}</div></section>`;
+    return `<section class="tube-connection-library-group"><button type="button" class="tube-connection-library-group-heading" data-cam-action="tube-designer-assembly-toggle-shape" data-tube-assembly-shape="${attr(id)}" aria-expanded="${!collapsed}"><span>${collapsed ? "▸" : "▾"} ${text(label)}</span><small>${items.length}</small></button><div class="tube-connection-library-cards"${collapsed ? " hidden" : ""}>${items.map((item) => assemblyCard(item, state.selectedId, assemblyParameterValues(view, item))).join("")}</div></section>`;
   }).join("");
-  const body = product && !connection
-    ? ""
-    : state.catalogueStatus === "loading" && !templates.length
+  const body = state.catalogueStatus === "loading" && !templates.length
     ? `<div class="tube-profile-library-empty"><strong>正在读取装配模板</strong><span>正在解析逻辑零件与下料归并方案。</span></div>`
     : state.catalogueError && !templates.length
       ? `<div class="tube-profile-library-empty"><strong>装配模板读取失败</strong><span>${text(state.catalogueError)}</span><button type="button" data-cam-action="tube-designer-assembly-retry">重新读取</button></div>`
       : groups || `<div class="tube-profile-library-empty"><strong>没有匹配的装配模板</strong><span>换一个关键词试试</span></div>`;
   const warnings = state.catalogueWarnings?.length ? `<details class="tube-assembly-catalogue-warnings"><summary>${state.catalogueWarnings.length} 个模板未载入</summary><ul>${state.catalogueWarnings.map((warning) => `<li>${text(warning)}</li>`).join("")}</ul></details>` : "";
-  return `<section class="tube-profile-library-panel tube-connection-library-panel"><header class="tube-profile-library-heading"><div><strong>装配工艺</strong><span>${compatibleTemplates.length} 个模板</span></div><button type="button" class="tube-assembly-refresh" data-cam-action="tube-designer-assembly-retry" aria-label="刷新装配工艺模板" title="刷新模板">刷新</button></header>${warnings}${product ? renderProductAssemblyConnections(view, state.selectedProductConnectionKey) : ""}${!product || connection ? `<label class="tube-connection-library-search"><span class="sr-only">搜索装配工艺</span><input type="search" value="${attr(state.search)}" placeholder="搜索工艺" data-cam-change-action="tube-designer-assembly-search"></label>` : ""}<div class="tube-connection-library-list">${body}</div></section>`;
-}
-
-function selectedProductAssemblyConnection(view, state) {
-  const source = productAssemblyConnectionsState(view);
-  const designer = view.scene?.tubeDesigner ?? {};
-  const productId = String(designer.activeProductId || designer.product?.entityId || "");
-  const runId = String(designer.generationRun?.entityId || designer.product?.activeGenerationRunId || "");
-  const key = productAssemblyConnectionIdentity(view).key;
-  return source.status === "ready" && source.key === key && source.result?.productEntityId === productId
-    && source.result?.generationRunId === runId && !source.result?.modelOutdated
-    ? source.result.connections?.find((item) => item.key === state.selectedProductConnectionKey) ?? null : null;
-}
-
-function productTemplateSupport(view, template) {
-  if (template.manufacturingPlan?.realization === "integrated")
-    return { label: "需一体下料生成", available: false };
-  if (template.productBinding?.mode !== "incremental-cut") return { label: "仅示例", available: false };
-  if (template.productBinding?.axisAngle
-      && assemblyBindingAxisAngle(template, selectedProductAssemblyConnection(view, assemblyLibraryState(view))) == null)
-    return { label: "节点角度待核对", available: false };
-  if (template.productBinding?.unsupportedBranches?.some((branch) => matchesParameterCondition(branch.when, assemblyParameterValues(view, template))))
-    return { label: "当前选项不支持", available: false };
-  const state = productAssemblyBindingsState(view);
-  if (state.key !== productAssemblyBindingIdentity(view).key || state.status !== "ready")
-    return { label: "待读取支持情况", available: false };
-  const capability = state.result?.capabilities?.templates?.find((item) => item.templateId === template.id);
-  return capability?.supported === true ? { label: "可检查加工", available: true }
-    : { label: "当前不支持", available: false };
+  return `<section class="tube-profile-library-panel tube-connection-library-panel"><header class="tube-profile-library-heading"><div><strong>装配工艺</strong><span>${compatibleTemplates.length} 个模板</span></div><button type="button" class="tube-assembly-refresh" data-cam-action="tube-designer-assembly-retry" aria-label="刷新装配工艺模板" title="刷新模板">刷新</button></header>${warnings}<label class="tube-connection-library-search"><span class="sr-only">搜索装配工艺</span><input type="search" value="${attr(state.search)}" placeholder="搜索工艺" data-cam-change-action="tube-designer-assembly-search"></label><div class="tube-connection-library-list">${body}</div></section>`;
 }
 
 const assemblyMemberBindings = new WeakMap();
@@ -407,61 +345,37 @@ const assemblyMemberBoundMounts = new WeakSet();
 export function renderAssemblyLibraryRightPane(context, view) {
   if (context?.mount) assemblyMemberBindings.set(context.mount, { context, view });
   const template = selectedAssemblyTemplate(view);
-  if (!template) return `<section class="tube-connection-library-editor"><header class="tube-connection-library-editor-heading"><strong>成品</strong></header><div class="tube-connection-library-editor-body">${renderFinishedProductEditor(view)}<p>暂无装配工艺</p></div></section>`;
+  if (!template) return `<section class="tube-connection-library-editor" data-window-state-controls="[data-finished-parameter],[data-finished-profile-parameter],select[data-cam-change-action='tube-designer-finished-shape-change'],select[data-cam-change-action='tube-designer-finished-profile-change'],input[data-cam-change-action='tube-designer-finished-length-change']"><header class="tube-connection-library-editor-heading"><strong>成品</strong></header><div class="tube-connection-library-editor-body">${renderFinishedProductEditor(view)}<p>暂无装配工艺</p></div></section>`;
   const values = assemblyParameterValues(view, template);
   const state = assemblyLibraryState(view);
   const processDefinitions = template.parameters.filter((item) => item.scope !== "scene" && item.scope !== "product");
   const basic = processDefinitions.filter((item) => item.level !== "advanced" && parameterVisible(item, values));
   const advanced = processDefinitions.filter((item) => item.level === "advanced" && parameterVisible(item, values));
   const effects = currentAssemblyWorkflow(view, template)?.parameterEffects;
-  const product = state.workMode === "product";
-  const connection = product ? selectedProductAssemblyConnection(view, state) : null;
-  const productAngle = assemblyBindingAxisAngle(template, connection);
-  const productSceneReadout = product && template.productBinding?.axisAngle
-    ? `<div class="tube-assembly-product-angle" role="status">成品节点轴夹角：${productAngle == null ? "待核验" : `${text(productAngle)}°`}</div>` : "";
-  const productTemplateChosen = connection && state.selectedProductTemplateConnectionKey === connection.key
-    && state.selectedProductTemplateId === template.id;
-  const processParameters = product ? null : renderPartProcesses(view, template, values);
-  const basicParameters = !product && !basic.length
+  const processParameters = renderPartProcesses(view, template, values);
+  const basicParameters = !basic.length
     ? '<section class="tube-connection-library-parameter-section basic"><header><strong>工艺参数</strong><small>0 项</small></header></section>'
-    : parameterSection(product ? "加工参数" : "工艺参数", basic, values, template.id, false, effects);
+    : parameterSection("工艺参数", basic, values, template.id, false, effects);
   let parameters = `${basicParameters}${parameterSection("更多参数", advanced, values, template.id, true, effects, processParameters)}`;
-  const stockMode = !product && state.processInputMode === "stock-operation" && supportsStockOperations(template);
+  const stockMode = state.processInputMode === "stock-operation" && supportsStockOperations(template);
   if (stockMode && !selectedStockOperation(view, template)) parameters = '<p class="tube-assembly-product-angle">当前母材没有加工。添加折弯位置后设置加工参数。</p>';
   if (stockMode) ensureStockProcessStorage(context, view, template);
-  const inputModeSwitch = !product && supportsStockOperations(template)
+  const inputModeSwitch = supportsStockOperations(template)
     ? `<div class="tube-assembly-work-mode" role="group" aria-label="工艺输入"><button type="button" data-cam-action="tube-designer-assembly-input-mode" data-process-input-mode="local-parts" aria-pressed="${!stockMode}">成品连接</button><button type="button" data-cam-action="tube-designer-assembly-input-mode" data-process-input-mode="stock-operation" aria-pressed="${stockMode}">连续母材</button></div>` : "";
-  const sceneParameters = product ? "" : stockMode ? `${renderStockProcessStorage(view, template)}${renderStockProcessEditor(view, template, assemblyTemplates(view))}`
+  const sceneParameters = stockMode ? `${renderStockProcessStorage(view, template)}${renderStockProcessEditor(view, template, assemblyTemplates(view))}`
     : template.exampleInput ? `${renderFinishedProductEditor(view)}${renderLocalProcessPlacement(view, template)}`
     : renderAssemblySceneParameters(view, template, values, effects);
-  const designer = view.scene?.tubeDesigner ?? {};
-  const hasGeneratedProduct = !!(designer.activeProductId || designer.product?.entityId)
-    && !!(designer.generationRun?.entityId || designer.product?.activeGenerationRunId);
-  const modeSwitch = hasGeneratedProduct ? `<div class="tube-assembly-work-mode" role="group" aria-label="装配工艺工作方式">${[["product", "产品节点"], ["example", "工艺示例"]].map(([mode, label]) => `<button type="button" class="${state.workMode === mode ? "active" : ""}" data-cam-action="tube-designer-assembly-work-mode" data-tube-assembly-mode="${mode}" aria-pressed="${state.workMode === mode}" title="${mode === "product" ? "查看已生成产品的连接节点；此处仅切换工作方式" : "查看工艺模板示例"}">${label}</button>`).join("")}</div>` : "";
   const interfaceLabel = String(template.interfaceType ?? "").split(/[/、]/, 1)[0].trim();
   const integrated = template.manufacturingPlan?.realization === "integrated";
   const summaryLead = stockMode ? `连续母材 · ${stockProcessState(view, template).instances.length} 处折弯`
     : supportsStockOperations(template) ? "连续母材 · 多处折弯" : integrated
     ? `${interfaceLabel} · ${template.participants.length} 段 → ${template.manufacturingPlan.blankParts.length} 件下料`
     : interfaceLabel;
-  const summaryLine = !product && summaryLead ? `<span class="tube-assembly-template-summary" title="${attr(template.summary)}">${text(summaryLead)}</span>` : "";
-  if (product && !productTemplateChosen) {
-    const message = connection ? "已选连接节点，请在左侧选择工艺。" : "请在左侧选择连接节点。";
-    return `<section class="tube-connection-library-editor"><header class="tube-connection-library-editor-heading"><div><strong>${connection ? "选择装配工艺" : "选择连接节点"}</strong>${modeSwitch}</div></header><div class="tube-connection-library-editor-body">${renderProductAssemblyBindingOverview(view, message)}</div></section>`;
-  }
-  if (product && template.manufacturingPlan?.realization === "integrated") {
-    const message = "此工艺需要将两段管合为一件下料；当前产品已拆为两件，暂不能应用。";
-    return `<section class="tube-connection-library-editor"><header class="tube-connection-library-editor-heading"><div><strong>${text(template.displayName)}</strong>${modeSwitch}</div></header><div class="tube-connection-library-editor-body">${renderProductAssemblyBindingOverview(view, message)}</div></section>`;
-  }
-  const applicability = !product && !stockMode && state.selectionProblem
+  const summaryLine = summaryLead ? `<span class="tube-assembly-template-summary" title="${attr(template.summary)}">${text(summaryLead)}</span>` : "";
+  const applicability = !stockMode && state.selectionProblem
     ? `<p class="tube-assembly-workflow-block" role="status">${text(state.selectionProblem)}</p>` : "";
-  return `<section class="tube-connection-library-editor" data-assembly-parameter-scope data-parameter-diagram-owner="assembly-library:${attr(template.id)}"><header class="tube-connection-library-editor-heading"><div><strong>${text(template.displayName)}</strong>${summaryLine}${modeSwitch}${inputModeSwitch}</div><div class="tube-connection-library-heading-actions"><button type="button" data-cam-action="tube-designer-assembly-toggle-diagram" aria-expanded="${state.showDiagram}">示意图</button>${!product && !stockMode && template.exampleInput ? '<button type="button" data-cam-action="tube-designer-assembly-load-example">载入示例成品</button>' : ""}<button type="button" data-cam-action="tube-designer-assembly-reset" data-tube-assembly-id="${attr(template.id)}">重置工艺</button></div></header><div class="tube-connection-library-editor-body">${product ? `${renderProductAssemblyBindings(view, { ...assemblyBindingInput(view), parameterHtml: `${productSceneReadout}<details class="tube-assembly-binding-parameters" id="tube-binding-parameters" open><summary title="参数修改后请重新检查加工方案">加工参数</summary>${parameters}</details>` })}` : `${sceneParameters}${applicability}${parameters}${renderAssemblyWorkflowWarning(view, template)}`}</div></section>`;
-}
-
-function assemblyBindingInput(view) {
-  const template = selectedAssemblyTemplate(view);
-  return { template, parameters: assemblyBindingParameterValues(template, assemblyParameterValues(view, template)),
-    processDrafts: assemblyLibraryState(view).processDrafts?.[template?.id] ?? {} };
+  return `<section class="tube-connection-library-editor" data-assembly-parameter-scope data-parameter-diagram-owner="assembly-library:${attr(template.id)}"
+    data-window-state-controls="[data-assembly-parameter-key],[data-profile-parameter-key],[data-tube-part-process-parameter],[data-process-anchor-key],[data-stock-operation-parameter],select[data-stock-instance],select[data-cam-change-action='tube-designer-finished-shape-change'],select[data-cam-change-action='tube-designer-finished-profile-change'],input[data-cam-change-action='tube-designer-finished-length-change'],select[data-cam-change-action='tube-designer-assembly-scene-profile-change'],input[data-cam-change-action='tube-designer-assembly-scene-length-change'],select[data-cam-change-action='tube-designer-stock-profile'],input[data-cam-change-action='tube-designer-stock-length']"><header class="tube-connection-library-editor-heading"><div><strong>${text(template.displayName)}</strong>${summaryLine}${inputModeSwitch}</div><div class="tube-connection-library-heading-actions"><button type="button" data-cam-action="tube-designer-assembly-toggle-diagram" aria-expanded="${state.showDiagram}">示意图</button>${!stockMode && template.exampleInput ? '<button type="button" data-cam-action="tube-designer-assembly-load-example">载入示例成品</button>' : ""}<button type="button" data-cam-action="tube-designer-assembly-reset" data-tube-assembly-id="${attr(template.id)}">重置工艺</button></div></header><div class="tube-connection-library-editor-body">${sceneParameters}${applicability}${parameters}${renderAssemblyWorkflowWarning(view, template)}</div></section>`;
 }
 
 function renderAssemblyPreviewProgress(progress, status, title = "正在生成装配三维预览", background = false) {
@@ -488,26 +402,6 @@ export function renderAssemblyLibraryViewportOverlay(context, view) {
   if (!template) return "";
   const values = assemblyParameterValues(view, template);
   const state = assemblyLibraryState(view);
-  if (state.workMode === "product") {
-    const source = assemblyProductSceneState(view);
-    const resources = ensureAssemblyProductResources(context, view);
-    const parts = assemblyProductParts(view);
-    if (!parts.some((part) => String(part.entityId) === state.productPartId)) state.productPartId = String(parts[0]?.entityId ?? "");
-    const designer = view.scene?.tubeDesigner ?? {};
-    const outdated = designer.product?.modelOutdated || designer.product?.partsOutdated;
-    const status = state.productViewportError || resources.error
-      || (resources.status === "loading" ? "正在恢复产品和下料件三维资源…" : "") || (state.exploded
-      ? !parts.length ? outdated ? "产品或加工已变化，请重新生成下料件。" : "当前产品尚未生成下料件。" : ""
-      : source.error || (!assemblyProductIdentity(view).every(Boolean) ? "请先生成产品，再查看真实构件。"
-        : source.status !== "ready" ? "正在读取当前产品模型…"
-          : !assemblyProductRows(view, source.snapshot).length ? "当前产品没有可显示的构件。" : ""));
-    const failed = source.error || resources.error || state.productViewportError;
-    const waiting = !failed && (resources.status === "loading" || (!state.exploded
-      && !outdated && assemblyProductIdentity(view).every(Boolean) && source.status !== "ready"));
-    const hud = status && !waiting ? `<div class="tube-connection-library-hud${failed ? " error" : ""}" aria-live="polite"><span>${text(status)}</span>${failed ? '<button type="button" data-cam-action="tube-designer-assembly-retry-preview">重新读取</button>' : ""}</div>` : "";
-    const progress = waiting ? renderAssemblyPreviewProgress({}, status, "正在读取产品三维资源") : "";
-    return `${renderAssemblyLibraryDiagramDock(view, template, values)}${renderAssemblyViewportStage(template, state, view)}${hud}${progress}`;
-  }
   ensureAssemblyLibraryPreview(context, view, template);
   const pending = state.selectionRequest ?? state.previewRequest;
   const progress = pending?.progress;
@@ -532,18 +426,17 @@ function hasFinishedShapePreview(preview) {
 }
 
 function renderAssemblyViewportStage(template, state, view = null) {
-  const product = state.workMode === "product";
-  const stockMode = !product && state.processInputMode === "stock-operation";
+  const stockMode = state.processInputMode === "stock-operation";
   if (stockMode) {
     const available = !!state.preview?.designParts?.length, calibration = available && !state.exploded;
     const description = calibration ? "按各折弯位置和方向展示名义目标形态；曲线采用分段近似，实际成形需校核。"
       : "同一根母材上的全部加工；每处折弯参数分别保存。";
     return `<div class="tube-assembly-preview" data-tube-assembly-preview><section class="tube-assembly-preview-pane scene" data-tube-assembly-preview-pane="scene" aria-label="连续母材：${description}"><header title="${description}"><div class="tube-assembly-preview-toolbar"><div class="tube-assembly-view-switch" role="group" aria-label="连续母材视图"><button type="button" class="tube-assembly-view-mode${calibration ? "" : " active"}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="exploded" aria-pressed="${!calibration}">下料件</button><button type="button" class="tube-assembly-view-mode${calibration ? " active" : ""}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="finished" aria-pressed="${calibration}"${available ? "" : ' disabled title="正在准备成形校核"'}>成形校核</button></div><small>${calibration ? "名义目标形态 · 曲线分段近似" : "连续母材加工"}</small></div></header><div class="tube-assembly-preview-host" data-tube-assembly-scene-viewport></div></section></div>`;
   }
-  const independentExample = !product && !stockMode && !!template.exampleInput;
+  const independentExample = !!template.exampleInput;
   const integrated = template.manufacturingPlan?.realization === "integrated";
-  const integratedExample = integrated && !product;
-  const logicalL = !product && state.preview?.plan?.templateId === template.id
+  const integratedExample = integrated;
+  const logicalL = state.preview?.plan?.templateId === template.id
     && state.preview?.layoutShape === "l" && state.preview?.designParts?.length === 2;
   const formedAvailable = integratedExample && (independentExample
     || state.preview?.plan?.templateId === template.id && (logicalL || hasIntegratedFormedPreview(state.preview)));
@@ -555,8 +448,6 @@ function renderAssemblyViewportStage(template, state, view = null) {
   const blankPending = independentExample ? state.previewRequest?.kind === "manufacturing"
     : !!state.previewRequest && !!state.preview?.finishedShape && !state.preview.manufacturingParts?.length;
   const sceneDescription = independentExample && !exploded ? "成品外形与尺寸"
-    : product ? exploded ? "已生成的真实下料件 · 包含已应用加工；检查中的方案尚未应用"
-    : "当前产品生成模型，新增加工见下料件"
     : integratedExample ? formedAvailable && !exploded
       ? logicalL ? "L 形成品外形示意" : targetShape ? targetDescription
         : "一体成形外形示意（单根连续管；尚未生成成形实体）"
@@ -566,16 +457,14 @@ function renderAssemblyViewportStage(template, state, view = null) {
     ? "下料件示例：查看连续母材与加工形状"
     : "下料件示例：查看各件加工形状"
     : logicalL ? "L 形成品外形示意" : "连接示例：查看管件位置与接口；未显示辅料";
-  const sceneTitle = stockMode ? "连续母材加工" : product ? view.scene?.tubeDesigner?.product?.name || "当前产品"
-    : independentExample && !exploded ? finishedProductShape(finishedProductInput(view).shapeId, view)?.displayName
+  const sceneTitle = independentExample && !exploded ? finishedProductShape(finishedProductInput(view).shapeId, view)?.displayName
       ?? "成品" : template.displayName;
   return `<div class="tube-assembly-preview" data-tube-assembly-preview><section class="tube-assembly-preview-pane scene" data-tube-assembly-preview-pane="scene" aria-label="${attr(`${sceneTitle}：${sceneDescription}`)}">
     <header title="${attr(sceneDescription)}"><div class="tube-assembly-preview-toolbar">
       ${integratedExample && !formedAvailable ? `<span class="tube-assembly-view-only-blank" title="${attr(state.preview?.formedPreviewError || "模板尚未提供目标成形预览")}">成形示意未生成 · 当前为下料件</span>` : `<div class="tube-assembly-view-switch" role="group" aria-label="装配视图">
-        <button type="button" class="tube-assembly-view-mode${exploded ? "" : " active"}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="finished" aria-pressed="${!exploded}"${integratedExample ? ` title="${independentExample || logicalL ? "仅显示成品外形" : targetShape ? targetDescription : "仅供核对外观；尚未生成成形实体"}"` : ""}>${product ? "产品生成模型" : independentExample || logicalL ? "成品示意" : integrated ? targetShape ? "目标示意" : "成形示意" : "连接示例"}</button>
-        <button type="button" class="tube-assembly-view-mode${exploded ? " active" : ""}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="exploded" aria-pressed="${exploded}"${blankPending ? ' disabled title="正在生成下料件"' : ""}>${product ? "已加工下料件" : "下料件"}</button>
+        <button type="button" class="tube-assembly-view-mode${exploded ? "" : " active"}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="finished" aria-pressed="${!exploded}"${integratedExample ? ` title="${independentExample || logicalL ? "仅显示成品外形" : targetShape ? targetDescription : "仅供核对外观；尚未生成成形实体"}"` : ""}>${independentExample || logicalL ? "成品示意" : integrated ? targetShape ? "目标示意" : "成形示意" : "连接示例"}</button>
+        <button type="button" class="tube-assembly-view-mode${exploded ? " active" : ""}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="exploded" aria-pressed="${exploded}"${blankPending ? ' disabled title="正在生成下料件"' : ""}>下料件</button>
       </div>`}</div>
-      ${product && exploded ? `<select class="tube-assembly-preview-part-select" aria-label="查看真实下料件" data-cam-change-action="tube-designer-assembly-product-part">${assemblyProductParts(view).map((part) => `<option value="${attr(part.entityId)}"${String(part.entityId) === state.productPartId ? " selected" : ""}>${text(part.partNumber || part.name || "下料件")}</option>`).join("")}</select>` : ""}
     </header>
     <div class="tube-assembly-preview-host" data-tube-assembly-scene-viewport></div>
   </section></div>`;
@@ -634,7 +523,7 @@ export function bindAssemblyParameterDiagrams(mount) {
 
 export async function handleAssemblyLibraryAction(context, view, action, target, ops) {
   const state = assemblyLibraryState(view);
-  if (action === "tube-designer-assembly-local-anchor-change" && state.workMode === "example"
+  if (action === "tube-designer-assembly-local-anchor-change"
       && state.processInputMode === "local-parts") {
     const template = selectedAssemblyTemplate(view), role = target.dataset.processRole, key = target.dataset.processAnchorKey;
     const part = state.localProcessInputs[template.id]?.parts?.[role], anchor = part?.anchor;
@@ -645,60 +534,59 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
         const drafts = state.localAnchorDrafts[template.id] ??= {};
         drafts[role] = { ...(drafts[role] ?? {}), [key]: value };
         state.selectionValidatedKey = ""; state.selectionFailureKey = "";
-        invalidateAssemblyPreview(view, false, false); ops.renderProject(context, view);
+        invalidateAssemblyPreview(view, false); ops.renderProject(context, view);
       }
     }
     return { handled: true };
   }
-  if (state.workMode === "example" && state.processInputMode === "stock-operation"
+  if (state.processInputMode === "stock-operation"
       && ["tube-designer-stock-plan-save", "tube-designer-stock-plan-load", "tube-designer-stock-plan-new", "tube-designer-stock-plan-reload"].includes(action)) {
     await handleStockProcessStorageAction(context, view, action, target, ops);
     return { handled: true };
   }
-  if (action === "tube-designer-assembly-input-mode" && state.workMode === "example") {
+  if (action === "tube-designer-assembly-input-mode") {
     const template = selectedAssemblyTemplate(view), mode = target?.dataset?.processInputMode;
     if (mode === "local-parts" || mode === "stock-operation" && supportsStockOperations(template)) {
       state.processInputMode = mode;
       if (mode === "stock-operation") { stockProcessState(view, template); state.exploded = true; }
       else state.exploded = false;
       state.selectionProblem = ""; state.selectionRequest = null;
-      invalidateAssemblyPreview(view, false, false);
+      invalidateAssemblyPreview(view, false);
       ops.renderProject(context, view);
     }
     return { handled: true };
   }
-  if (state.workMode === "example" && state.processInputMode === "stock-operation") {
+  if (state.processInputMode === "stock-operation") {
     const result = handleStockProcessAction(view, selectedAssemblyTemplate(view), assemblyTemplates(view), action, target);
     if (result.handled) {
       if (result.changed) {
         if (result.selectedTemplateId) state.selectedId = result.selectedTemplateId;
-        invalidateAssemblyPreview(view, false, false);
+        invalidateAssemblyPreview(view, false);
         ops.renderProject(context, view);
       }
       return { handled: true };
     }
   }
-  if (state.workMode !== "example" && action.startsWith("tube-designer-finished-")) return { handled: true };
-  if (state.workMode === "example") {
+  {
     const result = handleFinishedProductAction(view, action, target);
     if (result.handled) {
       if (result.changed) {
         state.exploded = false;
         state.selectionValidatedKey = "";
         state.selectionProblem = "";
-        invalidateAssemblyPreview(view, false, false);
+        invalidateAssemblyPreview(view, false);
         ops.renderProject(context, view);
       }
       return { handled: true };
     }
   }
-  if (action === "tube-designer-assembly-load-example" && state.workMode === "example") {
+  if (action === "tube-designer-assembly-load-example") {
     const template = selectedAssemblyTemplate(view), owner = context.sceneProxy;
     const productKey = finishedProductKey(finishedProductInput(view));
     const example = await owner.invoke("TubeDesigner.GetAssemblyTemplateExampleProduct", {
       templateId: template.id, parameters: assemblyPreviewParameterGroups(view, template).parameters,
     }, { timeoutMs: 120000 });
-    if (view.activeAreaId !== "assemblies" || state.workMode !== "example" || state.selectedId !== template.id
+    if (view.activeAreaId !== "assemblies" || state.selectedId !== template.id
         || context.sceneProxy !== owner || finishedProductKey(finishedProductInput(view)) !== productKey) return { handled: true };
     const sample = example?.finishedProduct;
     if (example?.schema !== "icax.assembly-example-product" || example.templateId !== template.id
@@ -710,54 +598,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     state.selectionValidatedKey = "";
     state.selectionProblem = "";
     state.exploded = false;
-    invalidateAssemblyPreview(view, false, false);
-    ops.renderProject(context, view);
-    return { handled: true };
-  }
-  const bindingResult = await handleProductAssemblyBindingAction(context, view, action, target, ops, () => assemblyBindingInput(view));
-  if (bindingResult.handled) return bindingResult;
-  if (action === "tube-designer-assembly-work-mode") {
-    state.selectionRequest = null;
-    state.workMode = target?.dataset?.tubeAssemblyMode === "product" ? "product" : "example";
-    state.workModeUserSelected = true;
-    state.previewRequest = null;
-    state.productViewportError = "";
-    clearAssemblyLibraryViewports(view);
-    ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-assembly-select-connection") {
-    const key = String(target?.dataset?.tubeConnectionKey ?? "");
-    const designer = view.scene?.tubeDesigner ?? {};
-    const productId = String(designer.activeProductId || designer.product?.entityId || "");
-    const runId = String(designer.generationRun?.entityId || designer.product?.activeGenerationRunId || "");
-    const source = productAssemblyConnectionsState(view);
-    const sourceKey = productAssemblyConnectionIdentity(view).key;
-    const connection = source.status === "ready" && source.key === sourceKey && source.result?.productEntityId === productId
-      && source.result?.generationRunId === runId && !source.result?.modelOutdated
-      ? source.result.connections?.find((item) => item.key === key) : null;
-    if (!connection) return { handled: true };
-    state.workMode = "product";
-    state.workModeUserSelected = true;
-    state.selectedProductConnectionKey = key;
-    state.selectedProductConnectionProductKey = `${productId}/${runId}`;
-    state.selectedProductTemplateConnectionKey = "";
-    state.selectedProductTemplateId = "";
-    const current = selectedAssemblyTemplate(view);
-    if (current) {
-      const draft = productAssemblyBindingDraft(view, current);
-      draft.connectionKey = key;
-      draft.participants = {};
-      draft.autoAssignedConnectionKey = "";
-      draft.replaceBindingId = "";
-      invalidateProductAssemblyCandidate(view, current.id);
-    }
-    state.productViewportError = "";
-    ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-assembly-product-part") {
-    if (assemblyProductParts(view).some((part) => String(part.entityId) === String(target?.value))) state.productPartId = String(target.value);
+    invalidateAssemblyPreview(view, false);
     ops.renderProject(context, view);
     return { handled: true };
   }
@@ -807,7 +648,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     return { handled: true };
   }
   if (action === "tube-designer-assembly-set-view") {
-    if (state.workMode === "example" && !selectedAssemblyTemplate(view)?.exampleInput
+    if (!selectedAssemblyTemplate(view)?.exampleInput
         && selectedAssemblyTemplate(view)?.manufacturingPlan?.realization === "integrated"
         && !hasIntegratedFormedPreview(state.preview)
         && !(state.preview?.layoutShape === "l" && state.preview?.designParts?.length === 2))
@@ -817,7 +658,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
         && !state.preview.manufacturingParts?.length) return { handled: true };
     if (state.exploded !== exploded) {
       state.exploded = exploded;
-      if (state.workMode === "example" && state.processInputMode !== "stock-operation" && selectedAssemblyTemplate(view)?.exampleInput) {
+      if (state.processInputMode !== "stock-operation" && selectedAssemblyTemplate(view)?.exampleInput) {
         // Keep the shared product, but stop scheduling work for the other view.
         state.previewRequest = null;
         state.previewError = "";
@@ -831,12 +672,6 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
   if (action === "tube-designer-assembly-retry-preview") {
     state.selectionFailureKey = "";
     finishedProductState(view).processInputFailures?.clear();
-    if (state.workMode === "product") {
-      stopAssemblyProductScene(view);
-      stopAssemblyProductResourceHydration(view);
-      state.productViewportError = "";
-      clearAssemblyLibraryViewports(view);
-    }
     state.previewFailureKey = "";
     state.previewError = "";
     state.preview = null;
@@ -846,7 +681,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
   if (action === "tube-designer-assembly-select") {
     const id = String(target?.dataset?.tubeAssemblyId ?? "");
     const chosen = assemblyTemplateById(assemblyTemplates(view), id);
-    if (state.workMode === "example" && state.processInputMode === "stock-operation" && chosen) {
+    if (state.processInputMode === "stock-operation" && chosen) {
       if (supportsStockOperations(chosen)) {
         const row = selectedStockOperation(view, selectedAssemblyTemplate(view));
         if (row) {
@@ -856,13 +691,23 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
         }
         state.selectedId = chosen.id;
         markStockProcessEdited(view, chosen);
-        invalidateAssemblyPreview(view, false, false); ops.renderProject(context, view);
+        invalidateAssemblyPreview(view, false); ops.renderProject(context, view);
         return { handled: true };
       }
       state.processInputMode = "local-parts";
     }
-    if (state.workMode === "example" && chosen && !supportsExampleScene(chosen)) return { handled: true };
-    if (state.workMode === "example" && chosen?.exampleInput) {
+    if (chosen && !supportsExampleScene(chosen)) return { handled: true };
+    if (chosen?.exampleInput) {
+      if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) {
+        state.selectedId = id;
+        state.selectionRequest = null;
+        state.selectionProblem = "";
+        state.selectionValidatedKey = "";
+        state.exploded = false;
+        invalidateAssemblyPreview(view, false);
+        ops.renderProject(context, view);
+        return { handled: true };
+      }
       const selectionKey = assemblyApplicabilityKey(view, chosen);
       if (id !== state.selectedId || state.selectionValidatedKey !== selectionKey
           || state.selectionOwner !== context.sceneProxy || state.selectionRequest) {
@@ -876,33 +721,11 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
       }
       return { handled: true };
     }
-    const connection = state.workMode === "product" ? selectedProductAssemblyConnection(view, state) : null;
-    if (state.workMode === "product" && (!connection || chosen?.participants?.length !== connection.participants?.length))
-      return { handled: true };
-    if (chosen) {
-      if (state.workMode === "product") {
-        state.selectedProductTemplateId = id;
-        state.selectedProductTemplateConnectionKey = connection.key;
-      }
-    }
     if (id !== state.selectedId && chosen) {
-      if (state.workMode === "example") {
-        preserveAssemblySceneOnTemplateChange(view, selectedAssemblyTemplate(view), chosen);
-      }
+      preserveAssemblySceneOnTemplateChange(view, selectedAssemblyTemplate(view), chosen);
       state.selectedId = id;
-      state.templateUserSelected = true;
       state.exploded = false;
-      invalidateAssemblyPreview(view, state.workMode !== "product" && !chosen.exampleInput);
-      if (state.workMode === "product" && state.selectedProductConnectionKey) {
-        const draft = productAssemblyBindingDraft(view, { id });
-        if (draft.connectionKey !== state.selectedProductConnectionKey) {
-          draft.connectionKey = state.selectedProductConnectionKey;
-          draft.participants = {};
-          draft.autoAssignedConnectionKey = "";
-          draft.replaceBindingId = "";
-          invalidateProductAssemblyCandidate(view, id);
-        }
-      }
+      invalidateAssemblyPreview(view, !chosen.exampleInput);
     }
     ops.renderProject(context, view);
     return { handled: true };
@@ -913,7 +736,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     const template = selectedAssemblyTemplate(view);
     if (template?.exampleInput) return { handled: true };
     const role = String(target?.dataset?.tubeAssemblySceneRole ?? "");
-    if (state.workMode !== "example" || template?.id !== String(target?.dataset?.tubeAssemblyId ?? "")
+    if (template?.id !== String(target?.dataset?.tubeAssemblyId ?? "")
         || !template.previewScene?.designParts?.some((part) => part.role === role)) return { handled: true };
     const current = assemblySceneParts(view, template)[role];
     let change = null;
@@ -950,7 +773,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
       }
     }
     if (change && updateAssemblyScenePart(view, template, role, change)) {
-      invalidateAssemblyPreview(view, false, false);
+      invalidateAssemblyPreview(view, false);
       ops.renderProject(context, view);
     }
     return { handled: true };
@@ -960,23 +783,22 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     const key = String(target?.dataset?.tubeAssemblyParameter ?? "");
     const definition = template?.parameters.find((item) => item.key === key);
     if (template?.exampleInput && definition?.scope === "scene") return { handled: true };
-    if (template && definition && (state.workMode !== "product"
-        || (definition.scope !== "scene" && definition.scope !== "product"))) {
+    if (template && definition) {
       const value = definition.valueType === "boolean" ? !!target.checked
         : definition.valueType === "choice" ? String(target.value ?? "") : Number(target.value);
       if (!['number', 'integer'].includes(definition.valueType) || Number.isFinite(value)) {
-        if (state.workMode === "example" && definition.scope === "scene") {
+        if (definition.scope === "scene") {
           if (assemblySceneParameterAccepts(definition, value, assemblyParameterValues(view, template))) {
             const signature = assemblySceneSignature(template);
             state.sceneParameterDrafts[signature] = {
               ...(state.sceneParameterDrafts[signature] ?? {}), [definition.sceneKey || key]: value,
             };
             if (state.parameterDrafts[template.id]) delete state.parameterDrafts[template.id][key];
-            invalidateAssemblyPreview(view, false, false);
+            invalidateAssemblyPreview(view, false);
             ops.renderProject(context, view);
           }
         } else {
-          if (state.workMode === "example" && state.processInputMode === "stock-operation") {
+          if (state.processInputMode === "stock-operation") {
             stockOperationSettings(view, template).parameters[key] = value;
             markStockProcessEdited(view, template);
           }
@@ -1002,7 +824,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
       const value = definition.valueType === "boolean" ? !!target.checked
         : Array.isArray(definition.options) ? String(target.value ?? "") : Number(target.value);
       if (definition.valueType !== "number" && definition.valueType !== "integer" || Number.isFinite(value)) {
-        const templateDrafts = state.workMode === "example" && state.processInputMode === "stock-operation"
+        const templateDrafts = state.processInputMode === "stock-operation"
           ? stockOperationSettings(view, template).processDrafts : state.processDrafts[templateId] ??= {};
         const processDrafts = templateDrafts[processId] ??= {};
         const current = processParameterValues(view, template, process, descriptor);
@@ -1011,7 +833,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
           ...(processDrafts[descriptor.id] ?? {}),
           ...parameterAutoFillPatch(definitions, current, key, value, sources),
         };
-        if (state.workMode === "example" && state.processInputMode === "stock-operation") markStockProcessEdited(view, template);
+        if (state.processInputMode === "stock-operation") markStockProcessEdited(view, template);
         invalidateAssemblyPreview(view);
         ops.renderProject(context, view);
       }
@@ -1020,17 +842,17 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
   }
   if (action === "tube-designer-assembly-reset") {
     const id = String(target?.dataset?.tubeAssemblyId ?? state.selectedId);
-    if (state.workMode === "example" && state.processInputMode === "stock-operation") {
+    if (state.processInputMode === "stock-operation") {
       const template = selectedAssemblyTemplate(view), row = selectedStockOperation(view, template);
       delete row.settings[id]; stockOperationSettings(view, template);
       markStockProcessEdited(view, template);
-      invalidateAssemblyPreview(view, false, false); ops.renderProject(context, view);
+      invalidateAssemblyPreview(view, false); ops.renderProject(context, view);
       return { handled: true };
     }
     delete state.parameterDrafts[id];
     delete state.processDrafts[id];
     delete state.localAnchorDrafts[id];
-    if (state.workMode === "example" && !selectedAssemblyTemplate(view)?.exampleInput) {
+    if (!selectedAssemblyTemplate(view)?.exampleInput) {
       const template = assemblyTemplateById(assemblyTemplates(view), id);
       if (template) {
         const signature = assemblySceneSignature(template);
@@ -1045,11 +867,10 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
   return { handled: false };
 }
 
-function invalidateAssemblyPreview(view, clearScene = false, invalidateProductCandidate = true) {
+function invalidateAssemblyPreview(view, clearScene = false) {
   const state = assemblyLibraryState(view);
   state.selectionRequest = null;
   state.selectionFailureKey = "";
-  if (invalidateProductCandidate) invalidateProductAssemblyCandidate(view, state.selectedId);
   state.previewRequest = null;
   state.preview = null;
   state.previewFailureKey = "";
@@ -1063,7 +884,7 @@ function invalidateAssemblyPreview(view, clearScene = false, invalidateProductCa
 export function assemblyPreviewKey(view, template = selectedAssemblyTemplate(view)) {
   if (!template) return "";
   const state = assemblyLibraryState(view);
-  if (state.workMode === "example" && state.processInputMode === "stock-operation")
+  if (state.processInputMode === "stock-operation")
     return finishedProductKey(["stock-operation", stockProcessPayload(view, template, assemblyTemplates(view)),
       assemblyTemplates(view).filter(supportsStockOperations).map((item) => assemblyManufacturingDependencies(view, item))]);
   const parameterGroups = assemblyPreviewParameterGroups(view, template);
@@ -1316,6 +1137,7 @@ function createAssemblyViewport(state, viewportFactory) {
     projectionMode: state.projectionMode,
     showProjectionToggle: true,
     pickingEnabled: false,
+    blankDoubleClickFitEnabled: true,
     antialias: true,
     pixelRatioCap: 2,
     onProjectionChange(mode) { state.projectionMode = mode; },
@@ -1378,13 +1200,6 @@ export function attachAssemblyLibraryViewports(context, view, mount, options = {
   mountAssemblyViewportPane(controller.scene, sceneHost);
   view.viewport?.setVisibleEntityIds?.([]);
   view.viewport?.setContinuousRendering?.(false);
-  if (state.workMode === "product") {
-    controller.scene.viewport.setDimensionAnnotations?.([]);
-    const source = ensureAssemblyProductScene(context, view);
-    void applyAssemblyProductScene(context, view, source);
-    return controller;
-  }
-  stopAssemblyProductScene(view);
   if (state.preview && (state.appliedKey !== assemblyAppliedKey(view, state, state.preview.key) || !controller.scene.ready)) {
     void applyAssemblyPreview(context, view, state.preview, state.preview.key);
   } else {
@@ -1399,8 +1214,6 @@ export function disposeAssemblyLibraryViewports(view) {
     view.tubeDesignerAssemblyLibrary.previewRequest = null;
   }
   if (!view || (typeof view !== "object" && typeof view !== "function")) return;
-  stopAssemblyProductScene(view);
-  stopAssemblyProductResourceHydration(view);
   const controller = assemblyViewportControllers.get(view);
   if (!controller) return;
   controller.generation += 1;
@@ -1477,49 +1290,10 @@ async function applyAssemblyPreviewPane(pane, rows, resources, revision, templat
   return true;
 }
 
-async function applyAssemblyProductScene(context, view, source) {
-  const controller = assemblyViewportControllers.get(view);
-  if (!controller) return;
-  const state = assemblyLibraryState(view);
-  const parts = assemblyProductParts(view);
-  const part = parts.find((item) => String(item.entityId) === state.productPartId) ?? parts[0];
-  state.productPartId = String(part?.entityId ?? "");
-  const rows = state.exploded ? assemblyProductPartRows(part) : assemblyProductRows(view, source.snapshot);
-  const identity = assemblyProductIdentity(view).join("/");
-  const mode = state.exploded ? "product-part" : "product-model";
-  const key = JSON.stringify([identity, mode, rows]);
-  const sceneId = `${identity}/${state.exploded ? part?.entityId ?? "" : ""}`;
-  const pane = controller.scene;
-  if (pane.appliedKey === key || pane.pendingKey === key || pane.failedKey === key) return;
-  const generation = ++controller.generation;
-  const isCurrent = () => controller.generation === generation && view.activeAreaId === "assemblies"
-    && assemblyLibraryState(view).workMode === "product" && assemblyProductIdentity(view).join("/") === identity;
-  pane.pendingKey = key;
-  state.productViewportError = "";
-  // Hide the previous product immediately while the new resource is loading.
-  if (pane.templateId !== sceneId || !rows.length) pane.viewport.setVisibleEntityIds?.([]);
-  try {
-    const resources = ensureAssemblyProductResources(context, view);
-    if (resources.promise) await resources.promise;
-    if (!isCurrent() || resources.status !== "ready") return;
-    await applyAssemblyPreviewPane(pane, rows,
-      context.sceneProxy?.resources ?? view.sceneProxy?.resources ?? context.projectProxy?.resources,
-      key, sceneId, mode, "", isCurrent);
-  } catch (error) {
-    if (!isCurrent()) return;
-    pane.failedKey = key;
-    pane.viewport.setVisibleEntityIds?.([]);
-    state.productViewportError = `真实构件显示失败：${error?.message ?? error}`;
-    view.tubeDesignerAssemblyLibraryRenderProject?.();
-  } finally {
-    if (pane.pendingKey === key) pane.pendingKey = "";
-  }
-}
-
 function assemblyExampleExploded(view, state) {
   if (state.processInputMode === "stock-operation") return !state.preview?.designParts?.length || !!state.exploded;
-  if (state.workMode === "example" && selectedAssemblyTemplate(view)?.exampleInput) return !!state.exploded;
-  return state.workMode === "example" && selectedAssemblyTemplate(view)?.manufacturingPlan?.realization === "integrated"
+  if (selectedAssemblyTemplate(view)?.exampleInput) return !!state.exploded;
+  return selectedAssemblyTemplate(view)?.manufacturingPlan?.realization === "integrated"
     && state.preview?.layoutShape !== "l"
     && !hasIntegratedFormedPreview(state.preview) || !!state.exploded;
 }
@@ -1531,7 +1305,7 @@ function assemblyAppliedKey(view, state, key) {
 }
 
 async function applyAssemblyPreview(context, view, preview, key) {
-  if (view.activeAreaId !== "assemblies" || assemblyLibraryState(view).workMode !== "example" || assemblyPreviewKey(view) !== key || assemblyLibraryState(view).preview !== preview) return false;
+  if (view.activeAreaId !== "assemblies" || assemblyPreviewKey(view) !== key || assemblyLibraryState(view).preview !== preview) return false;
   const controller = assemblyViewportControllers.get(view);
   if (!controller) return false;
   const baseResources = context.sceneProxy?.resources ?? view.sceneProxy?.resources ?? context.projectProxy?.resources;
@@ -1547,7 +1321,7 @@ async function applyAssemblyPreview(context, view, preview, key) {
   const generation = ++controller.generation;
   controller.scene.pendingKey = revision;
   const isCurrentDisplay = () => {
-    if (controller.generation !== generation || state.workMode !== "example" || view.activeAreaId !== "assemblies"
+    if (controller.generation !== generation || view.activeAreaId !== "assemblies"
         || assemblyAppliedKey(view, state, assemblyPreviewKey(view)) !== appliedKey) return false;
     // A pending product snapshot also satisfies a newer process selection
     // accepting exactly the same product and resource owner.
@@ -1591,7 +1365,7 @@ async function applyCurrentAssemblyPreview(context, view) {
     const sameProduct = !state.exploded && preview.independentFinishedProduct && state.preview?.independentFinishedProduct
       && state.preview.finishedKey === preview.finishedKey
       && state.preview.finishedOwnerGeneration === preview.finishedOwnerGeneration;
-    if ((state.preview !== preview && !sameProduct) || view.activeAreaId !== "assemblies" || state.workMode !== "example"
+    if ((state.preview !== preview && !sameProduct) || view.activeAreaId !== "assemblies"
         || assemblyPreviewKey(view) !== preview.key || assemblyAppliedKey(view, state, preview.key) !== appliedKey) return false;
     state.previewError = `装配预览显示失败：${error?.message ?? error}`;
     view.tubeDesignerAssemblyLibraryRenderProject?.();
@@ -1664,6 +1438,7 @@ async function finishedProcessInputForPreview(context, view, template, product) 
 
 function ensureAssemblyExampleSelection(context, view, template, ops = null, userSelected = false) {
   if (typeof context?.sceneProxy?.invoke !== "function") return null;
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
   const state = assemblyLibraryState(view);
   const selectionKey = assemblyApplicabilityKey(view, template);
   if (state.selectionRequest?.key === selectionKey) return state.selectionRequest;
@@ -1677,7 +1452,7 @@ function ensureAssemblyExampleSelection(context, view, template, ops = null, use
     progress: { phase: "正在检查成品是否适用于此工艺…", completed: 0, total: 0 } };
   const isCurrent = () => state.selectionRequest === request && context.sceneProxy === owner
     && assemblyPreviewScope(context, view) === scope
-    && view.activeAreaId === "assemblies" && state.workMode === "example"
+    && view.activeAreaId === "assemblies"
     && finishedProductKey(finishedProductInput(view)) === productKey;
   const repaint = () => {
     if (ops?.renderProject) ops.renderProject(context, view);
@@ -1687,7 +1462,7 @@ function ensureAssemblyExampleSelection(context, view, template, ops = null, use
   if (userSelected) state.exploded = false;
   state.previewError = "";
   request.promise = Promise.resolve().then(async () => {
-    if (!isCurrent()) return;
+    if (!isCurrent() || !hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
     const processInput = await finishedProcessInputForPreview(context, view, template, product);
     if (!isCurrent()) return;
     const result = await owner.invoke("TubeDesigner.CheckAssemblyTemplateApplicability", {
@@ -1699,7 +1474,6 @@ function ensureAssemblyExampleSelection(context, view, template, ops = null, use
     // A failed applicability check keeps the independent product and its model.
     state.selectionProblem = result.applicable ? "" : result.reason || "当前工艺不适用于此成品";
     state.selectedId = template.id;
-    if (userSelected) state.templateUserSelected = true;
     state.selectionValidatedKey = selectionKey;
     state.selectionOwner = owner;
     state.selectionRequest = null;
@@ -1710,7 +1484,6 @@ function ensureAssemblyExampleSelection(context, view, template, ops = null, use
   }).catch((error) => {
     if (!isCurrent()) return;
     state.selectedId = template.id;
-    if (userSelected) state.templateUserSelected = true;
     state.selectionProblem = `当前成品暂不能用于此工艺：${error?.message ?? error}`;
     state.selectionValidatedKey = selectionKey;
     state.selectionOwner = owner;
@@ -1826,7 +1599,7 @@ function ensureStockProcessStorage(context, view, template) {
         try {
           const id = restoreStockProcessPlan(view, storage.plans[0], assemblyTemplates(view));
           assemblyLibraryState(view).selectedId = id;
-          invalidateAssemblyPreview(view, false, false);
+          invalidateAssemblyPreview(view, false);
           storage.message = "已恢复项目中保存的加工方案。";
         } catch (error) { storage.error = error.message; }
       }
@@ -1876,7 +1649,7 @@ async function handleStockProcessStorageAction(context, view, action, target, op
     if (record) {
       try {
         state.selectedId = restoreStockProcessPlan(view, record, assemblyTemplates(view)); storage.pendingCommit = null;
-        invalidateAssemblyPreview(view, false, false);
+        invalidateAssemblyPreview(view, false);
       } catch (error) { storage.error = error.message; }
     }
     ops.renderProject(context, view); return;
@@ -1913,6 +1686,7 @@ async function handleStockProcessStorageAction(context, view, action, target, op
 }
 
 function ensureStockProcessPreview(context, view, template) {
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
   const state = assemblyLibraryState(view), key = assemblyPreviewKey(view, template);
   const scope = assemblyPreviewScope(context, view), owner = context.sceneProxy;
   if (state.preview?.stockProcess && state.preview.key === key) {
@@ -1924,10 +1698,11 @@ function ensureStockProcessPreview(context, view, template) {
   const request = { key, kind: "manufacturing", templateId: template.id, promise: null,
     progress: { phase: "正在计算连续母材的全部折弯…", completed: 0, total: payload.instances.length } };
   const isCurrent = () => state.previewRequest === request && context.sceneProxy === owner
-    && assemblyPreviewScope(context, view) === scope && state.workMode === "example"
+    && assemblyPreviewScope(context, view) === scope
     && state.processInputMode === "stock-operation" && view.activeAreaId === "assemblies" && assemblyPreviewKey(view) === key;
   state.previewRequest = request; state.previewError = "";
   request.promise = Promise.resolve().then(async () => {
+    if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
     const result = await owner.invoke("TubeDesigner.PreviewAssemblyProcessPlan", payload, { timeoutMs: 180000 });
     if (!isCurrent()) return null;
     const plan = result?.plan ?? result;
@@ -1964,6 +1739,7 @@ function ensureStockProcessPreview(context, view, template) {
 }
 
 function ensureProductFirstAssemblyPreview(context, view, template) {
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
   const state = assemblyLibraryState(view);
   const key = assemblyPreviewKey(view, template);
   const product = clone(finishedProductInput(view));
@@ -1997,6 +1773,7 @@ function ensureProductFirstAssemblyPreview(context, view, template) {
     // One result per product shape, shared by every process accepting its input.
     // This request remains usable when a different process is selected.
     entry.promise = Promise.resolve().then(async () => {
+      if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
       const plan = await finishedGeometryPlanForPreview(context, view, product);
       if (!cacheIsCurrent()) return null;
       if (plan?.schema !== "icax.finished-product-preview"
@@ -2036,7 +1813,7 @@ function ensureProductFirstAssemblyPreview(context, view, template) {
   const request = { key, kind, templateId: template.id, promise: null,
     progress: { phase: entry.finished ? "正在计算装配工艺和下料件…" : "正在生成成品外形…", completed: 0, total: 0 } };
   const isCurrent = () => state.previewRequest === request && view.activeAreaId === "assemblies"
-    && state.workMode === "example" && state.exploded === (kind === "manufacturing")
+    && state.exploded === (kind === "manufacturing")
     && assemblyPreviewScope(context, view) === scope && assemblyPreviewKey(view) === key;
   const repaint = () => { if (isCurrent()) view.tubeDesignerAssemblyLibraryRenderProject?.(); };
   const parameters = assemblyPreviewParameterGroups(view, template).parameters;
@@ -2086,8 +1863,8 @@ function ensureProductFirstAssemblyPreview(context, view, template) {
 
 export function ensureAssemblyLibraryPreview(context, view, template = selectedAssemblyTemplate(view)) {
   if (view.activeAreaId !== "assemblies" || !template || typeof context?.sceneProxy?.invoke !== "function") return null;
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
   const state = assemblyLibraryState(view);
-  if (state.workMode !== "example") return null;
   if (state.processInputMode === "stock-operation" && supportsStockOperations(template))
     return ensureStockProcessPreview(context, view, template);
   if (template.exampleInput) {
@@ -2109,7 +1886,7 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
   const sceneParts = assemblySceneDraftParts(view, template);
   const request = { key, templateId: template.id, promise: null,
     progress: { phase: "正在准备工艺方案…", completed: 0, total: 0 } };
-  const isCurrent = () => state.previewRequest === request && state.workMode === "example"
+  const isCurrent = () => state.previewRequest === request
     && view.activeAreaId === "assemblies" && assemblyPreviewKey(view, template) === key;
   const reportProgress = (phase, completed = 0, total = 0) => {
     if (!isCurrent()) return;
@@ -2117,6 +1894,7 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
     view.tubeDesignerAssemblyLibraryRenderProject?.();
   };
   request.promise = Promise.resolve().then(async () => {
+    if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
     const plan = await context.sceneProxy.invoke("TubeDesigner.ResolveAssemblyTemplatePreview", {
       templateId: template.id,
       parameters: parameterGroups.parameters,
@@ -2185,18 +1963,18 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
   return request;
 }
 
-function assemblyCard(item, selectedId, values, productSupport = null) {
+function assemblyCard(item, selectedId, values) {
   const blanks = item.manufacturingPlan?.blankParts?.length ?? 0;
   const integrated = item.manufacturingPlan?.realization === "integrated";
-  const countLabel = supportsStockOperations(item) ? "连续母材 · 多处折弯" : integrated
+  const countLabel = (supportsStockOperations(item) ? "连续母材 · 多处折弯" : integrated
     ? `${item.participants.length} 段逻辑管段 → ${blanks} 件连续母材`
-    : `${item.participants.length} 件构件 → ${blanks} 件下料件`;
+    : `${item.participants.length} 件构件 → ${blanks} 件下料件`)
+    + (item.libraryScope === "user" ? " · 我的" : "");
   const choice = item.parameters.find((definition) => definition.valueType === "choice"
     && definition.level !== "advanced" && parameterVisible(definition, values));
   const selected = choice?.options?.find((option) => String(option.value) === String(values[choice.key]));
   const method = selected ? `${choice.displayName}：${selected.label ?? selected.value}` : item.interfaceType;
-  const badge = productSupport ? `<small class="tube-connection-library-card-support${productSupport.available ? " available" : ""}">${text(productSupport.label)}</small>` : "";
-  return `<button type="button" class="tube-connection-library-card${item.id === selectedId ? " selected" : ""}" data-cam-action="tube-designer-assembly-select" data-tube-assembly-id="${attr(item.id)}" aria-label="${attr(`${item.displayName}，${countLabel}，${method}${productSupport ? `，${productSupport.label}` : ""}`)}"><span class="tube-connection-library-card-art">${renderAssemblyCatalogueIllustration(item)}</span><span><strong>${text(item.displayName)}</strong><small>${text(countLabel)}</small>${badge}</span></button>`;
+  return `<button type="button" class="tube-connection-library-card${item.id === selectedId ? " selected" : ""}" data-cam-action="tube-designer-assembly-select" data-tube-assembly-id="${attr(item.id)}" aria-label="${attr(`${item.displayName}，${countLabel}，${method}`)}"><span class="tube-connection-library-card-art">${renderAssemblyCatalogueIllustration(item)}</span><span><strong>${text(item.displayName)}</strong><small>${text(countLabel)}</small></span></button>`;
 }
 
 function currentAssemblyWorkflow(view, template) {
@@ -2233,6 +2011,7 @@ function assemblySceneDiagramKey(profile, scene) {
 
 function ensureAssemblySceneProfileDiagram(context, view, template, role) {
   if (typeof context?.sceneProxy?.invoke !== "function") return;
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
   const scene = assemblySceneParts(view, template)[role];
   if (!scene) return;
   const profile = libraryProfiles(view).find((item) => profileScope(item) === scene.profileRef.scope
@@ -2241,12 +2020,16 @@ function ensureAssemblySceneProfileDiagram(context, view, template, role) {
   const key = assemblySceneDiagramKey(profile, scene);
   const cache = assemblyLibraryState(view).sceneProfileDiagramCache;
   if (cache.has(key)) return;
-  const request = Promise.resolve().then(() => context.sceneProxy.invoke("TubeDesigner.EvaluateProfilePackage", {
-    profileRef: scene.profileRef, parameters: scene.parameters,
-  }, { timeoutMs: 120000 }));
+  const request = Promise.resolve().then(() => {
+    if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
+    return context.sceneProxy.invoke("TubeDesigner.EvaluateProfilePackage", {
+      profileRef: scene.profileRef, parameters: scene.parameters,
+    }, { timeoutMs: 120000 });
+  });
   cache.set(key, { request });
   if (cache.size > 48) cache.delete(cache.keys().next().value);
   void request.then((response) => {
+    if (!response) { cache.delete(key); return; }
     if (!response?.profile?.contours?.length) throw new Error("管型截面无有效轮廓");
     cache.set(key, { snapshot: response.profile });
     const currentTemplate = selectedAssemblyTemplate(view);
@@ -2384,7 +2167,7 @@ function processParameterValues(view, template, process, descriptor) {
   const defaults = Object.fromEntries([...(descriptor?.parameters ?? []), ...(descriptor?.operationParameters ?? [])]
     .map((item) => [item.key, item.defaultValue]));
   const state = assemblyLibraryState(view);
-  const source = state.workMode === "example" && state.processInputMode === "stock-operation"
+  const source = state.processInputMode === "stock-operation"
     ? stockOperationSettings(view, template).processDrafts : state.processDrafts?.[template.id];
   const drafts = source?.[process.id]?.[descriptor?.id] ?? {};
   return { ...defaults, ...drafts };

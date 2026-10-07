@@ -1,0 +1,42 @@
+{
+  "templateId": "minimal-protective-grille",
+  "originalDirectory": "templates/product/minimal_protective_grille",
+  "files": [
+    {
+      "path": "__pycache__/template.cpython-312.pyc",
+      "size": 17176,
+      "sha256": "24f0f63faa431313c416a322c6d1ab26303f859dba354732560a4a2e5bafa443"
+    },
+    {
+      "path": "display.json",
+      "size": 22246,
+      "sha256": "121d6f9f5fd8c6efc61ff8b36405e63fe80812bb0f94fce93c3e004875c34cae"
+    },
+    {
+      "path": "README.md",
+      "size": 1656,
+      "sha256": "ea630a27a9b6312b9be1d4e20c06d3e6ec04c29101690a6d0456e57a432ea852"
+    },
+    {
+      "path": "resource/icon.svg",
+      "size": 356,
+      "sha256": "5d51e47b95dc02c3223a7f11c6fc0fb1f47293e079cdce74408f78a185fc8882"
+    },
+    {
+      "path": "resource/schematic.svg",
+      "size": 613,
+      "sha256": "2e2309da09a1fb820f1a50f023f0b53aa96aa933724650c7397e1d956c7bd620"
+    },
+    {
+      "path": "template.json",
+      "size": 53244,
+      "sha256": "b8d973aa62bd31037c8288bcb42542cd91b654503a1898b930aed5ffa96a8583"
+    },
+    {
+      "path": "template.py",
+      "size": 11997,
+      "sha256": "45bb3b2541d6b71d829865524dc7c29f4e6064b3d7751074c0cb00ba85e239a9"
+    }
+  ],
+  "verified": true
+}

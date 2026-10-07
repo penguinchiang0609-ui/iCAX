@@ -1,0 +1,1013 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "guardrail_handrail": {
+          "title": {
+            "zh-CN": "扶手"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "guardrail_post": {
+          "title": {
+            "zh-CN": "立柱"
+          },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "guardrail_rail": {
+          "title": {
+            "zh-CN": "横档"
+          },
+          "order": 30,
+          "defaultOpen": true
+        },
+        "guardrail_infill": {
+          "title": {
+            "zh-CN": "填充"
+          },
+          "order": 40,
+          "defaultOpen": true
+        },
+        "guardrail_installation": {
+          "title": {
+            "zh-CN": "安装"
+          },
+          "order": 50,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "identity": {
+          "category": "structure",
+          "order": 0
+        },
+        "basic": {
+          "category": "structure",
+          "order": 10
+        },
+        "dimensions": {
+          "category": "specifications",
+          "order": 20
+        },
+        "layout": {
+          "category": "specifications",
+          "order": 30
+        },
+        "infill": {
+          "category": "specifications",
+          "sectionGroup": "guardrail_infill",
+          "order": 40
+        },
+        "infill_materials": {
+          "sectionGroup": "guardrail_infill",
+          "defaultOpen": true,
+          "order": 50
+        },
+        "profiles": {
+          "defaultOpen": true,
+          "order": 60
+        },
+        "process": {
+          "sectionGroup": "guardrail_installation",
+          "defaultOpen": true,
+          "order": 70
+        },
+        "components": {
+          "defaultOpen": true,
+          "order": 80
+        }
+      },
+      "fields": {
+        "handrailMode": {
+          "order": 10,
+          "sectionGroup": "guardrail_handrail",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "startExtension": {
+          "order": 20,
+          "sectionGroup": "guardrail_handrail",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "finishExtension": {
+          "order": 30,
+          "sectionGroup": "guardrail_handrail",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "barOrientation": {
+          "order": 40,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "horizontalRailCount": {
+          "order": 50,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "elevationSource": {
+          "order": 60,
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "slopeAngle2": {
+          "order": 70,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "slopeAngle3": {
+          "order": 80,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "treadGoing": {
+          "order": 90,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "treadRise": {
+          "order": 100,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "treadCount1": {
+          "order": 110,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "treadCount2": {
+          "order": 120,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "treadCount3": {
+          "order": 130,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "fixedBarCount": {
+          "order": 140,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "maximumHorizontalClearGap": {
+          "order": 150,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sidePlateHeight": {
+          "order": 160,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          },
+          "category": "specifications"
+        },
+        "sidePlateDrop": {
+          "order": 170,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          },
+          "category": "specifications"
+        },
+        "pathMode": {
+          "order": 180,
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "slopeAngle": {
+          "order": 190,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "productCode": {
+          "order": 200,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "layout": {
+          "order": 210,
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "dimensionMode": {
+          "order": 220,
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "sideLength1": {
+          "order": 230,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sideLength2": {
+          "order": 240,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sideLength3": {
+          "order": 250,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "guardHeight": {
+          "order": 260,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "railCount": {
+          "order": 270,
+          "sectionGroup": "guardrail_rail",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "cornerPostMode": {
+          "order": 280,
+          "sectionGroup": "guardrail_post",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "doublePostClearGap": {
+          "order": 290,
+          "sectionGroup": "guardrail_post",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "largePostMode": {
+          "order": 300,
+          "sectionGroup": "guardrail_post",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "largePostSize": {
+          "order": 310,
+          "sectionGroup": "guardrail_post",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "maximumPostSpacing": {
+          "order": 320,
+          "sectionGroup": "guardrail_post",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "bottomClearance": {
+          "order": 330,
+          "sectionGroup": "guardrail_rail",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "upperRailDrop": {
+          "order": 340,
+          "sectionGroup": "guardrail_rail",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "infillType": {
+          "order": 360,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "barDistribution": {
+          "order": 370,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "maximumVerticalClearGap": {
+          "order": 380,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "lowerPanelHeight": {
+          "order": 390,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "panelThickness": {
+          "order": 400,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "panelEdgeClearance": {
+          "order": 410,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "plateMaterial": {
+          "order": 420,
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "basePlateSize": {
+          "order": 440,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          },
+          "category": "specifications"
+        },
+        "basePlateThickness": {
+          "order": 450,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          },
+          "category": "specifications"
+        },
+        "baseBoltDiameter": {
+          "order": 460,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "baseBoltEdgeDistance": {
+          "order": 470,
+          "sectionGroup": "guardrail_installation",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "handrailProfileType": {
+          "order": 480,
+          "sectionGroup": "guardrail_handrail",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "handrailWidth": {
+          "order": 490,
+          "sectionGroup": "guardrail_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "handrailDepth": {
+          "order": 500,
+          "sectionGroup": "guardrail_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "handrailCornerRadius": {
+          "order": 510,
+          "sectionGroup": "guardrail_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "handrailWallThickness": {
+          "order": 520,
+          "sectionGroup": "guardrail_handrail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "postProfileType": {
+          "order": 530,
+          "sectionGroup": "guardrail_post",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "postWidth": {
+          "order": 540,
+          "sectionGroup": "guardrail_post",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "postDepth": {
+          "order": 550,
+          "sectionGroup": "guardrail_post",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "postCornerRadius": {
+          "order": 560,
+          "sectionGroup": "guardrail_post",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "postWallThickness": {
+          "order": 570,
+          "sectionGroup": "guardrail_post",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "railProfileType": {
+          "order": 580,
+          "sectionGroup": "guardrail_rail",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "railWidth": {
+          "order": 590,
+          "sectionGroup": "guardrail_rail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "railDepth": {
+          "order": 600,
+          "sectionGroup": "guardrail_rail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "railCornerRadius": {
+          "order": 610,
+          "sectionGroup": "guardrail_rail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "railWallThickness": {
+          "order": 620,
+          "sectionGroup": "guardrail_rail",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "infillProfileType": {
+          "order": 630,
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "infillWidth": {
+          "order": 640,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "infillDepth": {
+          "order": 650,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "infillCornerRadius": {
+          "order": 660,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "infillWallThickness": {
+          "order": 670,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "guardrailUse": {
+          "order": 680,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        },
+        "wallPicketProjection": {
+          "order": 690,
+          "sectionGroup": "guardrail_infill",
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "picketHoleClearance": {
+          "order": 700,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "spearTipEnabled": {
+          "order": 710,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 96,
+            "preferred": 140,
+            "max": 220
+          }
+        },
+        "spearTipModelReference": {
+          "order": 720,
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "width": {
+            "min": 180,
+            "preferred": 260,
+            "max": 340
+          }
+        },
+        "postCapEnabled": {
+          "order": 730,
+          "sectionGroup": "guardrail_post",
+          "width": {
+            "min": 96,
+            "preferred": 140,
+            "max": 220
+          }
+        },
+        "postCapModelReference": {
+          "order": 740,
+          "sectionGroup": "guardrail_post",
+          "line": "full",
+          "width": {
+            "min": 180,
+            "preferred": 260,
+            "max": 340
+          }
+        },
+        "glassThickness": {
+          "order": 750,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "glassMaterial": {
+          "order": 760,
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "glassClipEnabled": {
+          "order": 770,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 96,
+            "preferred": 140,
+            "max": 220
+          }
+        },
+        "glassClipModelReference": {
+          "order": 780,
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "width": {
+            "min": 180,
+            "preferred": 260,
+            "max": 340
+          }
+        },
+        "glassClipOffset": {
+          "order": 790,
+          "sectionGroup": "guardrail_infill",
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sideBayCount1": {
+          "order": 800,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sideBayCount2": {
+          "order": 810,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "sideBayCount3": {
+          "order": 820,
+          "width": {
+            "min": 64,
+            "preferred": 88,
+            "max": 112
+          }
+        },
+        "guardrailHandrailStructure": {
+          "sectionGroup": "guardrail_handrail",
+          "line": "full",
+          "order": 0,
+          "width": {
+            "min": 180,
+            "preferred": 240,
+            "max": 320
+          }
+        },
+        "guardrailPostStructure": {
+          "sectionGroup": "guardrail_post",
+          "line": "full",
+          "order": 0,
+          "width": {
+            "min": 180,
+            "preferred": 240,
+            "max": 320
+          }
+        },
+        "guardrailRailStructure": {
+          "sectionGroup": "guardrail_rail",
+          "line": "full",
+          "order": 0,
+          "width": {
+            "min": 180,
+            "preferred": 240,
+            "max": 320
+          }
+        },
+        "guardrailInfillStructure": {
+          "sectionGroup": "guardrail_infill",
+          "line": "full",
+          "order": 0,
+          "width": {
+            "min": 180,
+            "preferred": 240,
+            "max": 320
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "guardrail_dimensions": {
+          "title": {
+            "zh-CN": "护栏尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {
+        "sideLength1": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "第 1 边长度"
+          },
+          "group": "guardrail_dimensions",
+          "order": 10,
+          "editable": true
+        },
+        "guardHeight": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "主防护框架高度"
+          },
+          "group": "guardrail_dimensions",
+          "order": 20,
+          "editable": true
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "layout": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "pathMode": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "guardrailHandrailStructure": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "guardrailPostStructure": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "cornerPostMode": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "guardrailRailStructure": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "guardrailInfillStructure": {
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 220,
+            "max": 300
+          }
+        },
+        "installation": {
+          "order": 430,
+          "width": {
+            "min": 120,
+            "preferred": 180,
+            "max": 260
+          }
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{layout:choice} · 各段 {sideLength1} · 高 {guardHeight} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layout",
+          "value": "straight"
+        }
+      },
+      {
+        "text": {
+          "zh-CN": "{layout:choice} · 各段 {sideLength1} / {sideLength2} · 高 {guardHeight} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layout",
+          "value": "left_l"
+        }
+      },
+      {
+        "text": {
+          "zh-CN": "{layout:choice} · 各段 {sideLength1} / {sideLength2} · 高 {guardHeight} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layout",
+          "value": "right_l"
+        }
+      },
+      {
+        "text": {
+          "zh-CN": "{layout:choice} · 各段 {sideLength1} / {sideLength2} / {sideLength3} · 高 {guardHeight} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layout",
+          "value": "u"
+        }
+      }
+    ]
+  }
+}

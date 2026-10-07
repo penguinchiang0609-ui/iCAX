@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolvePunchArrayGroups, normalizePunchArrayGroup, migrateLegacyPunchArrays,
+import { resolvePunchArrayGroups, normalizePunchArrayGroup, createPunchArrayGroupsFromLayout,
   parsePunchArraySkipText, punchArraySkipText, punchArrayGroupInstanceCount, validatePunchArrayGroups } from "../../apps/tube-designer/webpage/punchArrayGroups.mjs";
 import { resolvePunchLayout } from "../../apps/tube-designer/webpage/punchLayout.mjs";
 import { createPunchWizardState, normalizePunchFeature, resolvePunchDistribution, openPunchParameters,
@@ -30,9 +30,9 @@ function invalid(feature,match,length=1000) {
 const apply=(m,p)=>[0,1,2].map(row=>[0,1,2].reduce((sum,k)=>sum+m[row*4+k]*p[k],m[row*4+3]));
 const near=(a,b)=>{assert.equal(a.length,b.length);a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-8,`${a} != ${b}`));};
 
-const legacy={station:200,reference:"end",arrayCount:3,rowCount:2,arrayPitch:50,rowPitch:20,skipInstancesText:"2:3"};
-assert.deepEqual(resolvePunchArrayGroups(legacy,1000),legacy,"Absence of arrayGroups never implicitly migrates old recipes.");cases++;
-assert.equal(punchArrayGroupInstanceCount(legacy,1000),5);
+const layout={station:200,reference:"end",arrayCount:3,rowCount:2,arrayPitch:50,rowPitch:20,skipInstancesText:"2:3"};
+assert.deepEqual(resolvePunchArrayGroups(layout,1000),layout,"Absence of arrayGroups never changes count/pitch layouts.");cases++;
+assert.equal(punchArrayGroupInstanceCount(layout,1000),5);
 assert.deepEqual(resolve({station:300,arrayGroups:[]}).arrayTransforms,[I]);
 assert.deepEqual(resolve({arrayGroups:[group("off","Y",NaN,NaN,{enabled:false})]}).arrayTransforms,[I]);
 const center=resolve({station:100,reference:"center",offset:17,rotation:23,arrayCount:99,rowCount:99,arrayGroups:[group("x","X")]});
@@ -95,7 +95,7 @@ assert.equal(skipped.arrayCandidateCount,6);assert.equal(skipped.arrayTransforms
 assert.equal(punchArraySkipText(skipped),"2:3");
 assert.deepEqual(parsePunchArraySkipText("2:3,1:*",skipped.arrayGroups),[{x:1,y:2},{x:0}]);
 const three=resolve({...skipped,arrayGroups:[...skipped.arrayGroups,group("z","Z",2,10)]});
-assert.equal(three.arrayTransforms.length,10,"A migrated partial selector applies across subsequently added axes.");
+assert.equal(three.arrayTransforms.length,10,"A grouped partial selector applies across subsequently added axes.");
 const reordered=resolve({...three,arrayGroups:[three.arrayGroups[2],three.arrayGroups[0],three.arrayGroups[1]]});
 assert.equal(reordered.arrayTransforms.length,10);assert.equal(punchArraySkipText(reordered),"*:2:3");
 const dormant=resolve({...skipped,arrayGroups:skipped.arrayGroups.map(g=>g.id==="y"?{...g,enabled:false}:g)});
@@ -110,26 +110,26 @@ invalid({...skipped,arraySkipText:"0:1"},/正整数/);
 invalid({...skipped,arraySkipText:"eval(1):1"},/填写/);
 assert.deepEqual(resolve(JSON.parse(JSON.stringify(three))),three,"JSON recipe round trips preserve indices and matrices.");
 
-const migrated=migrateLegacyPunchArrays(legacy,1000);
-assert.equal(legacy.arrayGroups,undefined);assert.equal(migrated.arrayGroups[0].direction,"negative");
-assert.deepEqual(migrated.arraySkips,[{"legacy-length":2,"legacy-rows":1}]);
-const migratedResult=resolve(migrated);
+const grouped=createPunchArrayGroupsFromLayout(layout,1000);
+assert.equal(layout.arrayGroups,undefined);assert.equal(grouped.arrayGroups[0].direction,"negative");
+assert.deepEqual(grouped.arraySkips,[{"layout-length":2,"layout-rows":1}]);
+const migratedResult=resolve(grouped);
 assert.deepEqual(migratedResult.arrayTransforms.map(m=>[m[3],m[7]]),[[0,0],[-50,0],[-100,0],[0,20],[-50,20]]);
 for(const rule of rules) {
   const old={station:125,...rule,arrayCount:rule.count??1,arrayPitch:rule.spacing??50};
-  const solved=resolvePunchLayout(old,1000),migrated=resolve(migrateLegacyPunchArrays(old,1000));
-  near(migrated.arrayTransforms.map(m=>migrated.arrayGroupsSummary.seedX+m[3]),solved.layoutSummary.positions);
+  const solved=resolvePunchLayout(old,1000),grouped=resolve(createPunchArrayGroupsFromLayout(old,1000));
+  near(grouped.arrayTransforms.map(m=>grouped.arrayGroupsSummary.seedX+m[3]),solved.layoutSummary.positions);
 }
 for(const face of ["top","bottom","left","right"]) {
-  const moved=resolve(migrateLegacyPunchArrays({station:500,face,rowCount:2,rowPitch:-20},1000));
+  const moved=resolve(createPunchArrayGroupsFromLayout({station:500,face,rowCount:2,rowPitch:-20},1000));
   const component=["left","right"].includes(face)?11:7;
   assert.deepEqual(moved.arrayTransforms.map(m=>m[component]),[0,-20]);
-  const partMoved=resolve(migrateLegacyPunchArrays({toolTarget:"part",station:500,face,rowCount:2,rowPitch:-20},1000));
-  assert.deepEqual(partMoved.arrayTransforms.map(m=>m[face==="left"?11:7]),[0,-20],"Part-coordinate legacy rows follow the native left-only Z mapping.");
+  const partMoved=resolve(createPunchArrayGroupsFromLayout({toolTarget:"part",station:500,face,rowCount:2,rowPitch:-20},1000));
+  assert.deepEqual(partMoved.arrayTransforms.map(m=>m[face==="left"?11:7]),[0,-20],"Part-coordinate layout rows follow the native left-only Z mapping.");
 }
-const round=resolve(migrateLegacyPunchArrays({station:500,face:"round",offset:17,rowDistributionMode:"full-circle",rowStartAngle:30,rowCount:4},1000));
+const round=resolve(createPunchArrayGroupsFromLayout({station:500,face:"round",offset:17,rowDistributionMode:"full-circle",rowStartAngle:30,rowCount:4},1000));
 assert.equal(round.offset,0);assert.deepEqual(round.arrayGroupsSummary.groups[1].values,[30,120,210,300]);
-const phase=resolve(migrateLegacyPunchArrays({station:500,face:"round",offset:17,rowPitch:90,rowCount:4},1000));
+const phase=resolve(createPunchArrayGroupsFromLayout({station:500,face:"round",offset:17,rowPitch:90,rowCount:4},1000));
 assert.equal(phase.offset,17);assert.deepEqual(phase.arrayGroupsSummary.groups[1].values,[0,90,180,270]);
 
 assert.equal(resolve({arrayGroups:[group("x","X",1000,1)]}).arrayTransforms.length,1000);
@@ -158,7 +158,7 @@ assert.equal(normalizePunchArrayGroup({centerFirstOffset:" "}).centerFirstOffset
 // Independent array edits use one cancellable transaction, never renderer writes.
 const part={entityId:"arrays",length:1000,profile:{kind:"rect",width:40,depth:20}};
 const view={pending:false,tubeDesignerPunchWizard:createPunchWizardState(part)},s=view.tubeDesignerPunchWizard;
-s.features=[normalizePunchFeature({...legacy,type:"circle",diameter:10,layoutDatum:"base"})];
+s.features=[normalizePunchFeature({...layout,type:"circle",toolRef:{id:"circle",version:"1.0"},diameter:10,layoutDatum:"base"})];
 const original=structuredClone(s.features[0]);
 assert.equal(openPunchParameters(view,"0","","pose"),true);assert.equal(s.parameterEditor.mode,"pose");
 assert.equal(s.features[0].arrayGroups,undefined);assert.equal(closePunchParameters(view,false,part),true);
@@ -189,11 +189,11 @@ field("count","0");assert.equal(closePunchParameters(view,true,part),false);asse
 closePunchParameters(view,false,part);
 openPunchParameters(view,"0","","arrays");
 change("array-skips-change",{},"2:3:1");
-change("array-group-remove",{tubeDesignerPunchArrayGroup:"legacy-rows"});
+change("array-group-remove",{tubeDesignerPunchArrayGroup:"layout-rows"});
 assert.deepEqual(s.features[0].arraySkips,[],"Removing a referenced group removes its selectors, not broadens them to wildcards.");
 closePunchParameters(view,false,part);
 
-const feature=n=>normalizePunchFeature({type:"circle",diameter:10,arrayGroups:[group("g","X",n,1)]});
+const feature=n=>normalizePunchFeature({type:"circle",toolRef:{id:"circle",version:"1.0"},diameter:10,arrayGroups:[group("g","X",n,1)]});
 s.features=[feature(600),feature(401)];assert.match(validatePunchWizard(view,part),/1000/);
 s.features=[feature(600),feature(400)];assert.equal(validatePunchWizard(view,part),"");
 s.features=[feature(600)];s.draft=feature(401);assert.equal(addPunchWizardFeature(view,part),false);

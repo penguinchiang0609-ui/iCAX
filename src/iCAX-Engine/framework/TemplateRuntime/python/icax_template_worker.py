@@ -34,7 +34,7 @@ def _localized_text(value: Any, fallback: str) -> str:
 
 def _scene_specification_annotations(
         result: dict[str, Any], template: dict[str, Any], parameters: dict[str, Any]) -> None:
-    """Attach descriptor-owned, envelope-style scene dimensions.
+    """Attach descriptor-owned scene dimensions and numeric parameter callouts.
 
     Complex products can continue to return their own exact anchors from
     ``template.py``.  Straightforward products declare their few principal
@@ -52,6 +52,19 @@ def _scene_specification_annotations(
         str(field.get("key")): field for field in template.get("parameters", [])
         if isinstance(field, dict) and isinstance(field.get("key"), str)
     }
+    existing = (result.get("annotations", []) if result.get("schema") == "icax.display-model"
+                else result.get("extensions", {}).get("tubeDesigner.specificationAnnotations", []))
+    anchored = {a.get("parameter") for a in existing if isinstance(a, dict)}
+
+    def coordinate(component: Any) -> float:
+        if not isinstance(component, dict):
+            return float(component)
+        key = component.get("parameter")
+        value = parameters.get(key)
+        if key not in fields or isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("标注坐标引用的尺寸参数无效")
+        return float(value) * float(component.get("scale", 1))
+
     annotations: list[dict[str, Any]] = []
     for index, declaration in enumerate(declarations):
         if not isinstance(declaration, dict):
@@ -60,6 +73,8 @@ def _scene_specification_annotations(
         axis = declaration.get("axis")
         if not isinstance(parameter, str) or parameter not in fields:
             raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 参数无效")
+        if parameter in anchored:
+            continue
         if axis not in ("x", "y", "z"):
             raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] axis 必须为 x、y 或 z")
         value = parameters.get(parameter)
@@ -71,8 +86,8 @@ def _scene_specification_annotations(
                 or not isinstance(offset, list) or len(offset) != 3):
             raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 原点和偏移必须是三个数值")
         try:
-            start = [float(component) for component in origin]
-            offset_vector = [float(component) for component in offset]
+            start = [coordinate(component) for component in origin]
+            offset_vector = [coordinate(component) for component in offset]
         except (TypeError, ValueError) as error:
             raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 原点和偏移必须是数值") from error
         axis_index = {"x": 0, "y": 1, "z": 2}[axis]
@@ -80,12 +95,14 @@ def _scene_specification_annotations(
         if declaration.get("centered") is True:
             start[axis_index] -= extent / 2
         end = list(start)
-        end[axis_index] += extent
+        kind = str(declaration.get("kind", "linear"))
+        if kind not in ("parameter", "count"):
+            end[axis_index] += extent
         field = fields[parameter]
         annotation = {
             "id": f"descriptor.{parameter}",
             "parameter": parameter,
-            "kind": str(declaration.get("kind", "linear")),
+            "kind": kind,
             "start": start,
             "end": end,
             "offset": offset_vector,
@@ -95,6 +112,9 @@ def _scene_specification_annotations(
         }
         if isinstance(declaration.get("visibleWhen"), dict):
             annotation["visibleWhen"] = declaration["visibleWhen"]
+        for key in ("group", "order"):
+            if key in declaration:
+                annotation[key] = declaration[key]
         annotations.append(annotation)
     if annotations:
         if result.get("schema") == "icax.display-model":

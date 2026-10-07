@@ -151,6 +151,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ChangeSet.h" />
+    <ClInclude Include="ChangeSetKeys.h" />
     <ClInclude Include="ComponentHelper.h" />
     <ClInclude Include="MaskRegistry.h" />
     <ClInclude Include="ComponentBase.h" />

@@ -25,10 +25,11 @@ OCCT is an implementation dependency of geometry adapter and CAD import plugins.
 Run from the repository root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File src\tools\build\build-opencascade.ps1 -Configuration Debug
+pwsh -NoProfile -File src\tools\build\build-opencascade.ps1 -Configuration Debug
+pwsh -NoProfile -File src\tools\build\build-opencascade.ps1 -Configuration Release
 ```
 
-The script generates Visual Studio 2022 x64 build files and installs OCCT into:
+The script requires PowerShell 7 and CMake. It generates Visual Studio 2022 x64 build files and installs OCCT into:
 
 ```text
 src/third_party/opencascade/install/vs2022-x64

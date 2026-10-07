@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Authorization Issuer</title>
+  <path fill="#3730A3" d="M128 12 230 50v73c0 59-38 98-102 121C64 221 26 182 26 123V50Z"/>
+  <path fill="#4F46E5" d="m128 27 87 33v63c0 49-30 82-87 105V27Z"/>
+  <path fill="#FBBF24" fill-rule="evenodd" d="M122 114a35 35 0 1 0-70 0 35 35 0 1 0 70 0ZM101 114a14 14 0 1 0-28 0 14 14 0 1 0 28 0Z"/>
+  <path fill="#FBBF24" d="m107 131 14-14 28 28h14v14h14v21h-21Z"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" d="m150 98 15 15 29-31"/>
+</svg>

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 import test from "node:test";
 import { clearPartsViewportAnnotations, renderNestingViewportOverlay } from "../../apps/tube-designer/webpage/partsArea.mjs";
 
@@ -36,7 +37,7 @@ function fixture() {
   const snapshots = [], measures = [], meshDelays = new Map(), measureDelays = new Map();
   const parts = ["part-a", "part-b"].map(entityId => ({ entityId, name: entityId, length: 100, quantity: 1,
     thumbnailGeometryResourceId: `resource://${entityId}`, thumbnailGeometryResourceVersion: 1,
-    manufacturingGeometryResourceVersion: 2, profile: { kind: "rect", width: 20, depth: 16 } }));
+    manufacturingGeometryResourceVersion: 2, profile: { sectionIdentity: nativeSectionIdentity("rect-20-16"), kind: "rect", width: 20, depth: 16 } }));
   const view = { activeAreaId: "nesting", tubeDesignerActivePartId: "part-a", tubeDesignerActiveNestingPartId: "part-a", tubeDesignerNestingSelectionKind: "part",
     scene: { tubeDesigner: { nestingGroups: [{ name: "标准零件", parts }] } },
     viewport: {

@@ -1,6 +1,12 @@
 import { escapeAttr as attr, escapeText as text } from "../../_shared/workbench/utils/format.mjs";
 import { renderPunchLayoutControls } from "./punchLayoutView.mjs";
 
+export function renderPunchArrayModeControl(action,groups,itemIndex,disabled=false,attrs='') {
+  const dimensions=groups.filter(group=>group.enabled!==false).length;
+  const selected=dimensions>1?'two':dimensions?'one':'none';
+  return '<select aria-label="阵列维度" data-cam-change-action="'+attr(action('array-mode-change'))+'" data-tube-designer-punch-index="'+attr(itemIndex)+'" data-tube-designer-punch-array-field="dimension"'+attrs+(disabled?' disabled':'')+'>'+[['none','无'],['one','一维阵列'],['two','二维阵列']].map(([value,label])=>'<option value="'+value+'"'+(value===selected?' selected':'')+'>'+label+'</option>').join('')+'</select>';
+}
+
 const fmt = value => Number.isFinite(Number(value)) ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3, useGrouping: false }).format(Number(value)) : "—";
 const modeNames = { pitch: "固定间距", equal: "首尾等距均分", "end-margins": "两端留距均分", "middle-fixed": "整体居中", "center-out": "中心扩散", fill: "区间排满", "max-spacing": "最大间距均分", sequence: "不等距序列", positions: "位置表" };
 const axes = [["X", "主管长度方向（X）"], ["Y", "横向（Y）"], ["Z", "高度方向（Z）"]];
@@ -23,11 +29,6 @@ function check(action, field, checked, itemIndex, groupId, disabled, label) {
   return '<label class="punch-array-check"><input type="checkbox"' + fieldAttrs(action, field, itemIndex, groupId, disabled)
     + (checked ? " checked" : "") + '/><span>' + text(label) + '</span></label>';
 }
-function button(action, suffix, label, itemIndex, attrs = "", disabled = false) {
-  return '<button type="button" class="tube-designer-secondary" data-cam-action="' + attr(action(suffix)) + '" data-tube-designer-punch-index="' + attr(itemIndex) + '" ' + attrs
-    + (disabled ? " disabled" : "") + '>' + text(label) + '</button>';
-}
-
 export function punchArrayGroupSummary(group, resolved = group) {
   const active = group.enabled === false ? "（停用）" : "";
   if (group.type === "polar") return active + "绕 " + group.axis + " 圆周 · " + fmt(group.count) + " 个 · "
@@ -70,22 +71,17 @@ function renderGroup(action, feature, itemIndex, disabled, length, group, groupI
     + select(action, "direction", group.direction ?? "positive", [["positive", "沿轴正向"], ["negative", "沿轴反向"]], itemIndex, id, disabled, "复制方向")
     + '<small class="punch-array-help">从刀具当前位置开始，负间距会翻转所选复制方向。</small>';
   return '<section class="punch-array-group" data-array-group-id="' + attr(id) + '" data-array-group-index="' + groupIndex + '"><header><strong>阵列 ' + (groupIndex + 1) + '</strong>'
-    + check(action, "enabled", group.enabled !== false, itemIndex, id, disabled, "启用")
-    + button(action, "array-group-remove", "删除此组", itemIndex, 'data-tube-designer-punch-array-group="' + attr(id) + '"', disabled) + '</header>'
+    + '</header>'
     + '<div class="punch-array-fields">' + select(action, "type", group.type, [["linear", "直线阵列"], ["polar", "圆周阵列"]], itemIndex, id, disabled, "阵列类型")
-    + select(action, "axis", group.axis, axes, itemIndex, id, disabled, group.type === "polar" ? "旋转轴方向" : "直线方向") + fields + '</div></section>';
+    + (group.enabled===false?"":select(action, "axis", group.axis, axes, itemIndex, id, disabled, group.type === "polar" ? "旋转轴方向" : "直线方向") + fields) + '</div></section>';
 }
 
 export function renderPunchArrayGroupsControls(action, feature, itemIndex, disabled, length, groups = [], result = {}, skipText = "") {
-  const add = (label, type, axis) => button(action, "array-group-add", label, itemIndex,
-    'data-tube-designer-punch-array-type="' + type + '" data-tube-designer-punch-array-axis="' + axis + '"', disabled);
   return '<div class="punch-array-editor" data-punch-array-editor><p>各组独立设置，可同时组合。按列表顺序逐组复制前面的结果；数量均包含首个刀具。刀具自身位置、姿态在独立入口设置。</p>'
-    + '<nav class="punch-array-add" aria-label="添加独立阵列组">'
-    + ["X","Y","Z"].map(axis=>add("＋ 沿 "+axis,"linear",axis)).join("")
-    + ["X","Y","Z"].map(axis=>add("＋ 绕 "+axis,"polar",axis)).join("")+'</nav>'
+    + '<label class="punch-array-field"><span>阵列维度</span>'+renderPunchArrayModeControl(action,groups,itemIndex,disabled)+'</label>'
     + '<small class="punch-array-help">沿 X / Y / Z：直线复制；绕 X / Y / Z：圆周复制。X 是主管长度方向。</small>'
-    + groups.map((group, i) => renderGroup(action, feature, itemIndex, disabled, length, group, i)).join("")
-    + (!groups.length ? '<p class="punch-array-empty">尚未添加阵列，只加工当前位置的一个刀具。选择上方按钮添加。</p>' : "")
+    + groups.filter(group=>group.enabled!==false).map((group, i) => renderGroup(action, feature, itemIndex, disabled, length, group, i)).join("")
+    + (!groups.some(group=>group.enabled!==false) ? '<p class="punch-array-empty">只加工当前位置的一个刀具。</p>' : "")
     + '<details class="punch-array-skips"><summary>跳过指定组合位置' + (skipText ? " · 已设置" : "") + '</summary><label><span>各组序号（从 1 开始）</span>'
     + '<textarea rows="2" aria-label="跳过组合位置" data-cam-change-action="' + attr(action("array-skips-change")) + '" data-tube-designer-punch-index="' + attr(itemIndex)
     + '" data-tube-designer-punch-array-field="arraySkips"' + (disabled ? " disabled" : "") + ' placeholder="2:3, 4:*">' + text(skipText) + '</textarea></label>'

@@ -1,15 +1,22 @@
 import { buildAutomaticDimensionReport } from "./partInspection.mjs";
+import { partDimensionCategories, annotatedPartElementIds, visiblePartDimensionAnnotations,
+  renderPartDimensionVisibilityIcon, nearestPartDimensionElement, partDimensionVisibilityState,
+  partDimensionElementVisible, setPartDimensionMasterVisibility, setPartDimensionCategoryVisibility,
+  setPartDimensionElementVisibility } from "./partDimensionAnnotations.mjs";
+import { patchParameterContent } from "./libraryDomPatch.mjs";
 import { beginPartSideSketch } from "./sketchArea.mjs";
 import { scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
-import { isNestingResultStale, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
+import { isNestingResultStale, loadNestingPlan, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { groupNestingPlans } from "./nestingGroups.mjs";
 import { selectedNestingPlanIds } from "./nestingExport.mjs";
 import { cancelNestingPlanHydration, getNestingPlacementColor, scheduleNestingPlanHydration } from "./nestingPreview.mjs";
 import { isPlatePart, isSheetPart, isComponentPart, isTubeNestingPart, plateDimensions, componentBounds,
-  manufacturingPartKind, manufacturingPartKindLabel, partSourcingLabel, tubeNestingExclusionReason } from "./manufacturingParts.mjs";
-import { editPunchWizardFeature, validatePunchWizard, openPunchParameters, closePunchParameters, setPunchFeatureSelected, removeSelectedPunchWizardFeatures } from "./punchWizard.mjs";
+  manufacturingPartKind, manufacturingPartKindLabel, partSourcingLabel, tubeNestingExclusionReason,
+  partAwaitingAssemblyValidation } from "./manufacturingParts.mjs";
+import { editPunchWizardFeature, validatePunchWizard, openPunchParameters, closePunchParameters, setPunchFeatureSelected, removeSelectedPunchWizardFeatures, togglePunchRowParameters, handlePunchColumnAction } from "./punchWizard.mjs";
 import { beginPunchOperation, finishPunchOperation, previewPunch } from "./punchEditor.mjs";
 import { handlePunchArrayGroupAction } from "./punchArrayGroupActions.mjs";
+import { handlePunchDiagramAction } from "./punchParameterDiagram.mjs";
 import {
   addPunchWizardFeature,
   createPunchWizardState,
@@ -26,6 +33,7 @@ import {
   updatePunchProfileParameter,
 } from "./punchProfileSource.mjs";
 export { isTubeNestingPart } from "./manufacturingParts.mjs";
+import { nestingSectionIdentity } from "./profileIdentity.mjs";
 
 // Temporarily keep final-part 2D sketch editing out of the product workflow.
 // The implementation and saved data remain intact so the feature can be
@@ -38,11 +46,22 @@ const partViewportLoads = new WeakMap();
 const emptyPartResources = { get: async () => { throw new Error("Empty part view has no resources"); } };
 let partViewportCancellationSequence = 0;
 const nestingPartScrollSnapshots = new WeakMap();
+const nestingResultDisclosureBindings = new WeakMap();
 const nestingPartCenterRequests = new WeakMap();
 
 function hasPartDrawing(part) {
-  return !!(part?.properties?.["tubeDesigner.partDrawing"]?.drawing
-    ?? part?.properties?.["tubeDesigner.punchWizard"]?.drawing);
+  return !!part?.properties?.["tubeDesigner.partDrawing"]?.drawing;
+}
+
+function renderNestingPartEditActions(part, view = {}) {
+  if (!part || !isTubeNestingPart(part) || !part.independentNesting) return "";
+  const id = escapeAttribute(part.entityId);
+  const disabled = view.pending || view.tubeDesignerPartRecoveryPending ? "disabled" : "";
+  if (hasPartDrawing(part) && part.properties?.["manufacturing.process"] === "part-drawing") {
+    return `<button class="tube-designer-primary" data-cam-action="tube-designer-drawing-open" data-tube-designer-part-id="${id}" ${disabled}>三维编辑</button>`;
+  }
+  if (part.properties?.["manufacturing.punchPart"] !== true) return "";
+  return `<button class="tube-designer-primary" data-cam-action="tube-designer-punch-open" data-tube-designer-part-id="${id}" ${disabled}>冲孔向导</button>`;
 }
 
 export function listManufacturingParts(designer = {}) {
@@ -84,7 +103,10 @@ export function buildMaterialProfileGroups(parts = []) {
   for (const part of parts) {
     const material = partMaterial(part);
     const profile = partProfile(part);
-    const key = `${material}\u001f${profile}`;
+    const section = isSheetPart(part) ? stableSectionKey({ kind: manufacturingPartKind(part), ...plateDimensions(part) })
+      : isComponentPart(part) ? stableSectionKey({ kind: "accessory", modelReference: part.properties?.["manufacturing.modelReference"] ?? profile, ...componentBounds(part) })
+        : nestingSectionIdentity(part?.profile ?? part?.properties?.["tubeDesigner.profile"] ?? {});
+    const key = `${material}\u001f${section}`;
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -113,20 +135,13 @@ export function buildProfileGroups(parts = [], { includeNonTube = false } = {}) 
   for (const part of parts) {
     if (!includeNonTube && !isTubeNestingPart(part)) continue;
     const profile = part?.profile ?? part?.properties?.["tubeDesigner.profile"] ?? {};
-    // Group by the section snapshot, never by material or a user-editable name.
+    // Native canonical geometry identity is shared by solve and export. Curve
+    // traversal, source resource IDs and display names never split stock.
     const section = isSheetPart(part) ? { kind: manufacturingPartKind(part), ...plateDimensions(part) }
       : isComponentPart(part) ? { kind: "accessory", modelReference: part.properties?.["manufacturing.modelReference"] ?? partProfile(part), ...componentBounds(part) } : {};
-    for (const field of [
-      "id", "kind", "packageVersion", "width", "depth", "diameter",
-      "wallThickness", "cornerRadius", "hollow", "contentDigest",
-      "parameters", "contours", "specification",
-    ]) {
-      if (profile[field] != null && profile[field] !== "") section[field] = profile[field];
-    }
-    if (!section.id && !section.kind) section.displayName = String(profile.displayName ?? "").trim();
-    const hasSection = Object.values(section).some((value) => value !== "");
     const eligibilityKey = isTubeNestingPart(part) ? "" : `excluded:${tubeNestingExclusionReason(part)}:`;
-    const key = eligibilityKey + (hasSection ? stableSectionKey(section) : `unknown:${String(part.entityId)}`);
+    const key = eligibilityKey + (isSheetPart(part) || isComponentPart(part)
+      ? stableSectionKey(section) : nestingSectionIdentity(profile));
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -184,89 +199,6 @@ export function filterManufacturingParts(parts = [], options = {}) {
     ].join(" ").toLocaleLowerCase("zh-CN");
     return searchable.includes(query);
   });
-}
-
-export function renderPartsLeftPane(context, view) {
-  return renderManufacturingPartsLeftPane(context, view, { legacyPartsArea: true });
-}
-
-function renderManufacturingPartsLeftPane(context, view, options = {}) {
-  const legacyPartsArea = Boolean(options.legacyPartsArea);
-  const designer = view.scene?.tubeDesigner ?? {};
-  const parts = listManufacturingParts(designer);
-  const allGroups = buildMaterialProfileGroups(parts);
-  const selectedIds = selectedPartIds(view, parts);
-  const query = String(view.tubeDesignerPartSearchText ?? "");
-  const filter = String(view.tubeDesignerPartFilter ?? "all");
-  const visibleParts = filterManufacturingParts(parts, { query, filter, selectedIds });
-  const groups = buildMaterialProfileGroups(visibleParts);
-  const activePart = resolveActivePart(view, visibleParts.length ? visibleParts : parts);
-  const totalQuantity = parts.reduce((total, part) => total + partQuantity(part), 0);
-  const selectedParts = parts.filter((part) => selectedIds.has(String(part.entityId)));
-  const selectedQuantity = selectedParts.reduce((total, part) => total + partQuantity(part), 0);
-  const netLength = parts.filter(isTubeNestingPart).reduce(
-    (total, part) => total + Math.max(0, finiteNumber(part.length) ?? 0) * partQuantity(part),
-    0,
-  );
-  const straightCount = parts.filter((part) => partProcessKind(part) === "straight").length;
-  const plateCount = parts.filter(isPlatePart).length;
-  const specialCount = parts.filter((part) => partProcessKind(part) === "special").length;
-  const otherCount = parts.filter((part) => !isTubeNestingPart(part) && !isPlatePart(part)).length;
-  scheduleDesignerPartThumbnailHydration(context);
-  schedulePartsAreaHydration(context, view);
-  return `
-    <div class="tube-designer-panel tube-designer-parts-panel">
-      <div class="tube-designer-heading tube-designer-parts-heading">
-        <div><strong>${legacyPartsArea ? "制造零件" : "零件清单"}</strong><span>${allGroups.length} 个材料截面组 · ${parts.length} 种 / ${totalQuantity} 件</span></div>
-        <div>
-          <button class="tube-designer-secondary" data-cam-action="tube-designer-open-disassemble" ${view.pending ? "disabled" : ""}>更新下料</button>
-          ${legacyPartsArea ? `<button class="tube-designer-primary tube-designer-parts-nest-button" data-cam-action="tube-designer-parts-open-nesting" ${view.pending || !selectedParts.length ? "disabled" : ""}>进入下料 <b>${selectedQuantity}</b></button>` : ""}
-        </div>
-      </div>
-      ${parts.length ? `
-        <div class="tube-designer-parts-summary">
-          <span><small>材料截面组</small><strong>${allGroups.length}</strong></span>
-          <span><small>零件总数</small><strong>${totalQuantity} 件</strong></span>
-          <span><small>管材净用料</small><strong>${formatCompactLength(netLength)}</strong></span>
-        </div>
-        <div class="tube-designer-parts-tools">
-          <label class="tube-designer-parts-search">
-            <span aria-hidden="true">⌕</span>
-            <input type="search" value="${escapeAttribute(query)}" placeholder="搜索零件号、产品、材料或规格" data-cam-change-action="tube-designer-parts-search" aria-label="搜索制造零件" />
-          </label>
-          <div class="tube-designer-parts-filter" role="group" aria-label="零件筛选">
-            ${renderFilterButton("all", "全部", parts.length, filter)}
-            ${renderFilterButton("selected", "已选", selectedParts.length, filter)}
-            ${renderFilterButton("straight", "直切", straightCount, filter)}
-            ${renderFilterButton("special", "斜切 / 异形", specialCount, filter)}
-            ${plateCount ? renderFilterButton("plate", "板件", plateCount, filter) : ""}
-            ${otherCount ? renderFilterButton("non-tube", "非管排件", parts.filter((part) => !isTubeNestingPart(part)).length, filter) : ""}
-          </div>
-          <div class="tube-designer-parts-selection-bar">
-            <span>当前显示 ${visibleParts.length} 种 · 已选 ${selectedParts.length} 种 / ${selectedQuantity} 件</span>
-            <div>
-              <button data-cam-action="tube-designer-parts-select-filtered" ${visibleParts.length ? "" : "disabled"}>选择当前</button>
-              <button data-cam-action="tube-designer-parts-clear-filtered" ${visibleParts.some((part) => selectedIds.has(String(part.entityId))) ? "" : "disabled"}>清空当前</button>
-            </div>
-          </div>
-        </div>
-        ${groups.length
-          ? `<div class="tube-designer-stock-groups">${groups.map((group) => renderStockGroup(group, activePart, selectedIds, view)).join("")}</div>`
-          : `<div class="tube-designer-empty-state tube-designer-parts-empty tube-designer-parts-no-results">
-              <strong>没有符合条件的零件</strong>
-              <span>可以换一个关键词，或清除当前筛选条件。</span>
-              <button class="tube-designer-secondary" data-cam-action="tube-designer-parts-clear-filters">清除筛选</button>
-            </div>`}`
-        : `<div class="tube-designer-empty-state tube-designer-parts-empty">
-            <strong>还没有制造零件</strong>
-            <span>先在“产品”中点击“导入下料”，结果会自动进入这里。</span>
-            <button class="tube-designer-primary" data-cam-action="tube-designer-open-disassemble" ${view.pending ? "disabled" : ""}>选择产品并导入下料</button>
-          </div>`}
-    </div>`;
-}
-
-export function renderPartsRightPane() {
-  return "";
 }
 
 export function renderPunchWizardDialog(_context, view) {
@@ -345,14 +277,13 @@ export function renderPartsViewportOverlay(_context, view) {
       </div>
       <div class="tube-designer-parts-view-actions">
         <button data-cam-action="tube-designer-parts-toggle-dimensions" aria-pressed="${view.tubeDesignerPartDimensionsVisible === false ? "false" : "true"}">${view.tubeDesignerPartDimensionsVisible === false ? "显示尺寸" : "隐藏尺寸"}</button>
-        <button data-cam-action="tube-designer-parts-default-view">默认视图</button>
-        <button data-cam-action="tube-designer-parts-fit-view">适合窗口</button>
       </div>
     </div>
     <aside class="tube-designer-parts-measurement" data-tube-designer-part-measurement>
       ${renderPartMeasurement(part, matchingState, view)}
     </aside>
     ${renderPartProgress(view)}
+    ${renderPartDimensionTree(view, part, matchingState.report)}
     <div class="tube-designer-parts-scene-help">右键旋转 · 中键平移 · 滚轮缩放</div>`;
 }
 
@@ -463,7 +394,7 @@ export function renderNestingViewportOverlay(context, view) {
     cancelPartViewportLoad(view);
     setPartProgress(context, view, null);
     view.tubeDesignerPartViewportKey = "";
-    scheduleNestingPlanHydration(context, view, activePlan, parts);
+    if (activePlan.detailsLoaded !== false) scheduleNestingPlanHydration(context, view, activePlan, parts);
   } else {
     cancelNestingPlanHydration(view);
   }
@@ -484,18 +415,15 @@ export function renderNestingViewportOverlay(context, view) {
   return `
     <div class="tube-designer-cutting-scene-header">
       <div class="tube-designer-cutting-scene-title">
-        <span>${showPlan ? (isNestingResultStale(view, context) ? "旧排样结果 · 需要重新排样" : "排样母材") : "待排零件"}</span>
+        ${showPlan ? `<span>${isNestingResultStale(view, context) ? "旧排样结果 · 需要重新排样" : "排样母材"}</span>` : ""}
         <strong>${escapeText(showPlan ? nestingPlanName(activePlan, plans.indexOf(activePlan), plans) : partDisplayName(part))}</strong>
         <small>${escapeText(showPlan
           ? nestingPlanProfile(activePlan)
           : `${partMaterial(part)} · ${partProfile(part)}`)}</small>
       </div>
       <div class="tube-designer-cutting-scene-actions">
-        ${!showPlan ? `<button data-cam-action="tube-designer-parts-toggle-dimensions" aria-pressed="${view.tubeDesignerPartDimensionsVisible === false ? "false" : "true"}">${view.tubeDesignerPartDimensionsVisible === false ? "显示标注" : "隐藏标注"}</button>` : ""}
-        <button data-cam-action="tube-designer-parts-default-view">等轴测</button>
-        <button data-cam-action="tube-designer-parts-fit-view">适合窗口</button>
         ${PART_2D_EDITING_ENABLED && punchPart && isTubeNestingPart(punchPart) && !showPlan ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>` : ""}
-        ${punchPart && isTubeNestingPart(punchPart) && punchPart.independentNesting ? `<button class="tube-designer-primary" data-cam-action="${hasPartDrawing(punchPart)?"tube-designer-drawing-open":"tube-designer-punch-open"}" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}">${hasPartDrawing(punchPart)?"三维编辑":"冲孔向导"}</button>` : ""}
+        ${renderNestingPartEditActions(punchPart, view)}
       </div>
     </div>
     ${showPlan ? '<span class="tube-designer-nesting-preview-status" data-tube-designer-nesting-preview-status role="status"></span>' : ""}
@@ -518,7 +446,8 @@ export function renderNestingResultDock(context, view) {
   const stale = isNestingResultStale(view, context);
   const unplaced = result?.unplaced ?? [];
   const missing = unplaced.reduce((sum, row) => sum + row.quantity, 0);
-  const placed = plans.reduce((sum, plan) => sum + (plan.placements?.length ?? 0), 0);
+  const placed = result?.metrics?.placedPartCount
+    ?? plans.reduce((sum, plan) => sum + (plan.partCount ?? plan.placements?.length ?? 0), 0);
   const selected = selectedNestingPlanIds(view, plans);
   const locked = new Set((view.tubeDesignerLockedNestingPlanIds ?? []).map(String));
   const allSelected = plans.length > 0 && selected.size === plans.length;
@@ -527,13 +456,18 @@ export function renderNestingResultDock(context, view) {
     const checkbox = context?.mount?.querySelector?.('[data-cam-action="tube-designer-nesting-toggle-all-plans"]');
     if (checkbox) checkbox.indeterminate = indeterminate;
     for (const details of context?.mount?.querySelectorAll?.('[data-tube-designer-nesting-result-group]') ?? []) {
-      details.addEventListener("toggle", () => {
-        if (details.isConnected === false) return;
-        const closed = new Set(view.tubeDesignerClosedNestingResultGroups ?? []);
-        const key = details.dataset.tubeDesignerNestingGroupKey;
-        if (details.open) closed.delete(key); else closed.add(key);
-        view.tubeDesignerClosedNestingResultGroups = [...closed];
-      });
+      let binding = nestingResultDisclosureBindings.get(details);
+      if (binding) binding.view = view;
+      else {
+        binding = { view }; nestingResultDisclosureBindings.set(details, binding);
+        details.addEventListener("toggle", () => {
+          if (details.isConnected === false) return;
+          const closed = new Set(binding.view.tubeDesignerClosedNestingResultGroups ?? []);
+          const key = details.dataset.tubeDesignerNestingGroupKey;
+          if (details.open) closed.delete(key); else closed.add(key);
+          binding.view.tubeDesignerClosedNestingResultGroups = [...closed];
+        });
+      }
       const input = details.querySelector('[data-cam-action="tube-designer-nesting-toggle-group"]');
       if (input) input.indeterminate = input.getAttribute("aria-checked") === "mixed";
     }
@@ -542,7 +476,7 @@ export function renderNestingResultDock(context, view) {
   scheduleActiveNestingPlanCentering(context, activePlanId);
   return `<div class="tube-designer-bottom-splitter" data-cam-resize-pane="bottom" data-no-window-drag
       title="拖拽调整排样结果区域高度" aria-label="调整排样结果区域高度"></div>
-    <section class="tube-designer-nesting-bottom" aria-label="排样结果列表">
+    <div class="tube-designer-dock-bottom-host"><section class="tube-designer-nesting-bottom" aria-label="排样结果列表">
       <header>
         <div><strong>排样结果</strong><span>${stale ? "输入已变化或上次排样失败，以下是旧结果" : "选中母材，查看三维排布与切割顺序"}</span></div>
         <div class="tube-designer-nesting-result-actions">
@@ -567,7 +501,7 @@ export function renderNestingResultDock(context, view) {
         }).join("")
           : `<div class="empty"><strong>${result ? "本次没有可用排样方案" : "尚未生成排样结果"}</strong><span>${result ? "请根据未排原因调整母材，再点击“开始排样”。" : "勾选零件，设置母材和间距，再点击菜单中的“开始排样”。"}</span></div>`}
       </div>
-    </section>`;
+    </section></div>`;
 }
 
 function renderNestingPlanRow(plan, index, plans, activePlanId, selected = true, locked = false, pending = false) {
@@ -598,6 +532,7 @@ function renderNestingPlanRow(plan, index, plans, activePlanId, selected = true,
     <span>${formatNumber(remainingLength)} mm</span>
     <span>${formatNumber(partCount)} 件</span>
     <span class="utilization"><i style="--progress:${Math.max(0, Math.min(100, utilizationPercent))}%"></i><b>${formatNumber(utilizationPercent)}%</b></span>
+    <small class="tube-designer-dock-compact-plan">母材 ${formatNumber(stockLength)} mm · 已用 ${formatNumber(usedLength)} mm · 余料 ${formatNumber(remainingLength)} mm · ${formatNumber(partCount)} 件 · ${formatNumber(utilizationPercent)}%</small>
     </button>
   </div>`;
 }
@@ -638,123 +573,31 @@ function renderNestingStockGroup(group, activePlan, selectedIds, view) {
 }
 
 function renderNestingPartInspector(part, view = {}) {
-  const endProcess = partEndProcess(part);
   const imported = Boolean(part?.properties?.["manufacturing.imported"]);
-  const importedMeasurement = part?.properties?.["manufacturing.geometryMeasurement"];
-  const importedFeatureCount = Number.isFinite(Number(importedMeasurement?.openingCount))
-    ? Number(importedMeasurement.openingCount) : 0;
-  const importedSource = String(part?.properties?.["manufacturing.import.sourceFileName"] ?? "").trim();
   const linked = Boolean(part?.linkedNesting);
+  const processLabel = partProcessLabel(part, { showUnmarkedEnds: false });
   return `<div class="tube-designer-cutting-inspector">
     <header class="tube-designer-cutting-pane-header">
       <div><strong>当前零件</strong><span>${escapeText(partDisplayName(part))}</span></div>
       ${PART_2D_EDITING_ENABLED && isTubeNestingPart(part) ? `<div class="tube-designer-cutting-pane-header-actions">
         <button type="button" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>
       </div>` : ""}
-      <em class="tube-designer-process-badge ${escapeAttribute(partProcessKind(part))}">${escapeText(partProcessLabel(part))}</em>
+      ${processLabel ? `<em class="tube-designer-process-badge ${escapeAttribute(partProcessKind(part))}">${escapeText(processLabel)}</em>` : ""}
     </header>
     <div class="tube-designer-cutting-inspector-scroll">
       <section class="tube-designer-part-editor" data-tube-designer-part-editor data-tube-designer-part-id="${escapeAttribute(part.entityId)}">
         <h3>零件参数</h3>
-        <label><span>名称</span><input type="text" maxlength="160" value="${escapeAttribute(part.name || part.partNumber || "")}" data-tube-designer-part-field="name" ${view.pending || linked ? "disabled" : ""} /></label>
-        ${imported ? `<label><span>材料</span><input type="text" maxlength="240" value="${escapeAttribute(partMaterial(part) === "材料未指定" ? "" : partMaterial(part))}" placeholder="例如：Q235B、不锈钢 304" data-tube-designer-part-field="material" ${view.pending || linked ? "disabled" : ""} /></label>` : ""}
-        <label><span>数量</span><input type="number" min="1" max="1000000" step="1" value="${escapeAttribute(partQuantity(part))}" data-tube-designer-part-field="quantity" ${view.pending || linked ? "disabled" : ""} /></label>
-        <label><span>排样优先级</span><input type="number" min="0" max="1000000" step="1" value="${escapeAttribute(partNestingPriority(part))}" data-tube-designer-part-field="nestingPriority" ${view.pending || linked ? "disabled" : ""} title="数字越小越优先；相同数字的零件一起优化" /></label>
+        <label data-tube-designer-parameter-group="nesting-part:${escapeAttribute(part.entityId)}:name"><span>名称</span><input type="text" maxlength="160" value="${escapeAttribute(part.name || part.partNumber || "")}" data-tube-designer-part-field="name" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending || linked ? "disabled" : ""} /></label>
+        ${imported ? `<label data-tube-designer-parameter-group="nesting-part:${escapeAttribute(part.entityId)}:material"><span>材料</span><input type="text" maxlength="240" value="${escapeAttribute(partMaterial(part) === "材料未指定" ? "" : partMaterial(part))}" placeholder="例如：Q235B、不锈钢 304" data-tube-designer-part-field="material" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending || linked ? "disabled" : ""} /></label>` : ""}
+        <label data-tube-designer-parameter-group="nesting-part:${escapeAttribute(part.entityId)}:quantity"><span>数量</span><input type="number" min="1" max="1000000" step="1" value="${escapeAttribute(partQuantity(part))}" data-tube-designer-part-field="quantity" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending || linked ? "disabled" : ""} /></label>
+        <label data-tube-designer-parameter-group="nesting-part:${escapeAttribute(part.entityId)}:nestingPriority"><span>排样优先级</span><input type="number" min="0" max="1000000" step="1" value="${escapeAttribute(partNestingPriority(part))}" data-tube-designer-part-field="nestingPriority" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending || linked ? "disabled" : ""} title="数字越小越优先；相同数字的零件一起优化" /></label>
         <div class="tube-designer-part-editor-actions">
           ${linked ? "" : `<button class="tube-designer-primary" data-cam-action="tube-designer-part-edit-save" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>保存修改</button>`}
           <button class="tube-designer-danger" data-cam-action="tube-designer-part-edit-delete" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>${linked ? "移出下料" : "删除此零件"}</button>
         </div>
         <small>${linked ? "该零件直接关联产品拆单结果；名称、数量和优先级随产品更新，删除仅取消下料关联。" : "数字越小越优先；同一优先级一起优化，完成并锁定后再排下一优先级。"}</small>
       </section>
-      <section>
-        <h3>基本信息</h3>
-        <dl>
-          ${renderNestingProperty("零件编号", part.partNumber || "未编号")}
-          ${renderNestingProperty("数量", `${partQuantity(part)} 件`)}
-          ${renderNestingProperty("排样优先级", `${partNestingPriority(part)}（数字越小越优先）`, true)}
-          ${renderNestingProperty(isSheetPart(part) || isComponentPart(part) ? `${manufacturingPartKindLabel(part)}尺寸` : "成品长度", isSheetPart(part) || isComponentPart(part) ? partProfile(part) : `${formatNumber(part.length)} mm`, true)}
-          ${isComponentPart(part) || partSourcingLabel(part) !== "供料方式未指定" ? renderNestingProperty("供料方式", partSourcingLabel(part)) : ""}
-          ${renderNestingProperty("来源产品", part.productName || part.productCode || "未命名产品", true)}
-        </dl>
-      </section>
-      <section>
-        <h3>下料信息</h3>
-        <dl>
-          ${renderNestingProperty("材料", partMaterial(part))}
-          ${renderNestingProperty("截面", partProfile(part))}
-          ${imported ? renderNestingProperty("几何识别", `主方向 +X · ${importedFeatureCount} 个孔 / 开口`, true) : ""}
-          ${importedSource ? renderNestingProperty("来源文件", importedSource, true) : ""}
-          ${!isTubeNestingPart(part) ? renderNestingProperty("下料方式", tubeNestingExclusionReason(part), true)
-            : renderNestingProperty("起始端", cutName(endProcess.startCut)) + renderNestingProperty("结束端", cutName(endProcess.endCut))}
-        </dl>
-      </section>
-      <div data-tube-designer-part-measurement data-tube-designer-nesting-measurement>
-        ${renderNestingPartMeasurement(part, view)}
-      </div>
     </div>
-  </div>`;
-}
-
-function renderNestingPartMeasurement(part, view = {}) {
-  const state = view.tubeDesignerPartMeasurementState;
-  const key = partMeasurementKey(part);
-  const matchingState = state?.key === key ? state : { status: "loading" };
-  const report = matchingState?.report;
-  const holes = Array.isArray(report?.holes) ? report.holes : [];
-  const pitches = Array.isArray(report?.pitches) ? report.pitches : [];
-  const measurement = part?.properties?.["manufacturing.geometryMeasurement"] ?? {};
-  const section = measurement?.section ?? {};
-  const wallThickness = finiteNumber(section.wallThickness ?? measurement.wallThickness);
-  const normalizedAxis = String(measurement.normalizedAxis ?? "+X");
-  let body;
-  if (matchingState.status === "error") {
-    body = `<div class="tube-designer-dimension-empty">${escapeText(matchingState.message ?? "无法读取零件复尺信息")}</div>`;
-  } else if (!report) {
-    body = `<div class="tube-designer-part-measurement-loading"><i></i><span>正在分析最终零件几何…</span></div>`;
-  } else if (report.partKind === "accessory") {
-    body = `<div class="tube-designer-dimension-overview">${[["width", "实体宽 X"], ["depth", "实体深 Y"], ["height", "实体高 Z"]
-      ].map(([keyName, label]) => `<span><small>${label}</small><strong>${formatNumber(report.bounds?.[keyName])} mm</strong></span>`).join("")}</div>
-      <div class="tube-designer-part-no-holes">配件按完整三维模型管理，不生成管材长度或孔距标尺。</div>`;
-  } else if (report.plate) {
-    body = `<div class="tube-designer-dimension-overview">
-        <span><small>长边</small><strong>${formatNumber(report.plate.longSide)} mm</strong></span>
-        <span><small>短边</small><strong>${formatNumber(report.plate.shortSide)} mm</strong></span>
-        <span><small>厚度</small><strong>${formatNumber(report.plate.thickness)} mm</strong></span>
-        <span><small>孔 / 开口</small><strong>${holes.length} 个</strong></span>
-      </div>
-      ${holes.length ? renderNestingHoleDetails(report, holes, pitches) : `<div class="tube-designer-dimension-empty">当前实体未识别到孔或开口。</div>`}`;
-  } else {
-    body = `<div class="tube-designer-dimension-overview">
-        <span><small>成品总长</small><strong>${formatNumber(report.length)} mm</strong></span>
-        <span><small>截面规格</small><strong>${escapeText(report.profile || partProfile(part))}</strong></span>
-        <span><small>孔 / 开口</small><strong>${holes.length} 个</strong></span>
-        <span><small>主方向</small><strong>${escapeText(normalizedAxis)}</strong></span>
-        <span><small>壁厚</small><strong>${wallThickness != null ? `${formatNumber(wallThickness)} mm` : "未识别"}</strong></span>
-        <span><small>数据来源</small><strong>最终几何</strong></span>
-      </div>
-      ${holes.length ? renderNestingHoleDetails(report, holes, pitches) : `<div class="tube-designer-dimension-empty">当前实体未识别到孔或开口；总长与截面取自最终实体。</div>`}`;
-  }
-  return `<section class="tube-designer-nesting-measurement-card">
-    <h3><span>自动复尺</span><span>${report ? "取自最终三维实体 · 单位 mm" : "正在读取最终三维实体"}</span></h3>
-    ${body}
-  </section>`;
-}
-
-function renderNestingHoleDetails(report, holes, pitches) {
-  return `<div class="tube-designer-dimension-list">
-    ${holes.map((hole) => `
-      <article>
-        <strong>${hole.kind === "side-opening" ? "单侧开口" : "孔"} ${hole.index} · ${escapeText(hole.sizeLabel)}</strong>
-        <span>中心距首端 ${formatNumber(hole.station)} mm · 距末端 ${formatNumber(Math.max(0, report.length - hole.station))} mm</span>
-        <span>开口边距首端 ${formatNumber(hole.startEdgeDistance)} mm · 距末端 ${formatNumber(hole.endEdgeDistance)} mm</span>
-        <span>面宽方向中心距边 ${formatNumber(hole.centerToFaceEdgeNegative)} / ${formatNumber(hole.centerToFaceEdgePositive)} mm</span>
-        <span>面宽方向开口边净距 ${formatNumber(hole.faceEdgeClearanceNegative)} / ${formatNumber(hole.faceEdgeClearancePositive)} mm</span>
-      </article>`).join("")}
-    ${pitches.map((pitch) => `
-      <article class="tube-designer-dimension-pitch">
-        <strong>开口 ${pitch.from} — 开口 ${pitch.to}</strong>
-        <span>中心距 ${formatNumber(pitch.centerDistance)} mm · 最近开口边净距 ${formatNumber(pitch.edgeClearance)} mm</span>
-      </article>`).join("")}
   </div>`;
 }
 
@@ -782,7 +625,7 @@ function renderNestingPlanInspector(plan, index, stale = false, view = {}) {
         </dl>
       </section>
       <section>
-        <h3>切割顺序 <span>${placements.length} 件</span></h3>
+        <h3>切割顺序 <span>${plan?.partCount ?? placements.length} 件</span></h3>
         <div class="tube-designer-cutting-order">
           ${placements.length ? placements.map((placement, placementIndex) => {
             const active = isActiveNestingPlacement(view, placement, placementIndex);
@@ -791,7 +634,7 @@ function renderNestingPlanInspector(plan, index, stale = false, view = {}) {
             <b style="border-color: ${getNestingPlacementColor(placementIndex, active)}" title="与三维零件颜色对应">${placementIndex + 1}</b>
             <span><strong>${escapeText(placement?.partName ?? placement?.name ?? placement?.partNumber ?? `零件 ${placementIndex + 1}`)}</strong><small>${formatNumber(placement?.start ?? placement?.position ?? 0)} — ${formatNumber(placement?.end ?? ((finiteNumber(placement?.start ?? placement?.position) ?? 0) + (finiteNumber(placement?.length) ?? 0)))} mm</small></span>
           </button>`;
-          }).join("") : `<div class="tube-designer-cutting-empty"><span>暂无切割顺序数据</span></div>`}
+          }).join("") : `<div class="tube-designer-cutting-empty"><span>${plan?.detailsLoaded === false ? "正在读取切割顺序…" : "暂无切割顺序数据"}</span></div>`}
         </div>
       </section>
     </div>
@@ -1036,8 +879,32 @@ function renderNestingSceneSummary(plan) {
 }
 
 export async function handlePartsAreaAction(context, view, action, target, ops) {
+  if (handlePartDimensionAction(context, view, action, target)) return { handled: true };
   if (action.startsWith("tube-designer-punch-") && view.pending) return { handled: true };
+  if(action.startsWith('tube-designer-punch-')&&handlePunchDiagramAction(view,action.slice('tube-designer-punch-'.length),target)) {
+    ops.renderProject(context,view);return {handled:true};
+  }
+  if(action.startsWith('tube-designer-punch-')&&handlePunchColumnAction(view,action.slice('tube-designer-punch-'.length),target)) {
+    ops.renderProject(context,view);return {handled:true};
+  }
+  if(view.tubeDesignerPunchWizard?.parameterEditor?.inline
+    &&(target?.dataset?.punchSheetField!==undefined||target?.dataset?.punchSheetArrayField!==undefined))
+    closePunchParameters(view,true,activePunchPart(view),false);
+  if(view.tubeDesignerPunchWizard?.parameterEditor?.inline
+      && ["remove-selected","edit","copy","toggle","undo","redo","remove-end"].some(name=>action==="tube-designer-punch-"+name))
+    closePunchParameters(view,true,activePunchPart(view),false);
   if(action==="tube-designer-punch-parameters-open") {
+    const editor=view.tubeDesignerPunchWizard?.parameterEditor;
+    if(target?.dataset?.punchCellActivate!==undefined&&editor?.inline
+      &&editor.index===String(target.dataset.tubeDesignerPunchIndex)
+      &&editor.end===(target.dataset.tubeDesignerPunchEnd??'')
+      &&editor.mode===(target.dataset.tubeDesignerPunchEditorMode??'shape'))return {handled:true};
+    if(target?.dataset?.tubeDesignerPunchInline!==undefined) {
+      const revision=view.tubeDesignerPunchWizard?.revision;
+      togglePunchRowParameters(view,target?.dataset?.tubeDesignerPunchIndex,target?.dataset?.tubeDesignerPunchEnd,target?.dataset?.tubeDesignerPunchEditorMode);
+      if(revision!==view.tubeDesignerPunchWizard?.revision)await previewActivePunch(context,view,ops,{includeDraft:view.tubeDesignerPunchWizard?.parameterEditor?.index==="draft",quiet:true});
+      else ops.renderProject(context,view);return {handled:true};
+    }
     const revision=view.tubeDesignerPunchWizard?.revision;
     openPunchParameters(view,target?.dataset?.tubeDesignerPunchIndex,target?.dataset?.tubeDesignerPunchEnd,target?.dataset?.tubeDesignerPunchEditorMode);
     if(revision!==view.tubeDesignerPunchWizard?.revision)await previewActivePunch(context,view,ops,{includeDraft:view.tubeDesignerPunchWizard?.parameterEditor?.index==="draft",quiet:true});
@@ -1070,20 +937,18 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
   }
   if(action==="tube-designer-punch-copy-selected") {
     const s=view.tubeDesignerPunchWizard;
+    if(s?.parameterEditor?.inline)closePunchParameters(view,true,activePunchPart(view),false);
     const index=s?.features?.findIndex(item=>item.id===s.selectedFeatureId)??-1;
     const changed=Number.isInteger(index)&&index>=0&&editPunchWizardFeature(view,"copy",index);
+    if(changed){s.showDraftRow=true;togglePunchRowParameters(view,'draft');}
     if(changed)await previewActivePunch(context,view,ops,{includeDraft:true,quiet:true});
     else ops.renderProject(context,view);
     return {handled:true};
   }
-  if(["tube-designer-punch-parameters-apply","tube-designer-punch-parameters-cancel","tube-designer-punch-parameters-close","tube-designer-punch-parameters-preview"].includes(action)) {
+  if(action === "tube-designer-punch-parameters-close") {
     const s=view.tubeDesignerPunchWizard,part=listNestingParts(view.scene?.tubeDesigner??{}).find(item=>String(item.entityId)===String(s?.partId));
     const includeDraft=s?.parameterEditor?.index==="draft";
-    // Parameter windows preview continuously; their close button commits the
-    // live values. Keep the legacy preview/apply actions for old integrations,
-    // but do not roll back a visible close.
-    const commit=!action.endsWith("-preview"), closeWithoutValidation=action.endsWith("-parameters-cancel")||action.endsWith("-parameters-close");
-    if(action.endsWith("-preview")||closePunchParameters(view,commit,part,closeWithoutValidation?false:true))await previewActivePunch(context,view,ops,{includeDraft,quiet:true});
+    if(closePunchParameters(view,true,part,false))await previewActivePunch(context,view,ops,{includeDraft,quiet:true});
     else ops.renderProject(context,view);
     return {handled:true};
   }
@@ -1209,8 +1074,8 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     const partId = String(target?.dataset?.tubeDesignerPartId ?? view.tubeDesignerActivePartId ?? "").trim();
     const part = listNestingParts(view.scene?.tubeDesigner ?? {})
       .find(item => String(item.entityId) === partId);
-    if (!part || !isTubeNestingPart(part) || !part.independentNesting) {
-      throw new Error("请先将管材零件加入下料区，再打开冲孔向导。");
+    if (!part || !isTubeNestingPart(part) || !part.independentNesting || part.properties?.["manufacturing.punchPart"] !== true) {
+      throw new Error("请先选择下料区的冲孔件，再打开冲孔向导。");
     }
     view.tubeDesignerActivePartId = partId;
     view.tubeDesignerActiveNestingPartId = partId;
@@ -1241,7 +1106,9 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     const state = view.tubeDesignerPunchWizard;
     const part = listNestingParts(view.scene?.tubeDesigner ?? {})
       .find(item => String(item.entityId) === String(state?.partId ?? ""));
+    if(state?.parameterEditor?.inline)closePunchParameters(view,true,part,false);
     if (part && addPunchWizardFeature(view, part)) {
+      state.showDraftRow=false;
       await previewActivePunch(context, view, ops, { quiet: true });
     } else ops.renderProject(context, view);
     return { handled: true };
@@ -1259,6 +1126,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     const part = listNestingParts(view.scene?.tubeDesigner ?? {})
       .find(item => String(item.entityId) === partId);
     if (!part || !state || String(state.partId) !== partId) throw new Error("当前冲孔零件已不存在，请重新选择。");
+    if(state.parameterEditor?.inline)closePunchParameters(view,true,part,false);
     const validationError = validatePunchWizard(view, part);
     if (validationError) {
       state.error = validationError;
@@ -1278,7 +1146,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
       }, invocationOptions);
       if (!response?.tubeDesigner) throw new Error("冲孔结果未能保存。");
       view.scene.tubeDesigner = response.tubeDesigner;
-      restoreSavedNestingTask(view, context);
+      await restoreSavedNestingTask(view, context);
       view.tubeDesignerPunchWizard = null;
       view.tubeDesignerActivePartId = partId;
       view.tubeDesignerActiveNestingPartId = partId;
@@ -1391,7 +1259,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
       }, { timeoutMs: 120000 });
       if (!response?.tubeDesigner) throw new Error("零件修改未能保存。");
       view.scene.tubeDesigner = response.tubeDesigner;
-      restoreSavedNestingTask(view, context);
+      await restoreSavedNestingTask(view, context);
       view.tubeDesignerPartMeasurementState = null;
       await context.actions?.refreshActiveSceneState?.();
     } catch (error) {
@@ -1422,7 +1290,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
       );
       if (!response?.tubeDesigner) throw new Error("零件删除未能完成。");
       view.scene.tubeDesigner = response.tubeDesigner;
-      restoreSavedNestingTask(view, context);
+      await restoreSavedNestingTask(view, context);
       view.tubeDesignerActivePartId = "";
       view.tubeDesignerActiveNestingPartId = "";
       view.tubeDesignerActiveNestingPlacementId = "";
@@ -1464,68 +1332,6 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     view.viewport?.fitViewToViewport?.(1.16);
     return { handled: true };
   }
-  if (action === "tube-designer-parts-toggle-dimensions") {
-    view.tubeDesignerPartDimensionsVisible = view.tubeDesignerPartDimensionsVisible === false;
-    const report = view.tubeDesignerPartMeasurementState?.report;
-    view.viewport?.setDimensionAnnotations?.(
-      view.tubeDesignerPartDimensionsVisible === false ? [] : report?.annotations ?? [],
-    );
-    synchronizeMeasurementDom(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-parts-open-nesting") {
-    if (view.pending) return { handled: true };
-    const selected = Array.isArray(view.tubeDesignerSelectedPartIds) ? new Set(view.tubeDesignerSelectedPartIds.map(String)) : null;
-    const ids = listManufacturingParts(view.scene?.tubeDesigner ?? {})
-      .filter(part => isTubeNestingPart(part) && (!selected || selected.has(String(part.entityId))))
-      .map(part => String(part.entityId));
-    if (!ids.length) throw new Error("请先选择要加入下料的管材零件。");
-    if (!context.sceneProxy?.invoke) throw new Error("当前项目未连接，无法加入下料任务。");
-    const operationId = Number(view.tubeDesignerOperationSequence ?? 0) + 1;
-    view.tubeDesignerOperationSequence = operationId;
-    view.tubeDesignerOperation = {
-      id: operationId,
-      kind: "stage-nesting",
-      title: "正在准备下料",
-      phase: "staging",
-      phaseLabel: "保存下料零件",
-      message: `正在关联 ${ids.length} 种零件到下料清单…`,
-    };
-    view.pending = true;
-    view.error = "";
-    ops.renderProject(context, view);
-    await waitForPartsAreaPaint();
-    try {
-      const response = await context.sceneProxy.invoke("TubeDesigner.StageNestingParts", {partEntityIds: ids}, {timeoutMs: 180000});
-      if (!response?.tubeDesigner) throw new Error("下料零件未能关联。");
-      if (view.tubeDesignerOperation?.id === operationId) {
-        Object.assign(view.tubeDesignerOperation, {
-          phase: "refreshing",
-          phaseLabel: "刷新下料清单",
-          message: "零件已关联，正在刷新下料页面…",
-        });
-      }
-      view.scene.tubeDesigner = response.tubeDesigner;
-      restoreSavedNestingTask(view, context);
-      view.tubeDesignerPartDimensionsVisible = false;
-      view.tubeDesignerNestingSelectionKind = "part";
-      await context.actions?.refreshActiveSceneState?.();
-      await context.actions?.selectRibbonTab?.("nesting");
-      // selectRibbonTab() updates the app-shell state, but the action context
-      // is an earlier snapshot. Keep the final render from switching the body
-      // back to the product area after the ribbon has moved to 下料.
-      context.activeRibbonTabId = "nesting";
-      view.activeAreaId = "nesting";
-    } catch (error) {
-      view.error = error?.message ?? String(error);
-      throw error;
-    } finally {
-      if (view.tubeDesignerOperation?.id === operationId) view.tubeDesignerOperation = null;
-      view.pending = false;
-      ops.renderProject(context, view);
-    }
-    return { handled: true };
-  }
   if (action === "tube-designer-delete-nesting-parts") {
     if (view.pending) return { handled: true };
     const parts = listNestingParts(view.scene?.tubeDesigner ?? {});
@@ -1537,7 +1343,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
       const response = await context.sceneProxy.invoke("TubeDesigner.DeleteNestingParts", { partEntityIds: ids });
       if (!response?.tubeDesigner) throw new Error("下料零件未能删除。");
       view.scene.tubeDesigner = response.tubeDesigner;
-      restoreSavedNestingTask(view, context);
+      await restoreSavedNestingTask(view, context);
       view.tubeDesignerActiveNestingPartId = "";
       view.tubeDesignerActivePartId = "";
       view.tubeDesignerPartViewportKey = "";
@@ -1554,6 +1360,11 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     const planId = String(target?.dataset?.tubeDesignerNestingPlanId ?? "");
     const plan = listNestingPlans(view).find((item, index) => String(item?.id ?? item?.stockId ?? `stock-${index + 1}`) === planId);
     if (!plan || view.pending) return { handled: true };
+    if (plan.detailsLoaded === false) {
+      try { await loadNestingPlan(context, view, planId); }
+      catch (error) { view.error = `读取母材明细失败：${error?.message ?? error}`; ops.renderProject(context, view); return { handled: true }; }
+      if (!view.tubeDesignerNestingResult?.plans?.includes(plan)) return { handled: true };
+    }
     // Badge 1 is placements[0]. This only moves the list; selection stays on
     // the complete stock, not on the first placement or a particular part.
     nestingPartCenterRequests.set(view, String(plan.placements?.[0]?.partId ?? ""));
@@ -1694,29 +1505,34 @@ function partViewportKey(part) {
   return `${part.entityId}@${String(part.thumbnailGeometryResourceId ?? "").trim()}@${Number(part.thumbnailGeometryResourceVersion ?? 0)}`;
 }
 
-function setPartProgress(context, view, part, phase) {
+function setPartProgress(context, view, part, phase, error = null) {
   const progress = part && phase ? {
     key: partViewportKey(part), phase, partName: partDisplayName(part),
-    label: phase === "geometry" ? "正在加载三维模型…" : "正在复尺并生成标注…",
+    label: phase === "error" ? `三维模型加载失败：${error?.message ?? error}`
+      : phase === "geometry" ? "正在加载三维模型…" : "正在复尺并生成标注…",
   } : null;
   view.tubeDesignerPartProgress = progress;
   for (const host of context?.mount?.querySelectorAll?.("[data-tube-designer-part-progress]") ?? []) {
     host.hidden = !progress;
-    host.setAttribute("aria-busy", progress ? "true" : "false");
+    host.setAttribute("aria-busy", progress && phase !== "error" ? "true" : "false");
     const label = host.querySelector?.("[data-tube-designer-part-progress-label]");
     if (label) label.textContent = progress?.label ?? "";
     const name = host.querySelector?.("[data-tube-designer-part-progress-name]");
     if (name) name.textContent = progress?.partName ?? "";
-    host.querySelector?.('[role="progressbar"]')?.setAttribute("aria-valuetext", progress?.label ?? "已完成");
+    const bar = host.querySelector?.('[role="progressbar"]');
+    if (bar) {
+      bar.hidden = phase === "error";
+      bar.setAttribute("aria-valuetext", progress?.label ?? "已完成");
+    }
   }
 }
 
 function renderPartProgress(view) {
   const progress = view.tubeDesignerPartProgress;
-  return `<div class="tube-designer-part-load-progress" data-tube-designer-part-progress role="status" aria-live="polite" aria-busy="${!!progress}" ${progress ? "" : "hidden"}>
+  return `<div class="tube-designer-part-load-progress" data-tube-designer-part-progress role="status" aria-live="polite" aria-busy="${!!progress && progress.phase !== "error"}" ${progress ? "" : "hidden"}>
     <strong data-tube-designer-part-progress-label>${escapeText(progress?.label ?? "")}</strong>
     <span data-tube-designer-part-progress-name>${escapeText(progress?.partName ?? "")}</span>
-    <div class="tube-designer-export-progress-track is-indeterminate" role="progressbar" aria-label="零件显示进度" aria-valuetext="${escapeAttribute(progress?.label ?? "已完成")}"><i style="width:36%"></i></div>
+    <div class="tube-designer-export-progress-track is-indeterminate" role="progressbar" aria-label="零件显示进度" aria-valuetext="${escapeAttribute(progress?.label ?? "已完成")}" ${progress?.phase === "error" ? "hidden" : ""}><i style="width:36%"></i></div>
   </div>`;
 }
 
@@ -1727,7 +1543,7 @@ function schedulePartsAreaHydration(context, view) {
   const geometryReady = part && view.tubeDesignerPartViewportKey === partViewportKey(part)
     && partViewportOwners.get(view) === view.viewport;
   const phase = !part ? null : !geometryReady ? "geometry"
-    : view.tubeDesignerPartMeasurementCache?.has(partMeasurementKey(part)) ? null : "measurement";
+    : view.activeAreaId === "nesting" || view.tubeDesignerPartMeasurementCache?.has(partMeasurementKey(part)) ? null : "measurement";
   setPartProgress(context, view, part, phase);
   queueMicrotask(() => {
     if (hydrationTokens.get(view) !== token || !isPartInspectionArea(view)) return;
@@ -1803,6 +1619,13 @@ async function hydratePartsArea(context, view, token) {
     if (!isCurrent()) return;
     viewport.setVisibleEntityIds?.([String(part.entityId)]);
 
+    if (areaId === "nesting") {
+      viewport.setDimensionAnnotations?.([]);
+      viewport.setMeasurementPoints?.([]);
+      setPartProgress(context, view, null);
+      return;
+    }
+
     const measurementKey = partMeasurementKey(part);
     view.tubeDesignerPartMeasurementCache ??= new Map();
     const cached = view.tubeDesignerPartMeasurementCache.get(measurementKey);
@@ -1833,6 +1656,10 @@ async function hydratePartsArea(context, view, token) {
     synchronizeMeasurementDom(context, view, part);
   } catch (error) {
     if (!isCurrent()) return;
+    if (areaId === "nesting") {
+      setPartProgress(context, view, part, "error", error);
+      return;
+    }
     setPartProgress(context, view, null);
     view.tubeDesignerPartMeasurementState = {
       key: partMeasurementKey(part),
@@ -1847,34 +1674,158 @@ function isPartInspectionArea(view) {
   return view.activeAreaId === "parts" || view.activeAreaId === "nesting";
 }
 
+function partDimensionState(view, part, suppliedReport = null) {
+  view.tubeDesignerPartDimensionStates ??= new Map();
+  const key = `${view.activeAreaId}:${String(part.entityId)}`;
+  let state = view.tubeDesignerPartDimensionStates.get(key);
+  if (!state) {
+    const nesting = view.activeAreaId === 'nesting';
+    state = { automaticDimensionsVisible: !nesting, treeCollapsed: nesting, selectedElementId: '',
+      hiddenCategories: new Set(nesting ? partDimensionCategories.map(([id]) => id) : []),
+      hiddenElementIds: new Set(), shownElementIds: new Set(), dimensionReport: null };
+    view.tubeDesignerPartDimensionStates.set(key, state);
+  }
+  const measurement = view.tubeDesignerPartMeasurementState;
+  const measurementKey = partMeasurementKey(part);
+  const cache = measurement?.key === measurementKey && measurement.status !== 'ready'
+    ? null : view.tubeDesignerPartMeasurementCache?.get?.(measurementKey);
+  const report = suppliedReport ?? (measurement?.key === measurementKey ? measurement.report : null)
+    ?? cache ?? null;
+  if (!report) state.dimensionReport = null;
+  if (report && state.dimensionReport !== report) {
+    state.dimensionReport = report;
+    const ids = new Set((report.holes ?? []).map(hole => hole.elementId));
+    for (const collection of [state.hiddenElementIds, state.shownElementIds]) {
+      for (const id of collection) if (!ids.has(id)) collection.delete(id);
+    }
+    if (!ids.has(state.selectedElementId)) state.selectedElementId = '';
+  }
+  return state;
+}
+
+function partDimensionTreeBody(state) {
+  const report = state.dimensionReport;
+  const visible = visiblePartDimensionAnnotations(state);
+  const master = partDimensionVisibilityState(state);
+  return `<header><div><label><input type="checkbox" data-tube-inspection-all-dimensions data-cam-action="tube-designer-parts-toggle-dimensions" ${(report ? master.checked : state.automaticDimensionsVisible) ? 'checked' : ''} data-tube-part-category-mixed="${master.mixed}" />标尺</label><span data-tube-inspection-visible-count>${report ? `已显示 ${visible.length} 项` : '正在载入'}</span></div><button type="button" class="tube-designer-scene-specification-collapse ${state.treeCollapsed ? 'is-collapsed' : ''}" data-tube-inspection-tree-collapse data-cam-action="tube-designer-parts-dimension-tree-collapse" aria-expanded="${!state.treeCollapsed}" aria-label="${state.treeCollapsed ? '展开标尺' : '收起标尺到左侧'}"><span class="tube-designer-scene-specification-collapse-icon" data-tube-inspection-tree-collapse-icon aria-hidden="true">${state.treeCollapsed ? '›' : '‹'}</span><span class="tube-designer-scene-specification-collapse-label" data-tube-inspection-tree-collapse-label ${state.treeCollapsed ? '' : 'hidden'}>标尺</span></button></header><div data-tube-inspection-dimension-categories>${partDimensionCategories.map(([key, label]) => {
+    const total = (report?.annotations ?? []).filter(annotation => annotation.category === key).length;
+    const shown = visible.filter(annotation => annotation.category === key).length;
+    return total ? `<label><input type="checkbox" data-tube-inspection-dimension-category="${key}" data-cam-action="tube-designer-parts-dimension-category" ${shown === total ? 'checked' : ''} data-tube-part-category-mixed="${shown > 0 && shown < total}" /><span>${label}</span><small>${shown}/${total}</small></label>` : '';
+  }).join('')}</div>`;
+}
+
+function renderPartDimensionTree(view, part, report = null) {
+  const state = partDimensionState(view, part, report);
+  return `<section class="tube-designer-inspection-dimension-tree tube-designer-parts-dimension-tree ${state.treeCollapsed ? 'is-collapsed' : ''}" data-tube-designer-part-dimension-tree data-tube-inspection-dimension-tree data-tube-designer-part-id="${escapeAttribute(part.entityId)}" aria-label="标尺显示设置">${partDimensionTreeBody(state)}</section>`;
+}
+
+function applyPartDimensionAnnotations(view, part) {
+  if (view.activeAreaId === "nesting") {
+    view.viewport?.setDimensionAnnotations?.([]);
+    view.viewport?.setMeasurementPoints?.([]);
+    return null;
+  }
+  const state = partDimensionState(view, part);
+  const annotations = visiblePartDimensionAnnotations(state);
+  view.tubeDesignerPartDimensionsVisible = state.automaticDimensionsVisible;
+  view.viewport?.setDimensionAnnotations?.(annotations.map(annotation => annotation.elementIds.includes(state.selectedElementId)
+    ? { ...annotation, color: 0xffed89 } : annotation));
+  const selected = state.dimensionReport?.holes.find(hole => hole.elementId === state.selectedElementId);
+  const shown = selected && annotations.some(annotation => annotation.elementIds.includes(selected.elementId));
+  const axis = state.dimensionReport?.axis;
+  const points = shown && Array.isArray(axis) && selected.halfSpanAlong > 0
+    ? [-1, 1].map(sign => selected.center.map((value, index) => value + axis[index] * sign * selected.halfSpanAlong))
+    : shown ? [selected.center] : [];
+  view.viewport?.setMeasurementPoints?.(points.map(([x, y, z]) => ({ x, y, z })));
+  return state;
+}
+
+function handlePartDimensionAction(context, view, action, target) {
+  if (!['tube-designer-parts-toggle-dimensions', 'tube-designer-parts-dimension-category',
+    'tube-designer-parts-dimension-tree-collapse', 'tube-designer-parts-elements-visibility',
+    'tube-designer-parts-element-visibility', 'tube-designer-parts-select-element'].includes(action)) return false;
+  if (view.activeAreaId === "nesting") return true;
+  const part = resolveActivePart(view, listAreaParts(view));
+  if (!part) return true;
+  const state = partDimensionState(view, part);
+  if (action === 'tube-designer-parts-toggle-dimensions') {
+    setPartDimensionMasterVisibility(state, target?.type === 'checkbox' ? target.checked : !state.automaticDimensionsVisible);
+  } else if (action === 'tube-designer-parts-dimension-tree-collapse') {
+    state.treeCollapsed = !state.treeCollapsed;
+  } else if (action === 'tube-designer-parts-dimension-category') {
+    const category = target?.dataset?.tubeInspectionDimensionCategory;
+    if (!partDimensionCategories.some(([key]) => key === category)) return true;
+    setPartDimensionCategoryVisibility(state, category, target.checked);
+  } else if (action === 'tube-designer-parts-elements-visibility') {
+    const ids = annotatedPartElementIds(state.dimensionReport);
+    const hide = ids.length > 0 && ids.every(id => partDimensionElementVisible(state, id));
+    for (const id of ids) {
+      setPartDimensionElementVisibility(state, id, !hide);
+    }
+  } else {
+    const id = target?.dataset?.tubeInspectionElementVisibility ?? target?.dataset?.tubeInspectionSelectElement;
+    if (!state.dimensionReport?.holes.some(hole => hole.elementId === id)) return true;
+    const hide = action === 'tube-designer-parts-element-visibility' && partDimensionElementVisible(state, id);
+    if (hide) setPartDimensionElementVisibility(state, id, false);
+    else {
+      setPartDimensionElementVisibility(state, id, true);
+      if (action === 'tube-designer-parts-select-element') state.selectedElementId = id;
+    }
+  }
+  applyPartDimensionAnnotations(view, part);
+  synchronizeMeasurementDom(context, view, part);
+  return true;
+}
+
+export function handlePartsAreaViewportPick(context, view, userData, hit, event) {
+  if (view.activeAreaId !== "parts" || view.pending || view.tubeDesignerPunchWizard || view.tubeDesignerPartDrawing
+    || view.tubeDesignerNestingSelectionKind === 'plan') return false;
+  const part = resolveActivePart(view, listAreaParts(view));
+  if (!part || (hit && String(userData?.objectId ?? userData?.entityId ?? '') !== String(part.entityId))) return false;
+  const state = partDimensionState(view, part);
+  const hole = nearestPartDimensionElement(state.dimensionReport, view.viewport, event);
+  if (hole) {
+    state.selectedElementId = hole.elementId;
+    setPartDimensionElementVisibility(state, hole.elementId, true);
+    applyPartDimensionAnnotations(view, part);
+    synchronizeMeasurementDom(context, view, part);
+  }
+  return Boolean(hole || hit);
+}
+
 function applyPartPresentation(view) {
   const report = view.tubeDesignerPartMeasurementState?.report;
   if (Array.isArray(report?.axis)) {
     view.viewport?.setPresentationAxis?.(report.axis, [1, 0, 0]);
   }
   view.viewport?.setStandardView?.("top-front");
-  view.viewport?.setDimensionAnnotations?.(
-    view.tubeDesignerPartDimensionsVisible === false
-      ? []
-      : report?.annotations ?? [],
-  );
+  const part = resolveActivePart(view, listAreaParts(view));
+  if (part) applyPartDimensionAnnotations(view, part);
 }
 
 function synchronizeMeasurementDom(context, view, suppliedPart = null) {
+  if (view.activeAreaId === "nesting") return;
   const hosts = context.mount?.querySelectorAll
     ? [...context.mount.querySelectorAll("[data-tube-designer-part-measurement]")]
     : [context.mount?.querySelector?.("[data-tube-designer-part-measurement]")].filter(Boolean);
-  if (!hosts.length) return;
   const parts = listAreaParts(view);
   const part = suppliedPart ?? resolveActivePart(view, parts);
   if (!part) return;
   for (const host of hosts) {
-    host.innerHTML = host.hasAttribute?.("data-tube-designer-nesting-measurement")
-      ? renderNestingPartMeasurement(part, view)
-      : renderPartMeasurement(part, view.tubeDesignerPartMeasurementState, view);
+    const html = renderPartMeasurement(part, view.tubeDesignerPartMeasurementState, view);
+    if (!patchParameterContent(context.mount, host, html)) host.innerHTML = html;
   }
-  const dimensionsVisible = view.tubeDesignerPartDimensionsVisible !== false;
-  const buttons = context.mount?.querySelectorAll?.('[data-cam-action="tube-designer-parts-toggle-dimensions"]') ?? [];
+  const state = partDimensionState(view, part);
+  for (const tree of context.mount?.querySelectorAll?.('[data-tube-designer-part-dimension-tree]') ?? []) {
+    if (String(tree.dataset.tubeDesignerPartId) !== String(part.entityId)) continue;
+    tree.classList.toggle('is-collapsed', state.treeCollapsed);
+    patchParameterContent(context.mount, tree, partDimensionTreeBody(state));
+    tree.dataset.tubePartVisibleAnnotationIds = JSON.stringify(visiblePartDimensionAnnotations(state).map(annotation => annotation.id));
+    tree.dataset.tubePartSelectedElement = state.selectedElementId;
+    for (const input of tree.querySelectorAll('[data-tube-part-category-mixed]')) input.indeterminate = input.dataset.tubePartCategoryMixed === 'true';
+  }
+  const dimensionsVisible = state.automaticDimensionsVisible;
+  const buttons = context.mount?.querySelectorAll?.('button[data-cam-action="tube-designer-parts-toggle-dimensions"]') ?? [];
   for (const button of buttons) {
     button.setAttribute("aria-pressed", dimensionsVisible ? "true" : "false");
     button.textContent = button.closest?.(".tube-designer-cutting-scene-actions")
@@ -2011,7 +1962,7 @@ function partProcessKind(part) {
     : "special";
 }
 
-function partProcessLabel(part) {
+function partProcessLabel(part, { showUnmarkedEnds = true } = {}) {
   if (isSheetPart(part) || isComponentPart(part)) return manufacturingPartKindLabel(part);
   if (partSourcingLabel(part) === "外购") return "外购";
   if (!isTubeNestingPart(part)) return "另行处理";
@@ -2022,7 +1973,7 @@ function partProcessLabel(part) {
   const process = partEndProcess(part);
   const start = String(process.startCut ?? "").trim();
   const end = String(process.endCut ?? "").trim();
-  if (!start && !end) return "待识别";
+  if (!start && !end) return showUnmarkedEnds ? "待识别" : "";
   if (partProcessKind(part) === "straight") return "直切";
   if (start && end && start === end) return `${cutName(start)} · 双端`;
   return "斜切 / 异形";
@@ -2045,6 +1996,9 @@ function cutName(value) {
 }
 
 function partReadyLabel(part) {
+  if (partAwaitingAssemblyValidation(part)) {
+    return "装配待验证";
+  }
   const status = String(part?.status ?? "").trim().toLowerCase();
   if (["failed", "error", "invalid"].includes(status)) return "需要检查";
   if (part?.manufacturingGeometryResourceId || ["ready", "succeeded", "generated"].includes(status)) {

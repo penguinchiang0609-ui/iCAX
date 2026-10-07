@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
                 {"kind", std::string("side")},
                 {"unit", std::string("mm")},
                 {"faceHeight", 100.0},
-                {"length", stagedPart.at("length")},
+                {"length", sourceForStage.at("length")},
                 {"entities", VariantArray{}}
             }}
         });
@@ -211,9 +211,21 @@ int main(int argc, char** argv) {
             {"stocks", VariantArray{ObjectMap{{"id", std::string("test-stock")}, {"profileKey", profileKey}, {"length", 6000.0}, {"quantity", -1}}}},
             {"parameters", ObjectMap{{"partGap", 2.0}}}};
         const auto nesting = Invoke(project, "Nest", nestingRequest);
-        Expect(!nesting.at("plans").To<VariantArray>().empty(), "Nesting returned no plan");
+        const auto readNestingPlans = [&](const ObjectMap& summary) {
+            const auto revision = summary.at("revision");
+            const auto catalog = Invoke(project, "ReadNestingResult", {{"revision", revision}});
+            VariantArray plans;
+            for (const auto& rowValue : catalog.at("rows").To<VariantArray>()) {
+                const auto row = rowValue.To<VariantArray>();
+                plans.emplace_back(Invoke(project, "ReadNestingResult",
+                    {{"revision", revision}, {"planId", row.front()}}));
+            }
+            return plans;
+        };
+        const auto nestingPlans = readNestingPlans(nesting);
+        Expect(!nestingPlans.empty(), "Nesting returned no plan");
         std::size_t placed = 0;
-        for (const auto& plan : nesting.at("plans").To<VariantArray>()) placed += plan.To<ObjectMap>().at("placements").To<VariantArray>().size();
+        for (const auto& plan : nestingPlans) placed += plan.To<ObjectMap>().at("placements").To<VariantArray>().size();
         Expect(placed == first.at("quantity").To<unsigned long long>(), "Nesting did not multiply production quantity");
         const auto exportDirectory = directory / "exports";
         // Export the nesting-owned snapshot. The original disassembly IDs are
@@ -237,7 +249,8 @@ int main(int argc, char** argv) {
         designer = Invoke(project, "SetInstanceQuantity", {{"productEntityId", productId}, {"quantity", 2ull}}).at("tubeDesigner").To<ObjectMap>();
         Expect(designer.at("nestingTask").To<ObjectMap>().at("result").To<ObjectMap>() == nesting, "Source quantity changed independent nesting result");
         Expect(designer.at("parts").To<VariantArray>().front().To<ObjectMap>().at("quantity").To<unsigned long long>() == first.at("unitQuantity").To<unsigned long long>() * 2, "Quantity change compounded old total");
-        Expect(Invoke(project, "Nest", nestingRequest).at("plans") == nesting.at("plans"), "Source quantity changed independent nesting demand");
+        Expect(readNestingPlans(Invoke(project, "Nest", nestingRequest)) == nestingPlans,
+            "Source quantity changed independent nesting demand");
         runtime->SaveProjectFile(project->GetProjectID(), path.string());
         designer = reopen();
         Expect(designer.at("product").To<ObjectMap>().at("quantity").To<unsigned long long>() == 2, "Modified quantity was not persisted");
@@ -267,7 +280,7 @@ int main(int argc, char** argv) {
             retainedPart.at("manufacturingGeometryResourceId").To<std::string>(),
             retainedPart.at("manufacturingGeometryResourceVersion").To<unsigned long long>()) != nullptr,
             "Independent nesting geometry was not saved after deleting its source product");
-        Expect(!Invoke(project, "Nest", nestingRequest).at("plans").To<VariantArray>().empty(),
+        Expect(Invoke(project, "Nest", nestingRequest).at("planCount").To<unsigned long long>() > 0,
             "Independent nesting part could not be nested after deleting its source product");
         runtime->Stop(); project.reset(); catalog.reset(); runtime.reset();
         for (const auto& entry : std::filesystem::directory_iterator(directory)) if (entry.is_regular_file()) std::filesystem::remove(entry.path());

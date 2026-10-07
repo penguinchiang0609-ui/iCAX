@@ -1,4 +1,4 @@
-TEST(ProductAssemblyBindingSDO, TeeFlatContactUsesVerifiedRealProductFaceDirection)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_TeeFlatContactUsesVerifiedRealProductFaceDirection)
 {
     const auto projectID=iCAX::Data::GenerateNewUUID();
     Scene scene(projectID,projectID);

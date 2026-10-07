@@ -97,7 +97,7 @@ await handleNestingPunchPartAction(previewContext, view, "tube-designer-nesting-
   value: "tool", dataset: { tubeDesignerPunchIndex: "draft" },
 }, operations);
 assert.ok(view.tubeDesignerPunchWizard.parameterEditor);
-await handleNestingPunchPartAction(previewContext,view,"tube-designer-nesting-punch-create-parameters-apply",{},operations);
+await handleNestingPunchPartAction(previewContext,view,"tube-designer-nesting-punch-create-parameters-close",{},operations);
 assert.equal(view.tubeDesignerPunchWizard.parameterEditor,null);
 
 await handleNestingPunchPartAction(previewContext, view, "tube-designer-nesting-punch-create-field-change", {

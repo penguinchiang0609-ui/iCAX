@@ -175,13 +175,30 @@ class ContinuousCornerInsertionTests(unittest.TestCase):
                                        participants=actual, product_topology="orthogonal-corner")
         self.assertEqual(original, actual)
 
-    def test_same_size_insert_and_tabs_and_noncoincident_nodes_remain_rejected(self):
+    def test_same_size_continuous_tabs_use_the_retained_skin_socket_policy(self):
+        local = turned_input(1)
+        local["parts"]["memberC"]["parameters"].update(width=40, depth=25)
+        original = deepcopy(local)
+        result = runtime.evaluate_process("orthogonal-corner", local,
+                                          {"abJoint": "continuous", "cJoint": "tabs"})
+        self.assertTrue(result["applicable"], result["reason"])
+        self.assertEqual(local, original)
+        features = [operation["requestFeature"] for operation in result["operations"]
+                    if "requestFeature" in operation]
+        self.assertEqual(len(features), 2)
+        self.assertTrue(all(feature["toolParameters"]["allowSideOpening"] for feature in features))
+        self.assertTrue(all(not feature["toolParameters"]["allowEndOpening"] for feature in features))
+
+    def test_same_size_insert_and_noncontinuous_tabs_and_noncoincident_nodes_remain_rejected(self):
+        for ab, joint, turn in (("continuous", "insert", 1), ("miter", "tabs", 0),
+                                ("wrap", "tabs", 0)):
+            with self.subTest(ab=ab, joint=joint):
+                local = turned_input(turn)
+                local["parts"]["memberC"]["parameters"].update(width=40, depth=25)
+                result = runtime.evaluate_process("orthogonal-corner", local, {"abJoint": ab, "cJoint": joint})
+                self.assertFalse(result["applicable"])
+                self.assertIn("C 端口", result["reason"])
         for joint in ("insert", "tabs"):
-            local = turned_input(1)
-            local["parts"]["memberC"]["parameters"].update(width=40, depth=25)
-            result = runtime.evaluate_process("orthogonal-corner", local, {"abJoint": "continuous", "cJoint": joint})
-            self.assertFalse(result["applicable"])
-            self.assertIn("C 端口", result["reason"])
             local = turned_input(1)
             local["parts"]["memberC"]["matrix"][3] += 1
             result = runtime.evaluate_process("orthogonal-corner", local, {"abJoint": "continuous", "cJoint": joint})

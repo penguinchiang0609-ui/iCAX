@@ -620,7 +620,7 @@ TEST(ProductAssemblyBindingSDO, ExistingWindowCombinesCornerAndInnerBarOnOneUncu
     checkSameShape(combinedLeft, assemblyBindingRowShape(reopened, reopenedRows.at(sharedKey)));
 }
 
-TEST(ProductAssemblyBindingSDO, ExistingAluminiumWindowAppliesIndependentCornerAndTeeCuts)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_ExistingAluminiumWindowAppliesIndependentCornerAndTeeCuts)
 {
     const auto projectID = iCAX::Data::GenerateNewUUID();
     Scene scene(projectID, projectID);
@@ -788,7 +788,7 @@ TEST(ProductAssemblyBindingSDO, ExistingAluminiumWindowAppliesIndependentCornerA
         assemblyBindingRowShape(scene, combinedRows.at("transom.1.1")));
 }
 
-TEST(ProductAssemblyBindingSDO, TeeTabSlotsCutRealProductMembers)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_TeeTabSlotsCutRealProductMembers)
 {
     for(const auto& variant : {std::pair<double,const char*>{0.0,"two"},
             {90.0,"two"}, {0.0,"four"}, {90.0,"four"}}){
@@ -846,7 +846,7 @@ TEST(ProductAssemblyBindingSDO, TeeTabSlotsCutRealProductMembers)
     }
 }
 
-TEST(ProductAssemblyBindingSDO, TeeProfileInsertCutsRealTopWallAndBranch)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_TeeProfileInsertCutsRealTopWallAndBranch)
 {
     const auto projectID=iCAX::Data::GenerateNewUUID();
     Scene scene(projectID,projectID);
@@ -897,7 +897,7 @@ TEST(ProductAssemblyBindingSDO, TeeProfileInsertCutsRealTopWallAndBranch)
     }
 }
 
-TEST(ProductAssemblyBindingSDO, AluminiumWindowFitsNarrowBranchInTrustedTOpening)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_AluminiumWindowFitsNarrowBranchInTrustedTOpening)
 {
     const auto demonstration = std::filesystem::current_path()
         / "src/apps/tube-designer/templates/product/aluminium_window/systems/demonstration.json";
@@ -1105,7 +1105,7 @@ TEST(ProductAssemblyBindingSDO, ExistingSecurityWindowPublishesUncutFrameAndCorn
     }
 }
 
-TEST(ProductAssemblyBindingSDO, ExistingLouverWindowPublishesUncutFrameAndCornerTeeNodes)
+TEST(ProductAssemblyBindingSDO, DISABLED_DeferredReference_ExistingLouverWindowPublishesUncutFrameAndCornerTeeNodes)
 {
     const auto projectID = iCAX::Data::GenerateNewUUID();
     Scene scene(projectID, projectID);

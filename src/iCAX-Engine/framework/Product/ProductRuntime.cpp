@@ -219,8 +219,7 @@ namespace
 
     iCAX::ProjectFile::CProjectFileDefinition
     _MakeProjectFileDefinition(
-        IN const iCAX::Product::CProductDefinition& Definition_,
-        IN const std::vector<std::string>& ModulePaths_)
+        IN const iCAX::Product::CProductDefinition& Definition_)
     {
         iCAX::ProjectFile::CProjectFileDefinition _File;
         _File.Magic = Definition_.ProjectFile.Magic;
@@ -231,7 +230,6 @@ namespace
             Definition_.ProjectFile.FormatRevision;
         _File.DefaultEncoding =
             iCAX::ProjectFile::EProjectFileEncoding::Binary;
-        _File.MigrationModulePaths = ModulePaths_;
         return _File;
     }
 
@@ -1181,6 +1179,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
         m_Definition.DefaultProjectStartupComponent);
     auto _pProjectRuntime = iCAX::Project::CreateProjectRuntime(_pProject);
     bool _bCatalogRegistered = false;
+    bool _bRuntimeRegistered = false;
     try
     {
         {
@@ -1194,6 +1193,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
             _bCatalogRegistered = true;
         }
         RegisterProjectRuntime(_pProjectRuntime);
+        _bRuntimeRegistered = true;
         if (_ShouldRecordRecentProject(_ProjectPath))
         {
             _pProject->OpenQuickSaveLog(
@@ -1207,10 +1207,26 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     catch (...)
     {
         // 打开流程跨 catalog、project runtime 和工作线程；任一步失败都要撤销已登记对象，避免残留半开项目。
-        (void)RemoveProjectRuntime(_pProject->GetProjectID());
+        if (_bRuntimeRegistered)
+        {
+            (void)RemoveProjectRuntime(_pProject->GetProjectID());
+        }
         if (_bCatalogRegistered)
         {
-            (void)CloseProjectCatalog(_pCatalog->GetCatalogID());
+            if (_bRuntimeRegistered)
+            {
+                (void)CloseProjectCatalog(_pCatalog->GetCatalogID());
+            }
+            else
+            {
+                // Failed duplicate registration must leave the existing
+                // project runtime and its frontend channel untouched.
+                {
+                    std::lock_guard<std::mutex> _Lock(m_ProjectCatalogMutex);
+                    m_ProjectCatalogs.erase(_pCatalog->GetCatalogID());
+                }
+                _pCatalog->CloseAll();
+            }
         }
         else
         {
@@ -1236,9 +1252,7 @@ iCAX::Product::CProductRuntime::OpenProjectFile(
     }
 
     iCAX::ProjectFile::CProjectFile _ProjectFile(
-        _MakeProjectFileDefinition(
-            m_Definition,
-            m_LoadedModulePaths));
+        _MakeProjectFileDefinition(m_Definition));
     auto _Prepared = _ProjectFile.PrepareOpen(
         _ProjectPathFromUTF8(strProjectPath_));
     const auto& _DocumentInfo = _Prepared.Result().Info;
@@ -1306,6 +1320,7 @@ iCAX::Product::CProductRuntime::OpenProjectFile(
     auto _pProjectRuntime =
         iCAX::Project::CreateProjectRuntime(_pProject);
     bool _bCatalogRegistered = false;
+    bool _bRuntimeRegistered = false;
     try
     {
         _pProject->GetMainScene().SceneSettings() =
@@ -1340,15 +1355,32 @@ iCAX::Product::CProductRuntime::OpenProjectFile(
             _bCatalogRegistered = true;
         }
         RegisterProjectRuntime(_pProjectRuntime);
+        _bRuntimeRegistered = true;
         StartProject(_pProjectRuntime);
         RecordRecentProject(strProjectPath_, _ProjectName);
     }
     catch (...)
     {
-        (void)RemoveProjectRuntime(_pProject->GetProjectID());
+        if (_bRuntimeRegistered)
+        {
+            (void)RemoveProjectRuntime(_pProject->GetProjectID());
+        }
         if (_bCatalogRegistered)
         {
-            (void)CloseProjectCatalog(_pCatalog->GetCatalogID());
+            if (_bRuntimeRegistered)
+            {
+                (void)CloseProjectCatalog(_pCatalog->GetCatalogID());
+            }
+            else
+            {
+                // A rejected duplicate open must not unregister the original
+                // project's frontend SDO channel.
+                {
+                    std::lock_guard<std::mutex> _Lock(m_ProjectCatalogMutex);
+                    m_ProjectCatalogs.erase(_pCatalog->GetCatalogID());
+                }
+                _pCatalog->CloseAll();
+            }
         }
         else
         {
@@ -1416,9 +1448,7 @@ void iCAX::Product::CProductRuntime::SaveProjectFileSnapshot(
     IN const std::string& strProjectPath_)
 {
     iCAX::ProjectFile::CProjectFile _ProjectFile(
-        _MakeProjectFileDefinition(
-            m_Definition,
-            m_LoadedModulePaths));
+        _MakeProjectFileDefinition(m_Definition));
     _ProjectFile.Save(
         _ProjectPathFromUTF8(strProjectPath_),
         _MakeProjectDocumentInfo(Project_),

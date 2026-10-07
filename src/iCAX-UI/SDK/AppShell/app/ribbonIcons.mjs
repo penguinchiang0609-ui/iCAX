@@ -16,6 +16,7 @@ const RIBBON_ICON_SHAPES = Object.freeze({
   excel: `<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M9 8h12M9 13h12M15 8v13"/><path class="accent" d="m4.8 8.5 3 7m0-7-3 7"/>`,
   machine: `<path d="M4 20V5h16v15M3 20h18M7 17V8h10v9zM12 5v3"/><path class="accent" d="M12 10v3m-3 3 3-3 3 3"/>`,
   nest: `<path d="M3 5h8v6H3zM13 13h8v6h-8z"/><path class="accent" d="M13 5h8v6h-8zM3 13h8v6H3z"/>`,
+  array: `<rect x="3" y="3" width="4" height="4"/><path class="accent" d="M10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4zM17 17h4v4h-4z"/>`,
   export: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M12 17V8m-3 3 3-3 3 3"/>`,
   report: `<path d="M6 4h12v17H6z"/><path class="accent" d="M9 8h6M9 12h6M9 16h4"/><path d="M9 2.5h6V6H9z"/>`,
   select: `<path d="m5 3 12 9-6 1.5L8 19z"/><path class="accent" d="m12 14 4 6"/>`,

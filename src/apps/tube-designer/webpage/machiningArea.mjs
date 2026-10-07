@@ -1,5 +1,6 @@
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { listNestingParts } from "./partsArea.mjs";
+import { loadNestingPlan, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { scheduleNestingPlanHydration, cancelNestingPlanHydration } from "./nestingPreview.mjs";
 import { confirmWithoutTitle } from "./confirmDialog.mjs";
 import { attachMachiningSideEditor, handleMachiningPathAction, pathEditor, renderMachiningEditToolbar, renderMachiningPathList, renderMachiningPathProperties, renderMachiningSideEditor } from "./machiningEditor.mjs";
@@ -22,10 +23,10 @@ export function machiningSourcePlans(view) {
   const source = designer(view);
   const parts = new Map(listNestingParts(source).map(part => [String(part.entityId), part]));
   const ordinals = new Map();
-  return (source.nestingTask?.result?.plans ?? []).map(plan => {
+  return (view.tubeDesignerNestingResult?.plans ?? source.nestingTask?.result?.plans ?? []).map(plan => {
     const part = parts.get(String(plan.placements?.[0]?.partId));
-    const profile = part?.profile ?? {};
-    const label = [profile.displayName, profile.specification].filter(Boolean).join(" ") || plan.profileKey || "排样母材";
+    const profile = plan.profileData ?? part?.profile ?? {};
+    const label = plan.profile || [profile.displayName, profile.specification].filter(Boolean).join(" ") || plan.profileKey || "排样母材";
     const ordinal = (ordinals.get(label) ?? 0) + 1;
     ordinals.set(label, ordinal);
     return { ...plan, name: `${label} · ${ordinal}`, profile: label, profileData: profile };
@@ -58,7 +59,7 @@ export function renderTubeMachiningLeftPane(_context, view) {
     <div class="tube-machining-job-list" aria-label="加工清单">${jobs.length ? jobs.map(job => `
       <button type="button" class="tube-machining-job ${job.id === active?.id ? "active" : ""}" data-cam-action="${PREFIX}select" data-job-id="${escapeAttr(job.id)}" aria-pressed="${job.id === active?.id}">
         <span class="tube-machining-source-tag">${job.sourceKind === "nesting" ? "下料关联" : "三维导入"}</span>
-        <strong>${escapeText(job.name)}</strong><small>${job.plan ? `${job.plan.placements.length} 件 · ${formatNumber(job.plan.stockLength)} mm` : escapeText(job.sourceFileName || "原排样记录")}</small>
+        <strong>${escapeText(job.name)}</strong><small>${job.plan ? `${job.plan.partCount ?? job.plan.placements.length} 件 · ${formatNumber(job.plan.stockLength)} mm` : escapeText(job.sourceFileName || "原排样记录")}</small>
         <span class="tube-machining-job-status ${job.stale ? "stale" : ""}">${job.status}</span>
       </button>`).join("") : `<div class="tube-machining-empty-list">暂无加工数据<br><small>加工清单与下料零件清单分开管理</small></div>`}</div></section>`;
 }
@@ -67,11 +68,11 @@ export function renderTubeMachiningRightPane(_context, view) {
   const job = selectedMachiningJob(view);
   const section = state(view).section;
   const [title, note] = sections[section] ?? sections.overview;
-  return `<section class="tube-machining-pane">${renderMachiningPathList(view, job)}${renderMachiningPathProperties(view, job)}<header class="tube-machining-pane-title"><strong>${title}</strong><span>${section === "overview" ? "数据检查" : "待接入"}</span></header>
+  return `<section class="tube-machining-pane" data-window-state-controls="[data-path-field],[data-cam-change-action='tube-path-node-index'],input[data-path-id]">${renderMachiningPathList(view, job)}${renderMachiningPathProperties(view, job)}<header class="tube-machining-pane-title"><strong>${title}</strong><span>${section === "overview" ? "数据检查" : "待接入"}</span></header>
     <p class="tube-machining-note">${note}</p>
     ${section !== "overview" ? `<div class="tube-machining-pending">工艺模块准备中<br><small>当前支持独立名义刀路的解析与编辑，工艺轨迹将在下一阶段接入。</small></div>` : ""}
     ${job ? `<dl class="tube-machining-facts"><dt>名称</dt><dd>${escapeText(job.name)}</dd><dt>来源</dt><dd>${job.sourceKind === "nesting" ? "下料区排样结果（关联）" : escapeText(job.sourceFileName)}</dd><dt>状态</dt><dd>${job.status}</dd>
-      ${job.plan ? `<dt>母材长度</dt><dd>${formatNumber(job.plan.stockLength)} mm</dd><dt>已排零件</dt><dd>${job.plan.placements.length} 件</dd><dt>余料长度</dt><dd>${formatNumber(job.plan.remainingLength)} mm</dd>` : ""}
+      ${job.plan ? `<dt>母材长度</dt><dd>${formatNumber(job.plan.stockLength)} mm</dd><dt>已排零件</dt><dd>${job.plan.partCount ?? job.plan.placements.length} 件</dd><dt>余料长度</dt><dd>${formatNumber(job.plan.remainingLength)} mm</dd>` : ""}
       ${job.sourceKind === "cad" ? `<dt>实体数量</dt><dd>${escapeText(job.solidCount)} 个</dd><dt>坐标</dt><dd>保留原装配坐标</dd><dt>单位</dt><dd>mm</dd>` : ""}
       <dt>实际轨迹</dt><dd>尚未添加工艺</dd></dl>
       ${job.stale ? `<p class="tube-machining-warning">下料来源已更新或删除，已生成的独立刀路不受影响。需要分析新排样时，请重新接收。</p>` : ""}` : `<div class="tube-machining-empty-list">选择加工数据后显示详情</div>`}
@@ -91,9 +92,9 @@ export function renderTubeMachiningDialogs(view) {
   if (!selected) return "";
   const plans = machiningSourcePlans(view);
   const disabled = view.pending ? "disabled" : "";
-  return `<div class="tube-designer-modal-backdrop"><section class="tube-designer-preset-dialog tube-machining-source-dialog" role="dialog" aria-modal="true" aria-labelledby="machining-source-title">
+  return `<div class="tube-designer-modal-backdrop"><section class="tube-designer-preset-dialog tube-machining-source-dialog" role="dialog" aria-modal="true" aria-labelledby="machining-source-title" data-window-state-controls="input[data-plan-id]">
     <header class="tube-designer-dialog-header"><div><strong id="machining-source-title">接收排样结果</strong><span>直接关联现有排样，不复制零件模型</span></div><button class="tube-designer-dialog-close" aria-label="关闭" data-cam-action="${PREFIX}cancel" ${disabled}>×</button></header>
-    <div class="tube-machining-source-list">${plans.length ? plans.map(plan => `<label><input type="checkbox" data-cam-change-action="${PREFIX}source-check" data-plan-id="${escapeAttr(plan.id)}" ${selected.includes(String(plan.id)) ? "checked" : ""} ${disabled}><span><strong>${escapeText(plan.name)}</strong><small>${plan.placements.length} 件 · 母材 ${formatNumber(plan.stockLength)} mm</small></span></label>`).join("") : `<p class="tube-machining-note">下料区还没有排样结果。请先完成排样，或取消后直接导入 STEP / IGES。</p>`}</div>
+    <div class="tube-machining-source-list">${plans.length ? plans.map(plan => `<label><input type="checkbox" data-cam-change-action="${PREFIX}source-check" data-plan-id="${escapeAttr(plan.id)}" ${selected.includes(String(plan.id)) ? "checked" : ""} ${disabled}><span><strong>${escapeText(plan.name)}</strong><small>${plan.partCount ?? plan.placements.length} 件 · 母材 ${formatNumber(plan.stockLength)} mm</small></span></label>`).join("") : `<p class="tube-machining-note">下料区还没有排样结果。请先完成排样，或取消后直接导入 STEP / IGES。</p>`}</div>
     <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${PREFIX}cancel" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${PREFIX}receive" ${!selected.length || view.pending ? "disabled" : ""}>接收 ${selected.length} 根母材</button></footer>
   </section></div>`;
 }
@@ -160,6 +161,7 @@ export async function handleTubeMachiningRibbonCommand(context, view, commandId,
       const response = await context.sceneProxy.invoke("TubeDesigner.List", { nestingOnly: true }, { timeoutMs: 180000 });
       if (!response?.tubeDesigner) throw new Error("无法读取下料排样结果。");
       view.scene.tubeDesigner = response.tubeDesigner;
+      await restoreSavedNestingTask(view, context);
       const ids = machiningSourcePlans(view).map(plan => String(plan.id));
       const preferred = view.tubeDesignerSelectedNestingPlanIds ?? [];
       const selected = ids.filter(id => preferred.includes(id));
@@ -197,7 +199,11 @@ export async function handleTubeMachiningAction(context, view, action, target, o
   if (!action.startsWith(PREFIX)) return { handled: false };
   if (view.pending) return { handled: true };
   try {
-    if (action === PREFIX + "select") state(view).selectedId = String(target?.dataset?.jobId ?? "");
+    if (action === PREFIX + "select") {
+      state(view).selectedId = String(target?.dataset?.jobId ?? "");
+      const job = selectedMachiningJob(view);
+      if (job?.plan?.detailsLoaded === false) await loadNestingPlan(context, view, job.plan.id);
+    }
     if (action === PREFIX + "cancel") state(view).sourceSelection = null;
     if (action === PREFIX + "source-check") {
       const ids = new Set(state(view).sourceSelection ?? []);
@@ -209,6 +215,8 @@ export async function handleTubeMachiningAction(context, view, action, target, o
       const ids = state(view).sourceSelection ?? [];
       if (!ids.length) throw new Error("请选择排样结果。");
       await mutate(context, view, ops, { action: "link", planIds: ids, nestingRevision: designer(view).nestingTask?.revision });
+      const job = selectedMachiningJob(view);
+      if (job?.plan?.detailsLoaded === false) await loadNestingPlan(context, view, job.plan.id);
     }
   } catch (error) { view.error = error?.message ?? String(error); }
   ops.renderProject(context, view);
@@ -226,6 +234,25 @@ export function attachTubeMachining(context, view, _mount, ops) {
   if (editor?.space === "2d") { cancelNestingPlanHydration(view); currentState.preview = null; return; }
   const overlay = job ? machiningPathOverlay(view, job) : { revision: "empty", rows: [], resources: new Map() };
   view.tubeDesignerMachiningPreviewPlanId = job?.plan?.id ?? "";
+  if (job?.plan?.detailsLoaded === false) {
+    const loadKey = `${view.tubeDesignerNestingResult?.revision ?? ""}:${job.plan.id}`;
+    currentState.preview = currentState.previewLoadFailedKey === loadKey
+      ? { status: "error", message: view.error || "读取母材切割顺序失败" }
+      : { status: "loading", message: "正在读取母材切割顺序…" };
+    if (currentState.previewLoadingKey === loadKey
+      || currentState.previewLoadFailedKey === loadKey) return;
+    currentState.previewLoadingKey = loadKey;
+    void loadNestingPlan(context, view, job.plan.id).then(() => {
+      if (currentState.previewLoadingKey === loadKey) currentState.previewLoadingKey = "";
+      if (view.activeAreaId === "machining") ops.renderProject(context, view);
+    }).catch((error) => {
+      if (currentState.previewLoadingKey === loadKey) currentState.previewLoadingKey = "";
+      currentState.previewLoadFailedKey = loadKey;
+      view.error = `读取排样结果失败：${error?.message ?? error}`;
+      ops.renderProject(context, view);
+    });
+    return;
+  }
   if (job?.plan) {
     currentState.preview = null;
     scheduleNestingPlanHydration(context, view, job.plan, listNestingParts(designer(view)), { areaId: "machining", overlay });

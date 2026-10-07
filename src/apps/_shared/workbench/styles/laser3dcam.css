@@ -194,6 +194,10 @@
   cursor: pointer;
 }
 
+.cam-viewcube-piece:focus {
+  outline: none;
+}
+
 .cam-viewcube-surface {
   stroke: rgba(117, 74, 4, 0.74);
   stroke-width: 0.8;
@@ -205,6 +209,11 @@
   fill: #ffda50;
   stroke: rgba(255, 246, 176, 0.96);
   stroke-width: 1.2;
+}
+
+.cam-viewcube-piece:focus-visible .cam-viewcube-surface {
+  stroke: #24545d;
+  stroke-width: 1.8;
 }
 
 .cam-viewcube-label {

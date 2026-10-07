@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { resolve, sep } from "node:path";
-import { renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
-import { catalogText } from "../../apps/tube-designer/webpage/productCatalog.mjs";
-import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
+import { importBrowserAsset, readBrowserAsset, serveBrowserAsset } from './browserPackageRuntime.mjs';
+const { renderDesignerRightPane } = await importBrowserAsset('apps/tube-designer/webpage/designerViews.mjs');
+const { catalogText } = await importBrowserAsset('apps/tube-designer/webpage/productCatalog.mjs');
+const { tubeDesignerCss } = await importBrowserAsset('apps/tube-designer/webpage/styles/tubeDesigner.css.mjs');
 
-const raw = JSON.parse(readFileSync(new URL(
-  "../../apps/tube-designer/templates/product/single_face_security_window/template.json",
-  import.meta.url,
-), "utf8"));
+const raw = JSON.parse(readBrowserAsset('apps/tube-designer/templates/product/single_face_security_window/template.json'));
 const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
 const template = {
   ...raw,
@@ -48,16 +43,7 @@ const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwri
 const browser = await chromium.launch({ headless: true, channel: process.env.ICAX_BROWSER_CHANNEL || "msedge" });
 try {
   const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
-  const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
-  await page.route("http://tube-designer.test/**", async (route) => {
-    const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
-    if (pathname === "/") return route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" });
-    const path = resolve(sourceRoot, pathname.replace(/^\/src\//, ""));
-    if (!pathname.startsWith("/src/")
-      || !path.startsWith(sourceRoot.replace(/[\\/]$/, "") + sep)
-      || !/\.m?js$/.test(path)) return route.abort();
-    return route.fulfill({ contentType: "text/javascript", body: readFileSync(path, "utf8") });
-  });
+  await page.route("http://tube-designer.test/**", serveBrowserAsset);
   await page.goto("http://tube-designer.test/");
   await page.setContent(`<style>body{margin:0}.tube-designer-workspace{height:640px}.cam-info-pane{width:360px;height:640px;box-sizing:border-box}${tubeDesignerCss}</style><main class="tube-designer-workspace"><aside class="cam-info-pane">${rightHtml}</aside></main>`);
   const result = await page.evaluate(async ({ renderView }) => {
@@ -113,7 +99,7 @@ try {
   assert.equal(result.overflow, "auto");
   assert.equal(result.scrollable, true);
   assert.equal(result.reachable, true);
-  assert.deepEqual(result.sectionTitles, ["材料", "工艺"]);
+  assert.deepEqual(result.sectionTitles, ["用料", "装配"]);
   assert.equal(result.hasEmbeddedProductDiagram, false,
     "产品示意图已从实例编辑页移除，不应占用右侧参数滚动区");
   assert.equal(result.oneScrollbar, true);

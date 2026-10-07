@@ -1,4 +1,6 @@
 import { renderRibbonCommandIcon } from "./ribbonIcons.mjs";
+import { createStartupScreen } from "./startupScreen.mjs";
+import { createNewProjectMemory } from "./newProjectMemory.mjs";
 import {
   connectApplication,
   escapeAttr,
@@ -8,8 +10,10 @@ import {
 } from "../../index.mjs";
 
 const root = document.getElementById("app");
+const startupScreen = createStartupScreen(document);
+let startupPromise = null;
 const DIRECT_START_PRODUCT_ID = "icax.tube-designer";
-const DIRECT_START_PRODUCT_TITLE = "iTubeDesigner";
+const DIRECT_START_PRODUCT_TITLE = "TubeDesigner";
 const TOOLBAR_TOOLTIP_SELECTOR = [
   "[data-toolbar-tooltip]",
   ".ribbon-command",
@@ -23,6 +27,7 @@ const TOOLBAR_TOOLTIP_SELECTOR = [
 const TOOLBAR_TOOLTIP_DELAY_MS = 260;
 let toolbarTooltipTimer = 0;
 let toolbarTooltipTarget = null;
+const newProjectMemory = createNewProjectMemory();
 
 const state = {
   bridgeStatus: "Disconnected",
@@ -44,9 +49,13 @@ const state = {
   pendingOperations: [],
   projectOperations: new Map(),
   savedProjectIds: new Set(),
+  projectSaves: new Map(),
+  projectCloses: new Map(),
+  productCloseQueues: new WeakMap(),
   logs: [],
   error: "",
-  startCenterOpen: true,
+  startupPhase: "loading",
+  startCenterOpen: false,
   projectWindowStart: 0,
   activeRibbonTabId: "",
   openRibbonMenuCommandId: "",
@@ -65,21 +74,49 @@ const state = {
 
 const actions = {
   async bootstrap() {
-    state.bridgeStatus = "Connecting";
-    render();
-
-    state.appProxy = await connectApplication();
-    state.bridge = state.appProxy.bridge;
-    state.bridgeStatus = "Connected";
-
-    await actions.refresh();
-    // This delivery exposes a single product.  Start an unsaved project for it
-    // directly so the user lands in the design workspace instead of a console
-    // or product-selection page.
-    const directProduct = findProductState(DIRECT_START_PRODUCT_ID);
-    if (directProduct && !state.activeProjectState) {
+    if (startupPromise) return startupPromise;
+    state.startupPhase = "loading";
+    state.startCenterOpen = false;
+    state.error = "";
+    startupScreen.setStage("正在启动 TubeDesigner");
+    startupPromise = (async () => {
+      if (!state.appProxy) {
+        state.bridgeStatus = "Connecting";
+        render();
+        state.appProxy = await connectApplication();
+        state.bridge = state.appProxy.bridge;
+      }
+      state.bridgeStatus = "Connected";
+      startupScreen.setStage("正在加载设计工作台");
+      await actions.refresh();
+      if (!findProductState(DIRECT_START_PRODUCT_ID)) {
+        throw new Error("未找到 TubeDesigner，请检查程序安装是否完整。");
+      }
+      startupScreen.setStage("正在准备设计场景");
       await actions.openDirectTubeDesignerProject();
+      if (!state.activeProjectState || await state.productSurfaceMountPromise === false) {
+        throw new Error(state.error || "TubeDesigner 工作台加载失败。");
+      }
+      state.startupPhase = "ready";
+      document.title = getApplicationTitle();
+      startupScreen.finish();
+    })();
+    try {
+      await startupPromise;
+    } finally {
+      startupPromise = null;
     }
+  },
+
+  reportStartupProgress(progress, projectId) {
+    if (state.startupPhase !== "loading"
+        || state.activeProductState?.productId !== DIRECT_START_PRODUCT_ID
+        || !projectId
+        || projectId !== state.activeProjectState?.projectId) {
+      return false;
+    }
+    startupScreen.setStage(progress.stage || progress.title, progress.detail);
+    return true;
   },
 
   async refresh() {
@@ -155,6 +192,14 @@ const actions = {
       return;
     }
 
+    const opened = getOpenProjects().find((project) =>
+      (!productId || project.productId === productId)
+      && normalizePath(project.projectPath) === normalizePath(path));
+    if (opened) {
+      await actions.selectOpenProject(opened.projectId);
+      return;
+    }
+
     await track("App.OpenProjectFile", async () => {
       const response = await state.appProxy.openProjectFile(path);
       await enterProject({ ...response, projectPath: path });
@@ -215,7 +260,8 @@ const actions = {
   },
 
   async chooseProjectFile() {
-    const bridge = state.bridge ?? state.appProxy?.bridge ?? null;
+    const bridge = state.bridge ?? state.appProxy?.bridge
+      ?? globalThis.icax ?? globalThis.icaxNativeBridge ?? null;
     if (typeof bridge?.openFileDialog !== "function") {
       state.error = "当前宿主没有提供文件选择能力。";
       render();
@@ -232,11 +278,18 @@ const actions = {
     });
   },
 
-  async saveProject(saveAs = false) {
-    const project = state.activeProjectProxy;
-    if (!project || state.pendingCount) return;
-    await track("Project.Save", async () => {
-      const product = findProductState(state.activeProductProxy?.productId ?? state.selectedProductId);
+  async saveProject(saveAs = false, entry = null) {
+    const project = entry?.projectProxy ?? state.activeProjectProxy;
+    if (!project || state.pendingCount) return false;
+    const existing = state.projectSaves.get(project.projectId);
+    if (existing) return existing;
+    const productProxy = entry?.productProxy ?? state.activeProductProxy, appProxy = state.appProxy;
+    const product = findProductState(productProxy?.productId ?? state.selectedProductId);
+    const module = state.productModules.get(productProxy?.productId);
+    const context = entry ? buildOpenProjectContext(entry) : buildProductContext();
+    if (module?.isProjectReadOnly?.(context)) return false;
+    const operation = Promise.resolve().then(async () => {
+      await module?.prepareProjectSave?.(context);
       let path = project.state.projectPath;
       if (saveAs || !state.savedProjectIds.has(project.projectId) || !path || path.includes("://")) {
         if (typeof state.bridge?.saveFileDialog !== "function") {
@@ -249,18 +302,36 @@ const actions = {
           defaultExtension: extensions[0] ?? "icax",
           filters: [{ name: "项目文件", extensions: extensions.length ? extensions : ["icax"] }],
         });
-        if (!path) return;
+        if (!path) return false;
         const resolved = resolveNewProjectPath(path, project.state.projectName, product);
         if (resolved.error) throw new Error(resolved.error);
         path = resolved.projectPath;
       }
+      // File selection can be asynchronous too. Commit the current live draft
+      // immediately before saving, using the original project's context.
+      await module?.prepareProjectSave?.(context);
       await project.save(path);
       state.savedProjectIds.add(project.projectId);
-      state.activeProjectState = project.state;
-      state.activeProductState = await state.activeProductProxy.getState();
-      state.appState = await state.appProxy.getState();
+      const productState = await productProxy.getState();
+      if (state.activeProjectProxy === project) state.activeProjectState = project.state;
+      if (state.activeProductProxy === productProxy) state.activeProductState = productState;
+      state.appState = await appProxy.getState();
       pushLog("ok", `项目已保存：${path}`);
+      updateBottomDockLogs();
+      return true;
+    }).catch((error) => {
+      if (state.activeProjectProxy === project) state.error = error?.message ?? String(error);
+      pushLog("error", `保存项目失败：${error?.message ?? String(error)}`);
+      updateBottomDockLogs();
+      throw error;
+    }).finally(() => {
+      if (state.projectSaves.get(project.projectId) === operation) state.projectSaves.delete(project.projectId);
+      refreshProjectSaveControl();
     });
+    state.error = "";
+    state.projectSaves.set(project.projectId, operation);
+    refreshProjectSaveControl();
+    return operation;
   },
 
   async undoProject() {
@@ -297,16 +368,34 @@ const actions = {
     refreshProjectHistoryControls();
   },
 
-  async refreshActiveSceneState() {
-    if (!state.activeSceneProxy) {
+  async refreshActiveSceneState(expected = {}) {
+    const sceneProxy = state.activeSceneProxy;
+    const projectProxy = state.activeProjectProxy;
+    const projectId = state.activeProjectState?.projectId;
+    const mount = root.querySelector("[data-product-surface='project']");
+    if (!sceneProxy
+        || (expected.sceneProxy && expected.sceneProxy !== sceneProxy)
+        || (expected.projectId && expected.projectId !== projectId)) {
       return null;
     }
-    const sceneState = await state.activeSceneProxy.getState();
+    const sceneState = await sceneProxy.getState();
+    // A late response belongs to the surface that requested it. Navigation
+    // must not apply it to a different project or take back the user's focus.
+    if (state.activeSceneProxy !== sceneProxy || state.activeProjectProxy !== projectProxy
+        || state.activeProjectState?.projectId !== projectId
+        || root.querySelector("[data-product-surface='project']") !== mount
+        || (mount && !mount.isConnected)) {
+      return null;
+    }
     state.activeSceneState = sceneState;
-    const surfaceMount = render();
+    // Reuse the live product host. Rebuilding the app shell here disconnects
+    // its editors before the product's own local DOM patch can preserve them.
+    const surfaceMount = mount ? mountActiveProductSurface() : render();
     if (await surfaceMount === false) {
       throw new Error(state.error || "Product surface failed to synchronize with scene state");
     }
+    refreshProjectHistoryControls();
+    updateBottomDockLogs();
     return sceneState;
   },
 
@@ -363,11 +452,91 @@ const actions = {
     state.activeSceneProxy = entry.projectProxy?.getMainScene?.() ?? null;
     state.activeSceneState = state.activeSceneProxy?.state ?? entry.projectState?.mainScene ?? null;
     state.startCenterOpen = false;
+    revealProjectTab(projectId);
     await mountActiveProductModule();
     ensureActiveRibbonTab();
     if (await render() === false) {
       throw new Error(state.error || "Selected project surface failed to synchronize");
     }
+  },
+
+  async closeOpenProject(projectId) {
+    const entry = getOpenProjects().find((item) => item.projectId === projectId);
+    if (!entry) return false;
+    const existing = state.projectCloses.get(projectId);
+    if (existing) return existing;
+    const module = state.productModules.get(entry.productId);
+    const operation = Promise.resolve().then(async () => {
+      requireProjectReadyToClose(entry);
+      const choice = await chooseProjectClose(entry);
+      if (choice === "cancel") return false;
+      requireProjectReadyToClose(entry);
+      if (choice === "save" && await actions.saveProject(false, entry) !== true) return false;
+      const projects = getOpenProjects();
+      const index = projects.findIndex((item) => item.projectId === projectId);
+      const catalog = findOpenProjectCatalog(entry);
+      if (!catalog?.catalogId) throw new Error("项目目录尚未就绪，无法关闭。");
+      // Catalogue responses replace the product's project registry. Serialize
+      // closes of one product so an older response cannot restore a closed tab.
+      const previous = state.productCloseQueues.get(entry.productProxy);
+      const close = Promise.resolve(previous).catch(() => {}).then(() => {
+        if (!entry.productProxy.projects.has(projectId)) return entry.productProxy.state;
+        // A task may have started while choosing a save path or waiting for a
+        // preceding close; check the target again immediately before teardown.
+        requireProjectReadyToClose(entry);
+        return entry.productProxy.closeProjectCatalog(catalog.catalogId);
+      });
+      state.productCloseQueues.set(entry.productProxy, close);
+      let productState;
+      try { productState = await close; }
+      finally {
+        if (state.productCloseQueues.get(entry.productProxy) === close) state.productCloseQueues.delete(entry.productProxy);
+      }
+      if (entry.productProxy.projects.has(projectId)) throw new Error("项目未能关闭，请重试。");
+      state.appState = mergeProductIntoApplicationState(state.appState, productState);
+      if (state.activeProductProxy === entry.productProxy) state.activeProductState = entry.productProxy.state;
+      for (const item of projects) {
+        if (item.productProxy !== entry.productProxy || entry.productProxy.projects.has(item.projectId)) continue;
+        state.savedProjectIds.delete(item.projectId);
+        state.projectOperations.delete(item.projectId);
+        await module?.releaseProject?.(buildOpenProjectContext(item));
+      }
+      pushLog("ok", `项目已关闭：${entry.projectName || entry.projectPath || projectId}`);
+      // Navigation during the native reply owns the live surface. A background
+      // close only patches the tabs, leaving editors, caret and scroll untouched.
+      if (state.activeProductProxy !== entry.productProxy
+          || entry.productProxy.projects.has(state.activeProjectState?.projectId)) {
+        refreshProjectSwitcher();
+        updateBottomDockLogs();
+        return true;
+      }
+      state.activeProjectProxy = null;
+      state.activeProjectState = null;
+      state.activeSceneProxy = null;
+      state.activeSceneState = null;
+      state.productSurfaceMountSequence += 1;
+      const remaining = getOpenProjects();
+      const next = [...projects.slice(index + 1), ...projects.slice(0, index).reverse()]
+        .find((item) => remaining.some((candidate) => candidate.projectId === item.projectId)) ?? remaining[0];
+      if (next) await actions.selectOpenProject(next.projectId);
+      else {
+        state.selectedProductId = entry.productId;
+        state.activeProductProxy = null;
+        state.activeProductState = null;
+        state.activeRibbonTabId = "";
+        state.projectWindowStart = 0;
+        state.startCenterOpen = true;
+        state.productSurfaceMountPromise = Promise.resolve();
+        render();
+      }
+      return true;
+    }).finally(() => {
+      if (state.projectCloses.get(projectId) === operation) state.projectCloses.delete(projectId);
+      refreshProjectSwitcher();
+    });
+    state.projectCloses.set(projectId, operation);
+    refreshProjectSwitcher();
+    return operation;
   },
 
   openStartCenter() {
@@ -386,9 +555,13 @@ const actions = {
 
   openNewProjectDialog() {
     const product = getSelectedProductState();
-    state.newProjectName = product?.productName ? `${product.productName} 项目` : "未命名项目";
-    state.newProjectPath = makeDefaultProjectPath(state.newProjectName, product);
-    state.newProjectPathTouched = false;
+    const defaultName = product?.productName ? `${product.productName} 项目` : "未命名项目";
+    const remembered = newProjectMemory.restore(product?.productId, {
+      name: defaultName, path: makeDefaultProjectPath(defaultName, product),
+    });
+    state.newProjectName = remembered.name;
+    state.newProjectPath = remembered.path;
+    state.newProjectPathTouched = remembered.pathTouched;
     state.newProjectError = "";
     state.newProjectDialogPosition = null;
     state.newProjectDialogOpen = true;
@@ -433,12 +606,26 @@ const actions = {
     if (!ribbon.tabs.some((tab) => tab.id === normalizedId)) {
       throw new Error(`Unknown ribbon tab: ${normalizedId}`);
     }
+    const module = getActiveProductModule();
+    const context = buildProductContext();
+    if (typeof module?.beforeSelectRibbonTab === "function"
+        && await module.beforeSelectRibbonTab(context, normalizedId) === false) return state.activeRibbonTabId;
+    if (context.isCurrentProject?.() === false) return state.activeRibbonTabId;
     closeRibbonCommandMenu();
     state.activeRibbonTabId = normalizedId;
     if (await render() === false) {
       throw new Error(state.error || `Failed to mount ribbon tab: ${normalizedId}`);
     }
     return normalizedId;
+  },
+
+  refreshProductRibbon() {
+    // Permission updates must not replace the workspace or its live editors.
+    const ribbon = root.querySelector(".product-ribbon");
+    if (ribbon) ribbon.outerHTML = renderProductRibbon();
+    refreshProjectSaveControl();
+    refreshProjectHistoryControls();
+    refreshProjectNavigationControls();
   },
 
   async windowCommand(command) {
@@ -451,7 +638,8 @@ const actions = {
         return { closed: false, blocked: true };
       }
     }
-    const bridge = state.bridge ?? state.appProxy?.bridge ?? null;
+    const bridge = state.bridge ?? state.appProxy?.bridge
+      ?? globalThis.icax ?? globalThis.icaxNativeBridge ?? null;
     if (typeof bridge?.windowCommand === "function") {
       await bridge.windowCommand(command);
     }
@@ -560,13 +748,14 @@ root.addEventListener("click", (event) => {
     render();
   } else if (action === "select-open-project") {
     runAction(() => actions.selectOpenProject(target.dataset.projectId));
+  } else if (action === "close-open-project") {
+    event.stopPropagation();
+    runAction(() => actions.closeOpenProject(target.dataset.projectId), { preserveSurface: true, errorPresentation: "log" });
   } else if (action === "select-ribbon-tab") {
     if (isActiveProjectBusy()) {
       return;
     }
-    closeRibbonCommandMenu();
-    state.activeRibbonTabId = target.dataset.tabId ?? "";
-    render();
+    runAction(() => actions.selectRibbonTab(target.dataset.tabId), { preserveSurface: true });
   } else if (action === "ribbon-command-menu-toggle") {
     if (isActiveProjectBusy()) {
       return;
@@ -579,7 +768,11 @@ root.addEventListener("click", (event) => {
       return;
     }
     closeRibbonCommandMenu();
-    runAction(() => actions.executeRibbonCommand(target.dataset.commandId));
+    const commandId = target.dataset.commandId;
+    const module = getActiveProductModule();
+    const preserveSurface = ["app.save", "app.saveAs"].includes(commandId)
+      || module?.shouldPreserveRibbonCommandSurface?.(buildProductContext(), commandId) === true;
+    runAction(() => actions.executeRibbonCommand(commandId), { preserveSurface });
   } else if (action === "window-minimize") {
     runAction(() => actions.windowCommand("minimize"));
   } else if (action === "window-maximize") {
@@ -592,8 +785,9 @@ root.addEventListener("click", (event) => {
 root.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && !event.altKey && ["s", "o"].includes(event.key.toLowerCase())) {
     event.preventDefault();
-    if (!state.pendingCount) runAction(() => event.key.toLowerCase() === "o"
-      ? actions.chooseProjectFile() : actions.saveProject(event.shiftKey));
+    const opening = event.key.toLowerCase() === "o";
+    if (!state.pendingCount) runAction(() => opening
+      ? actions.chooseProjectFile() : actions.saveProject(event.shiftKey), { preserveSurface: !opening });
     return;
   }
   if (event.key === "Escape" && state.openRibbonMenuCommandId) {
@@ -724,11 +918,19 @@ root.addEventListener("input", (event) => {
         pathInput.value = state.newProjectPath;
       }
     }
+    rememberNewProjectDraft();
   } else if (target.dataset.field === "newProjectPath") {
     state.newProjectPath = target.value;
     state.newProjectPathTouched = true;
+    rememberNewProjectDraft();
   }
 });
+
+function rememberNewProjectDraft() {
+  newProjectMemory.remember(getSelectedProductState()?.productId, {
+    name: state.newProjectName, path: state.newProjectPath,
+  });
+}
 
 function render() {
   document.title = getApplicationTitle();
@@ -737,8 +939,7 @@ function render() {
     root.innerHTML = `
       <div class="startup-shell">
         ${renderStartupTitleBar()}
-        ${renderStartCenter({ overlay: false })}
-        ${renderGlobalProgress()}
+        ${state.startupPhase === "ready" ? renderStartCenter({ overlay: false }) : '<main aria-hidden="true"></main>'}
       </div>
     `;
   } else {
@@ -862,6 +1063,7 @@ function exposeAppShellAutomation() {
         activeSceneId: state.activeSceneState?.sceneId ?? "",
         activeRibbonTabId: state.activeRibbonTabId,
         startCenterOpen: state.startCenterOpen,
+        startupPhase: state.startupPhase,
         pendingCount: state.pendingCount,
         error: state.error,
         products: getProducts().map((product) => ({
@@ -884,6 +1086,10 @@ function exposeAppShellAutomation() {
     },
     async openProject(projectPath, productId) {
       await actions.openProjectFromPath(projectPath, productId);
+      return this.getState();
+    },
+    async closeProject(projectId) {
+      await actions.closeOpenProject(projectId);
       return this.getState();
     },
     async executeRibbonCommand(commandId) {
@@ -981,6 +1187,7 @@ function renderStartCenter({ overlay }) {
 }
 
 function getApplicationTitle() {
+  if (state.startupPhase !== "ready") return DIRECT_START_PRODUCT_TITLE;
   if (!state.activeProjectState) {
     return getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID
       ? DIRECT_START_PRODUCT_TITLE
@@ -991,17 +1198,22 @@ function getApplicationTitle() {
     || "工作台";
 }
 
+function isActiveProjectReadOnly() {
+  return Boolean(state.activeProjectState && getActiveProductModule()?.isProjectReadOnly?.(buildProductContext()));
+}
+
 function renderTitleBar() {
   const undoRedo = getCombinedProjectHistoryState();
   const projectBusy = isActiveProjectBusy();
+  const readOnly = isActiveProjectReadOnly();
   const applicationTitle = getApplicationTitle();
   return `
     <header class="title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" data-action="open-start-center">${escapeText(applicationTitle)} ▾</button>
-        <button class="quick-button" type="button" data-action="ribbon-command" data-command-id="app.save" ${projectBusy || !state.activeProjectProxy ? "disabled" : ""} title="保存 (Ctrl+S)">保存</button>
-        <button class="quick-button" type="button" data-action="undo-project" ${undoRedo.canUndo && !projectBusy ? "" : "disabled"} title="撤销" aria-label="撤销">${renderRibbonCommandIcon("undo")}</button>
-        <button class="quick-button" type="button" data-action="redo-project" ${undoRedo.canRedo && !projectBusy ? "" : "disabled"} title="重做" aria-label="重做">${renderRibbonCommandIcon("redo")}</button>
+        <button class="app-button" type="button" data-action="open-start-center" ${readOnly ? "disabled" : ""}>${escapeText(applicationTitle)} ▾</button>
+        <button class="quick-button" type="button" data-action="ribbon-command" data-command-id="app.save" ${readOnly || projectBusy || state.projectSaves.has(state.activeProjectProxy?.projectId) || !state.activeProjectProxy ? "disabled" : ""} title="保存 (Ctrl+S)">${state.projectSaves.has(state.activeProjectProxy?.projectId) ? "正在保存…" : "保存"}</button>
+        <button class="quick-button" type="button" data-action="undo-project" ${undoRedo.canUndo && !projectBusy && !readOnly ? "" : "disabled"} title="撤销" aria-label="撤销">${renderRibbonCommandIcon("undo")}</button>
+        <button class="quick-button" type="button" data-action="redo-project" ${undoRedo.canRedo && !projectBusy && !readOnly ? "" : "disabled"} title="重做" aria-label="重做">${renderRibbonCommandIcon("redo")}</button>
       </div>
       ${renderProjectSwitcher()}
       ${renderWindowControls()}
@@ -1010,13 +1222,14 @@ function renderTitleBar() {
 }
 
 function renderStartupTitleBar() {
-  const isDirectTubeDesigner = getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID;
+  const isDirectTubeDesigner = state.startupPhase !== "ready"
+    || getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID;
   return `
     <header class="title-bar start-title-bar">
       <div class="app-corner">
         <button class="app-button" type="button" disabled>${isDirectTubeDesigner ? DIRECT_START_PRODUCT_TITLE : "工作台"}</button>
       </div>
-      <div class="startup-title">${isDirectTubeDesigner ? "项目" : "选择产品与项目"}</div>
+      <div class="startup-title">${state.startupPhase !== "ready" ? "" : isDirectTubeDesigner ? "项目" : "选择产品与项目"}</div>
       ${renderWindowControls()}
     </header>
   `;
@@ -1035,22 +1248,30 @@ function renderWindowControls() {
 function renderProjectSwitcher() {
   const projects = getOpenProjects();
   const maxStart = Math.max(0, projects.length - 3);
+  const readOnly = isActiveProjectReadOnly();
   state.projectWindowStart = Math.min(state.projectWindowStart, maxStart);
   const visibleProjects = projects.slice(state.projectWindowStart, state.projectWindowStart + 3);
   return `
     <div class="project-switcher ${projects.length === 1 ? "single-project" : ""}">
-      <button class="project-arrow" type="button" data-action="project-window-prev" ${state.projectWindowStart > 0 ? "" : "disabled"}>‹</button>
+      <button class="project-arrow" type="button" data-action="project-window-prev" ${state.projectWindowStart > 0 && !readOnly ? "" : "disabled"}>‹</button>
       <div class="project-tabs">
         ${visibleProjects.length === 0 ? `<span class="project-tab empty">未打开项目</span>` : visibleProjects.map((item) => `
-          <button class="project-tab ${item.projectId === state.activeProjectState?.projectId ? "active" : ""}"
-                  type="button"
-                  data-action="select-open-project"
-                  data-project-id="${escapeAttr(item.projectId)}">
-            ${escapeText(item.projectName || item.projectPath || item.projectId)}
-          </button>
+          <div class="project-tab ${item.projectId === state.activeProjectState?.projectId ? "active" : ""}" data-no-window-drag>
+            <button class="project-tab-select" type="button"
+                    data-action="select-open-project" data-project-id="${escapeAttr(item.projectId)}"
+                    ${readOnly ? "disabled" : ""}
+                    title="${escapeAttr(item.projectPath || item.projectName || item.projectId)}"
+                    aria-current="${item.projectId === state.activeProjectState?.projectId ? "page" : "false"}">
+              ${escapeText(item.projectName || item.projectPath || item.projectId)}
+            </button>
+            <button class="project-tab-close" type="button"
+                    data-action="close-open-project" data-project-id="${escapeAttr(item.projectId)}"
+                    title="关闭项目" aria-label="关闭项目：${escapeAttr(item.projectName || item.projectPath || item.projectId)}"
+                    ${readOnly || isProjectCloseBusy(item.projectId) ? "disabled" : ""}>×</button>
+          </div>
         `).join("")}
       </div>
-      <button class="project-arrow" type="button" data-action="project-window-next" ${state.projectWindowStart < maxStart ? "" : "disabled"}>›</button>
+      <button class="project-arrow" type="button" data-action="project-window-next" ${state.projectWindowStart < maxStart && !readOnly ? "" : "disabled"}>›</button>
     </div>
   `;
 }
@@ -1066,7 +1287,8 @@ function renderProductRibbon() {
           <button class="ribbon-tab ${activeTab?.id === tab.id ? "active" : ""}"
                   type="button"
                   data-action="select-ribbon-tab"
-                  data-tab-id="${escapeAttr(tab.id)}">
+                  data-tab-id="${escapeAttr(tab.id)}"
+                  ${tab.authorizationRequired ? `aria-disabled="true" title="${escapeAttr(tab.unavailableReason)}"` : ""}>
             ${escapeText(tab.title)}
           </button>
         `).join("")}
@@ -1093,8 +1315,9 @@ function renderRibbonCommand(command) {
             data-action="ribbon-command"
             data-command-id="${escapeAttr(command.id)}"
             data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
+            ${command.authorizationRequired ? `aria-disabled="true" title="${escapeAttr(command.unavailableReason)}"` : ""}
             ${activeAttribute}
-            ${command.disabled ? "disabled" : ""}>
+            ${command.disabled || command.authorizationRequired ? "disabled" : ""}>
       ${renderRibbonCommandIcon(command.iconName, command.icon)}
       <span>${escapeText(command.title)}</span>
     </button>`;
@@ -1111,7 +1334,7 @@ function renderRibbonCommand(command) {
               aria-label="展开${escapeAttr(command.title)}菜单"
               aria-haspopup="menu"
               aria-expanded="${open ? "true" : "false"}"
-              ${command.disabled ? "disabled" : ""}>
+              ${command.disabled || command.authorizationRequired ? "disabled" : ""}>
         <span aria-hidden="true">⌄</span>
       </button>
       ${open ? `<div class="ribbon-command-menu" role="menu" aria-label="${escapeAttr(command.title)}菜单">
@@ -1121,7 +1344,8 @@ function renderRibbonCommand(command) {
                   role="menuitem"
                   data-action="ribbon-command"
                   data-command-id="${escapeAttr(item.id)}"
-                  ${item.disabled ? "disabled" : ""}>
+                  ${item.authorizationRequired ? `aria-disabled="true" title="${escapeAttr(item.unavailableReason)}"` : ""}
+                  ${item.disabled || item.authorizationRequired ? "disabled" : ""}>
             ${renderRibbonCommandIcon(item.iconName, item.icon)}
             <span>${escapeText(item.title)}</span>
           </button>
@@ -1212,6 +1436,7 @@ function endBottomDockResize() {
 }
 
 function renderGlobalProgress() {
+  if (state.startupPhase !== "ready") return "";
   if (state.pendingCount <= 0) {
     return "";
   }
@@ -1285,7 +1510,7 @@ function renderNewProjectDialog() {
     : "";
   return `
     <div class="modal-backdrop">
-      <section class="new-project-dialog"${positionStyle}>
+      <section class="new-project-dialog" data-window-state-ignore${positionStyle}>
         <header data-window-dialog-drag>
           <strong>新建项目</strong>
           <button class="icon-button" type="button" data-action="close-new-project-dialog">×</button>
@@ -1364,6 +1589,7 @@ async function enterProject(response) {
   state.newProjectDialogOpen = false;
   state.newProjectDialogPosition = null;
   state.startCenterOpen = false;
+  revealProjectTab(projectState.projectId);
   await mountActiveProductModule();
   ensureActiveRibbonTab();
 }
@@ -1448,9 +1674,10 @@ function mountActiveProductSurface() {
   }
 
   const sequence = ++state.productSurfaceMountSequence;
-  const operation = Promise.resolve(mountProductModule(module, buildProductContext(mount)))
+  const context = buildProductContext(mount);
+  const operation = Promise.resolve(mountProductModule(module, context))
     .catch((error) => {
-      if (sequence !== state.productSurfaceMountSequence) {
+      if (sequence !== state.productSurfaceMountSequence || !context.isCurrentProject()) {
         return false;
       }
       state.productSurfaceErrorKey = mountKey;
@@ -1463,6 +1690,12 @@ function mountActiveProductSurface() {
 }
 
 function buildProductContext(mount = root.querySelector("[data-product-surface='project']")) {
+  const productProxy = state.activeProductProxy;
+  const projectProxy = state.activeProjectProxy;
+  const sceneProxy = state.activeSceneProxy;
+  const projectId = state.activeProjectState?.projectId;
+  const productChannelId = productProxy?.productChannelId;
+  const sceneChannelId = sceneProxy?.sceneChannelId;
   return {
     product: state.activeProductState,
     appProxy: state.appProxy,
@@ -1475,6 +1708,12 @@ function buildProductContext(mount = root.querySelector("[data-product-surface='
     mode: "project",
     activeRibbonTabId: state.activeRibbonTabId,
     actions,
+    isCurrentProject: () => state.activeProductProxy === productProxy
+      && state.activeProjectProxy === projectProxy
+      && state.activeSceneProxy === sceneProxy
+      && state.activeProjectState?.projectId === projectId
+      && productProxy?.productChannelId === productChannelId
+      && sceneProxy?.sceneChannelId === sceneChannelId,
   };
 }
 
@@ -1482,6 +1721,79 @@ function getActiveProductModule() {
   return state.activeProductState?.productId
     ? state.productModules.get(state.activeProductState.productId)
     : null;
+}
+
+function buildOpenProjectContext(entry) {
+  if (state.activeProjectProxy === entry.projectProxy) return buildProductContext();
+  const sceneProxy = entry.projectProxy?.getMainScene?.() ?? null;
+  return {
+    product: entry.productProxy?.state, appProxy: state.appProxy,
+    productProxy: entry.productProxy, projectProxy: entry.projectProxy, sceneProxy,
+    project: entry.projectProxy?.state ?? entry.projectState,
+    scene: sceneProxy?.state ?? entry.projectState?.mainScene,
+    mount: null, mode: "project", actions,
+    isCurrentProject: () => state.activeProjectProxy === entry.projectProxy
+      && state.activeSceneProxy === sceneProxy,
+  };
+}
+
+function findOpenProjectCatalog(entry) {
+  return (entry.productProxy?.state?.catalogs ?? []).find((catalog) =>
+    catalog.mainProject?.projectId === entry.projectId
+    || (catalog.projects ?? []).some((project) => project.projectId === entry.projectId));
+}
+
+function requireProjectReadyToClose(entry) {
+  if (state.pendingCount || state.projectSaves.has(entry.projectId)
+      || (state.projectOperations.get(entry.projectId)?.length ?? 0) > 0) {
+    throw new Error("项目任务尚未完成，请稍后关闭。");
+  }
+  const module = state.productModules.get(entry.productId);
+  const guard = module?.getWindowCloseGuard?.(buildOpenProjectContext(entry));
+  if (guard?.blocked) throw new Error(guard.message || "项目任务尚未完成，请稍后关闭。");
+}
+
+function revealProjectTab(projectId) {
+  const index = getOpenProjects().findIndex((item) => item.projectId === projectId);
+  if (index < 0) return;
+  if (index < state.projectWindowStart) state.projectWindowStart = index;
+  else if (index >= state.projectWindowStart + 3) state.projectWindowStart = index - 2;
+}
+
+function refreshProjectSwitcher() {
+  const switcher = root.querySelector(".project-switcher");
+  if (switcher) switcher.outerHTML = renderProjectSwitcher();
+}
+
+function chooseProjectClose(entry) {
+  // The host exposes no dirty flag. Offer the standard save/discard/cancel
+  // choice instead of treating "saved once" as proof there are no live edits.
+  const dialog = document.createElement("dialog");
+  dialog.className = "project-close-dialog";
+  dialog.setAttribute("data-project-close-dialog", entry.projectId);
+  dialog.setAttribute("aria-labelledby", "project-close-title");
+  dialog.innerHTML = `<strong id="project-close-title">关闭项目</strong>
+    <p>关闭“${escapeText(entry.projectName || entry.projectPath || entry.projectId)}”前是否保存项目文件？</p>
+    <footer><button class="primary-button" data-project-close-choice="save" autofocus>保存并关闭</button>
+    <button class="tool-button" data-project-close-choice="discard">直接关闭</button>
+    <button class="tool-button" data-project-close-choice="cancel">取消</button></footer>`;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (choice) => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve(choice);
+    };
+    dialog.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-project-close-choice]");
+      if (button) finish(button.dataset.projectCloseChoice);
+    });
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); finish("cancel"); });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 
 function getProductProjectHistoryState() {
@@ -1505,13 +1817,34 @@ function getCombinedProjectHistoryState() {
   };
 }
 
+function refreshProjectSaveControl() {
+  const readOnly = isActiveProjectReadOnly();
+  root.querySelectorAll('[data-action="close-open-project"]').forEach((button) => {
+    button.disabled = readOnly || isProjectCloseBusy(button.dataset.projectId);
+  });
+  const button = root.querySelector('[data-action="ribbon-command"][data-command-id="app.save"]');
+  if (!button) return;
+  const saving = state.projectSaves.has(state.activeProjectProxy?.projectId);
+  button.disabled = readOnly || saving || isActiveProjectBusy() || !state.activeProjectProxy;
+  button.textContent = saving ? "正在保存…" : "保存";
+  button.setAttribute("aria-busy", String(saving));
+}
+
 function refreshProjectHistoryControls() {
   const history = getCombinedProjectHistoryState();
-  const busy = isActiveProjectBusy();
+  const busy = isActiveProjectBusy() || isActiveProjectReadOnly();
   const undo = root.querySelector('[data-action="undo-project"]');
   const redo = root.querySelector('[data-action="redo-project"]');
   undo?.toggleAttribute("disabled", busy || !history.canUndo);
   redo?.toggleAttribute("disabled", busy || !history.canRedo);
+}
+
+function refreshProjectNavigationControls() {
+  const readOnly = isActiveProjectReadOnly();
+  root.querySelector('[data-action="open-start-center"]')?.toggleAttribute("disabled", readOnly);
+  root.querySelectorAll('[data-action="select-open-project"]').forEach(button => button.disabled = readOnly);
+  root.querySelector('[data-action="project-window-prev"]')?.toggleAttribute("disabled", readOnly || state.projectWindowStart <= 0);
+  root.querySelector('[data-action="project-window-next"]')?.toggleAttribute("disabled", readOnly || state.projectWindowStart >= Math.max(0, getOpenProjects().length - 3));
 }
 
 async function executeProjectHistoryCommand(direction) {
@@ -1552,6 +1885,8 @@ function normalizeRibbonDefinition(ribbon) {
     tabs: tabs.map((tab) => ({
       id: String(tab.id ?? ""),
       title: String(tab.title ?? tab.id ?? ""),
+      authorizationRequired: Boolean(tab.authorizationRequired),
+      unavailableReason: String(tab.unavailableReason ?? ""),
       groups: (Array.isArray(tab.groups) ? tab.groups : []).map((group) => ({
         title: String(group.title ?? ""),
         scope: String(group.scope ?? "all"),
@@ -1564,12 +1899,16 @@ function normalizeRibbonDefinition(ribbon) {
           size: command.size,
           active: command.active === undefined ? undefined : Boolean(command.active),
           disabled: Boolean(command.disabled),
+          authorizationRequired: Boolean(command.authorizationRequired),
+          unavailableReason: String(command.unavailableReason ?? ""),
           menuItems: (Array.isArray(command.menuItems) ? command.menuItems : []).map((item) => ({
             id: String(item.id ?? ""),
             title: String(item.title ?? item.id ?? ""),
             icon: item.icon,
             iconName: item.iconName,
             disabled: Boolean(item.disabled),
+            authorizationRequired: Boolean(item.authorizationRequired),
+            unavailableReason: String(item.unavailableReason ?? ""),
           })).filter((item) => item.id),
         })),
       })),
@@ -1651,6 +1990,11 @@ function getActiveProjectOperation() {
 
 function isActiveProjectBusy() {
   return Boolean(getActiveProjectOperation());
+}
+
+function isProjectCloseBusy(projectId) {
+  return Boolean(state.pendingCount || state.projectCloses.has(projectId)
+    || state.projectSaves.has(projectId) || state.projectOperations.get(projectId)?.length);
 }
 
 function filterRecentProjects(projects) {
@@ -1792,13 +2136,20 @@ function normalizePath(path) {
   return String(path ?? "").replace(/\\/g, "/").replace(/\/+$/g, "").toLocaleLowerCase();
 }
 
-function runAction(action) {
+function runAction(action, { preserveSurface = false, errorPresentation = "" } = {}) {
+  const project = preserveSurface ? state.activeProjectProxy : null;
   Promise.resolve()
     .then(action)
     .catch((error) => {
-      state.error = error?.message ?? String(error);
-      pushLog("error", state.error);
-      render();
+      const message = error?.message ?? String(error);
+      if (errorPresentation === "log") {
+        // Saving before close can already have recorded the same error. Keep
+        // close failures in the log rather than carrying them to the start page.
+        if (state.activeProjectProxy === project && state.error === message) state.error = "";
+      } else if (!preserveSurface || state.activeProjectProxy === project) state.error = message;
+      pushLog("error", message);
+      if (preserveSurface) updateBottomDockLogs();
+      else render();
     });
 }
 
@@ -1958,7 +2309,20 @@ function pushLog(level, message) {
   state.logs = state.logs.slice(0, 80);
 }
 
-actions.bootstrap().catch((error) => {
+function failStartup(error) {
+  state.startupPhase = "error";
   state.error = error?.message ?? String(error);
-  render();
-});
+  state.bridgeStatus = state.bridge ? "Connected" : "Disconnected";
+  pushLog("error", state.error);
+  startupScreen.fail(state.error, retryStartup);
+}
+
+async function retryStartup() {
+  try {
+    await actions.bootstrap();
+  } catch (error) {
+    failStartup(error);
+  }
+}
+
+actions.bootstrap().catch(failStartup);

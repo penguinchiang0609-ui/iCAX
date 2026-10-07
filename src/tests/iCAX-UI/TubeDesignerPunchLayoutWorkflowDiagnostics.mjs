@@ -182,7 +182,7 @@ await check("stock profile, per-profile dimensions and metadata share undo histo
   await action("parameters-open",{dataset:{tubeDesignerPunchIndex:"0"}});
   await action("draft-change",{value:"2500",dataset:{tubeDesignerNestingPunchField:"length"}});
   await width(99);assert.equal(state.history.length,beforePopup,"a modal transaction cannot also edit the main tube");
-  await action("parameters-cancel");verify("round",70);
+  await action("parameters-close");verify("round",70);
   assert.equal(state.creationInput.draft,view.tubeDesignerNestingPunchPartDraft,"cancel must rebind the stock input too");
   await width(75);verify("round",75);await action("undo");verify("round",70);
 });

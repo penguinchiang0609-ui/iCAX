@@ -7,6 +7,8 @@ import {
 } from "./productCatalog.mjs";
 import { captureScrollAnchor, restoreScrollAnchor } from "./scrollAnchor.mjs";
 import { productParameterKind } from "./productParameterClassification.mjs";
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 
 // Product templates are managed as portable .itpt archives.  The dialog keeps
 // built-in packages read-only and exposes imported personal packages separately
@@ -28,7 +30,8 @@ export function renderProductTemplateManagerDialog(view) {
   if (create) {
     const baseId = String(state.baseTemplateId ?? builtins.find((item) => item?.available)?.id ?? "");
     return `<div class="tube-designer-modal-backdrop tube-designer-template-manager-backdrop" role="presentation">
-      <section class="tube-designer-template-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-template-create-title">
+      <section class="tube-designer-template-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-template-create-title"
+        data-window-state-controls="[data-tube-template-create-base],[data-tube-template-create-name],[data-tube-template-create-description]">
         <header class="tube-designer-dialog-header"><div><strong id="tube-template-create-title">新增产品模板</strong><span>以现有模板为基础创建个人模板包，保存后可导出为 .itpt。</span></div><button class="tube-designer-dialog-close" data-cam-action="tube-designer-template-manager-close" aria-label="关闭">×</button></header>
         <div class="tube-designer-template-manager-body">
           <label class="tube-designer-field wide"><span>基础模板</span><select data-tube-template-create-base>${builtins.filter((item) => item?.available).map((item) => `<option value="${escapeAttr(item.id)}" ${item.id === baseId ? "selected" : ""}>${escapeText(item.name ?? item.id)} · ${escapeText(item.version ?? "")}</option>`).join("")}</select><small>新模板沿用基础模板的参数和几何脚本，后续可在模板包中继续扩展。</small></label>
@@ -45,7 +48,7 @@ export function renderProductTemplateManagerDialog(view) {
     ...custom.map((item) => ({ ...item, scope: "personal", id: String(item.id ?? "") })),
   ];
   return `<div class="tube-designer-modal-backdrop tube-designer-template-manager-backdrop" role="presentation">
-    <section class="tube-designer-template-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-template-manager-title">
+    <section class="tube-designer-template-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-template-manager-title" data-window-state-controls=":not(*)">
       <header class="tube-designer-dialog-header"><div><strong id="tube-template-manager-title">产品模板管理</strong><span>内置模板 ${builtins.filter((item) => item?.available).length} 个 · 我的模板 ${custom.length} 个</span></div><button class="tube-designer-dialog-close" data-cam-action="tube-designer-template-manager-close" aria-label="关闭">×</button></header>
       <div class="tube-designer-template-manager-toolbar"><button class="tube-designer-primary" data-cam-action="tube-designer-template-create-open">＋ 新增模板</button><button class="tube-designer-secondary" data-cam-action="tube-designer-template-import">导入 .itpt</button><button class="tube-designer-secondary" data-cam-action="tube-designer-template-export" ${selected ? "" : "disabled"}>导出 .itpt</button><button class="tube-designer-danger" data-cam-action="tube-designer-template-delete" ${selected?.scope === "personal" ? "" : "disabled"}>删除模板</button></div>
       <div class="tube-designer-template-manager-body"><div class="tube-designer-template-manager-list" role="listbox" aria-label="产品模板"><table><thead><tr><th>模板</th><th>版本</th><th>来源</th><th>状态</th></tr></thead><tbody>${rows.length ? rows.map((item) => `<tr class="${item.id === selectedId ? "selected" : ""}" data-cam-action="tube-designer-template-select" data-tube-template-id="${escapeAttr(item.id)}" role="option" aria-selected="${item.id === selectedId}"><td><strong>${escapeText(item.displayName ?? item.name ?? item.id)}</strong><small>${escapeText(item.description ?? "")}</small></td><td>${escapeText(item.version ?? item.templateVersion ?? "—")}</td><td><span class="tube-designer-template-scope ${item.scope === "builtin" ? "builtin" : "personal"}">${item.scope === "builtin" ? "内置" : "我的模板"}</span></td><td>${item.scope === "builtin" ? "只读" : "可导出 / 可删除"}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">还没有可管理的模板。</td></tr>`}</tbody></table></div>${selected ? `<aside class="tube-designer-template-manager-summary"><strong>${escapeText(selected.displayName ?? selected.name ?? selected.id)}</strong><span>${selected.scope === "builtin" ? "内置模板" : "个人模板包"}</span><p>${escapeText(selected.description ?? "暂无说明")}</p><dl><dt>模板 ID</dt><dd>${escapeText(selected.id)}</dd><dt>版本</dt><dd>${escapeText(selected.version ?? selected.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt（ZIP）</dd></dl></aside>` : `<aside class="tube-designer-template-manager-summary empty">选择一行查看模板摘要。<br />内置模板不能删除，个人模板可导出或删除。</aside>`}</div>
@@ -82,9 +85,7 @@ function templateLibraryItems(view) {
         available: item?.available ?? true,
       };
     });
-  // The library and product-creation dialog consume the same one-template
-  // records.  `buildCatalogEntries` only has a legacy fallback for descriptors
-  // supplied by older callers; shipped resources are already one card/one ID.
+  // The library and product-creation dialog use one card per descriptor.
   const expand = (items, fallbackScope) => buildCatalogEntries(items).map((entry) => ({
       ...entry,
       templateId: String(entry.templateId ?? entry.id ?? ""),
@@ -490,7 +491,7 @@ export function renderProductTemplateLibraryRightPane(_context, view) {
   const emptyContent = item.scope === "system" && !Array.isArray(item.parameters)
     ? `<div class="tube-designer-empty" role="alert">模板参数未在启动时载入，请检查模板包。</div>`
     : `<div class="tube-designer-empty">此模板没有可编辑参数。</div>`;
-  return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body" data-tube-template-library-rendered-id="${escapeAttr(item.id)}"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${parameterLayout.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${renderTemplateParameterLayout(view, item, parameterLayout)}</section>` : emptyContent}</div></div>`;
+  return `<div class="tube-designer-panel tube-product-template-library-editor" data-window-state-controls="[data-tube-template-library-parameter]"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body" data-tube-template-library-rendered-id="${escapeAttr(item.id)}"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${parameterLayout.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${renderTemplateParameterLayout(view, item, parameterLayout)}</section>` : emptyContent}</div></div>`;
 }
 
 export function renderProductTemplateLibraryViewportOverlay(context, view) {
@@ -502,7 +503,7 @@ export function renderProductTemplateLibraryViewportOverlay(context, view) {
 }
 
 function productTemplatePreviewKey(view, item) {
-  return JSON.stringify([item?.scope ?? "", item?.templateId ?? item?.id ?? "", item?.presetId ?? "", item?.version ?? "", templateParameterValues(view, item)]);
+  return JSON.stringify([item?.scope ?? "", item?.templateId ?? item?.id ?? "", item?.version ?? "", templateParameterValues(view, item)]);
 }
 
 function centeredTemplateMatrix(bounds) {
@@ -569,14 +570,16 @@ function ensureProductTemplateLibraryPreview(context, view, item) {
   const state = productTemplateLibraryState(view);
   const key = productTemplatePreviewKey(view, item);
   if (state.preview?.key === key || state.previewRequest?.key === key || state.previewFailureKey === key) return;
+  if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
   state.previewError = "";
   const request = { key, promise: null };
   request.promise = Promise.resolve().then(() => {
+    if (!hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return null;
     const payload = { templateId: item.templateId ?? item.id, parameters: templateParameterValues(view, item) };
     const version = item.version ?? item.templateVersion;
     if (version) payload.templateVersion = version;
     return context.sceneProxy.invoke("TubeDesigner.GenerateProductTemplatePreview", payload, { timeoutMs: 120000 });
-  }).then((response) => applyProductTemplateLibraryPreview(context, view, item, response, key, request)).then(() => {
+  }).then((response) => response && applyProductTemplateLibraryPreview(context, view, item, response, key, request)).then(() => {
     if (state.previewRequest === request) { state.previewRequest = null; state.previewFailureKey = ""; }
     if (view.activeAreaId === "templates") view.tubeDesignerProductTemplateLibraryRenderProject?.();
   }).catch((error) => {

@@ -1,0 +1,4830 @@
+{
+  "schema": "icax.manufacturing-model",
+  "schemaVersion": 2,
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "resources": [
+    {
+      "key": "section.d2a21c958fdf76f9e6dd94aa",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "contours": [
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -19.0,
+                  17.0
+                ],
+                "end": [
+                  -19.0,
+                  -17.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -19.0,
+                  -17.0
+                ],
+                "middle": [
+                  -18.414213562373096,
+                  -18.414213562373096
+                ],
+                "end": [
+                  -17.0,
+                  -19.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -17.0,
+                  -19.0
+                ],
+                "end": [
+                  17.0,
+                  -19.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  17.0,
+                  -19.0
+                ],
+                "middle": [
+                  18.414213562373096,
+                  -18.414213562373096
+                ],
+                "end": [
+                  19.0,
+                  -17.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  19.0,
+                  -17.0
+                ],
+                "end": [
+                  19.0,
+                  17.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  19.0,
+                  17.0
+                ],
+                "middle": [
+                  18.414213562373096,
+                  18.414213562373096
+                ],
+                "end": [
+                  17.0,
+                  19.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  17.0,
+                  19.0
+                ],
+                "end": [
+                  -17.0,
+                  19.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -17.0,
+                  19.0
+                ],
+                "middle": [
+                  -18.414213562373096,
+                  18.414213562373096
+                ],
+                "end": [
+                  -19.0,
+                  17.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -17.8,
+                  16.8
+                ],
+                "end": [
+                  -17.8,
+                  -16.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -17.8,
+                  -16.8
+                ],
+                "middle": [
+                  -17.507106781186547,
+                  -17.507106781186547
+                ],
+                "end": [
+                  -16.8,
+                  -17.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -16.8,
+                  -17.8
+                ],
+                "end": [
+                  16.8,
+                  -17.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  16.8,
+                  -17.8
+                ],
+                "middle": [
+                  17.507106781186547,
+                  -17.507106781186547
+                ],
+                "end": [
+                  17.8,
+                  -16.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  17.8,
+                  -16.8
+                ],
+                "end": [
+                  17.8,
+                  16.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  17.8,
+                  16.8
+                ],
+                "middle": [
+                  17.507106781186547,
+                  17.507106781186547
+                ],
+                "end": [
+                  16.8,
+                  17.8
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  16.8,
+                  17.8
+                ],
+                "end": [
+                  -16.8,
+                  17.8
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -16.8,
+                  17.8
+                ],
+                "middle": [
+                  -17.507106781186547,
+                  17.507106781186547
+                ],
+                "end": [
+                  -17.8,
+                  16.8
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "section.b6859ce8f64f9fa519a6fd41",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "contours": [
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -11.0,
+                  9.0
+                ],
+                "end": [
+                  -11.0,
+                  -9.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -11.0,
+                  -9.0
+                ],
+                "middle": [
+                  -10.414213562373096,
+                  -10.414213562373096
+                ],
+                "end": [
+                  -9.0,
+                  -11.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -9.0,
+                  -11.0
+                ],
+                "end": [
+                  9.0,
+                  -11.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  9.0,
+                  -11.0
+                ],
+                "middle": [
+                  10.414213562373096,
+                  -10.414213562373096
+                ],
+                "end": [
+                  11.0,
+                  -9.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  11.0,
+                  -9.0
+                ],
+                "end": [
+                  11.0,
+                  9.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  11.0,
+                  9.0
+                ],
+                "middle": [
+                  10.414213562373096,
+                  10.414213562373096
+                ],
+                "end": [
+                  9.0,
+                  11.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  9.0,
+                  11.0
+                ],
+                "end": [
+                  -9.0,
+                  11.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -9.0,
+                  11.0
+                ],
+                "middle": [
+                  -10.414213562373096,
+                  10.414213562373096
+                ],
+                "end": [
+                  -11.0,
+                  9.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "line",
+                "start": [
+                  -10.0,
+                  9.0
+                ],
+                "end": [
+                  -10.0,
+                  -9.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -10.0,
+                  -9.0
+                ],
+                "middle": [
+                  -9.707106781186548,
+                  -9.707106781186548
+                ],
+                "end": [
+                  -9.0,
+                  -10.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  -9.0,
+                  -10.0
+                ],
+                "end": [
+                  9.0,
+                  -10.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  9.0,
+                  -10.0
+                ],
+                "middle": [
+                  9.707106781186548,
+                  -9.707106781186548
+                ],
+                "end": [
+                  10.0,
+                  -9.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  10.0,
+                  -9.0
+                ],
+                "end": [
+                  10.0,
+                  9.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  10.0,
+                  9.0
+                ],
+                "middle": [
+                  9.707106781186548,
+                  9.707106781186548
+                ],
+                "end": [
+                  9.0,
+                  10.0
+                ]
+              },
+              {
+                "kind": "line",
+                "start": [
+                  9.0,
+                  10.0
+                ],
+                "end": [
+                  -9.0,
+                  10.0
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -9.0,
+                  10.0
+                ],
+                "middle": [
+                  -9.707106781186548,
+                  9.707106781186548
+                ],
+                "end": [
+                  -10.0,
+                  9.0
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "section.8ee6b87d71824a831c4f83e1",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "contours": [
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "arc",
+                "start": [
+                  9.5,
+                  0.0
+                ],
+                "middle": [
+                  6.7175144212722016,
+                  6.7175144212722016
+                ],
+                "end": [
+                  5.817072295949927e-16,
+                  9.5
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  5.817072295949927e-16,
+                  9.5
+                ],
+                "middle": [
+                  -6.717514421272201,
+                  6.7175144212722016
+                ],
+                "end": [
+                  -9.5,
+                  1.1634144591899855e-15
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -9.5,
+                  1.1634144591899855e-15
+                ],
+                "middle": [
+                  -6.717514421272203,
+                  -6.717514421272201
+                ],
+                "end": [
+                  -1.7451216887849782e-15,
+                  -9.5
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -1.7451216887849782e-15,
+                  -9.5
+                ],
+                "middle": [
+                  6.7175144212722,
+                  -6.717514421272203
+                ],
+                "end": [
+                  9.5,
+                  0.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "closed": true,
+            "segments": [
+              {
+                "kind": "arc",
+                "start": [
+                  8.5,
+                  0.0
+                ],
+                "middle": [
+                  6.0104076400856545,
+                  6.0104076400856545
+                ],
+                "end": [
+                  5.204748896376251e-16,
+                  8.5
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  5.204748896376251e-16,
+                  8.5
+                ],
+                "middle": [
+                  -6.010407640085654,
+                  6.0104076400856545
+                ],
+                "end": [
+                  -8.5,
+                  1.0409497792752501e-15
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -8.5,
+                  1.0409497792752501e-15
+                ],
+                "middle": [
+                  -6.010407640085655,
+                  -6.010407640085654
+                ],
+                "end": [
+                  -1.5614246689128753e-15,
+                  -8.5
+                ]
+              },
+              {
+                "kind": "arc",
+                "start": [
+                  -1.5614246689128753e-15,
+                  -8.5
+                ],
+                "middle": [
+                  6.010407640085653,
+                  -6.010407640085655
+                ],
+                "end": [
+                  8.5,
+                  0.0
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "outer_frame.continuous.0001",
+      "displayName": "大外框",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-003",
+        "group": "main",
+        "manufacturing.categoryKey": "outer_frame.continuous",
+        "manufacturing.categoryName": "大外框",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "packageVersion": "2026.9.13.6",
+          "kind": "rect",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 38.0,
+          "depth": 38.0,
+          "wallThickness": 1.2,
+          "cornerRadius": 2.0,
+          "displayName": "方管",
+          "specification": "方矩管 38.0 × 38.0 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -19.0,
+                    17.0
+                  ],
+                  "end": [
+                    -19.0,
+                    -17.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -19.0,
+                    -17.0
+                  ],
+                  "middle": [
+                    -18.414213562373096,
+                    -18.414213562373096
+                  ],
+                  "end": [
+                    -17.0,
+                    -19.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -17.0,
+                    -19.0
+                  ],
+                  "end": [
+                    17.0,
+                    -19.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    17.0,
+                    -19.0
+                  ],
+                  "middle": [
+                    18.414213562373096,
+                    -18.414213562373096
+                  ],
+                  "end": [
+                    19.0,
+                    -17.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    19.0,
+                    -17.0
+                  ],
+                  "end": [
+                    19.0,
+                    17.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    19.0,
+                    17.0
+                  ],
+                  "middle": [
+                    18.414213562373096,
+                    18.414213562373096
+                  ],
+                  "end": [
+                    17.0,
+                    19.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    17.0,
+                    19.0
+                  ],
+                  "end": [
+                    -17.0,
+                    19.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -17.0,
+                    19.0
+                  ],
+                  "middle": [
+                    -18.414213562373096,
+                    18.414213562373096
+                  ],
+                  "end": [
+                    -19.0,
+                    17.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -17.8,
+                    16.8
+                  ],
+                  "end": [
+                    -17.8,
+                    -16.8
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -17.8,
+                    -16.8
+                  ],
+                  "middle": [
+                    -17.507106781186547,
+                    -17.507106781186547
+                  ],
+                  "end": [
+                    -16.8,
+                    -17.8
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -16.8,
+                    -17.8
+                  ],
+                  "end": [
+                    16.8,
+                    -17.8
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    16.8,
+                    -17.8
+                  ],
+                  "middle": [
+                    17.507106781186547,
+                    -17.507106781186547
+                  ],
+                  "end": [
+                    17.8,
+                    -16.8
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    17.8,
+                    -16.8
+                  ],
+                  "end": [
+                    17.8,
+                    16.8
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    17.8,
+                    16.8
+                  ],
+                  "middle": [
+                    17.507106781186547,
+                    17.507106781186547
+                  ],
+                  "end": [
+                    16.8,
+                    17.8
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    16.8,
+                    17.8
+                  ],
+                  "end": [
+                    -16.8,
+                    17.8
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -16.8,
+                    17.8
+                  ],
+                  "middle": [
+                    -17.507106781186547,
+                    17.507106781186547
+                  ],
+                  "end": [
+                    -17.8,
+                    16.8
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionResource": "section.d2a21c958fdf76f9e6dd94aa"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.d2a21c958fdf76f9e6dd94aa",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                600.0,
+                0.0,
+                19.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1181.0,
+                0.0,
+                19.0
+              ]
+            },
+            {
+              "key": "vertex.2",
+              "point": [
+                1181.0,
+                0.0,
+                1781.0
+              ]
+            },
+            {
+              "key": "vertex.3",
+              "point": [
+                19.0,
+                0.0,
+                1781.0
+              ]
+            },
+            {
+              "key": "vertex.4",
+              "point": [
+                19.0,
+                0.0,
+                19.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  600.0,
+                  0.0,
+                  19.0
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            {
+              "key": "segment.1",
+              "from": "vertex.1",
+              "to": "vertex.2",
+              "sectionFrame": {
+                "origin": [
+                  1181.0,
+                  0.0,
+                  19.0
+                ],
+                "xAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "zAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              }
+            },
+            {
+              "key": "segment.2",
+              "from": "vertex.2",
+              "to": "vertex.3",
+              "sectionFrame": {
+                "origin": [
+                  1181.0,
+                  0.0,
+                  1781.0
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  -1.0
+                ],
+                "zAxis": [
+                  -1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            {
+              "key": "segment.3",
+              "from": "vertex.3",
+              "to": "vertex.4",
+              "sectionFrame": {
+                "origin": [
+                  19.0,
+                  0.0,
+                  1781.0
+                ],
+                "xAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  -1.0,
+                  0.0
+                ],
+                "zAxis": [
+                  0.0,
+                  0.0,
+                  -1.0
+                ]
+              }
+            },
+            {
+              "key": "segment.4",
+              "from": "vertex.4",
+              "to": "vertex.0",
+              "sectionFrame": {
+                "origin": [
+                  19.0,
+                  0.0,
+                  19.0
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          ],
+          "closed": true,
+          "startVertex": "vertex.0",
+          "closure": "straight-mid-edge-seam"
+        },
+        "formingOrder": [
+          "vertex.4",
+          "vertex.3",
+          "vertex.2",
+          "vertex.1"
+        ]
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001",
+      "displayName": "主横杆 1",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-005",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.horizontal",
+        "manufacturing.categoryName": "主横杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "packageVersion": "2026.9.13.6",
+          "kind": "rect",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 22.0,
+          "depth": 22.0,
+          "wallThickness": 1.0,
+          "cornerRadius": 2.0,
+          "displayName": "方管",
+          "specification": "方矩管 22.0 × 22.0 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -11.0,
+                    9.0
+                  ],
+                  "end": [
+                    -11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -11.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    -9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -11.0
+                  ],
+                  "end": [
+                    9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -11.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    11.0,
+                    -9.0
+                  ],
+                  "end": [
+                    11.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    11.0,
+                    9.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    11.0
+                  ],
+                  "end": [
+                    -9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    11.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    -11.0,
+                    9.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -10.0,
+                    9.0
+                  ],
+                  "end": [
+                    -10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -10.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    -9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -10.0
+                  ],
+                  "end": [
+                    9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -10.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    10.0,
+                    -9.0
+                  ],
+                  "end": [
+                    10.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    10.0,
+                    9.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    10.0
+                  ],
+                  "end": [
+                    -9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    10.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    -10.0,
+                    9.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionResource": "section.b6859ce8f64f9fa519a6fd41"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.b6859ce8f64f9fa519a6fd41",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                33.0,
+                0,
+                200.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1167.0,
+                0,
+                200.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  33.0,
+                  0,
+                  200.0
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002",
+      "displayName": "主横杆 2",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-006",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.horizontal",
+        "manufacturing.categoryName": "主横杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "packageVersion": "2026.9.13.6",
+          "kind": "rect",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 22.0,
+          "depth": 22.0,
+          "wallThickness": 1.0,
+          "cornerRadius": 2.0,
+          "displayName": "方管",
+          "specification": "方矩管 22.0 × 22.0 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -11.0,
+                    9.0
+                  ],
+                  "end": [
+                    -11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -11.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    -9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -11.0
+                  ],
+                  "end": [
+                    9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -11.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    11.0,
+                    -9.0
+                  ],
+                  "end": [
+                    11.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    11.0,
+                    9.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    11.0
+                  ],
+                  "end": [
+                    -9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    11.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    -11.0,
+                    9.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -10.0,
+                    9.0
+                  ],
+                  "end": [
+                    -10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -10.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    -9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -10.0
+                  ],
+                  "end": [
+                    9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -10.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    10.0,
+                    -9.0
+                  ],
+                  "end": [
+                    10.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    10.0,
+                    9.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    10.0
+                  ],
+                  "end": [
+                    -9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    10.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    -10.0,
+                    9.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionResource": "section.b6859ce8f64f9fa519a6fd41"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.b6859ce8f64f9fa519a6fd41",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                33.0,
+                0,
+                666.6666666666667
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1167.0,
+                0,
+                666.6666666666667
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  33.0,
+                  0,
+                  666.6666666666667
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003",
+      "displayName": "主横杆 3",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-007",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.horizontal",
+        "manufacturing.categoryName": "主横杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "packageVersion": "2026.9.13.6",
+          "kind": "rect",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 22.0,
+          "depth": 22.0,
+          "wallThickness": 1.0,
+          "cornerRadius": 2.0,
+          "displayName": "方管",
+          "specification": "方矩管 22.0 × 22.0 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -11.0,
+                    9.0
+                  ],
+                  "end": [
+                    -11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -11.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    -9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -11.0
+                  ],
+                  "end": [
+                    9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -11.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    11.0,
+                    -9.0
+                  ],
+                  "end": [
+                    11.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    11.0,
+                    9.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    11.0
+                  ],
+                  "end": [
+                    -9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    11.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    -11.0,
+                    9.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -10.0,
+                    9.0
+                  ],
+                  "end": [
+                    -10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -10.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    -9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -10.0
+                  ],
+                  "end": [
+                    9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -10.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    10.0,
+                    -9.0
+                  ],
+                  "end": [
+                    10.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    10.0,
+                    9.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    10.0
+                  ],
+                  "end": [
+                    -9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    10.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    -10.0,
+                    9.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionResource": "section.b6859ce8f64f9fa519a6fd41"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.b6859ce8f64f9fa519a6fd41",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                33.0,
+                0,
+                1133.3333333333335
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1167.0,
+                0,
+                1133.3333333333335
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  33.0,
+                  0,
+                  1133.3333333333335
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004",
+      "displayName": "主横杆 4",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-008",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.horizontal",
+        "manufacturing.categoryName": "主横杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "rect",
+          "packageVersion": "2026.9.13.6",
+          "kind": "rect",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 22.0,
+          "depth": 22.0,
+          "wallThickness": 1.0,
+          "cornerRadius": 2.0,
+          "displayName": "方管",
+          "specification": "方矩管 22.0 × 22.0 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -11.0,
+                    9.0
+                  ],
+                  "end": [
+                    -11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -11.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    -9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -11.0
+                  ],
+                  "end": [
+                    9.0,
+                    -11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -11.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    -10.414213562373096
+                  ],
+                  "end": [
+                    11.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    11.0,
+                    -9.0
+                  ],
+                  "end": [
+                    11.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    11.0,
+                    9.0
+                  ],
+                  "middle": [
+                    10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    11.0
+                  ],
+                  "end": [
+                    -9.0,
+                    11.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    11.0
+                  ],
+                  "middle": [
+                    -10.414213562373096,
+                    10.414213562373096
+                  ],
+                  "end": [
+                    -11.0,
+                    9.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "line",
+                  "start": [
+                    -10.0,
+                    9.0
+                  ],
+                  "end": [
+                    -10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -10.0,
+                    -9.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    -9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    -9.0,
+                    -10.0
+                  ],
+                  "end": [
+                    9.0,
+                    -10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.0,
+                    -10.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    -9.707106781186548
+                  ],
+                  "end": [
+                    10.0,
+                    -9.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    10.0,
+                    -9.0
+                  ],
+                  "end": [
+                    10.0,
+                    9.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    10.0,
+                    9.0
+                  ],
+                  "middle": [
+                    9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "start": [
+                    9.0,
+                    10.0
+                  ],
+                  "end": [
+                    -9.0,
+                    10.0
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.0,
+                    10.0
+                  ],
+                  "middle": [
+                    -9.707106781186548,
+                    9.707106781186548
+                  ],
+                  "end": [
+                    -10.0,
+                    9.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionResource": "section.b6859ce8f64f9fa519a6fd41"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.b6859ce8f64f9fa519a6fd41",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                33.0,
+                0,
+                1600.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1167.0,
+                0,
+                1600.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  33.0,
+                  0,
+                  1600.0
+                ],
+                "xAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "zAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.vertical.0001",
+      "displayName": "主竖杆 1",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-009",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.vertical",
+        "manufacturing.categoryName": "主竖杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "round",
+          "packageVersion": "2026.9.16.1",
+          "kind": "round",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 19.0,
+          "depth": 19.000000000000004,
+          "wallThickness": 1.0,
+          "cornerRadius": 0.0,
+          "displayName": "圆管",
+          "specification": "圆管 19.0 × 19.000000000000004 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.7175144212722016,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    5.817072295949927e-16,
+                    9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.817072295949927e-16,
+                    9.5
+                  ],
+                  "middle": [
+                    -6.717514421272201,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ],
+                  "middle": [
+                    -6.717514421272203,
+                    -6.717514421272201
+                  ],
+                  "end": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ],
+                  "middle": [
+                    6.7175144212722,
+                    -6.717514421272203
+                  ],
+                  "end": [
+                    9.5,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    8.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.0104076400856545,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    5.204748896376251e-16,
+                    8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.204748896376251e-16,
+                    8.5
+                  ],
+                  "middle": [
+                    -6.010407640085654,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ],
+                  "middle": [
+                    -6.010407640085655,
+                    -6.010407640085654
+                  ],
+                  "end": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ],
+                  "middle": [
+                    6.010407640085653,
+                    -6.010407640085655
+                  ],
+                  "end": [
+                    8.5,
+                    0.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionModel": "round",
+          "sectionResource": "section.8ee6b87d71824a831c4f83e1"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.8ee6b87d71824a831c4f83e1",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                148.0,
+                0,
+                33.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                148.0,
+                0,
+                1767.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  148.0,
+                  0,
+                  33.0
+                ],
+                "xAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "zAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.vertical.0002",
+      "displayName": "主竖杆 2",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-010",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.vertical",
+        "manufacturing.categoryName": "主竖杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "round",
+          "packageVersion": "2026.9.16.1",
+          "kind": "round",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 19.0,
+          "depth": 19.000000000000004,
+          "wallThickness": 1.0,
+          "cornerRadius": 0.0,
+          "displayName": "圆管",
+          "specification": "圆管 19.0 × 19.000000000000004 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.7175144212722016,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    5.817072295949927e-16,
+                    9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.817072295949927e-16,
+                    9.5
+                  ],
+                  "middle": [
+                    -6.717514421272201,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ],
+                  "middle": [
+                    -6.717514421272203,
+                    -6.717514421272201
+                  ],
+                  "end": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ],
+                  "middle": [
+                    6.7175144212722,
+                    -6.717514421272203
+                  ],
+                  "end": [
+                    9.5,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    8.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.0104076400856545,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    5.204748896376251e-16,
+                    8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.204748896376251e-16,
+                    8.5
+                  ],
+                  "middle": [
+                    -6.010407640085654,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ],
+                  "middle": [
+                    -6.010407640085655,
+                    -6.010407640085654
+                  ],
+                  "end": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ],
+                  "middle": [
+                    6.010407640085653,
+                    -6.010407640085655
+                  ],
+                  "end": [
+                    8.5,
+                    0.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionModel": "round",
+          "sectionResource": "section.8ee6b87d71824a831c4f83e1"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.8ee6b87d71824a831c4f83e1",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                600.0,
+                0,
+                33.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                600.0,
+                0,
+                1767.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  600.0,
+                  0,
+                  33.0
+                ],
+                "xAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "zAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    },
+    {
+      "key": "main_grid.vertical.0003",
+      "displayName": "主竖杆 3",
+      "children": [],
+      "properties": {
+        "partNumber": "TD-SF-001-011",
+        "group": "main",
+        "manufacturing.categoryKey": "main_grid.vertical",
+        "manufacturing.categoryName": "主竖杆",
+        "quantity": 1,
+        "manufacturing.partKind": "tube",
+        "manufacturing.sourcing": "made",
+        "tubeDesigner.profile": {
+          "schema": "icax.tube-profile",
+          "schemaVersion": 2,
+          "id": "round",
+          "packageVersion": "2026.9.16.1",
+          "kind": "round",
+          "resourceKind": "built-in",
+          "profileForm": "parametric",
+          "width": 19.0,
+          "depth": 19.000000000000004,
+          "wallThickness": 1.0,
+          "cornerRadius": 0.0,
+          "displayName": "圆管",
+          "specification": "圆管 19.0 × 19.000000000000004 mm",
+          "hollow": true,
+          "contours": [
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    9.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.7175144212722016,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    5.817072295949927e-16,
+                    9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.817072295949927e-16,
+                    9.5
+                  ],
+                  "middle": [
+                    -6.717514421272201,
+                    6.7175144212722016
+                  ],
+                  "end": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -9.5,
+                    1.1634144591899855e-15
+                  ],
+                  "middle": [
+                    -6.717514421272203,
+                    -6.717514421272201
+                  ],
+                  "end": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.7451216887849782e-15,
+                    -9.5
+                  ],
+                  "middle": [
+                    6.7175144212722,
+                    -6.717514421272203
+                  ],
+                  "end": [
+                    9.5,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "path",
+              "closed": true,
+              "segments": [
+                {
+                  "kind": "arc",
+                  "start": [
+                    8.5,
+                    0.0
+                  ],
+                  "middle": [
+                    6.0104076400856545,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    5.204748896376251e-16,
+                    8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    5.204748896376251e-16,
+                    8.5
+                  ],
+                  "middle": [
+                    -6.010407640085654,
+                    6.0104076400856545
+                  ],
+                  "end": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -8.5,
+                    1.0409497792752501e-15
+                  ],
+                  "middle": [
+                    -6.010407640085655,
+                    -6.010407640085654
+                  ],
+                  "end": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ]
+                },
+                {
+                  "kind": "arc",
+                  "start": [
+                    -1.5614246689128753e-15,
+                    -8.5
+                  ],
+                  "middle": [
+                    6.010407640085653,
+                    -6.010407640085655
+                  ],
+                  "end": [
+                    8.5,
+                    0.0
+                  ]
+                }
+              ]
+            }
+          ],
+          "sectionModel": "round",
+          "sectionResource": "section.8ee6b87d71824a831c4f83e1"
+        }
+      },
+      "manufacturingInput": {
+        "kind": "tube-path",
+        "profileResource": "section.8ee6b87d71824a831c4f83e1",
+        "path": {
+          "vertices": [
+            {
+              "key": "vertex.0",
+              "point": [
+                1052.0,
+                0,
+                33.0
+              ]
+            },
+            {
+              "key": "vertex.1",
+              "point": [
+                1052.0,
+                0,
+                1767.0
+              ]
+            }
+          ],
+          "segments": [
+            {
+              "key": "segment.0",
+              "from": "vertex.0",
+              "to": "vertex.1",
+              "sectionFrame": {
+                "origin": [
+                  1052.0,
+                  0,
+                  33.0
+                ],
+                "xAxis": [
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                "yAxis": [
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                "zAxis": [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              }
+            }
+          ],
+          "closed": false,
+          "startVertex": "vertex.0"
+        }
+      }
+    }
+  ],
+  "roots": [
+    "outer_frame.continuous.0001",
+    "main_grid.horizontal.0001",
+    "main_grid.horizontal.0002",
+    "main_grid.horizontal.0003",
+    "main_grid.horizontal.0004",
+    "main_grid.vertical.0001",
+    "main_grid.vertical.0002",
+    "main_grid.vertical.0003"
+  ],
+  "sourceMappings": [
+    {
+      "itemKey": "outer_frame.continuous.0001",
+      "sources": [
+        {
+          "itemKey": "outer_frame.bottom.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.5,
+                1.0
+              ]
+            },
+            {
+              "segmentKey": "segment.4",
+              "sourceRange": [
+                0.0,
+                0.5
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.right.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.1",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.top.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.2",
+              "sourceRange": [
+                1.0,
+                0.0
+              ]
+            }
+          ]
+        },
+        {
+          "itemKey": "outer_frame.left.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.3",
+              "sourceRange": [
+                1.0,
+                0.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.horizontal.0001",
+      "sources": [
+        {
+          "itemKey": "main_grid.horizontal.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.horizontal.0002",
+      "sources": [
+        {
+          "itemKey": "main_grid.horizontal.0002",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.horizontal.0003",
+      "sources": [
+        {
+          "itemKey": "main_grid.horizontal.0003",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.horizontal.0004",
+      "sources": [
+        {
+          "itemKey": "main_grid.horizontal.0004",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.vertical.0001",
+      "sources": [
+        {
+          "itemKey": "main_grid.vertical.0001",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.vertical.0002",
+      "sources": [
+        {
+          "itemKey": "main_grid.vertical.0002",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "itemKey": "main_grid.vertical.0003",
+      "sources": [
+        {
+          "itemKey": "main_grid.vertical.0003",
+          "segments": [
+            {
+              "segmentKey": "segment.0",
+              "sourceRange": [
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "processes": [
+    {
+      "key": "outer_frame.continuous.0001.fold.vertex.1",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "vertex.1",
+              "incomingSegment": "segment.0",
+              "outgoingSegment": "segment.1"
+            },
+            "angle": 90.0,
+            "axisDirection": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.fold.vertex.2",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "vertex.2",
+              "incomingSegment": "segment.1",
+              "outgoingSegment": "segment.2"
+            },
+            "angle": 90.0,
+            "axisDirection": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.fold.vertex.3",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "vertex.3",
+              "incomingSegment": "segment.2",
+              "outgoingSegment": "segment.3"
+            },
+            "angle": 90.0,
+            "axisDirection": [
+              -0.0,
+              -1.0,
+              -0.0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.fold.vertex.4",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "node-v-notch-integrated",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            }
+          },
+          "geometry": {
+            "anchor": {
+              "kind": "path-corner",
+              "vertexKey": "vertex.4",
+              "incomingSegment": "segment.3",
+              "outgoingSegment": "segment.4"
+            },
+            "angle": 90.0,
+            "axisDirection": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          "resources": {
+            "node-slot": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {},
+        "processDrafts": {
+          "node-slot": {
+            "v-notch-sharp": {}
+          }
+        },
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0001",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.left.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                33.0,
+                0,
+                200.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0001",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.right.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                1167.0,
+                0,
+                200.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0002",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.left.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                33.0,
+                0,
+                666.6666666666667
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0002",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.right.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                1167.0,
+                0,
+                666.6666666666667
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0003",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.left.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                33.0,
+                0,
+                1133.3333333333335
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0003",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.right.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                1167.0,
+                0,
+                1133.3333333333335
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0004",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.left.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                33.0,
+                0,
+                1600.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0004"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0004",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.right.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                1167.0,
+                0,
+                1600.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 5,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0004"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0001.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0001",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.bottom.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                148.0,
+                0,
+                33.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0001.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0001",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.top.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                148.0,
+                0,
+                1767.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0002.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0002",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.bottom.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                600.0,
+                0,
+                33.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0002.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0002",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.top.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                600.0,
+                0,
+                1767.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0003.end.start",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0003",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.bottom.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "start",
+              "point": [
+                1052.0,
+                0,
+                33.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.vertical.0003.end.end",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-end-joint",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.vertical.0003",
+              "state": "initial"
+            },
+            "mate": {
+              "scope": "display",
+              "itemKey": "outer_frame.top.0001"
+            }
+          },
+          "geometry": {
+            "mode": "insert",
+            "anchor": {
+              "kind": "member-end",
+              "end": "end",
+              "point": [
+                1052.0,
+                0,
+                1767.0
+              ]
+            }
+          }
+        },
+        "parameters": {
+          "insertionDepth": 10,
+          "clearance": 0.1
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.vertical.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.left.0001.main_grid.horizontal.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.left.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.left.0001.main_grid.horizontal.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.left.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.left.0001.main_grid.horizontal.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.left.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.left.0001.main_grid.horizontal.0004",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0004"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.left.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.right.0001.main_grid.horizontal.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.right.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.right.0001.main_grid.horizontal.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.right.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.right.0001.main_grid.horizontal.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.right.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.right.0001.main_grid.horizontal.0004",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.horizontal.0004"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.right.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.bottom.0001.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.bottom.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.bottom.0001.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.bottom.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.bottom.0001.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.bottom.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.top.0001.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.top.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.top.0001.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.top.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "outer_frame.continuous.0001.aperture.outer_frame.top.0001.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "outer_frame.continuous.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "outer_frame.top.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "outer_frame.continuous.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001.aperture.main_grid.horizontal.0001.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001.aperture.main_grid.horizontal.0001.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0001.aperture.main_grid.horizontal.0001.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0001",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0001"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0001"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002.aperture.main_grid.horizontal.0002.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0002",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0002"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002.aperture.main_grid.horizontal.0002.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0002",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0002"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0002.aperture.main_grid.horizontal.0002.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0002",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0002"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0002"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003.aperture.main_grid.horizontal.0003.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0003",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0003"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003.aperture.main_grid.horizontal.0003.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0003",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0003"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0003.aperture.main_grid.horizontal.0003.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0003",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0003"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0003"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004.aperture.main_grid.horizontal.0004.main_grid.vertical.0001",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0004",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0001"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0004"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0004"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004.aperture.main_grid.horizontal.0004.main_grid.vertical.0002",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0004",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0002"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0004"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0004"
+        },
+        "dependencies": []
+      }
+    },
+    {
+      "key": "main_grid.horizontal.0004.aperture.main_grid.horizontal.0004.main_grid.vertical.0003",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "tube-profile-aperture",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 2,
+          "parts": {
+            "stock": {
+              "scope": "manufacturing",
+              "itemKey": "main_grid.horizontal.0004",
+              "state": "initial"
+            },
+            "branch": {
+              "scope": "display",
+              "itemKey": "main_grid.vertical.0003"
+            }
+          },
+          "geometry": {
+            "receiverSource": "main_grid.horizontal.0004"
+          }
+        },
+        "parameters": {
+          "clearance": 0.1,
+          "checkFit": true
+        },
+        "processDrafts": {},
+        "targets": {
+          "stock": "main_grid.horizontal.0004"
+        },
+        "dependencies": []
+      }
+    }
+  ]
+}

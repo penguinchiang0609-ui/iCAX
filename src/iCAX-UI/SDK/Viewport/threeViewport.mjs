@@ -1,4 +1,5 @@
 import * as THREE from "../ThirdParty/three/three.module.js";
+import { placeSpecificationCallout } from "./specificationCalloutLayout.mjs";
 import {
   ColliderFlags,
   ColliderPDOEvents,
@@ -203,12 +204,19 @@ export class ThreeRenderViewport {
     this.isDefragging = false;
     this.isDisposed = false;
     this.dynamicReadPending = false;
+    this.blankDoubleClickFitEnabled = options.blankDoubleClickFitEnabled === true;
+    this.pendingBlankPick = null;
+    this.hoverFrame = null;
+    this.pendingHoverEvent = null;
+    this.hoveredObjectId = "";
+    this.hoverPointerActive = false;
     this.navigation = {
       pointerId: null,
       mode: null,
       lastX: 0,
       lastY: 0,
       moved: false,
+      pickAllowed: false,
     };
 
     this.root = document.createElement("div");
@@ -281,7 +289,10 @@ export class ThreeRenderViewport {
     this.root.appendChild(this.dimensionLabelLayer);
     this.specificationLabelLayer = document.createElement("div");
     this.specificationLabelLayer.className = "icax-three-specification-label-layer";
-    this.specificationLabelLayer.setAttribute("aria-label", "产品规格标注");
+    this.specificationLabelLayer.setAttribute("aria-label", "产品尺寸规格");
+    this.specificationLeaderSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    this.specificationLeaderSvg.classList.add("icax-three-dimension-leaders");
+    this.specificationLabelLayer.appendChild(this.specificationLeaderSvg);
     this.root.appendChild(this.specificationLabelLayer);
 
     this.#installProjectionToggle();
@@ -337,7 +348,14 @@ export class ThreeRenderViewport {
 
   setPickingEnabled(enabled) {
     this.pickingEnabled = Boolean(enabled);
+    if (!this.pickingEnabled) this.#clearHover();
     this.root.classList.toggle("picking-enabled", this.pickingEnabled);
+    return this;
+  }
+
+  setBlankDoubleClickFitEnabled(enabled) {
+    this.blankDoubleClickFitEnabled = Boolean(enabled);
+    this.#cancelBlankPick();
     return this;
   }
 
@@ -480,6 +498,8 @@ export class ThreeRenderViewport {
 
   dispose() {
     this.isDisposed = true;
+    this.#cancelBlankPick();
+    this.#clearHover();
     this.#unsubscribe();
     this.#removeDomListeners();
     this.resizeObserver?.disconnect?.();
@@ -538,7 +558,11 @@ export class ThreeRenderViewport {
     }
     const resources = await Promise.all([...references.values()].map((reference) =>
       this.#loadViewResource(resourceClient, reference)));
-    if (generation !== this.viewApplyGeneration || this.isDisposed) {
+    // An editor can change while the resources for this snapshot are loading,
+    // before it has a replacement snapshot to submit. Do not display stale
+    // geometry even for a frame in that interval.
+    if (generation !== this.viewApplyGeneration || this.isDisposed
+      || typeof snapshot?.isCurrent === "function" && !snapshot.isCurrent()) {
       return {
         applied: false,
         superseded: true,
@@ -644,7 +668,7 @@ export class ThreeRenderViewport {
         `Cannot fit View revision ${expectedRevision}; applied revision is ${this.appliedViewRevision}`,
       );
     }
-    if (!this.fitView(padding)) {
+    if (!this.fitViewToViewport(padding)) {
       throw new Error(`View revision ${expectedRevision} has no visible geometry to fit`);
     }
     return {
@@ -728,6 +752,9 @@ export class ThreeRenderViewport {
   }
 
   fitViewToViewport(padding = 1.18) {
+    // A new product can change the surrounding pane layout before the
+    // ResizeObserver runs. Fit against the current container, not its old size.
+    if (this.host) this.resize();
     const bounds = new THREE.Box3();
     for (const object of this.sceneObjects.values()) {
       if (object.visible) bounds.expandByObject(object);
@@ -1026,7 +1053,8 @@ export class ThreeRenderViewport {
     for (const annotation of annotationList) {
       const start = toFiniteVector3(annotation?.start);
       const end = toFiniteVector3(annotation?.end);
-      if (!start || !end || start.distanceToSquared(end) <= Number.EPSILON) continue;
+      const parameterCallout = ["parameter", "count"].includes(String(annotation?.kind ?? ""));
+      if (!start || !end || (!parameterCallout && start.distanceToSquared(end) <= Number.EPSILON)) continue;
       const offset = toFiniteVector3(annotation?.offset) ?? new THREE.Vector3();
       const displayStart = start.clone().add(offset);
       const displayEnd = end.clone().add(offset);
@@ -1068,6 +1096,7 @@ export class ThreeRenderViewport {
         ? (componentChangedOrEditing ? 0xef5b55 : 0x27c27a)
         : (annotation?.color ?? 0x27c27a));
       const vertices = [];
+      if (!parameterCallout) {
       if (offset.lengthSq() > Number.EPSILON) vertices.push(start, displayStart, end, displayEnd);
       vertices.push(displayStart, displayEnd);
 
@@ -1084,6 +1113,7 @@ export class ThreeRenderViewport {
         displayStart.clone().sub(tick), displayStart.clone().add(tick),
         displayEnd.clone().sub(tick), displayEnd.clone().add(tick),
       );
+      }
 
       const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
       const material = new THREE.LineBasicMaterial({
@@ -1222,7 +1252,10 @@ export class ThreeRenderViewport {
       this.specificationLabelLayer.appendChild(labelRoot);
       this.specificationLabels.push({
         element: labelRoot,
-        worldPoint: displayStart.clone().lerp(displayEnd, 0.5),
+        worldPoint: parameterCallout ? displayStart.clone() : displayStart.clone().lerp(displayEnd, 0.5),
+        parameterCallout,
+        anchorPoint: start.clone(),
+        color: `#${color.getHexString()}`,
       });
     }
     this.specificationAnnotationsSignature = signature;
@@ -1301,7 +1334,9 @@ export class ThreeRenderViewport {
     }
     this.specificationLabels = [];
     this.specificationAnnotationsSignature = "";
+    this.specificationLeaderSvg?.replaceChildren?.();
     this.specificationLabelLayer?.replaceChildren?.();
+    this.specificationLabelLayer?.appendChild?.(this.specificationLeaderSvg);
     if (render) this.#renderOnce();
     return this;
   }
@@ -2236,6 +2271,7 @@ export class ThreeRenderViewport {
     object.parent?.remove(object);
     object.material?.dispose?.();
     this.sceneObjects.delete(normalizedId);
+    if (this.hoveredObjectId === normalizedId) this.#clearHover();
     this.selectedObjectIds.delete(normalizedId);
     this.emphasizedObjectIds.delete(normalizedId);
     if (this.selectedObjectId === normalizedId) {
@@ -2267,6 +2303,7 @@ export class ThreeRenderViewport {
   }
 
   #clearRenderContent() {
+    this.#clearHover();
     this.clearGhostMesh();
     this.#clearViewContent();
     for (const object of this.colliderObjects.values()) {
@@ -2640,27 +2677,131 @@ export class ThreeRenderViewport {
     return sprite;
   }
 
+  #specificationLabelAtPointer(event) {
+    return [...this.specificationLabels].reverse().find(({ element }) => {
+      if (element.hidden) return false;
+      const rect = element.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+  }
+
+  #viewportOverlayAtPointer(event) {
+    const host = this.root.closest(".cam-viewport") ?? this.root;
+    const elements = [
+      ...this.outsideDimensionLabels.map(({ element }) => element),
+      ...host.querySelectorAll(".cam-viewcube, .icax-three-axis-gizmo, .icax-three-projection-toggle"),
+    ];
+    return elements.some(element => {
+      if (element.hidden) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0
+        && event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+  }
+
+  #annotationGraphicAtPointer(event) {
+    // Dimension captions can be WebGL sprites or DOM labels. Their rulers and
+    // leaders still occupy the canvas even though they never select a model.
+    const point = new DOMPoint(event.clientX, event.clientY);
+    for (const svg of [this.dimensionLeaderSvg, this.specificationLeaderSvg]) {
+      for (const shape of svg.querySelectorAll("path, line")) {
+        if (!shape.getClientRects().length) continue;
+        const matrix = shape.getScreenCTM();
+        if (matrix && shape.isPointInStroke(point.matrixTransform(matrix.inverse()))) return true;
+      }
+    }
+    const canvas = this.renderer.domElement, bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return false;
+    this.pointer.set((event.clientX - bounds.left) / bounds.width * 2 - 1,
+      -(event.clientY - bounds.top) / bounds.height * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const objects = [this.dimensionContent, this.specificationContent, this.measurementContent]
+      .filter(group => group.visible).flatMap(group => group.children.filter(object => object.visible));
+    const lineThreshold = this.raycaster.params.Line.threshold;
+    const pointThreshold = this.raycaster.params.Points.threshold;
+    const worldPerPixel = this.#visibleHeightAtTarget() / bounds.height;
+    this.raycaster.params.Line.threshold = worldPerPixel * 3;
+    this.raycaster.params.Points.threshold = worldPerPixel * 5;
+    try {
+      return this.raycaster.intersectObjects(objects, false).length > 0;
+    } finally {
+      this.raycaster.params.Line.threshold = lineThreshold;
+      this.raycaster.params.Points.threshold = pointThreshold;
+    }
+  }
+
+  #cancelBlankPick() {
+    if (this.pendingBlankPick != null) clearTimeout(this.pendingBlankPick);
+    this.pendingBlankPick = null;
+  }
+
+  #notifyHover(hit, event, hits, pointerActive) {
+    const objectId = hit ? String(hit.object?.userData?.objectId ?? hit.object?.uuid ?? "") : "";
+    if (objectId === this.hoveredObjectId && pointerActive === this.hoverPointerActive) return;
+    this.hoveredObjectId = objectId;
+    this.hoverPointerActive = pointerActive;
+    this.options.onHover?.(hit?.object?.userData ?? null, hit ?? null, event ?? null, hits, { pointerActive });
+  }
+
+  #clearHover(event = null, pointerActive = false) {
+    if (this.hoverFrame != null) cancelAnimationFrame(this.hoverFrame);
+    this.hoverFrame = null;
+    this.pendingHoverEvent = null;
+    this.#notifyHover(null, event, [], pointerActive);
+  }
+
+  #queueHover(event) {
+    if (typeof this.options.onHover !== "function") return;
+    this.pendingHoverEvent = event;
+    if (this.hoverFrame != null) return;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = null;
+      const current = this.pendingHoverEvent;
+      this.pendingHoverEvent = null;
+      if (!current || this.isDisposed) return;
+      if (!this.pickingEnabled || this.navigation.pointerId != null || current.buttons
+          || this.#specificationLabelAtPointer(current) || this.#viewportOverlayAtPointer(current)) {
+        this.#clearHover(current, true);
+        return;
+      }
+      const hits = this.#hitsAtPointer(current);
+      this.#notifyHover(hits[0] ?? null, current, hits, true);
+    });
+  }
+
   #installPointerControls() {
     const canvas = this.renderer.domElement;
     // Resting specification labels deliberately do not participate in pointer
     // hit-testing, so orbit/pan/zoom continue to use the canvas even when the
-    // cursor is visually over a label.  A canvas double-click performs an
-    // explicit screen-rectangle lookup and opens only that annotation.
+    // cursor is visually over a label. Their screen rectangles still own left
+    // clicks, including both clicks before double-click editing starts.
     this.#listen(canvas, "dblclick", (event) => {
-      if (event.button !== 0) return;
-      const entry = [...this.specificationLabels].reverse().find(({ element }) => {
-        if (element.hidden || element.classList.contains("is-editing")) return false;
-        const rect = element.getBoundingClientRect();
-        return event.clientX >= rect.left && event.clientX <= rect.right
-          && event.clientY >= rect.top && event.clientY <= rect.bottom;
-      });
-      const trigger = entry?.element?.querySelector?.(".icax-three-specification-trigger");
-      if (!trigger) return;
+      if (event.button !== 0 || event.target !== canvas) return;
+      this.#cancelBlankPick();
+      const entry = this.#specificationLabelAtPointer(event);
+      if (entry) {
+        if (entry.element.classList.contains("is-editing")) return;
+        const trigger = entry.element.querySelector(".icax-three-specification-trigger");
+        if (!trigger) return;
+        event.preventDefault();
+        event.stopPropagation();
+        trigger.click();
+        return;
+      }
+      if (!this.blankDoubleClickFitEnabled
+        || this.#viewportOverlayAtPointer(event) || this.#hitsAtPointer(event).length
+        || this.#annotationGraphicAtPointer(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      trigger.click();
+      this.fitViewToViewport(Number(this.options.fitViewPadding ?? 1.35));
     });
     this.#listen(canvas, "pointerdown", (event) => {
+      this.#cancelBlankPick();
+      this.#clearHover(event, true);
+      const pickAllowed = event.button === 0 && !this.#specificationLabelAtPointer(event)
+        && !this.#viewportOverlayAtPointer(event);
       canvas.focus?.({ preventScroll: true });
       const mode = event.button === 2
         ? "orbit"
@@ -2670,27 +2811,41 @@ export class ThreeRenderViewport {
       this.navigation.lastX = event.clientX;
       this.navigation.lastY = event.clientY;
       this.navigation.moved = false;
+      this.navigation.pickAllowed = pickAllowed;
       if (mode) {
         event.preventDefault();
         canvas.setPointerCapture?.(event.pointerId);
       }
     });
     this.#listen(canvas, "pointerup", (event) => {
-      const wasNavigation = this.navigation.pointerId === event.pointerId
-        && Boolean(this.navigation.mode);
+      const startedOnCanvas = this.navigation.pointerId === event.pointerId;
+      const wasNavigation = startedOnCanvas && Boolean(this.navigation.mode);
+      const pickAllowed = startedOnCanvas && this.navigation.pickAllowed;
       const moved = this.navigation.moved;
-      if (this.navigation.pointerId === event.pointerId) {
+      if (startedOnCanvas) {
         this.#resetNavigation();
       }
       if (canvas.hasPointerCapture?.(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
-      if (!wasNavigation && !moved && event.button === 0) {
+      if (pickAllowed && !wasNavigation && !moved && event.button === 0
+          && !this.#specificationLabelAtPointer(event) && !this.#viewportOverlayAtPointer(event)) {
         this.#emitPick(event);
       }
     });
     this.#listen(canvas, "pointermove", (event) => {
-      if (this.navigation.pointerId !== event.pointerId || !this.navigation.mode) {
+      if (this.navigation.pointerId !== event.pointerId) {
+        if (this.navigation.pointerId == null && !event.buttons) this.#queueHover(event);
+        else this.#clearHover(event, true);
+        return;
+      }
+      this.#clearHover(event, true);
+      if (!this.navigation.mode) {
+        if (Math.hypot(event.clientX - this.navigation.lastX,
+          event.clientY - this.navigation.lastY) > 3) {
+          this.navigation.moved = true;
+          this.#cancelBlankPick();
+        }
         return;
       }
       const dx = event.clientX - this.navigation.lastX;
@@ -2703,6 +2858,8 @@ export class ThreeRenderViewport {
       }
     });
     this.#listen(canvas, "wheel", (event) => {
+      this.#cancelBlankPick();
+      this.#clearHover(event, true);
       event.preventDefault();
       const speed = Number(this.options.zoomSpeed ?? 0.0015);
       this.cameraState.radius = this.#clampCameraRadius(
@@ -2713,7 +2870,19 @@ export class ThreeRenderViewport {
       this.#emitCameraChange("zoom");
     }, { passive: false });
     this.#listen(canvas, "contextmenu", (event) => event.preventDefault());
+    this.#listen(canvas, "pointerleave", event => this.#clearHover(event));
+    this.#listen(canvas, "pointercancel", event => this.#clearHover(event));
+    const finishPointer = (event) => {
+      if (this.navigation.pointerId === event.pointerId) this.#resetNavigation();
+    };
+    // A gesture may end on an editor or another overlay instead of the canvas.
+    // Clear its origin so a later release cannot inherit permission to pick.
+    this.#listen(window, "pointerup", finishPointer);
+    this.#listen(window, "pointercancel", finishPointer);
+    this.#listen(window, "pointerdown", () => this.#cancelBlankPick(), { capture: true });
     this.#listen(window, "blur", () => {
+      this.#cancelBlankPick();
+      this.#clearHover();
       this.#resetNavigation();
     });
   }
@@ -2729,19 +2898,40 @@ export class ThreeRenderViewport {
     }
   }
 
-  #emitPick(event) {
-    if (!this.pickingEnabled || typeof this.options.onPick !== "function") {
-      return;
-    }
+  #hitsAtPointer(event) {
     const rect = this.renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return [];
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(
+    return this.raycaster.intersectObjects(
       [...this.sceneObjects.values()].filter((object) => object.visible),
       false,
     );
-    this.options.onPick(hits[0]?.object?.userData ?? null, hits[0] ?? null, event, hits);
+  }
+
+  #emitPick(event) {
+    if (!this.pickingEnabled || typeof this.options.onPick !== "function") return;
+    const hits = this.#hitsAtPointer(event);
+    this.#cancelBlankPick();
+    if (hits.length) {
+      this.options.onPick(hits[0].object.userData ?? null, hits[0], event, hits);
+      return;
+    }
+    if (!this.blankDoubleClickFitEnabled) {
+      this.options.onPick(null, null, event, []);
+      return;
+    }
+    // A blank double click fits the view without changing the current selection.
+    // Defer only blank single clicks long enough for the browser to distinguish
+    // the gesture; component selection remains immediate.
+    const revision = this.appliedViewRevision;
+    this.pendingBlankPick = setTimeout(() => {
+      this.pendingBlankPick = null;
+      if (!this.isDisposed && this.pickingEnabled && this.appliedViewRevision === revision) {
+        this.options.onPick?.(null, null, event, []);
+      }
+    }, 500);
   }
 
   #updateCamera() {
@@ -2826,6 +3016,7 @@ export class ThreeRenderViewport {
   }
 
   #emitCameraChange(reason) {
+    this.#cancelBlankPick();
     if (typeof this.options.onCameraChange === "function") {
       this.options.onCameraChange(this.getCameraState(), { reason });
     }
@@ -2837,6 +3028,7 @@ export class ThreeRenderViewport {
     this.navigation.lastX = 0;
     this.navigation.lastY = 0;
     this.navigation.moved = false;
+    this.navigation.pickAllowed = false;
   }
 
   #startRenderLoop() {
@@ -3009,6 +3201,17 @@ export class ThreeRenderViewport {
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
     this.camera.updateMatrixWorld(true);
+    this.specificationLeaderSvg.replaceChildren();
+    this.specificationLeaderSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    const occupied = [];
+    const callouts = [];
+    const canvasBounds = canvas.getBoundingClientRect();
+    const overlayHost = this.root.closest(".cam-viewport") ?? this.root;
+    for (const control of overlayHost.querySelectorAll(".cam-viewcube, .icax-three-axis-gizmo")) {
+      const box = control.getBoundingClientRect();
+      if (box.width && box.height) occupied.push({ x: box.left - canvasBounds.left,
+        y: box.top - canvasBounds.top, w: box.width, h: box.height });
+    }
     for (const label of this.specificationLabels) {
       const projected = label.worldPoint.clone().project(this.camera);
       const visible = Number.isFinite(projected.x) && Number.isFinite(projected.y)
@@ -3020,6 +3223,25 @@ export class ThreeRenderViewport {
       // Keep the template's original world-space anchor; do not displace labels.
       label.element.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
       label.element.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+      const box = label.element.getBoundingClientRect();
+      const x = (projected.x * 0.5 + 0.5) * width, y = (-projected.y * 0.5 + 0.5) * height;
+      if (label.parameterCallout) callouts.push({label,x,y,w:box.width,h:box.height});
+      else occupied.push({x:x-box.width/2,y:y-box.height/2,w:box.width,h:box.height});
+    }
+    // Numeric layout/count callouts retain their world anchors, with screen
+    // leaders and non-overlapping captions. Exact dimension labels stay put.
+    for (const entry of callouts) {
+      const {label,w,h}=entry;
+      const position = placeSpecificationCallout(entry, occupied, width, height);
+      occupied.push({...position,w,h});
+      label.element.style.left=`${position.x+w/2}px`;
+      label.element.style.top=`${position.y+h/2}px`;
+      const anchor=label.anchorPoint.clone().project(this.camera);
+      const line=document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1",String((anchor.x*0.5+0.5)*width));line.setAttribute("y1",String((-anchor.y*0.5+0.5)*height));
+      line.setAttribute("x2",String(position.x+w/2));line.setAttribute("y2",String(position.y+h/2));
+      line.setAttribute("stroke",label.color);line.setAttribute("stroke-width","1");
+      this.specificationLeaderSvg.appendChild(line);
     }
   }
 

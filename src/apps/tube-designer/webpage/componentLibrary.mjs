@@ -5,6 +5,9 @@ import { libraryProfiles, profileRef, profileScope, profileSelectionKey } from "
 import { beginNewSectionSketch, beginProfileSectionSketch } from "./sketchArea.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
+import { rememberComponentCreationDraft, restoreComponentCreationDraft } from "./componentCreationMemory.mjs";
+import { hasLicenseFeature } from "./licensing.mjs";
+import { resourceEditLicenseFeatures } from "./resourceLicensing.mjs";
 
 const PREFIX = "tube-designer-component-";
 const SCOPES = ["system", "template", "user"];
@@ -66,6 +69,7 @@ const CSG_TOOLS = {
   scale: { label: "缩放", hint: "向右或向上拖动放大，反向拖动缩小" },
 };
 const csgViewportControllers = new WeakMap();
+const rememberedCSGProfileInputs = new WeakMap();
 
 const CSG_BUILTIN_PROFILES = {
   "builtin:solid-rectangle": {
@@ -177,11 +181,6 @@ function normalizeCSGProfile(profile) {
   result.parameters = result.parameters && typeof result.parameters === "object" ? result.parameters : {};
   result.parameterDefinitions = Array.isArray(result.parameterDefinitions)
     ? result.parameterDefinitions : (Array.isArray(result.snapshot.parameterDefinitions) ? result.snapshot.parameterDefinitions : []);
-  if (result.sourceType === "parametric" && !result.snapshot.parameterDiagram && CSG_BUILTIN_PROFILES[result.key]) {
-    try {
-      result.snapshot.parameterDiagram = CSG_BUILTIN_PROFILES[result.key].build(result.parameters).parameterDiagram;
-    } catch { /* Keep older or incomplete snapshots readable without guessed dimensions. */ }
-  }
   return result;
 }
 function createCSGFeature(primitive, index = 0) {
@@ -228,7 +227,67 @@ export function openComponentCSGEditor(view, model = null) {
   if (model && (model.scope !== "user" || model.modelType !== "csg" || !model.csgDefinition)) return false;
   state.error = "";
   state.csgDraft = normalizeCSGDraft(model);
+  if (!model) restoreComponentCreationDraft(state.csgDraft, { primitives: CSG_PRIMITIVES,
+    createFeature: createCSGFeature, resolveProfile: (key, parameters, sourcePath) => restoreCSGCreationProfile(view, key, parameters, sourcePath) });
   return true;
+}
+
+function rememberCSGCreation(view) {
+  return rememberComponentCreationDraft(view?.tubeDesignerComponentLibrary?.csgDraft, { primitives: CSG_PRIMITIVES });
+}
+
+function restoreCSGCreationProfile(view, key, remembered, sourcePath) {
+  if (Object.hasOwn(CSG_BUILTIN_PROFILES, key)) {
+    try { return builtinCSGProfile(key, remembered); } catch { return builtinCSGProfile(key); }
+  }
+  if (typeof sourcePath === "string" && sourcePath && /\.dxf$/i.test(sourcePath)) {
+    const profile = { ...builtinCSGProfile("builtin:solid-rectangle"), key, sourceType: "fixed", sourcePath };
+    rememberedCSGProfileInputs.set(profile, { sourcePath });
+    return profile;
+  }
+  const profile = cloneValue(csgProfileChoices(view).find(choice => choice.value.key === key)?.value);
+  if (!profile) return null;
+  const parameters = { ...profile.parameters };
+  for (const definition of profile.parameterDefinitions ?? []) {
+    const value = remembered[definition.key];
+    if (value === undefined || definition.readOnly || definition.presentation?.visible === false) continue;
+    const type = definition.valueType ?? "number";
+    if (type === "boolean" ? typeof value !== "boolean" : type === "string" ? typeof value !== "string"
+      : typeof value !== "number" || !Number.isFinite(value) || type === "integer" && !Number.isInteger(value)) continue;
+    if (typeof value === "number" && (value < (definition.min ?? definition.minimum ?? -Infinity)
+      || value > (definition.max ?? definition.maximum ?? Infinity))) continue;
+    const choices = definition.options ?? definition.choices;
+    if (choices?.length && !choices.some(choice => (typeof choice === "object" ? choice.value : choice) === value)) continue;
+    parameters[definition.key] = value;
+  }
+  if (profile.sourceType === "parametric" && JSON.stringify(parameters) !== JSON.stringify(profile.parameters)) {
+    profile.parameters = parameters;
+    rememberedCSGProfileInputs.set(profile, { parameters });
+  }
+  return profile;
+}
+
+async function evaluateRememberedCSGProfiles(context, draft, current) {
+  let updated = false;
+  for (const feature of draft.features) {
+    const profile = feature.profile, inputs = profile && rememberedCSGProfileInputs.get(profile);
+    if (!inputs) continue;
+    try {
+      const response = await productInvoke(context, inputs.sourcePath ? "TubeDesigner.ImportProfileDxf" : "TubeDesigner.EvaluateProfilePackage",
+        inputs.sourcePath ? { sourcePath: inputs.sourcePath } : { profileRef: cloneValue(profile.profileRef), parameters: inputs.parameters });
+      if (!current() || feature.profile !== profile) return { current: false, updated };
+      if (!response?.profile?.contours?.length) throw new Error("记忆的截面输入未生成有效轮廓。");
+      feature.profile = normalizeCSGProfile({ ...profile, snapshot: response.profile,
+        name: response.profile.name || profile.name });
+    } catch {
+      if (!current() || feature.profile !== profile) return { current: false, updated };
+      // Deleted files and unavailable resource inputs must not prevent a new draft from generating.
+      feature.profile = builtinCSGProfile("builtin:solid-rectangle");
+    }
+    rememberedCSGProfileInputs.delete(profile);
+    updated = true;
+  }
+  return { current: current(), updated };
 }
 
 export function componentLibraryState(view) {
@@ -595,7 +654,7 @@ function renderComponentCSGViewportOverlay(view, draft) {
 
 export function renderComponentLibraryDialogs(view) {
   const state = componentLibraryState(view);
-  if (state.importDraft) return `<div class="tube-designer-modal-backdrop" role="presentation"><section class="tube-designer-preset-dialog tube-component-library-dialog" role="dialog" aria-modal="true" aria-labelledby="component-import-title">
+  if (state.importDraft) return `<div class="tube-designer-modal-backdrop" role="presentation"><section class="tube-designer-preset-dialog tube-component-library-dialog" role="dialog" aria-modal="true" aria-labelledby="component-import-title" data-window-state-controls="[data-component-field]">
     <header class="tube-designer-dialog-header"><div><strong id="component-import-title">导入三维配件</strong><span>${escapeText(state.importDraft.sourceFileName)}</span></div><button class="tube-designer-dialog-close" data-cam-action="${PREFIX}cancel-import" aria-label="取消导入" ${view.pending ? "disabled" : ""}>×</button></header>
     <div class="tube-designer-preset-dialog-body" data-component-import-form>${metadataFields(state.importDraft, view.pending, "import-draft")}<p class="tube-component-library-note">导入后保存为“我的模型”。保留原始三维形状，默认按外购配件管理。</p></div>
     <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${PREFIX}cancel-import" ${view.pending ? "disabled" : ""}>取消</button><button class="tube-designer-primary" data-cam-action="${PREFIX}confirm-import" ${view.pending ? "disabled" : ""}>${view.pending ? "正在导入…" : "导入"}</button></footer>
@@ -815,6 +874,7 @@ async function chooseCSGProfileDxf(context, view, ops, draft, feature) {
     if (!draft.features.includes(feature)) return null;
     setCSGExtrusionProfile(draft, feature, {
       sourceType: "fixed", key: `embedded:dxf:${Date.now()}`,
+      sourcePath,
       name: String(snapshot.name ?? snapshot.sourceFileName ?? "DXF 截面"),
       parameters: {}, parameterDefinitions: [], snapshot,
     });
@@ -824,6 +884,11 @@ async function chooseCSGProfileDxf(context, view, ops, draft, feature) {
 }
 
 export async function handleComponentLibraryAction(context, view, action, target, ops) {
+  try { return await performComponentLibraryAction(context, view, action, target, ops); }
+  finally { if (String(action).startsWith(PREFIX)) rememberCSGCreation(view); }
+}
+
+async function performComponentLibraryAction(context, view, action, target, ops) {
   if (!String(action).startsWith(PREFIX)) return { handled: false };
   const state = componentLibraryState(view);
   const suffix = action.slice(PREFIX.length);
@@ -840,6 +905,7 @@ export async function handleComponentLibraryAction(context, view, action, target
     return { handled: true };
   }
   if (suffix === "cancel-csg") {
+    rememberCSGCreation(view);
     state.csgDraft = null; state.error = "";
     view.tubeDesignerComponentCSGProfileReturn = null;
     ops.renderProject(context, view); return { handled: true };
@@ -992,6 +1058,7 @@ export async function handleComponentLibraryAction(context, view, action, target
   }
   if (suffix === "save-csg" && state.csgDraft) {
     const draft = state.csgDraft;
+    rememberCSGCreation(view);
     if (draft.previewStatus === "error") throw new Error(draft.previewError || "当前 CSG 组合无法生成有效实体。");
     if (!String(draft.name).trim()) throw new Error("请填写模型名称。");
     if (!String(draft.category).trim()) throw new Error("请填写模型分类。");
@@ -1094,6 +1161,7 @@ export async function handleComponentLibraryRibbonCommand(context, view, command
   if (commandId === "components.import") { await chooseComponentModel(context, view, ops); return true; }
   if (commandId === "components.draw") {
     if (!state.csgDraft) openComponentCSGEditor(view);
+    rememberCSGCreation(view);
     ops.renderProject(context, view); return true;
   }
   if (commandId === "components.export-step") { await exportComponentModel(context, view, ops); return true; }
@@ -1132,6 +1200,7 @@ export async function ensureComponentModelPreview(context, view, ops = null) {
   if (state.previewFailureKey === key) return;
   const entityId = `component-model:${componentModelKey(model)}`;
   const cached = state.previewCache.get(key);
+  if (!cached && !hasLicenseFeature(context, view, resourceEditLicenseFeatures)) return;
   const revisionFor = (response) => `component-preview:${key}:${response.geometryResourceId}:${response.geometryResourceVersion}`;
   if (cached && view.viewport.getAppliedViewState?.().revision === revisionFor(cached)) {
     // The shared workbench hides entities when remounting self-managed areas.
@@ -1316,6 +1385,7 @@ function bindCSGManipulation(controller, surface) {
     controller.drag = null;
     surface.classList.remove("dragging");
     surface.releasePointerCapture?.(event.pointerId);
+    rememberCSGCreation(controller.view);
     scheduleComponentCSGPreview(controller, 0);
   };
   surface.addEventListener("pointerup", finish);
@@ -1323,6 +1393,7 @@ function bindCSGManipulation(controller, surface) {
 }
 
 function scheduleComponentCSGPreview(controller, delay = 90) {
+  if (!hasLicenseFeature(controller.context, controller.view, resourceEditLicenseFeatures)) return;
   const draft = controller.view?.tubeDesignerComponentLibrary?.csgDraft;
   if (!draft || controller.disposed) return;
   const signature = csgPreviewSignature(draft);
@@ -1349,11 +1420,20 @@ function scheduleComponentCSGPreview(controller, delay = 90) {
 }
 
 async function runComponentCSGPreview(controller) {
+  if (!hasLicenseFeature(controller.context, controller.view, resourceEditLicenseFeatures)) return;
   const draft = controller.view?.tubeDesignerComponentLibrary?.csgDraft;
   if (!draft || controller.disposed || controller.previewRunning) return;
-  const signature = controller.latestSignature ?? csgPreviewSignature(draft);
+  let signature = controller.latestSignature ?? csgPreviewSignature(draft);
   controller.previewRunning = true;
   try {
+    const current = () => !controller.disposed && controller.view?.tubeDesignerComponentLibrary?.csgDraft === draft
+      && controller.latestSignature === signature;
+    const profiles = await evaluateRememberedCSGProfiles(controller.context, draft, current);
+    if (!profiles.current) return;
+    if (!hasLicenseFeature(controller.context, controller.view, resourceEditLicenseFeatures)) return;
+    signature = csgPreviewSignature(draft);
+    controller.latestSignature = signature;
+    if (profiles.updated) controller.ops?.renderProject?.(controller.context, controller.view);
     if (typeof controller.context.sceneProxy?.invoke !== "function")
       throw new Error("当前场景没有提供 CSG 实时计算能力。");
     const response = await controller.context.sceneProxy.invoke("TubeDesigner.GenerateComponentCSGPreview", {
@@ -1431,7 +1511,7 @@ async function runComponentCSGPreview(controller) {
   }
 }
 
-export function ensureComponentCSGPreview(context, view, mount) {
+export function ensureComponentCSGPreview(context, view, mount, ops) {
   if (!mount || (typeof mount !== "object" && typeof mount !== "function")) return null;
   const draft = componentLibraryState(view).csgDraft;
   const surface = mount.querySelector?.("[data-component-csg-manipulation]") ?? null;
@@ -1456,6 +1536,7 @@ export function ensureComponentCSGPreview(context, view, mount) {
   }
   controller.context = context;
   controller.view = view;
+  if (ops) controller.ops = ops;
   controller.pane = mount;
   controller.dialog = mount;
   bindCSGManipulation(controller, surface);
@@ -1474,5 +1555,5 @@ export function attachComponentLibrary(context, view, mount, ops) {
   });
   if (view.activeAreaId === "components" && !state.csgDraft)
     queueMicrotask(() => { void ensureComponentModelPreview(context, view, ops).catch(() => {}); });
-  queueMicrotask(() => { ensureComponentCSGPreview(context, view, mount); });
+  queueMicrotask(() => { ensureComponentCSGPreview(context, view, mount, ops); });
 }

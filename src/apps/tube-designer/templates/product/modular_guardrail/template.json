@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "modular-guardrail",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "displayName": {
     "zh-CN": "竖杆护栏"
   },
@@ -10,11 +10,34 @@
   "extensions": {
     "parameterDependencies": {
       "manufacturingOnly": [
+        "baseBoltDiameter",
+        "baseBoltEdgeDistance",
+        "glassClipEnabled",
+        "glassClipModelReference",
+        "glassClipOffset",
+        "panelEdgeClearance",
+        "picketHoleClearance",
+        "postCapEnabled",
+        "postCapModelReference",
         "productCode",
-        "materialGrade",
-        "plateMaterial",
-        "glassMaterial",
-        "picketHoleClearance"
+        "spearTipEnabled",
+        "spearTipModelReference",
+        "tubeDesignerToolBindings"
+      ],
+      "creationOnly": [
+        "handrailMode",
+        "barOrientation",
+        "elevationSource",
+        "pathMode",
+        "layout",
+        "dimensionMode",
+        "railCount",
+        "cornerPostMode",
+        "largePostMode",
+        "infillType",
+        "barDistribution",
+        "guardrailUse",
+        "installation"
       ]
     },
     "catalog": {
@@ -61,17 +84,1138 @@
             "zh-CN": "护栏高度"
           },
           "order": 20
+        },
+        {
+          "parameter": "startExtension",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            0,
+            0,
+            {
+              "parameter": "guardHeight"
+            }
+          ],
+          "offset": [
+            -180,
+            0,
+            80
+          ],
+          "group": "layout",
+          "order": 100
+        },
+        {
+          "parameter": "finishExtension",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1"
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.96875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            80
+          ],
+          "group": "layout",
+          "order": 101
+        },
+        {
+          "parameter": "horizontalRailCount",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.9375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "infill",
+          "order": 102,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "horizontal"
+          }
+        },
+        {
+          "parameter": "slopeAngle2",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.90625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 103,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "angle"
+              },
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "slopeAngle3",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 104,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "angle"
+              },
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "u"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "treadGoing",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.84375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 105,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "treads"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "treadRise",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.8125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 106,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "treads"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "treadCount1",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.78125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 107,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "treads"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "treadCount2",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.75
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 108,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "pathMode",
+                    "value": "level"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "elevationSource",
+                    "value": "treads"
+                  }
+                ]
+              },
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "treadCount3",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.71875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 109,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "pathMode",
+                    "value": "level"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "elevationSource",
+                    "value": "treads"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "u"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "fixedBarCount",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.6875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "infill",
+          "order": 110,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "barDistribution",
+                "value": "manual_count"
+              },
+              {
+                "op": "eq",
+                "parameter": "barOrientation",
+                "value": "vertical"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "maximumHorizontalClearGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.65625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "infill",
+          "order": 111,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "straight"
+              },
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "sidePlateHeight",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "process",
+          "order": 112,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installation",
+            "value": "side_plate"
+          }
+        },
+        {
+          "parameter": "sidePlateDrop",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.59375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "process",
+          "order": 113,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installation",
+            "value": "side_plate"
+          }
+        },
+        {
+          "parameter": "slopeAngle",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.5625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 114,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "angle"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "sideLength2",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.5
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 116,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pathMode",
+                    "value": "level"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "elevationSource",
+                    "value": "angle"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "treadCount2",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "sideLength3",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.46875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "dimensions",
+          "order": 117,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "u"
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pathMode",
+                    "value": "level"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "elevationSource",
+                    "value": "angle"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "treadCount3",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "doublePostClearGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.40625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 119,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              },
+              {
+                "op": "eq",
+                "parameter": "cornerPostMode",
+                "value": "double"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "largePostSize",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 120,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "largePostMode",
+            "value": "none"
+          }
+        },
+        {
+          "parameter": "maximumPostSpacing",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.34375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 121,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "straight"
+              },
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "bottomClearance",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.3125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 122
+        },
+        {
+          "parameter": "upperRailDrop",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.28125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 123,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "railCount",
+            "value": 3
+          }
+        },
+        {
+          "parameter": "maximumVerticalClearGap",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.25
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "infill",
+          "order": 124,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "barDistribution",
+                "value": "manual_count"
+              },
+              {
+                "op": "eq",
+                "parameter": "barOrientation",
+                "value": "vertical"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "lowerPanelHeight",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.21875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "infill",
+          "order": 125,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layout",
+                "value": "straight"
+              },
+              {
+                "op": "ne",
+                "parameter": "layout",
+                "value": "straight"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "basePlateSize",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.1875
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "process",
+          "order": 126,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "installation",
+            "value": "embedded"
+          }
+        },
+        {
+          "parameter": "basePlateThickness",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.15625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "process",
+          "order": 127,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "installation",
+            "value": "embedded"
+          }
+        },
+        {
+          "parameter": "wallPicketProjection",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "layout",
+          "order": 128,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "guardrailUse",
+                "value": "wall"
+              },
+              {
+                "op": "eq",
+                "parameter": "barOrientation",
+                "value": "vertical"
+              }
+            ]
+          }
+        },
+        {
+          "parameter": "sideBayCount1",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.09375
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 129
+        },
+        {
+          "parameter": "sideBayCount2",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.0625
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 130,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        },
+        {
+          "parameter": "sideBayCount3",
+          "kind": "parameter",
+          "axis": "x",
+          "origin": [
+            {
+              "parameter": "sideLength1",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "guardHeight",
+              "scale": 0.03125
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ],
+          "group": "basic",
+          "order": 131,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "u"
+          }
         }
       ]
     },
     "addDialog": {
       "structureParameters": [
         "layout",
-        "barOrientation",
-        "railCount",
+        "pathMode",
+        "guardrailHandrailStructure",
+        "guardrailPostStructure",
         "cornerPostMode",
-        "largePostMode",
-        "pathMode"
+        "installation",
+        "guardrailRailStructure",
+        "guardrailInfillStructure",
+        "elevationSource",
+        "dimensionMode",
+        "guardrailUse",
+        "barDistribution"
+      ],
+      "parameterGroups": [
+        {
+          "key": "guardrail-shape",
+          "displayName": {
+            "zh-CN": "整体结构"
+          },
+          "parameters": [
+            "layout",
+            "pathMode"
+          ]
+        },
+        {
+          "key": "guardrail-handrail",
+          "displayName": {
+            "zh-CN": "扶手"
+          },
+          "parameters": [
+            "guardrailHandrailStructure"
+          ]
+        },
+        {
+          "key": "guardrail-post",
+          "displayName": {
+            "zh-CN": "立柱"
+          },
+          "parameters": [
+            "guardrailPostStructure",
+            "cornerPostMode",
+            "installation"
+          ]
+        },
+        {
+          "key": "guardrail-rail",
+          "displayName": {
+            "zh-CN": "横档"
+          },
+          "parameters": [
+            "guardrailRailStructure"
+          ]
+        },
+        {
+          "key": "guardrail-infill",
+          "displayName": {
+            "zh-CN": "填充"
+          },
+          "parameters": [
+            "guardrailInfillStructure"
+          ]
+        },
+        {
+          "key": "creation:basic",
+          "displayName": {
+            "zh-CN": "结构参数"
+          },
+          "parameters": [
+            "elevationSource",
+            "dimensionMode",
+            "guardrailUse"
+          ]
+        },
+        {
+          "key": "creation:infill",
+          "displayName": {
+            "zh-CN": "竖杆与封板"
+          },
+          "parameters": [
+            "barDistribution"
+          ]
+        }
       ]
     },
     "productDiagram": {
@@ -132,6 +1276,400 @@
             "glass.infill",
             "plate.infill"
           ]
+        },
+        "handrailMode": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "startExtension": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "finishExtension": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "barOrientation": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "horizontalRailCount": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "fixedBarCount": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "maximumHorizontalClearGap": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "sidePlateHeight": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "sidePlateDrop": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "cornerPostMode": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "doublePostClearGap": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "largePostMode": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "largePostSize": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "maximumPostSpacing": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "bottomClearance": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "upperRailDrop": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "barDistribution": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "maximumVerticalClearGap": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "lowerPanelHeight": {
+          "memberRolePrefixes": [
+            "plate.infill",
+            "glass.infill"
+          ]
+        },
+        "panelThickness": {
+          "memberRolePrefixes": [
+            "plate.infill",
+            "glass.infill"
+          ]
+        },
+        "panelEdgeClearance": {
+          "memberRolePrefixes": [
+            "plate.infill",
+            "glass.infill"
+          ]
+        },
+        "plateMaterial": {
+          "memberRolePrefixes": [
+            "plate.infill",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "installation": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "basePlateSize": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "basePlateThickness": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "baseBoltDiameter": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "baseBoltEdgeDistance": {
+          "memberRolePrefixes": [
+            "guardrail.post",
+            "plate.base",
+            "plate.side_mount"
+          ]
+        },
+        "handrailProfileType": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "handrailWidth": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "handrailDepth": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "handrailCornerRadius": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "handrailWallThickness": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "postProfileType": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "postWidth": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "postDepth": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "postCornerRadius": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "postWallThickness": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "railProfileType": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "railWidth": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "railDepth": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "railCornerRadius": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "railWallThickness": {
+          "memberRolePrefixes": [
+            "guardrail.cross_rail"
+          ]
+        },
+        "infillProfileType": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "infillWidth": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "infillDepth": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "infillCornerRadius": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "infillWallThickness": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "guardrailUse": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "wallPicketProjection": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
+        },
+        "picketHoleClearance": {
+          "memberRolePrefixes": [
+            "guardrail.handrail",
+            "guardrail.cross_rail"
+          ]
+        },
+        "spearTipEnabled": {
+          "memberRolePrefixes": [
+            "accessory.spear_tip"
+          ]
+        },
+        "spearTipModelReference": {
+          "memberRolePrefixes": [
+            "accessory.spear_tip"
+          ]
+        },
+        "postCapEnabled": {
+          "memberRolePrefixes": [
+            "accessory.post_cap",
+            "guardrail.post"
+          ]
+        },
+        "postCapModelReference": {
+          "memberRolePrefixes": [
+            "accessory.post_cap",
+            "guardrail.post"
+          ]
+        },
+        "glassThickness": {
+          "memberRolePrefixes": [
+            "glass.infill"
+          ]
+        },
+        "glassMaterial": {
+          "memberRolePrefixes": [
+            "glass.infill"
+          ]
+        },
+        "glassClipEnabled": {
+          "memberRolePrefixes": [
+            "accessory.glass_clip"
+          ]
+        },
+        "glassClipModelReference": {
+          "memberRolePrefixes": [
+            "accessory.glass_clip"
+          ]
+        },
+        "glassClipOffset": {
+          "memberRolePrefixes": [
+            "accessory.glass_clip"
+          ]
+        },
+        "guardrailHandrailStructure": {
+          "memberRolePrefixes": [
+            "guardrail.handrail"
+          ]
+        },
+        "guardrailPostStructure": {
+          "memberRolePrefixes": [
+            "guardrail.post"
+          ]
+        },
+        "guardrailRailStructure": {
+          "memberRolePrefixes": [
+            "guardrail.handrail",
+            "guardrail.cross_rail"
+          ]
+        },
+        "guardrailInfillStructure": {
+          "memberRolePrefixes": [
+            "guardrail.decorative_bar",
+            "guardrail.horizontal_bar",
+            "guardrail.vertical_bar",
+            "glass.infill",
+            "plate.infill"
+          ]
         }
       },
       "profileRoles": {
@@ -140,6 +1678,7 @@
             "handrailProfileType",
             "handrailWidth",
             "handrailDepth",
+            "handrailCornerRadius",
             "handrailWallThickness"
           ],
           "memberRolePrefixes": [
@@ -151,6 +1690,7 @@
             "postProfileType",
             "postWidth",
             "postDepth",
+            "postCornerRadius",
             "postWallThickness"
           ],
           "memberRolePrefixes": [
@@ -162,6 +1702,7 @@
             "railProfileType",
             "railWidth",
             "railDepth",
+            "railCornerRadius",
             "railWallThickness"
           ],
           "memberRolePrefixes": [
@@ -219,16 +1760,200 @@
     "resourceRoles": {
       "profiles": {
         "handrail": {
-          "parameter": "handrailProfileType"
+          "parameter": "handrailProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "handrailWidth",
+              "depth": "handrailDepth",
+              "wallThickness": "handrailWallThickness",
+              "cornerRadius": "handrailCornerRadius"
+            },
+            "round": {
+              "width": "handrailWidth",
+              "wallThickness": "handrailWallThickness"
+            }
+          },
+          "managedParameters": [
+            "handrailWidth",
+            "handrailDepth",
+            "handrailWallThickness",
+            "handrailCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
         },
         "post": {
-          "parameter": "postProfileType"
+          "parameter": "postProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "postWidth",
+              "depth": "postDepth",
+              "wallThickness": "postWallThickness",
+              "cornerRadius": "postCornerRadius"
+            },
+            "round": {
+              "width": "postWidth",
+              "wallThickness": "postWallThickness"
+            }
+          },
+          "managedParameters": [
+            "postWidth",
+            "postDepth",
+            "postWallThickness",
+            "postCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
         },
         "rail": {
-          "parameter": "railProfileType"
+          "parameter": "railProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "railWidth",
+              "depth": "railDepth",
+              "wallThickness": "railWallThickness",
+              "cornerRadius": "railCornerRadius"
+            },
+            "round": {
+              "width": "railWidth",
+              "wallThickness": "railWallThickness"
+            }
+          },
+          "managedParameters": [
+            "railWidth",
+            "railDepth",
+            "railWallThickness",
+            "railCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
         },
         "infill": {
-          "parameter": "infillProfileType"
+          "parameter": "infillProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "infillWidth",
+              "depth": "infillDepth",
+              "wallThickness": "infillWallThickness",
+              "cornerRadius": "infillCornerRadius"
+            },
+            "round": {
+              "width": "infillWidth",
+              "wallThickness": "infillWallThickness"
+            }
+          },
+          "managedParameters": [
+            "infillWidth",
+            "infillDepth",
+            "infillWallThickness",
+            "infillCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽度"
+              },
+              "depth": {
+                "zh-CN": "深度"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "外圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
         }
       }
     },
@@ -250,7 +1975,7 @@
         {
           "key": "materials",
           "displayName": {
-            "zh-CN": "管材与材料"
+            "zh-CN": "用料"
           },
           "order": 20,
           "allowPresets": true,
@@ -262,7 +1987,7 @@
         {
           "key": "process",
           "displayName": {
-            "zh-CN": "加工与装配工艺"
+            "zh-CN": "装配"
           },
           "order": 30,
           "allowPresets": true,
@@ -282,7 +2007,234 @@
         "material": "Q235B",
         "description": "模板内声明的真实固定尺寸柱帽模型；XY居中、底面Z=0，80方柱顶面焊接用。"
       }
-    }
+    },
+    "productControls": [
+      {
+        "key": "guardrailHandrailStructure",
+        "displayName": {
+          "zh-CN": "扶手结构"
+        },
+        "group": "process",
+        "order": 10,
+        "visibleWhen": {
+          "op": "ne",
+          "parameter": "pathMode",
+          "value": "stepped"
+        },
+        "choices": [
+          {
+            "value": "per_bay",
+            "displayName": {
+              "zh-CN": "分跨接柱"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "handrailMode",
+              "value": "per_bay"
+            },
+            "parameters": {
+              "handrailMode": "per_bay"
+            }
+          },
+          {
+            "value": "continuous",
+            "displayName": {
+              "zh-CN": "跨柱连续（每边整根）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "handrailMode",
+              "value": "continuous"
+            },
+            "parameters": {
+              "handrailMode": "continuous"
+            }
+          }
+        ]
+      },
+      {
+        "key": "guardrailPostStructure",
+        "displayName": {
+          "zh-CN": "立柱结构"
+        },
+        "group": "process",
+        "order": 20,
+        "choices": [
+          {
+            "value": "none",
+            "displayName": {
+              "zh-CN": "不设大立柱"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "largePostMode",
+              "value": "none"
+            },
+            "parameters": {
+              "largePostMode": "none"
+            }
+          },
+          {
+            "value": "middle",
+            "displayName": {
+              "zh-CN": "每边中间大立柱"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "largePostMode",
+              "value": "middle"
+            },
+            "parameters": {
+              "largePostMode": "middle"
+            }
+          },
+          {
+            "value": "ends",
+            "displayName": {
+              "zh-CN": "两端大立柱"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "largePostMode",
+              "value": "ends"
+            },
+            "parameters": {
+              "largePostMode": "ends"
+            }
+          }
+        ]
+      },
+      {
+        "key": "guardrailRailStructure",
+        "displayName": {
+          "zh-CN": "横档结构"
+        },
+        "group": "process",
+        "order": 30,
+        "choices": [
+          {
+            "value": "two",
+            "displayName": {
+              "zh-CN": "二横档（扶手＋下横档）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railCount",
+              "value": 2
+            },
+            "parameters": {
+              "railCount": 2
+            }
+          },
+          {
+            "value": "three",
+            "displayName": {
+              "zh-CN": "三横档（扶手＋上、下横档）"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "railCount",
+              "value": 3
+            },
+            "parameters": {
+              "railCount": 3
+            }
+          }
+        ]
+      },
+      {
+        "key": "guardrailInfillStructure",
+        "displayName": {
+          "zh-CN": "填充结构"
+        },
+        "group": "process",
+        "order": 40,
+        "choices": [
+          {
+            "value": "vertical",
+            "displayName": {
+              "zh-CN": "竖杆"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "barOrientation",
+              "value": "vertical"
+            },
+            "parameters": {
+              "barOrientation": "vertical"
+            }
+          },
+          {
+            "value": "horizontal",
+            "displayName": {
+              "zh-CN": "横杆"
+            },
+            "matchWhen": {
+              "op": "eq",
+              "parameter": "barOrientation",
+              "value": "horizontal"
+            },
+            "parameters": {
+              "barOrientation": "horizontal"
+            }
+          }
+        ]
+      }
+    ],
+    "structureEditors": [
+      {
+        "key": "guardrail_handrail",
+        "controlKey": "guardrailHandrailStructure",
+        "displayName": {
+          "zh-CN": "扶手结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改扶手结构"
+        },
+        "controls": [
+          "guardrailHandrailStructure"
+        ]
+      },
+      {
+        "key": "guardrail_post",
+        "controlKey": "guardrailPostStructure",
+        "displayName": {
+          "zh-CN": "立柱结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改立柱结构"
+        },
+        "controls": [
+          "guardrailPostStructure"
+        ]
+      },
+      {
+        "key": "guardrail_rail",
+        "controlKey": "guardrailRailStructure",
+        "displayName": {
+          "zh-CN": "横档结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改横档结构"
+        },
+        "controls": [
+          "guardrailRailStructure"
+        ]
+      },
+      {
+        "key": "guardrail_infill",
+        "controlKey": "guardrailInfillStructure",
+        "displayName": {
+          "zh-CN": "填充结构"
+        },
+        "dialogTitle": {
+          "zh-CN": "更改填充结构"
+        },
+        "controls": [
+          "guardrailInfillStructure"
+        ]
+      }
+    ]
   },
   "groups": [
     {
@@ -380,7 +2332,10 @@
         "parameter": "pathMode",
         "value": "stepped"
       },
-      "description": "连续扶手跨过立柱，立柱顶端裁切贴合；转角和坡度变化处仍为独立拼接，不视为连续弯管。"
+      "description": "连续扶手跨过立柱，立柱顶端裁切贴合；转角和坡度变化处仍为独立拼接，不视为连续弯管。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "startExtension",
@@ -388,7 +2343,7 @@
         "zh-CN": "扶手起点延伸"
       },
       "valueType": "number",
-      "defaultValue": 0,
+      "defaultValue": 30,
       "group": "layout",
       "order": 151,
       "unit": "mm",
@@ -397,32 +2352,7 @@
         "minimum": 0,
         "maximum": 2000
       },
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "pathMode",
-            "value": "level"
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "pathMode",
-                "value": "continuous"
-              },
-              {
-                "op": "eq",
-                "parameter": "handrailMode",
-                "value": "continuous"
-              }
-            ]
-          }
-        ]
-      },
-      "description": "从终端立柱中心沿扶手轴向向外延伸。"
+      "description": "扶手端部超出端柱外侧的长度；0 表示与端柱外侧齐平。"
     },
     {
       "key": "finishExtension",
@@ -430,7 +2360,7 @@
         "zh-CN": "扶手终点延伸"
       },
       "valueType": "number",
-      "defaultValue": 0,
+      "defaultValue": 30,
       "group": "layout",
       "order": 152,
       "unit": "mm",
@@ -439,32 +2369,7 @@
         "minimum": 0,
         "maximum": 2000
       },
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "pathMode",
-            "value": "level"
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "pathMode",
-                "value": "continuous"
-              },
-              {
-                "op": "eq",
-                "parameter": "handrailMode",
-                "value": "continuous"
-              }
-            ]
-          }
-        ]
-      },
-      "description": "从终端立柱中心沿扶手轴向向外延伸。"
+      "description": "扶手端部超出端柱外侧的长度；0 表示与端柱外侧齐平。"
     },
     {
       "key": "barOrientation",
@@ -488,7 +2393,10 @@
             "zh-CN": "横杆"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "horizontalRailCount",
@@ -1189,7 +3097,10 @@
           }
         }
       ],
-      "description": "两种横档结构都包含竖杆，横档结构与填充形式分别配置。"
+      "description": "两种横档结构都包含竖杆，横档结构与填充形式分别配置。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "cornerPostMode",
@@ -1281,7 +3192,10 @@
             "zh-CN": "两端大立柱"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "largePostSize",
@@ -1375,44 +3289,6 @@
         "op": "eq",
         "parameter": "railCount",
         "value": 3
-      }
-    },
-    {
-      "key": "endExtension",
-      "displayName": {
-        "zh-CN": "扶手两端轴向延伸"
-      },
-      "valueType": "number",
-      "defaultValue": 30,
-      "group": "layout",
-      "order": 150,
-      "quantity": "length",
-      "unit": "mm",
-      "constraints": {
-        "minimum": 0,
-        "maximum": 500,
-        "step": 1
-      },
-      "description": "从终端立柱中心向外延伸；设置大端柱时扶手顶接大柱侧面，端延伸不作用于大端柱。",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "pathMode",
-            "value": "level"
-          },
-          {
-            "op": "eq",
-            "parameter": "pathMode",
-            "value": "level"
-          },
-          {
-            "op": "ne",
-            "parameter": "pathMode",
-            "value": "level"
-          }
-        ]
       }
     },
     {
@@ -1648,7 +3524,7 @@
       },
       "valueType": "enum",
       "defaultValue": "embedded",
-      "group": "process",
+      "group": "basic",
       "order": 230,
       "choices": [
         {
@@ -1778,7 +3654,12 @@
             "rect",
             "round"
           ]
-        }
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -1891,7 +3772,12 @@
             "rect",
             "round"
           ]
-        }
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -2004,7 +3890,12 @@
             "rect",
             "round"
           ]
-        }
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -2117,7 +4008,12 @@
             "rect",
             "round"
           ]
-        }
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
       },
       "choices": [
         {
@@ -2530,7 +4426,8 @@
         "maximumLength": 200
       },
       "presentation": {
-        "editor": "component-model"
+        "editor": "component-model",
+        "visible": false
       },
       "visibleWhen": {
         "op": "all",
@@ -2639,20 +4536,6 @@
         "parameter": "layout",
         "value": "u"
       }
-    },
-    {
-      "key": "materialGrade",
-      "displayName": {
-        "zh-CN": "金属件材质牌号"
-      },
-      "valueType": "string",
-      "defaultValue": "",
-      "group": "profiles",
-      "order": 225,
-      "constraints": {
-        "maximumLength": 80
-      },
-      "description": "可填写304不锈钢、316L、Q235B等；写入管材和金属板件的材料牌号，不覆盖挡板材质或外购配件，也不替代材料与工艺核验。"
     }
   ],
   "name": "护栏/竖杆护栏"

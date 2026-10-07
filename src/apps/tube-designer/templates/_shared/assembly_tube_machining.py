@@ -266,7 +266,9 @@ def _through_fit(receiver,branch,clearance):
     rb,bb=receiver['bounds'],branch['bounds']
     available=min(rb['max'][i]-rb['min'][i] for i in (0,1))-2*_wall(receiver)
     required=max(bb['max'][i]-bb['min'][i] for i in (0,1))+2*clearance
-    if available<=required:
+    # Both dimensions come from evaluated contours. Numerical round-tube
+    # extrema must not turn an exactly touching fit into positive clearance.
+    if available<=required+1.e-7:
         raise ValueError(f'无法安全穿管：接收管内腔较小边 {available:g} mm，必须大于穿杆及开孔间隙 {required:g} mm')
 
 

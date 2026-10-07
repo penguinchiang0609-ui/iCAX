@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 
 #include "SDOSupport.h"
@@ -17,8 +18,8 @@ namespace
         CJobSDO()
             : CSDO("Job")
         {
-            ExposeMethod("Get", &iCAX::CAM::SDO::HandleGetJob);
-            ExposeMethod("SetMachine", &iCAX::CAM::SDO::HandleSetJobMachine);
+            ExposeMethod("Get", tube::license::ProtectProductMethod<11009, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleGetJob));
+            ExposeMethod("SetMachine", tube::license::ProtectProductMethod<11010, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleSetJobMachine));
         }
     };
 

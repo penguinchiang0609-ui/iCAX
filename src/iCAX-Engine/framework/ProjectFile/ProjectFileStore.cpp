@@ -1,7 +1,7 @@
 #include "pch.h"
 
 #include "ProjectFileStore.h"
-#include "ProjectMigrationRegistration.h"
+#include "ProjectFilePerformance.h"
 
 #include "Database/IRepository.h"
 #include "Database/IMetaRegistry.h"
@@ -45,7 +45,7 @@ namespace
     }
 
     CProjectResourceRecord ToProjectResource(
-        IN const iCAX::Resource::CResourcePersistentPayload& Payload_)
+        IN iCAX::Resource::CResourcePersistentPayload Payload_)
     {
         const auto& _Info = Payload_.Info;
         CProjectResourceRecord _Record;
@@ -70,7 +70,7 @@ namespace
             _Info.nMinimumReaderVersion;
         _Record.nFlags = _Info.nFlags;
         _Record.Metadata = _Info.Metadata;
-        _Record.Body = Payload_.Body;
+        _Record.Body = std::move(Payload_.Body);
         for (const auto& _Dependency : _Info.Dependencies)
         {
             _Record.Dependencies.push_back(
@@ -124,6 +124,7 @@ namespace
         IN const iCAX::Database::IRepository& Database_,
         IN const iCAX::Resource::CResourceLibrary& Resources_)
     {
+        const iCAX::ProjectFile::detail::CSavePerformance _Performance("collect");
         Info_.Magic = Definition_.Magic;
         Info_.ProductID = Definition_.ProductID;
         Info_.FormatVersion =
@@ -149,7 +150,10 @@ namespace
                 "Database has no meta registry");
         }
 
-        for (const auto& _EntityID : Database_.GetEntityIDs())
+        const auto _EntityIDs=Database_.GetEntityIDs();
+        _Document.Entities.reserve(_EntityIDs.size());
+        _Document.Components.reserve(_EntityIDs.size()*2);
+        for (const auto& _EntityID : _EntityIDs)
         {
             const auto _pEntity = Database_.GetEntity(_EntityID);
             if (!_pEntity)
@@ -173,7 +177,7 @@ namespace
                 _Record.EntityID = _EntityID;
                 _Record.ComponentClass = _ComponentClass;
                 _Record.bEnabled = _pComponent->IsEnable();
-                const auto _Properties =
+                auto _Properties =
                     _pComponent->GetProperties();
                 for (const auto& _PropertyName :
                     _pMeta->GetPropertyNames(_ComponentClass))
@@ -191,13 +195,14 @@ namespace
                     {
                         _Record.Properties.emplace(
                             _PropertyName,
-                            _Property->second);
+                            std::move(_Property->second));
                     }
                 }
                 _Document.Components.push_back(
                     std::move(_Record));
             }
         }
+        _Performance.Mark("components");
 
         std::vector<iCAX::Resource::CResourceReference> _Roots;
         for (const auto& _Info : Resources_.GetManifest(false))
@@ -214,6 +219,7 @@ namespace
         }
         const auto _Reachable =
             Resources_.CollectReachable(_Roots);
+        _Performance.Mark("resource-manifest");
         if (!_Reachable.IsComplete())
         {
             const auto& _Missing = _Reachable.Missing.front();
@@ -222,6 +228,7 @@ namespace
                 _Missing.URL + "@" +
                 std::to_string(_Missing.nVersion));
         }
+        _Document.Resources.reserve(_Reachable.Resources.size());
         for (const auto& _Info : _Reachable.Resources)
         {
             _Document.Resources.push_back(ToProjectResource(
@@ -229,8 +236,10 @@ namespace
                     _Info.Key.Source,
                     _Info.nVersion})));
         }
+        _Performance.Mark("resource-bodies");
         _Document.Canonicalize();
         RequireValidProjectDocument(_Document);
+        _Performance.Mark("validated");
         return _Document;
     }
 
@@ -412,30 +421,11 @@ namespace
 iCAX::ProjectFile::CProjectFile::CProjectFile(
     IN CProjectFileDefinition Definition_)
     : m_Definition(std::move(Definition_))
-    , m_pMigrations(
-        std::make_unique<CProjectMigrationRegistry>())
 {
     RequireValidDefinition(m_Definition);
-    if (m_Definition.MigrationModulePaths.empty())
-    {
-        CProjectMigrationRegistrationCatalog::ReplayAll(
-            *m_pMigrations);
-    }
-    else
-    {
-        CProjectMigrationRegistrationCatalog::ReplayByModulePaths(
-            *m_pMigrations,
-            m_Definition.MigrationModulePaths);
-    }
 }
 
 iCAX::ProjectFile::CProjectFile::~CProjectFile() = default;
-
-iCAX::ProjectFile::CProjectMigrationRegistry&
-iCAX::ProjectFile::CProjectFile::Migrations() noexcept
-{
-    return *m_pMigrations;
-}
 
 iCAX::ProjectFile::CPreparedProjectOpen::CPreparedProjectOpen() = default;
 iCAX::ProjectFile::CPreparedProjectOpen::~CPreparedProjectOpen() = default;
@@ -455,7 +445,7 @@ iCAX::ProjectFile::CPreparedProjectOpen
 iCAX::ProjectFile::CProjectFile::PrepareOpen(
     IN const std::filesystem::path& Path_) const
 {
-    const auto _Read = CProjectFileCodec::Read(Path_);
+    auto _Read = CProjectFileCodec::Read(Path_);
     if (_Read.Document.Info.Magic != m_Definition.Magic)
     {
         throw std::invalid_argument(
@@ -467,20 +457,17 @@ iCAX::ProjectFile::CProjectFile::PrepareOpen(
             "Project file belongs to another product");
     }
 
-    CProjectMigrationContext _MigrationContext;
-    auto _Document = m_pMigrations->UpgradeToCurrent(
-        _Read.Document,
-        m_Definition.nCurrentFormatRevision,
-        m_Definition.CurrentFormatVersion,
-        &_MigrationContext);
+    if (_Read.Document.Info.nFormatRevision != m_Definition.nCurrentFormatRevision
+        || _Read.Document.Info.FormatVersion != m_Definition.CurrentFormatVersion)
+    {
+        throw std::invalid_argument("Unsupported product project format version");
+    }
 
     CPreparedProjectOpen _Prepared;
-    _Prepared.m_Result.Info = _Document.Info;
+    _Prepared.m_Result.Info = _Read.Document.Info;
     _Prepared.m_Result.SourceEncoding = _Read.Encoding;
-    _Prepared.m_Result.MigrationDiagnostics =
-        std::move(_MigrationContext.Diagnostics);
     _Prepared.m_pDocument =
-        std::make_unique<CProjectDocument>(std::move(_Document));
+        std::make_unique<CProjectDocument>(std::move(_Read.Document));
     return _Prepared;
 }
 

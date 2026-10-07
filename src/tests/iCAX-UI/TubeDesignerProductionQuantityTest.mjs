@@ -3,23 +3,25 @@ import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/desig
 import { renderDesignerAddParameterContent, renderDesignerRightPane, renderDesignerLeftPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handlePartsAreaAction, listNestingParts, renderNestingLeftPane, buildProfileGroups } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildNestingRequest, restoreSavedNestingTask } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
 
 const template = { id: "test", name: "测试产品", available: true, parameters: [] };
-const profile = { id: "rect", kind: "rect", width: 40, depth: 20, wallThickness: 2 };
+const profile = { id: "rect", kind: "rect", width: 40, depth: 20, wallThickness: 2,
+  sectionIdentity: nativeSectionIdentity("quantity-fixture-rect-40-20-t2") };
 const source = { entityId: "source", name: "横杆", quantity: 6, unitQuantity: 2, instanceQuantity: 3, length: 1000, profile };
 const frozen = { ...source, entityId: "copy", quantity: 6, instanceQuantity: 1 };
 const designer = {
   templates: [template], product: { entityId: "product", name: "窗", templateId: "test", quantity: 3, parameters: {} },
-  instances: [{ entityId: "product", name: "窗", templateId: "test", quantity: 3 }],
+  instances: [{ entityId: "product", name: "窗", templateId: "test", quantity: 3, hasDisassembly:true, partCount:1 }],
   manufacturingGroups: [{ productEntityId: "product", name: "窗", generationRunId: "source-run", parts: [source] }],
   nestingGroups: [],
 };
 const ops = { renderProject() {}, showNotice() {} };
 const addView = { scene: { tubeDesigner: structuredClone(designer) }, tubeDesignerAddTemplateId: "test" };
-assert.match(renderDesignerAddParameterContent(designer, addView), /value="1"[\s\S]*data-tube-designer-instance-quantity="add"/);
+assert.doesNotMatch(renderDesignerAddParameterContent(designer, addView), /data-tube-designer-instance-quantity="add"/, "Style creation starts with one instance; quantity editing belongs to the created product");
 await handleDesignerAreaAction({}, addView, "tube-designer-instance-quantity-change", { value: "3", dataset: { tubeDesignerInstanceQuantity: "add" } }, ops);
 assert.equal(addView.tubeDesignerAddInstanceQuantity, "3");
-assert.match(renderDesignerAddParameterContent(designer, addView), /value="3"[\s\S]*data-tube-designer-instance-quantity="add"/);
+assert.doesNotMatch(renderDesignerAddParameterContent(designer, addView), /data-tube-designer-instance-quantity="add"/, "Style creation starts with one instance; quantity editing belongs to the created product");
 for (const value of ["", "0", "-1", "1.5", "1000001", "NaN"]) {
   await assert.rejects(handleDesignerAreaAction({}, addView, "tube-designer-instance-quantity-change", { value, dataset: { tubeDesignerInstanceQuantity: "add" } }, ops), /整数/);
 }
@@ -35,7 +37,7 @@ const context = { activeRibbonTabId: "product", actions: { async selectRibbonTab
   if (method === "TubeDesigner.StageNestingParts") {
     result.nestingGroups = [{ productEntityId: "batch", generationRunId: "batch", name: "窗", parts: [frozen] }];
     result.nestingTask = { revision: "stage", parts: [{ partEntityId: "copy", generationRunId: "batch" }], request: {}, result: {} };
-    return { tubeDesigner: result, staged: true, partEntityIds: ["copy"] };
+    return { tubeDesigner: result, staged: true, partEntityIds: ["copy"], stagedParts: [{sourcePartEntityId:"source",partEntityId:"copy",generationRunId:"batch",quantity:6}], nestingTask: result.nestingTask };
   }
   if (method === "TubeDesigner.SetInstanceQuantity") {
     result.product.quantity = payload.quantity;
@@ -46,12 +48,13 @@ const context = { activeRibbonTabId: "product", actions: { async selectRibbonTab
   } else throw new Error(method);
   return { tubeDesigner: result };
 } } };
-await handlePartsAreaAction(context, view, "tube-designer-parts-open-nesting", {}, ops);
+view.tubeDesignerSelectedInstanceIds=["product"];
+await handleDesignerAreaAction(context, view, "tube-designer-confirm-disassemble", {}, ops);
 assert.equal(view.activeAreaId, "nesting");
 assert.equal(context.activeRibbonTabId, "nesting");
 assert.equal(selectedRibbonTab, "nesting");
 assert.deepEqual(calls[0].payload.partEntityIds, ["source"]);
-assert.deepEqual(view.tubeDesignerSelectedPartIds, ["source"]);
+assert.deepEqual(view.tubeDesignerSelectedPartIds, []);
 assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["copy"]);
 assert.equal(listNestingParts(view.scene.tubeDesigner)[0].quantity, 6);
 const key = buildProfileGroups([frozen])[0].key;

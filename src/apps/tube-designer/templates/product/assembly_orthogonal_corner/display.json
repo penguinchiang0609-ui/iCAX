@@ -1,0 +1,328 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "corner_a": {
+          "title": {
+            "zh-CN": "A 边原管"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "corner_b": {
+          "title": {
+            "zh-CN": "B 边原管"
+          },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "corner_c": {
+          "title": {
+            "zh-CN": "C 边原管"
+          },
+          "order": 30,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "size": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "a": {
+          "category": "materials",
+          "order": 20,
+          "defaultOpen": true,
+          "sectionGroup": "corner_a"
+        },
+        "b": {
+          "category": "materials",
+          "order": 30,
+          "defaultOpen": true,
+          "sectionGroup": "corner_b"
+        },
+        "c": {
+          "category": "materials",
+          "order": 40,
+          "defaultOpen": true,
+          "sectionGroup": "corner_c"
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 10,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "aLength": {
+          "order": 20,
+          "category": "specifications",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "aProfileType": {
+          "order": 30,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "aWidth": {
+          "order": 40,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "aDepth": {
+          "order": 50,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "aWallThickness": {
+          "order": 60,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "aCornerRadius": {
+          "order": 70,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "aInnerRadius": {
+          "order": 80,
+          "category": "materials",
+          "sectionGroup": "corner_a",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bLength": {
+          "order": 90,
+          "category": "specifications",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bProfileType": {
+          "order": 100,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "bWidth": {
+          "order": 110,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bDepth": {
+          "order": 120,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bWallThickness": {
+          "order": 130,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bCornerRadius": {
+          "order": 140,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "bInnerRadius": {
+          "order": 150,
+          "category": "materials",
+          "sectionGroup": "corner_b",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cLength": {
+          "order": 160,
+          "category": "specifications",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cProfileType": {
+          "order": 170,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "cWidth": {
+          "order": 180,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cDepth": {
+          "order": 190,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cWallThickness": {
+          "order": 200,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cCornerRadius": {
+          "order": 210,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        },
+        "cInnerRadius": {
+          "order": 220,
+          "category": "materials",
+          "sectionGroup": "corner_c",
+          "width": {
+            "min": 64,
+            "preferred": 104,
+            "max": 160
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "aLength": {
+          "order": 0,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "bLength": {
+          "order": 10,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        },
+        "cLength": {
+          "order": 20,
+          "line": "full",
+          "width": {
+            "min": 140,
+            "preferred": 260,
+            "max": 480
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "product_dimensions": {
+          "title": {
+            "zh-CN": "产品定位尺寸"
+          },
+          "order": 10
+        }
+      },
+      "annotations": {}
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "A {aLength} / B {bLength} / C {cLength} mm"
+        }
+      }
+    ]
+  }
+}

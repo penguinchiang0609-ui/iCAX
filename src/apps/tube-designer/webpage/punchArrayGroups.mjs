@@ -1,4 +1,6 @@
 import { normalizePunchLayout, resolvePunchLayout, punchLayoutInstanceCount } from "./punchLayout.mjs";
+import { parsePunchArraySkipText, resolvePunchArraySkipPatterns } from "./arraySkipPatterns.mjs";
+export { parsePunchArraySkipText, resolvePunchArraySkipPatterns } from "./arraySkipPatterns.mjs";
 
 // Array transforms act on an already positioned/oriented, unexpanded seed tool
 // in native blank coordinates (X=0..L). Later groups multiply on the LEFT:
@@ -99,43 +101,11 @@ function resolveGroup(group, feature, length, seed) {
   return { ...group, values, transforms, instanceCount: transforms.length, ...(layoutSummary ? { layoutSummary } : {}) };
 }
 
-export function parsePunchArraySkipText(text, groups) {
-  const input = String(text ?? "").trim(); if (!input) return [];
-  if (input.length > 50000) throw new Error("跳过组合文本过长。");
-  return input.split(/[\s,，;；]+/u).map(token => {
-    const indices = token.split(/[:：]/u);
-    if (indices.length !== groups.length || indices.some(value => value !== "*" && !/^\d+$/.test(value))) throw new Error(`跳过组合“${token}”须按 ${groups.length} 组填写，例如 2:3，* 表示该组任意实例。`);
-    const entries = indices.flatMap((value, index) => {
-      if (value === "*") return [];
-      const n = Number(value); if (!Number.isSafeInteger(n) || n < 1) throw new Error("跳过组合序号须为正整数。");
-      return [[groups[index].id, n - 1]];
-    });
-    if (!entries.length) throw new Error("不能跳过所有阵列组合。");
-    return Object.fromEntries(entries);
-  });
-}
 export function punchArraySkipText(feature) {
   if (feature.arraySkipText !== undefined) return String(feature.arraySkipText);
   return (feature.arraySkips ?? []).map(pattern => (feature.arrayGroups ?? []).map(group =>
     Object.hasOwn(pattern, group.id) ? Number(pattern[group.id]) + 1 : "*").join(":")).join(", ");
 }
-function skipPatterns(feature, groups) {
-  const patterns = feature.arraySkipText === undefined ? feature.arraySkips ?? [] : parsePunchArraySkipText(feature.arraySkipText, groups);
-  if (!Array.isArray(patterns) || patterns.length > LIMIT) throw new Error("跳过组合须为有效列表，且不超过 1000 条。");
-  const seen = new Set();
-  for (const pattern of patterns) {
-    if (!pattern || typeof pattern !== "object" || Array.isArray(pattern) || !Object.keys(pattern).length) throw new Error("跳过组合须指定至少一个阵列组序号。");
-    for (const [id,index] of Object.entries(pattern)) {
-      const group = groups.find(item => item.id === id);
-      if (!group) throw new Error(`跳过组合引用了不存在的阵列组 ${id}。`);
-      if (!Number.isSafeInteger(index) || index < 0 || (enabled(group) && index >= group.instanceCount)) throw new Error(`跳过组合超出阵列组 ${id} 的实例范围。`);
-    }
-    const key = JSON.stringify(Object.entries(pattern).sort(([a],[b]) => a.localeCompare(b)));
-    if (seen.has(key)) throw new Error("跳过组合重复填写。"); seen.add(key);
-  }
-  return patterns;
-}
-
 export function resolvePunchArrayGroups(feature = {}, baseLength = 0) {
   if (!hasPunchArrayGroups(feature)) return { ...feature };
   const result = { ...feature, arrayTransforms: [], arrayInstances: [], arrayCandidateCount: 0, arrayGroupsError: "",
@@ -165,7 +135,7 @@ export function resolvePunchArrayGroups(feature = {}, baseLength = 0) {
       groups.push(resolved);
     }
     result.arrayCandidateCount = candidateCount;
-    const patterns = skipPatterns(feature, groups);
+    const patterns = resolvePunchArraySkipPatterns(feature, groups);
     result.arraySkips = patterns.map(pattern => ({ ...pattern }));
     let instances = [{ indices: {}, matrix: identity() }];
     for (const group of groups) instances = group.transforms.flatMap((matrix,index) => instances.map(instance => ({
@@ -203,27 +173,27 @@ export function punchArrayGroupInstanceCount(feature, length) {
   return resolved.arrayGroupsError ? 0 : resolved.arrayGroupsSummary.expandedCount;
 }
 
-/** Explicit editor migration only. Normal reading/rendering must not assign it. */
-export function migrateLegacyPunchArrays(feature = {}, length = 0) {
+/** Convert the current count/pitch layout into editable array groups. */
+export function createPunchArrayGroupsFromLayout(feature = {}, length = 0) {
   if (hasPunchArrayGroups(feature)) return { ...feature, arrayGroups: Array.isArray(feature.arrayGroups) ? feature.arrayGroups.map(normalizePunchArrayGroup) : feature.arrayGroups };
-  const legacy = resolvePunchLayout(feature, length), normalized = normalizePunchLayout(feature);
-  if (legacy.layoutError) return { ...feature, arrayGroupsError: "旧阵列无法迁移：" + legacy.layoutError };
-  const x = normalizePunchArrayGroup({ id: "legacy-length", type: "linear", axis: "X", count: normalized.arrayCount, spacing: normalized.arrayPitch,
+  const layout = resolvePunchLayout(feature, length), normalized = normalizePunchLayout(feature);
+  if (layout.layoutError) return { ...feature, arrayGroupsError: "阵列布局无效：" + layout.layoutError };
+  const x = normalizePunchArrayGroup({ id: "layout-length", type: "linear", axis: "X", count: normalized.arrayCount, spacing: normalized.arrayPitch,
     ...Object.fromEntries(layoutFields.map(key => [key, normalized[key]])),
-    direction: ["pitch","sequence"].includes(normalized.distributionMode) && legacy.reference === "end" ? "negative" : "positive" });
+    direction: ["pitch","sequence"].includes(normalized.distributionMode) && layout.reference === "end" ? "negative" : "positive" });
   const arrayGroups = [x];
-  if (legacy.rowCount > 1 || Math.abs(legacy.rowOffsets[0] ?? 0) > EPS) {
-    const row = legacy.face === "round"
-      ? { id: "legacy-rows", type: "polar", axis: "X", count: legacy.rowCount,
+  if (layout.rowCount > 1 || Math.abs(layout.rowOffsets[0] ?? 0) > EPS) {
+    const row = layout.face === "round"
+      ? { id: "layout-rows", type: "polar", axis: "X", count: layout.rowCount,
         angleMode: normalized.rowDistributionMode === "pitch" ? "pitch" : normalized.rowDistributionMode,
-        startAngle: legacy.rowOffsets[0], angleStep: legacy.rowPitch, endAngle: legacy.rowOffsets.at(-1), origin: null }
-      // Legacy part-coordinate tools use only "left" for the Z translation;
-      // side-coordinate tools use both side faces. Preserve native behavior.
-      : { id: "legacy-rows", type: "linear", axis: (feature.toolTarget==="part" ? legacy.face==="left" : ["left","right"].includes(legacy.face)) ? "Z" : "Y", count: legacy.rowCount, spacing: legacy.rowPitch };
+        startAngle: layout.rowOffsets[0], angleStep: layout.rowPitch, endAngle: layout.rowOffsets.at(-1), origin: null }
+      // Part-coordinate tools use "left" for Z translation; side-coordinate
+      // tools use both side faces, matching the native coordinate contract.
+      : { id: "layout-rows", type: "linear", axis: (feature.toolTarget==="part" ? layout.face==="left" : ["left","right"].includes(layout.face)) ? "Z" : "Y", count: layout.rowCount, spacing: layout.rowPitch };
     arrayGroups.push(normalizePunchArrayGroup(row, 1));
   }
-  const arraySkips = legacy.skippedInstances.map(key => { const [row,col] = key.split(":").map(Number); return {
+  const arraySkips = layout.skippedInstances.map(key => { const [row,col] = key.split(":").map(Number); return {
     [x.id]: col, ...(arrayGroups.length > 1 ? { [arrayGroups[1].id]: row } : {}),
   }; });
-  return { ...feature, station: legacy.station, reference: legacy.reference, offset: legacy.offset, arrayGroups, arraySkips };
+  return { ...feature, station: layout.station, reference: layout.reference, offset: layout.offset, arrayGroups, arraySkips };
 }

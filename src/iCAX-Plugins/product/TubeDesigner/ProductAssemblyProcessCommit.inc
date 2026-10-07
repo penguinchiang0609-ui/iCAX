@@ -71,7 +71,6 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
 {
     if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
         throw std::invalid_argument("保存装配工艺计划请求无效");
-    tube::license::Enforce<403, tube::license::Feature::Production>();
     const auto _Payload = DecodeObjectPayload(Request_);
     const auto _PlanID = GetRequiredText(_Payload, "planId", 160);
     const auto _RequestID = GetRequiredText(_Payload, "requestId", 160);

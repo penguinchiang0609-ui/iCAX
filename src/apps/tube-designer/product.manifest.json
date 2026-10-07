@@ -38,79 +38,51 @@
       "templates": [
         {
           "templateId": "modular-guardrail",
-          "version": "1.4.2",
+          "version": "1.4.3",
           "displayName": "护栏/竖杆护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-cross-straight",
-          "version": "1.4.2",
+          "version": "1.4.3",
           "displayName": "护栏/X 形护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-diamond-straight",
-          "version": "1.4.2",
+          "version": "1.4.3",
           "displayName": "护栏/菱形护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-glass-straight",
-          "version": "1.4.2",
+          "version": "1.4.3",
           "displayName": "护栏/挡板护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "single-face-security-window",
-          "version": "3.9.2",
+          "version": "3.9.9",
           "displayName": "窗/防盗窗",
           "status": "available"
         },
         {
-          "templateId": "minimal-protective-grille",
-          "version": "1.2.0",
-          "displayName": "窗/极简防护网",
-          "status": "available",
-          "industry": "门窗防护"
-        },
-        {
           "templateId": "assembly-frame-lt",
-          "version": "1.0.0",
+          "version": "1.0.1",
           "displayName": "验证/L＋T 装配组合原管框架",
           "status": "available",
           "industry": "门窗"
         },
         {
           "templateId": "straight-steel-staircase",
-          "version": "2.1.0",
+          "version": "2.1.1",
           "displayName": "楼梯/钢楼梯",
           "status": "available",
           "industry": "楼梯"
-        },
-        {
-          "templateId": "decorative-door",
-          "version": "1.0.0",
-          "displayName": "门/雕花装饰门",
-          "status": "available",
-          "industry": "门"
-        },
-        {
-          "templateId": "aluminium-window",
-          "version": "1.1.0",
-          "displayName": "窗/普通铝合金窗",
-          "status": "available",
-          "industry": "窗"
-        },
-        {
-          "templateId": "louver-window",
-          "version": "2.1.0",
-          "displayName": "窗/百叶窗",
-          "status": "available",
-          "industry": "窗"
         }
       ],
       "designGeometry": "assembly-member",

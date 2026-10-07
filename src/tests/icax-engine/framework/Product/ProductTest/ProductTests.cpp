@@ -527,6 +527,47 @@ TEST(ProductRuntimeTest, SavesAndReopensProjectFileWithStableIdentity)
     RemoveProjectFiles(_ProjectPath);
 }
 
+TEST(ProductRuntimeTest, DuplicateFileOpenKeepsOriginalProjectRunning)
+{
+    const auto _ProjectPath = MakeTempProjectPath();
+    auto _pRuntime = MakeRuntime();
+    _pRuntime->Start();
+
+    auto _pCatalog = _pRuntime->OpenProjectCatalog(
+        "Robot Catalog", _ProjectPath.string(),
+        "Robot Cell", _ProjectPath.string());
+    auto _pProject = _pCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pProject);
+    const auto _ProjectID = _pProject->GetProjectID();
+    const auto _SceneID = _pProject->GetMainSceneID();
+    _pRuntime->SaveProjectFile(_ProjectID, _ProjectPath.string());
+
+    try
+    {
+        (void)_pRuntime->OpenProjectFile(_ProjectPath.string());
+        FAIL() << "Opening an already running project must fail";
+    }
+    catch (const std::runtime_error& _Error)
+    {
+        EXPECT_STREQ("ProjectRuntime already exists", _Error.what());
+    }
+
+    EXPECT_EQ(_pCatalog,
+        _pRuntime->FindProjectCatalog(_pCatalog->GetCatalogID()));
+    EXPECT_TRUE(_pProject->IsRunning());
+    EXPECT_TRUE(_pRuntime->GetSceneFrontendSDOEndpoint(
+        _ProjectID, _SceneID).IsValid());
+
+    EXPECT_TRUE(_pRuntime->CloseProjectCatalog(_pCatalog->GetCatalogID()));
+    auto _pReopened = _pRuntime->OpenProjectFile(_ProjectPath.string());
+    ASSERT_NE(nullptr, _pReopened);
+    ASSERT_NE(nullptr, _pReopened->GetMainProject());
+    EXPECT_EQ(_ProjectID, _pReopened->GetMainProject()->GetProjectID());
+
+    _pRuntime->Stop();
+    RemoveProjectFiles(_ProjectPath);
+}
+
 TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
 {
     auto _pProductDataStore = std::make_shared<CMemoryProductDataStore>();

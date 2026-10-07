@@ -1,18 +1,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
+const windowDefaults = new Map();
+globalThis.localStorage = { getItem: key => windowDefaults.get(key) ?? null, setItem: (key, value) => windowDefaults.set(key, value) };
+const {
   componentLibraryState, componentModelKey, getComponentModels, getVisibleComponentModels, getComponentModelOptions, renderComponentModelField,
   renderComponentLibraryLeftPane, renderComponentLibraryRightPane, renderComponentLibraryDialogs,
   renderComponentLibraryViewportOverlay,
   refreshComponentModels, handleComponentLibraryAction, handleComponentLibraryRibbonCommand,
   ensureComponentModelPreview, ensureComponentCSGPreview, attachComponentLibrary,
-} from "../../apps/tube-designer/webpage/componentLibrary.mjs";
-import { renderDesignerAddParameterContent, buildPartCategories } from "../../apps/tube-designer/webpage/designerViews.mjs";
-import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
-import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
+} = await import("../../apps/tube-designer/webpage/componentLibrary.mjs");
+const { renderDesignerAddParameterContent, buildPartCategories } = await import("../../apps/tube-designer/webpage/designerViews.mjs");
+const { handleDesignerAreaAction } = await import("../../apps/tube-designer/webpage/designerActions.mjs");
+const { ribbonDefinition } = await import("../../apps/tube-designer/webpage/ribbonDefinition.mjs");
+const { licenseStatus } = await import("../../apps/tube-designer/webpage/licensing.mjs");
 
 const tests = [];
-async function test(name, run) { await run(); tests.push(name); }
+async function test(name, run) { windowDefaults.clear(); await run(); tests.push(name); }
 
 await test("bottom import button appears only in personal components", () => {
   for (const scope of ["system", "template", "user"]) {
@@ -45,6 +48,8 @@ function harness(models = [system, user]) {
     productProxy: { async invoke(method, payload) { calls.push({ method, payload }); return { models }; } },
     sceneProxy: { resources: {}, async invoke(method, payload) { calls.push({ method, payload }); return geometry(payload.id); } },
   };
+  licenseStatus(context, view);
+  view.tubeDesignerLicense = { featureSchemaVersion: 1, capabilities: { "product.design": true } };
   const ops = { renderProject() { renderCount++; }, showNotice(_context, _view, text) { notices.push(text); } };
   const act = (suffix, target = {}) => handleComponentLibraryAction(context, view, `tube-designer-component-${suffix}`, target, ops);
   return { context, view, state, ops, act, calls, snapshots, fits, visible, notices, renders: () => renderCount };
@@ -339,7 +344,7 @@ await test("CSG drawing builds an editable boolean tree, saves it to My Componen
 await test("CSG extrusion accepts library program profiles, embedded DXF, and a 2D sketch without intermediate component records", async () => {
   const h = harness();
   h.view.tubeDesignerSystemProfiles = [{
-    id: "rect", name: "矩形管", profileType: "parametric-package",
+    id: "rect", name: "矩形管", profileType: "parametric-package", profileForm: "parametric",
     descriptor: { parameters: [
       { key: "width", displayName: { "zh-CN": "外宽" }, valueType: "number", defaultValue: 40, min: 1, step: 1 },
       { key: "depth", displayName: { "zh-CN": "外高" }, valueType: "number", defaultValue: 20, min: 1, step: 1 },
@@ -798,10 +803,12 @@ await test("empty library clears the previous scene and lazy loading does not ru
   assert.equal(h.calls[0].method, "TubeDesigner.ListComponentModels");
 });
 
-await test("component tab and action routes are independent of tube profile and nesting workflows", async () => {
+await test("component action routes remain independent behind the three public pages", async () => {
   const tab = ribbonDefinition.tabs.find((item) => item.id === "resources");
   assert.equal(tab.title, "资源库");
-  assert.deepEqual(tab.groups.find((group) => group.title === "配件操作").commands.map((item) => item.id), ["components.draw", "components.import", "components.export-step"]);
+  assert.deepEqual(ribbonDefinition.tabs.map((item) => item.id), ["view", "resources", "about"]);
+  assert.deepEqual(tab.groups.flatMap((group) => group.commands).map((item) => item.id).filter((id) => id.startsWith("resources.")),
+    ["resources.products", "resources.profiles", "resources.tools", "resources.assemblies"]);
   const h = harness();
   await h.act("scope", { dataset: { componentScope: "user" } });
   await handleDesignerAreaAction(h.context, h.view, "tube-designer-component-select", { dataset: { componentKey: "user:custom" } }, h.ops);
@@ -809,18 +816,20 @@ await test("component tab and action routes are independent of tube profile and 
   assert.equal(await handleComponentLibraryRibbonCommand(h.context, h.view, "unrelated", h.ops), false);
   const entry = readFileSync(new URL("../../apps/tube-designer/webpage/entry.mjs", import.meta.url), "utf8");
   assert.match(entry, /components:\s*\{\s*left: renderComponentLibraryLeftPane/);
-  assert.match(entry, /\["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"\]/);
+  assert.match(entry, /\["view", "nesting", "machining", "templates", "profiles", "tools", "assemblies", "components", "sketch", "about"\]/);
 });
 
-await test("add template renders component selectors and breakdown distinguishes glass and accessories", () => {
+await test("component fields stay out of creation-only structure inputs and breakdown distinguishes glass and accessories", () => {
   const h = harness();
   const template = { id: "model-guard", available: true, name: "护栏/玻璃护栏", extensions: { modelResources: { clip: { name: "玻璃夹" } } },
     parameters: [{ key: "clip", type: "text", defaultValue: "template:clip", displayName: "玻璃夹", presentation: { editor: "component-model" } }] };
   h.view.scene = { tubeDesigner: { templates: [template] } };
   h.view.tubeDesignerAddTemplateId = template.id;
   const html = renderDesignerAddParameterContent(h.view.scene.tubeDesigner, h.view);
-  assert.match(html, /value="template:clip" selected/);
-  assert.match(html, /value="library:custom"/);
+  assert.doesNotMatch(html, /data-tube-designer-parameter="clip"/);
+  const field = renderComponentModelField(template.parameters[0], "template:clip", false, { view: h.view, template });
+  assert.match(field, /value="template:clip" selected/);
+  assert.match(field, /value="library:custom"/);
   const parts = [
     { entityId: "glass", partKind: "glass", length: 300, properties: { "manufacturing.plate": { width: 400, height: 800, thickness: 8 } } },
     { entityId: "cap", partKind: "accessory", length: 40, properties: { "manufacturing.modelName": "柱帽", "manufacturing.modelBounds": { width: 40, depth: 40, height: 12 }, "manufacturing.sourcing": "purchased" } },

@@ -1,0 +1,59 @@
+{
+  "schema": "icax.deferred-product-reference",
+  "schemaVersion": 1,
+  "status": "archived",
+  "preparedAt": "2026-10-05T00:34:11.965071+00:00",
+  "templateId": "decorative-door",
+  "version": "1.0.0",
+  "originalDirectory": "src/apps/tube-designer/templates/product/decorative_door",
+  "referenceDirectory": "src/apps/tube-designer/docs/deferred-products/decorative-door/reference",
+  "nonCacheFileCount": 5,
+  "parameterCount": 45,
+  "cachePolicy": "Moved intact; cache bytes inventoried separately, excluded from source count.",
+  "files": [
+    {
+      "path": "patterns.json",
+      "bytes": 3149,
+      "sha256": "f6798dd35679d101e84680dd69ddf993e765cd6c230e182f32e9f54483154aeb",
+      "cache": false
+    },
+    {
+      "path": "README.md",
+      "bytes": 2551,
+      "sha256": "d252e1701803af582936d6202854fd9157683fa8e8ce1ed111574ad80b879692",
+      "cache": false
+    },
+    {
+      "path": "resource/icon.svg",
+      "bytes": 423,
+      "sha256": "210c01277edf7e80d484ad4c3b7ba0bc86394235f7f030faa6840a561550d472",
+      "cache": false
+    },
+    {
+      "path": "template.json",
+      "bytes": 30570,
+      "sha256": "2dae130769b401321e5fb6ebf493bca40fbe3ffddfa3a60908fa12ad08910756",
+      "cache": false
+    },
+    {
+      "path": "template.py",
+      "bytes": 22364,
+      "sha256": "d4823be6709fb431ee6520ce3c4bdb98de2d871465d8f94742db4d34ddc9f76b",
+      "cache": false
+    }
+  ],
+  "retainedCacheFiles": [
+    {
+      "path": "__pycache__/template.cpython-312.pyc",
+      "bytes": 32557,
+      "sha256": "359de7409f291c7168b2232ba4409f31afba3af58c44edd6a89ef881e2c3be4f",
+      "cache": true
+    }
+  ],
+  "verifiedAt": "2026-10-05T00:35:47.751339+00:00",
+  "verification": {
+    "allFilesAndCacheSha256Equal": true,
+    "completeParameterDeclarationsEqual": true,
+    "originalDirectoryAbsent": true
+  }
+}

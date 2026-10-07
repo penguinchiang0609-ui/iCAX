@@ -1,12 +1,16 @@
 import { renderViewCube } from "../../_shared/workbench/viewport/viewCube.mjs";
-import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { escapeAttr } from "../../_shared/workbench/utils/format.mjs";
+import { punchSectionDiagramOwner, renderPunchParameterDiagram } from "./punchParameterDiagram.mjs";
 import { moldApplicability, previewSectionAnalysis } from "./moldApplicability.mjs";
 import { normalizePunchLayout, resolvePunchLayout, punchLayoutInstanceCount } from "./punchLayout.mjs";
-import { migrateLegacyPunchArrays, resolvePunchArrayGroups, punchArraySkipText, hasPunchArrayGroups, punchArrayGroupInstanceCount } from "./punchArrayGroups.mjs";
-import { renderPunchArrayGroupsControls, renderPunchArrayGroupsSummary } from "./punchArrayGroupsView.mjs";
-import { migratePunchRecord, migratePunchRecipe, BRANCH_PLACEMENT_DEFAULTS } from "./punchToolMigration.mjs";
-import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { createPunchArrayGroupsFromLayout, resolvePunchArrayGroups, punchArraySkipText, hasPunchArrayGroups, punchArrayGroupInstanceCount } from "./punchArrayGroups.mjs";
+import { renderPunchArrayGroupsControls, renderPunchArrayGroupsSummary, renderPunchArrayModeControl } from "./punchArrayGroupsView.mjs";
+import { clonePunchRecord, clonePunchRecipe, BRANCH_PLACEMENT_DEFAULTS } from "./punchRecipe.mjs";
+import { matchesParameterCondition, parameterVisible, parameterEnabled } from "./parameterConditions.mjs";
+import { renderProfileParameterGroups } from "./profileLibrary.mjs";
+import { fieldDisplayClass, fieldDisplayStyle } from "./designerViews.mjs";
 import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
+import { punchPoseColumns, punchArrayColumns, mergePunchColumns, renderPunchColumnControl } from './punchSheetColumns.mjs';
 
 const PLANE_FACES = [
   { value: "top", label: "上方（+Z）" }, { value: "bottom", label: "下方（-Z）" },
@@ -26,7 +30,7 @@ const label = item => typeof item?.displayName === "string" ? item.displayName :
 const punchRecordKind = item => String(item?.recordKind ?? (item?.section ? (item.section.source === "dxf" ? "dxf" : "branch") : "tool"));
 
 export function normalizePunchFeature(feature = {}) {
-  feature = migratePunchRecord(feature);
+  feature = clonePunchRecord(feature);
   const recordKind = punchRecordKind(feature);
   const normalized = normalizePunchLayout(recipeItem(feature));
   delete normalized.depthMode;
@@ -47,14 +51,15 @@ export function readPunchWizardFeatures(part = {}) {
   return (part?.properties?.["tubeDesigner.punchWizard"]?.features ?? []).map(normalizePunchFeature);
 }
 export function createPunchWizardState(part = {}) {
-  const config = migratePunchRecipe(part?.properties?.["tubeDesigner.punchWizard"] ?? {});
+  const config = clonePunchRecipe(part?.properties?.["tubeDesigner.punchWizard"] ?? {});
   const features=(config.features ?? []).map(normalizePunchFeature);
+  const draft = normalizePunchFeature({ recordKind: "branch", face: punchWizardProfileInfo(part).round ? "round" : "top",
+    station: Number(config.baseLength ?? part.length ?? 1000) / 2, layoutDatum: "base" });
   return { partId: String(part.entityId ?? ""), resourceId: part.manufacturingGeometryResourceId,
     resourceVersion: part.manufacturingGeometryResourceVersion, baseLength: Number(config.baseLength ?? part.length ?? 1000),
     features, originalFeatureRecipes:Object.fromEntries(features.map((feature,index)=>[feature.id,recipeItem(config.features[index])])),
     ends: Object.fromEntries(Object.entries(config.ends ?? { start: { type: "keep" }, end: { type: "keep" } }).map(([key,item])=>[key,recipeItem(item)])),
-    draft: normalizePunchFeature({ recordKind: "branch", face: punchWizardProfileInfo(part).round ? "round" : "top",
-      station: Number(config.baseLength ?? part.length ?? 1000) / 2, layoutDatum: "base" }),
+    draft, draftToolInitializationId: draft.id,
     editingId: "", history: [], future: [], revision: 0,
     // Saved thumbnails are still in the original blank's 0..L coordinates.
     // End cuts may shorten part.length; preserve the recipe's blank midpoint.
@@ -151,9 +156,9 @@ export function openPunchParameters(view, index = "draft", end = "", mode = "sha
   mode=end?"shape":["shape","pose","arrays"].includes(mode)?mode:"shape";
   s.parameterEditor={index:key,end,mode,snapshot:historySnapshot(s),error:""};
   if(mode==="arrays"&&!hasPunchArrayGroups(item)) {
-    const migrated=migrateLegacyPunchArrays(item,s.baseLength);
-    if(migrated.arrayGroupsError)s.parameterEditor.error=migrated.arrayGroupsError;
-    else {Object.assign(item,migrated);changed(s);}
+    const grouped=createPunchArrayGroupsFromLayout(item,s.baseLength);
+    if(grouped.arrayGroupsError)s.parameterEditor.error=grouped.arrayGroupsError;
+    else {Object.assign(item,grouped);changed(s);}
   }
   if(!end&&key!=="draft")s.selectedFeatureId=item.id;
   return true;
@@ -260,6 +265,7 @@ export function updatePunchWizardField(view, target) {
 }
 export function validatePunchFeature(part, feature) {
   const f = resolvePunchDistribution(feature,part?.length);
+  if (!f.toolRef?.id) return "请选择刀具模板。";
   if (!f.enabled) return "";
   if (f.layoutError) return f.layoutError;
   if (!(Number(part?.length) > 0)) return "零件长度不可用。";
@@ -277,10 +283,6 @@ export function validatePunchFeature(part, feature) {
     if (Object.values(f.toolParameters ?? {}).some(v => typeof v === "number" && !Number.isFinite(v))) return "刀具参数必须是有效数字。";
     return ""; // Actual footprint/curved walls are checked against the native BRep.
   }
-  // Legacy feature migration keeps its original dimensions, never converts unknown tools to circles.
-  if (!["circle","rectangle","slot","ellipse","custom"].includes(f.type)) return "旧孔类型无法识别，请选择刀具模板。";
-  if (f.type==="circle" ? !(f.diameter>0) : !(f.spanAlong>0&&f.spanAcross>0)) return "刀具尺寸必须大于零。";
-  if (f.type==="slot" && f.spanAlong<=f.spanAcross) return "腰形孔的长度必须大于宽度。";
   return "";
 }
 export function validatePunchWizard(view, part) {
@@ -332,6 +334,7 @@ function validateDescriptorValues(descriptor,item) {
 }
 function validatePunchEnd(item,descriptor) {
   if(!item||item.type==="keep")return "";
+  if(!item.toolRef?.id)return "请选择端部刀具模板。";
   if(!descriptor)return item.toolRef?"当前端部刀具定义不可用。":"请选择端部刀具模板。";
   if(descriptor.requiresSection&&!item.section?.profile?.contours?.length)return "请选择切端用管型或导入有效的本地 DXF 截面。";
   return validateDescriptorValues(descriptor,item);
@@ -381,6 +384,19 @@ export function setPunchFeatureSelected(view, index, selected) {
   return true;
 }
 
+/** Reuse the parameter transaction while placing its controls inside the table. */
+export function togglePunchRowParameters(view,index="draft",end="",mode="shape") {
+  const s=view?.tubeDesignerPunchWizard,item=end?s?.ends?.[end]:String(index)==="draft"?s?.draft:s?.features?.[Number(index)];
+  if(!s||view.pending||!item||isPunchToolReadOnly(s,item))return false;
+  const previous=s.parameterEditor;
+  if(previous&&!previous.inline)return false;
+  const same=previous?.index===String(index)&&previous.end===end&&previous.mode===mode;
+  if(previous)closePunchParameters(view,true,{length:s.baseLength},false);
+  if(!same&&openPunchParameters(view,index,end,mode))s.parameterEditor.inline=true;
+  if(String(index)==='draft'&&!end)s.showDraftRow=true;
+  return true;
+}
+
 /** Remove all rows selected in the table toolbar in one undoable transaction. */
 export function removeSelectedPunchWizardFeatures(view) {
   const s = view?.tubeDesignerPunchWizard;
@@ -399,6 +415,8 @@ export function removeSelectedPunchWizardFeatures(view) {
   if (s.editingId && removed.some(item => item.id === s.editingId)) {
     s.editingId = "";
     s.draft = normalizePunchFeature({ recordKind: "branch", station: Number(s.baseLength ?? 1000) / 2, layoutDatum: "base" });
+    s.draftToolInitializationId = s.draft.id;
+    initializePunchDraftTool(s);
   }
   changed(s);
   return true;
@@ -434,21 +452,20 @@ export function editPunchWizardFeature(view, action, index) {
 export function installPunchCatalogue(s, result) {
   s.tools = Array.isArray(result?.tools) ? result.tools : [];
   s.catalogueStatus = "ready";
-  for(const item of [s.draft,...s.features]) if(!item.toolRef) {
-    const tool=s.tools.find(t=>t.id===item.type);
-    if(tool) {
-      const supplied=Object.fromEntries((tool.parameters??[]).map(p=>[p.key,item[p.key]??p.defaultValue]));
-      selectPunchTool(s,item,tool.id);item.toolParameters=supplied;
-    }
-  }
-  for(const item of Object.values(s.ends??{})) if(item.type!=="keep"&&!item.toolRef) {
-    const tool=s.tools.find(t=>t.target==="end"&&t.id==="end-"+item.type);
-    if(tool) {
-      const supplied=Object.fromEntries((tool.parameters??[]).map(p=>[p.key,item[p.key]??p.defaultValue]));
-      selectPunchTool(s,item,tool.id);item.toolParameters=supplied;
-    }
-  }
+  initializePunchDraftTool(s);
   s.catalogueErrors = result?.errors ?? [];
+}
+
+function initializePunchDraftTool(s) {
+  const item = s.draft;
+  if(s.catalogueStatus !== "ready" || !item || item.id !== s.draftToolInitializationId
+      || s.features.some(feature => feature.id === item.id)) return;
+  if(!item.toolRef) {
+    const tool = s.tools.find(candidate => candidate.id === "circle");
+    if(!tool) return;
+    selectPunchTool(s, item, tool.id);
+  }
+  delete s.draftToolInitializationId;
 }
 
 function tableFieldAttrs(action, field, index, parameter = "", end = "") {
@@ -496,43 +513,51 @@ function tableEndToolSelect(action,s,item,end,disabled) {
   return tableSelect(action,"tool",id,choices,end,disabled,end);
 }
 
-function tableParameterFields(action, descriptor, item, index, disabled, end = "", target) {
+function tableParameterParts(action, descriptor, item, index, disabled, end = "", target) {
   if(!descriptor) {
-    if(item.toolRef)return '<span class="tube-designer-punch-sheet-readonly">固化刀具</span>';
+    if(item.toolRef)return {shape:'<span class="tube-designer-punch-sheet-readonly">固化刀具</span>',operations:''};
     const dimensions=item.type==="circle"
       ? [["diameter","直径",item.diameter,"mm"]]
       : [["spanAlong","长",item.spanAlong,"mm"],["spanAcross","宽",item.spanAcross,"mm"],
         ...((item.type==="rectangle")?[["cornerRadius","R",item.cornerRadius,"mm"]]:[])];
-    return dimensions.map(([field,name,value,unit])=>'<label><small>'+name+(unit?'（'+unit+'）':"")+'</small>'+tableNumber(action,field,value,index,"",disabled,end)+'</label>').join("");
+    return {shape:dimensions.map(([field,name,value,unit])=>'<label><small>'+name+(unit?'（'+unit+'）':"")+'</small>'+tableNumber(action,field,value,index,"",disabled,end)+'</label>').join(""),operations:''};
   }
-  const shapeFields=(descriptor.parameters??[]).filter(definition=>matchesVisibility(definition.visibleWhen,item.toolParameters??{})).map(definition=>{
+  const shapeValues=item.toolParameters??{};
+  const shapeFields=renderProfileParameterGroups({id:descriptor.id,descriptor},(descriptor.parameters??[]).filter(definition=>parameterVisible(definition,shapeValues)),shapeValues,disabled,{keyPrefix:'punch-tool-'+index+'-'+end,renderControl:(definition)=>{
     const binding=definition.derived;
     if(binding) {
       const bound=target?.applicable===true?target.parameters?.[definition.key]:undefined;
-      return '<label><small>'+escapeText(label(definition))+'</small><span>'+escapeText(bound??"待分析")+'（由单件工艺测量）</span></label>';
+      return '<label class="tube-designer-field'+fieldDisplayClass(definition)+'"'+fieldDisplayStyle(definition)+'><small>'+escapeText(label({...definition,displayName:definition.uiTitle??definition.displayName}))+'</small><span>'+escapeText(bound??"待分析")+'（由单件工艺测量）</span></label>';
     }
     const value=item.toolParameters?.[definition.key]??definition.defaultValue;
     const attrs=tableFieldAttrs(action,"parameter",index,definition.key,end);
+    const fieldDisabled=disabled||!parameterEnabled(definition,shapeValues);
     let input;
-    if(definition.options)input='<select'+attrs+(disabled?' disabled':'')+'>'+definition.options.map(option=>{
+    if(definition.options)input='<select'+attrs+(fieldDisabled?' disabled':'')+'>'+definition.options.map(option=>{
       const optionValue=option.value??option;
       return '<option value="'+escapeText(optionValue)+'" '+(String(optionValue)===String(value)?'selected':'')+'>'+escapeText(option.label??optionValue)+'</option>';
     }).join("")+'</select>';
-    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(disabled?'disabled':'')+'/>';
-    else input='<span class="tube-designer-punch-sheet-number"><input type="'+(definition.valueType==="string"?'text':'number')+'" value="'+escapeText(value??"")+'"'+attrs+(disabled?' disabled':'')+'/></span>';
-    return '<label><small>'+escapeText(label(definition)+(definition.unit?'（'+definition.unit+'）':""))+'</small>'+input+'</label>';
-  }).join("");
+    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(fieldDisabled?'disabled':'')+'/>';
+    else input='<span class="tube-designer-punch-sheet-number"><input type="'+(definition.valueType==="string"?'text':'number')+'" step="'+escapeText(definition.step??(definition.valueType==='integer'?1:'any'))+'" value="'+escapeText(value??"")+'"'+attrs+(fieldDisabled?' disabled':'')+'/></span>';
+    return '<label class="tube-designer-field'+fieldDisplayClass(definition)+'"'+fieldDisplayStyle(definition)+'><small>'+escapeText(label({...definition,displayName:definition.uiTitle??definition.displayName})+(definition.unit?' / '+definition.unit:""))+'</small>'+input+'</label>';
+  }});
   const operationValues={...Object.fromEntries((descriptor.operationParameters??[]).map(definition=>[definition.key,definition.defaultValue])),...item};
-  const operationFields=(descriptor.operationParameters??[]).filter(definition=>matchesVisibility(definition.visibleWhen,operationValues)).map(definition=>{
+  const operationFields=renderProfileParameterGroups({id:descriptor.id,descriptor},(descriptor.operationParameters??[]).filter(definition=>parameterVisible(definition,operationValues)),operationValues,disabled,{keyPrefix:'punch-operation-'+index+'-'+end,renderControl:definition=>{
     const value=item[definition.key]??definition.defaultValue;
     const attrs=tableFieldAttrs(action,definition.key,index,"",end);
+    const fieldDisabled=disabled||!parameterEnabled(definition,operationValues);
     let input;
-    if(definition.options)input='<select'+attrs+(disabled?' disabled':'')+'>'+definition.options.map(option=>{const optionValue=option.value??option;return '<option value="'+escapeText(optionValue)+'" '+(String(optionValue)===String(value)?'selected':'')+'>'+escapeText(option.label??optionValue)+'</option>';}).join('')+'</select>';
-    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(disabled?'disabled':'')+'/>';
-    else input='<span class="tube-designer-punch-sheet-number"><input type="number" value="'+escapeText(value??"")+'" step="'+escapeText(definition.step??"any")+'"'+attrs+(disabled?' disabled':'')+'/></span>';
-    return '<label><small>'+escapeText(label(definition)+(definition.unit?'（'+definition.unit+'）':""))+'</small>'+input+'</label>';
-  }).join("");
-  return (descriptor.kind==="fixed"?'<span class="tube-designer-punch-sheet-readonly">定式尺寸</span>':shapeFields)+operationFields;
+    if(definition.options)input='<select'+attrs+(fieldDisabled?' disabled':'')+'>'+definition.options.map(option=>{const optionValue=option.value??option;return '<option value="'+escapeText(optionValue)+'" '+(String(optionValue)===String(value)?'selected':'')+'>'+escapeText(option.label??optionValue)+'</option>';}).join('')+'</select>';
+    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(fieldDisabled?'disabled':'')+'/>';
+    else input='<span class="tube-designer-punch-sheet-number"><input type="number" value="'+escapeText(value??"")+'" step="'+escapeText(definition.step??"any")+'"'+attrs+(fieldDisabled?' disabled':'')+'/></span>';
+    return '<label class="tube-designer-field'+fieldDisplayClass(definition)+'"'+fieldDisplayStyle(definition)+'><small>'+escapeText(label({...definition,displayName:definition.uiTitle??definition.displayName})+(definition.unit?' / '+definition.unit:""))+'</small>'+input+'</label>';
+  }});
+  return {shape:descriptor.kind==="fixed"?'<span class="tube-designer-punch-sheet-readonly">定式尺寸</span>':shapeFields,operations:operationFields};
+}
+
+function tableParameterFields(...args) {
+  const {shape,operations}=tableParameterParts(...args);
+  return shape+operations;
 }
 
 function tableProfileSelect(action, item, index, choices, disabled, end = "") {
@@ -546,19 +571,18 @@ function tableProfileParameters(action,item,index,choices,disabled,end = "") {
   if(item.section?.source==="dxf")return '<span class="tube-designer-punch-sheet-readonly">DXF 定式截面</span>';
   const choice=choices.find(candidate=>candidate.key===item.section?.key);
   const values=item.section?.parameters??choice?.defaultParameters??{};
-  const definitions=(choice?.definitions??[]).filter(definition=>matchesVisibility(definition?.visibleWhen,values));
-  const fields=definitions.map(definition=>{
+  const definitions=(choice?.definitions??[]).filter(definition=>parameterVisible(definition,values));
+  const fields=renderProfileParameterGroups(choice?.profile??{id:item.section?.key},definitions,values,disabled,{keyPrefix:'punch-section-'+index+'-'+end,renderControl:(definition)=>{
     const value=values[definition.key]??definition.defaultValue;
     const attrs=' data-cam-change-action="'+action("profile-parameter")+'" data-tube-designer-punch-index="'+escapeText(index)+'" data-tube-designer-punch-profile-parameter="'+escapeText(definition.key)+'" data-profile-parameter-key="'+escapeText(definition.key)+'"'+(end?' data-tube-designer-punch-end="'+escapeText(end)+'"':"");
     let input;
-    if(definition.options)input='<select'+attrs+(disabled?' disabled':'')+'>'+definition.options.map(option=>{const optionValue=option.value??option;return '<option value="'+escapeText(optionValue)+'" '+(String(optionValue)===String(value)?'selected':'')+'>'+escapeText(option.label??optionValue)+'</option>';}).join("")+'</select>';
-    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(disabled?'disabled':'')+'/>';
-    else input='<span class="tube-designer-punch-sheet-number"><input type="'+(definition.valueType==="string"?'text':'number')+'" step="'+escapeText(definition.step??(definition.valueType==="integer"?1:"any"))+'" value="'+escapeText(value??"")+'"'+attrs+(disabled?' disabled':'')+'/></span>';
-    return '<label><small>'+escapeText(label(definition)+(definition.unit?'（'+definition.unit+'）':""))+'</small>'+input+'</label>';
-  }).join("");
-  const diagram=renderProfileParameterDiagram(item.section?.profile,{definitions:definitions.length?definitions:undefined,parameters:values,compact:true,title:"支管参数示意图"});
-  return '<div class="tube-designer-punch-profile-parameters" data-profile-parameter-scope><div class="tube-designer-punch-sheet-parameters">'+fields+'</div>'
-    +(diagram?'<details class="tube-designer-punch-profile-diagram"><summary>支管参数示意图</summary>'+diagram+'</details>':"")+'</div>';
+    const fieldDisabled=disabled||!parameterEnabled(definition,values);
+    if(definition.options)input='<select'+attrs+(fieldDisabled?' disabled':'')+'>'+definition.options.map(option=>{const optionValue=option.value??option;return '<option value="'+escapeText(optionValue)+'" '+(String(optionValue)===String(value)?'selected':'')+'>'+escapeText(option.label??optionValue)+'</option>';}).join("")+'</select>';
+    else if(definition.valueType==="boolean")input='<input type="checkbox"'+attrs+' '+(value?'checked ':'')+(fieldDisabled?'disabled':'')+'/>';
+    else input='<span class="tube-designer-punch-sheet-number"><input type="'+(definition.valueType==="string"?'text':'number')+'" step="'+escapeText(definition.step??(definition.valueType==="integer"?1:"any"))+'" value="'+escapeText(value??"")+'"'+attrs+(fieldDisabled?' disabled':'')+'/></span>';
+    return '<label class="tube-designer-field'+fieldDisplayClass(definition)+'"'+fieldDisplayStyle(definition)+'><small>'+escapeText(label({...definition,displayName:definition.uiTitle??definition.displayName})+(definition.unit?' / '+definition.unit:""))+'</small>'+input+'</label>';
+  }});
+  return '<div class="tube-designer-punch-profile-parameters" data-profile-parameter-scope data-parameter-diagram-owner="'+escapeText(punchSectionDiagramOwner(item,index,end))+'"><div class="tube-designer-punch-sheet-parameters">'+fields+'</div></div>';
 }
 
 const matchesVisibility=matchesParameterCondition;
@@ -571,7 +595,7 @@ function punchParameterSummary(item, descriptor, choices=[]) {
   const choice=choices.find(candidate=>candidate.key===item.section?.key);
   const definitions=item.section?(choice?.definitions??[]):descriptor?.parameters??[];
   const values=item.section?item.section.parameters:item.toolParameters;
-  const parts=definitions.filter(d=>matchesVisibility(d.visibleWhen,values??{})).slice(0,3).map(d=>{
+  const parts=definitions.filter(d=>parameterVisible(d,values??{})).slice(0,3).map(d=>{
     const value=values?.[d.key]??d.defaultValue;
     const option=d.options?.find(o=>String(o.value??o)===String(value));
     return label(d)+" "+(option?.label??(typeof value==="boolean"?(value?"是":"否"):value??"—"))+(d.unit??"");
@@ -593,7 +617,7 @@ function punchPoseDescriptor(descriptor, item, pose) {
   return pose ? undefined : descriptor;
 }
 function punchArrayViewState(item,baseLength) {
-  const feature=migrateLegacyPunchArrays(item,baseLength);
+  const feature=createPunchArrayGroupsFromLayout(item,baseLength);
   return {feature,groups:feature.arrayGroups??[],result:resolvePunchArrayGroups(feature,baseLength)};
 }
 function renderPunchPoseFields(action,item,index,disabled,descriptor) {
@@ -623,7 +647,7 @@ function punchPoseSummary(item) {
   return position+(item.toolRef?.id==="branch-profile"?" · 轴夹角 "+(item.angle??90)+"° · 方位 "+(item.azimuth??0)+"°":" · 刀具坐标定位");
 }
 function renderPunchParameterDialog(action,s,view,options,btn) {
-  const editor=s.parameterEditor;if(!editor)return "";
+  const editor=s.parameterEditor;if(!editor||editor.inline)return "";
   const index=editor.index,end=editor.end;
   const item=end?s.ends?.[end]:index==="draft"?s.draft:s.features?.[Number(index)];
   if(!item)return "";
@@ -651,8 +675,9 @@ function renderPunchParameterDialog(action,s,view,options,btn) {
   const position=editor.windowPosition;
   const windowStyle=Number.isFinite(position?.left)&&Number.isFinite(position?.top)
     ?' style="position:fixed;left:'+position.left+'px;top:'+position.top+'px;margin:0"':"";
-  return '<div class="tube-designer-punch-parameter-backdrop"><section class="tube-designer-punch-parameter-dialog" role="dialog" aria-modal="false" aria-labelledby="punch-parameter-title" aria-describedby="punch-parameter-window-hint" data-punch-parameter-dialog data-punch-editor-mode="'+mode+'"'+windowStyle+'>'
-    +'<header data-punch-parameter-drag><div><strong id="punch-parameter-title">'+escapeText(title)+'</strong><small id="punch-parameter-window-hint">修改即时预览；可拖动标题移开窗口，关闭返回场景</small></div>'+btn("parameters-cancel","×",'aria-label="关闭参数编辑"')+'</header>'
+  const rememberedControls=index==="draft"&&!end&&!s.editingId?'[data-tube-designer-punch-index="draft"]':"";
+  return '<div class="tube-designer-punch-parameter-backdrop"><section class="tube-designer-punch-parameter-dialog" role="dialog" aria-modal="false" aria-labelledby="punch-parameter-title" aria-describedby="punch-parameter-window-hint" data-window-state-controls="'+escapeText(rememberedControls)+'" data-punch-parameter-dialog data-punch-editor-mode="'+mode+'"'+windowStyle+'>'
+    +'<header data-punch-parameter-drag><div><strong id="punch-parameter-title">'+escapeText(title)+'</strong><small id="punch-parameter-window-hint">修改即时预览；可拖动标题移开窗口，关闭返回场景</small></div>'+btn("parameters-close","×",'aria-label="关闭参数编辑"')+'</header>'
     +'<div class="tube-designer-punch-parameter-content">'+content
     +((editor.error||s.error)?'<div class="tube-designer-punch-error" role="alert">'+escapeText(editor.error||s.error)+'</div>':"")
     +'<small class="tube-designer-punch-parameter-note">'+escapeText(note)+'</small>'
@@ -660,21 +685,108 @@ function renderPunchParameterDialog(action,s,view,options,btn) {
     +'</section></div>';
 }
 
-function renderPunchTableRow(action, s, view, item, index, btn, options) {
+function renderInlinePunchEditor(action,s,view,item,index,end,btn,options,expectedMode) {
+  const editor=s.parameterEditor;
+  if(!editor?.inline||editor.index!==String(index)||editor.end!==end||(expectedMode&&editor.mode!==expectedMode))return "";
+  const descriptor=punchToolDescriptor(s,item),kind=punchRecordKind(item),disabled=view.pending;
+  const mode=end?'shape':editor.mode;
+  const inCell=mode!=='shape';
+  const selector=kind==='tool'?(end?tableEndToolSelect(action,s,item,end,disabled):tableToolSelect(action,s,item,index,disabled))
+    :tableProfileSelect(action,item,index,options.branchProfiles??[],disabled,end);
+  const target=previewSectionAnalysis(s,item,end);
+  const applicability=moldApplicability(descriptor,item.toolParameters,target);
+  const sharedDefinition=options.sharedDefinitionLayout&&mode==='shape'&&!end;
+  const parts=tableParameterParts(action,descriptor,item,index,disabled,end,target);
+  const fields=(kind==='tool'?'':tableProfileParameters(action,item,index,options.branchProfiles??[],disabled,end))
+    +parts.shape+(sharedDefinition?'':parts.operations);
+  const source=tableActionSelect(action,'record-kind-change',kind,end
+    ?[{value:'tool',label:'端部刀具'},{value:'branch',label:'支管切端'},{value:'dxf',label:'DXF 切端'}]
+    :[{value:'tool',label:'刀具冲孔'},{value:'branch',label:'支管相贯'},{value:'dxf',label:'本地 DXF'}],index,disabled,end);
+  const shape=(sharedDefinition&&parts.operations?'<div class="punch-inline-operation">'+parts.operations+'</div>':'')
+    +(end?'':'<div class="punch-inline-source"><label><span>加工来源</span>'+source+'</label><label><span>'+(kind==='tool'?'刀具':'截面')+'</span>'+selector+'</label></div>')
+    +(item.type==='keep'?'':'<div class="tube-designer-punch-sheet-parameters">'+fields+'</div>');
+  const arrays=mode==='arrays'?punchArrayViewState(item,s.baseLength):null;
+  const content=mode==='pose'?renderPunchPoseFields(action,item,index,disabled,descriptor)
+    :mode==='arrays'?renderPunchArrayGroupsControls(action,arrays.feature,index,disabled,s.baseLength,arrays.groups,arrays.result,punchArraySkipText(arrays.feature)):shape;
+  const diagramButton=mode==='shape'&&item.section?.source!=='dxf'&&item.section?.profile?.contours?.length
+    ?btn('section-diagram','参数示意图','data-tube-designer-punch-index="'+escapeText(index)+'"'+(end?' data-tube-designer-punch-end="'+end+'"':'')):'';
+  const actions=diagramButton+(end&&item.type!=='keep'?btn('remove-end','恢复原端面','data-tube-designer-punch-index="'+end+'"'):'')+(sharedDefinition?'':btn('parameters-close','收起'));
+  return '<section class="tube-designer-punch-inline-editor'+(inCell?' tube-designer-punch-cell-editor':'')+'" aria-label="'+escapeAttr(end?(end==='start'?'左端面参数':'右端面参数'):({shape:'形状参数',pose:'位置 / 姿态',arrays:'阵列'}[mode]))+'" data-punch-inline-editor data-punch-editor-mode="'+mode+'"'+(inCell?' data-punch-cell-editor="'+mode+'"':'')+'>'
+    +(actions?'<nav class="punch-inline-actions">'+actions+'</nav>':'')
+    +'<div class="tube-designer-punch-parameter-content">'+content
+    +((editor.error||applicability.length)?'<div class="tube-designer-punch-error" role="alert">'+escapeText(editor.error||applicability.map(f=>f.message).join('；'))+'</div>':'')+'</div></section>';
+}
+export function handlePunchColumnAction(view,action,target) {
+  if(!['columns-toggle','columns-open'].includes(action))return false;
+  const s=view.tubeDesignerPunchWizard,group=target?.dataset?.punchColumnGroup;
+  if(!s||!['pose','arrays'].includes(group))return true;
+  s.sheetColumns??={};s.sheetColumns[group]=action==='columns-open'||s.sheetColumns[group]===false;
+  return true;
+}
+
+function parameterCellAttributes(action,s,index,mode,disabled,end='') {
+  const active=s.parameterEditor?.inline&&s.parameterEditor.index===String(index)
+    && s.parameterEditor.end===end&&s.parameterEditor.mode===mode;
+  return ' data-punch-record-column="'+mode+'"'+(disabled?' aria-disabled="true"'
+    :' data-cam-action="'+action('parameters-open')+'" data-punch-cell-activate data-tube-designer-punch-inline data-tube-designer-punch-index="'+escapeText(index)+'" data-tube-designer-punch-editor-mode="'+mode+'"'+(end?' data-tube-designer-punch-end="'+end+'"':'')+' tabindex="0" aria-expanded="'+!!active+'"');
+}
+
+function renderExpandedShapeRow(action,s,view,item,index,end,btn,options,colspan) {
+  if(s.parameterEditor?.mode!=='shape')return '';
+  const editor=renderInlinePunchEditor(action,s,view,item,index,end,btn,options,'shape');
+  if(!editor)return '';
+  const tone=(end?(end==='start'?0:1):String(index)==='draft'?s.features.length:Number(index))%2?'odd':'even';
+  return '<tr class="tube-designer-punch-inline-row" data-punch-row-tone="'+tone+'" data-punch-inline-row="'+escapeText(end?'end:'+end:String(index)==='draft'?'draft':item.id)+'"><td colspan="'+colspan+'">'+editor+'</td></tr>';
+}
+
+function sheetColumnState(s,options) {
+  const records=[...s.features,...(s.showDraftRow||s.editingId||!s.features.length?[s.draft]:[])];
+  const pose=mergePunchColumns(records.map(item=>punchPoseColumns(item,punchToolDescriptor(s,item))));
+  const arrays=mergePunchColumns(records.flatMap(item=>punchArrayViewState(item,s.baseLength).groups.filter(group=>group.enabled!==false).map(punchArrayColumns)));
+  const open={pose:s.sheetColumns?.pose!==false,arrays:s.sheetColumns?.arrays!==false};
+  return {pose,arrays,open,count:3+(open.pose?pose.length:1)+(open.arrays?arrays.length+2:1)};
+}
+function sheetGroupToggle(action,group,expanded,disabled) {
+  return '<button type="button" class="punch-column-group-toggle" data-cam-action="'+action('columns-toggle')+'" data-punch-column-group="'+group+'" aria-expanded="'+expanded+'"'+(disabled?' disabled':'')+'>'+(group==='pose'?'位置 / 姿态':'阵列')+'<small>'+(expanded?'收起列':'展开列')+'</small></button>';
+}
+function renderPoseColumns(action,s,item,index,disabled,columns) {
+  if(!columns.open.pose)return '<td data-punch-record-column="pose" data-punch-cell-activate data-cam-action="'+action('columns-open')+'" data-punch-column-group="pose" tabindex="0">'+escapeText(punchPoseSummary(item))+'</td>';
+  const definitions=punchPoseColumns(item,punchToolDescriptor(s,item));
+  return columns.pose.map(column=>{
+    const definition=definitions.find(field=>field.key===column.key);
+    const value=item[column.key]??({angle:90,length:120,direction:'through',endDatum:'long'}[column.key]??0);
+    return '<td data-punch-record-column="pose:'+column.key+'" data-punch-column-key="'+column.key+'">'+(definition?renderPunchColumnControl(definition,value,tableFieldAttrs(action,column.key,index)+' data-punch-sheet-field',disabled):'<span class="punch-column-na">—</span>')+'</td>';
+  }).join('');
+}
+function renderArrayColumns(action,s,item,index,disabled,columns,btn) {
+  const state=punchArrayViewState(item,s.baseLength);
+  if(!columns.open.arrays)return '<td data-punch-record-column="arrays" data-punch-cell-activate data-cam-action="'+action('columns-open')+'" data-punch-column-group="arrays" tabindex="0">'+renderPunchArrayGroupsSummary(state.groups,state.result)+'</td>';
+  const groups=state.groups.filter(group=>group.enabled!==false);
+  const modeCell='<td data-punch-record-column="arrays:mode">'+renderPunchArrayModeControl(action,state.groups,index,disabled,' data-punch-sheet-array-field')+'</td>';
+  const attrs=(group,field)=>' data-cam-change-action="'+action('array-group-field')+'" data-tube-designer-punch-index="'+escapeText(index)+'" data-tube-designer-punch-array-group="'+escapeText(group.id)+'" data-tube-designer-punch-array-field="'+field+'" data-punch-sheet-array-field';
+  const cells=columns.arrays.map(column=>'<td data-punch-record-column="arrays:'+column.key+'" data-punch-column-key="'+column.key+'"><div class="punch-array-column-stack">'+groups.map(group=>{
+    const field=punchArrayColumns(group).find(candidate=>candidate.key===column.key);
+    const originIndex={originX:0,originY:1,originZ:2}[column.key];
+    const value=column.key==='originAuto'?!group.origin:originIndex!==undefined?(group.origin??[s.baseLength/2,0,0])[originIndex]:group[column.key];
+    return '<div data-array-group-id="'+escapeText(group.id)+'">'+(field?renderPunchColumnControl(field,value,attrs(group,column.key),disabled||(originIndex!==undefined&&!group.origin)):'<span class="punch-column-na">—</span>')+'</div>';
+  }).join('')+'</div></td>').join('');
+  const skips='<td data-punch-record-column="arrays:skips"><input type="text" aria-label="跳过组合位置" placeholder="如 2:3, 4:*" value="'+escapeText(punchArraySkipText(state.feature))+'" data-cam-change-action="'+action('array-skips-change')+'" data-tube-designer-punch-index="'+escapeText(index)+'" data-tube-designer-punch-array-field="arraySkips" data-punch-sheet-array-field'+(disabled?' disabled':'')+'/>'+(state.result.arrayGroupsError?'<small role="alert">'+escapeText(state.result.arrayGroupsError)+'</small>':'')+'</td>';
+  return modeCell+cells+skips;
+}
+function renderPunchTableRow(action, s, view, item, index, btn, options,columns) {
   const descriptor=punchToolDescriptor(s,item);
   const locked=isPunchToolReadOnly(s,item), disabled=view.pending||locked;
   const selected=new Set(Array.isArray(s.selectedFeatureIds)?s.selectedFeatureIds:[]).has(item.id);
   const rowClass=[item.enabled===false?'is-suppressed':'',s.selectedFeatureId===item.id?'is-selected':''].filter(Boolean).join(" ");
-  const sourceSelect='<div class="tube-designer-punch-source-cell"><span '+(!locked?'tabindex="0" role="button" data-punch-edit-name aria-label="编辑 '+escapeText(punchSourceName(item,descriptor))+' 形状" title="双击名称或点击编辑形状"':'')+'>'+escapeText(punchSourceName(item,descriptor))+'</span><small>'+escapeText(punchParameterSummary(item,punchPoseDescriptor(descriptor,item,false),options.branchProfiles))+'</small></div>';
-  const edit=(mode,title)=>locked?'':btn("parameters-open",title,'data-tube-designer-punch-index="'+index+'" data-tube-designer-punch-editor-mode="'+mode+'"');
-  const arrayState=punchArrayViewState(item,s.baseLength);
-  return '<tr class="'+rowClass+'" data-tube-designer-punch-row="'+escapeText(index)+'">'
-    +'<th scope="row" data-cam-action="'+action("summary-select")+'" data-tube-designer-punch-index="'+escapeText(index)+'"><label class="tube-designer-punch-row-select" title="选择此行"><input type="checkbox" data-cam-change-action="'+action("selection-change")+'" data-tube-designer-punch-index="'+escapeText(index)+'" '+(selected?'checked ':'')+(view.pending?'disabled':'')+'/><span>'+(index+1)+'</span></label></th>'
-    +'<td>'+tableCheck(action,"enabled",item.enabled!==false,index,"",disabled)+'</td>'
-    +'<td><div class="punch-record-cell">'+sourceSelect+(locked?'<small>固化参数 · 只读</small>':edit("shape","编辑形状"))+'</div></td>'
-    +'<td><div class="punch-record-cell"><span class="punch-pose-summary">'+escapeText(punchPoseSummary(item))+'</span>'+edit("pose","编辑位置 / 姿态")+'</div></td>'
-    +'<td><div class="punch-record-cell">'+renderPunchArrayGroupsSummary(arrayState.groups,arrayState.result)+edit("arrays","编辑阵列")+'</div></td>'
-    +'</tr>';
+  const sourceName=punchSourceName(item,descriptor),sourceSummary=punchParameterSummary(item,punchPoseDescriptor(descriptor,item,false),options.branchProfiles);
+  const sourceSelect='<div class="tube-designer-punch-source-cell"><span title="'+escapeAttr(sourceName)+'">'+escapeText(sourceName)+'</span><small title="'+escapeAttr(sourceSummary)+'">'+escapeText(sourceSummary)+'</small></div>';
+  return '<tr class="'+rowClass+'" data-punch-row-tone="'+(index%2?'odd':'even')+'" data-tube-designer-punch-row="'+escapeText(index)+'">'
+    +'<th scope="row" data-punch-frozen-column="number"><div class="tube-designer-punch-row-select"><input type="checkbox" aria-label="选择第 '+(index+1)+' 行" data-cam-change-action="'+action("selection-change")+'" data-tube-designer-punch-index="'+escapeText(index)+'" '+(selected?'checked ':'')+(view.pending?'disabled':'')+'/>'+btn('summary-select',String(index+1),'data-tube-designer-punch-index="'+escapeText(index)+'" aria-label="查看第 '+(index+1)+' 行"')+'</div></th>'
+    +'<td data-punch-frozen-column="enabled">'+tableCheck(action,"enabled",item.enabled!==false,index,"",disabled)+'</td>'
+    +'<td data-punch-frozen-column="shape"'+parameterCellAttributes(action,s,index,'shape',disabled)+'><div class="punch-record-cell">'+sourceSelect+(locked?'<small>固化参数 · 只读</small>':'')+'</div></td>'
+    +renderPoseColumns(action,s,item,index,disabled,columns)
+    +renderArrayColumns(action,s,item,index,disabled,columns,btn)+'</tr>'
+    +renderExpandedShapeRow(action,s,view,item,index,'',btn,options,columns.count);
 }
 
 function renderEndRow(action,s,view,end,btn,options) {
@@ -683,60 +795,61 @@ function renderEndRow(action,s,view,end,btn,options) {
   const kind=punchRecordKind(item);
   const kindSelect=tableActionSelect(action,"record-kind-change",kind,[{value:"tool",label:"端部刀具"},{value:"branch",label:"支管切端"},{value:"dxf",label:"DXF 切端"}],end,disabled,end);
   const source=kind==="tool"?tableEndToolSelect(action,s,item,end,disabled)
-    :'<div class="tube-designer-punch-source-cell"><span '+(!disabled?'tabindex="0" role="button" data-punch-edit-name title="双击名称编辑截面与刀具姿态"':'')+'>'+escapeText(punchSourceName(item,descriptor))+'</span><small>'+escapeText(punchParameterSummary(item,descriptor,options.branchProfiles))+'</small></div>';
-  const controls=item.type==="keep"?'<span class="tube-designer-punch-sheet-readonly">不修改</span>'
-    :disabled?'<span class="tube-designer-punch-sheet-readonly">固化端部 · 只读</span>':btn("parameters-open","编辑端面参数",'data-tube-designer-punch-index="'+end+'" data-tube-designer-punch-end="'+end+'"');
+    :tableProfileSelect(action,item,end,options.branchProfiles??[],disabled,end);
   const mode=parameterChoiceSummary(descriptor,item,"cutMode");
   const summary=item.type==="keep"?"保留原端面":(datums.find(d=>d.value===(item.datum??"long"))?.label??item.datum)
     +(mode?" · "+mode:"")
     +" · 修剪 "+(item.trim??0)+" mm · 旋转 "+(item.rotation??0)+"°";
-  return '<tr data-tube-designer-punch-end-row="'+end+'"><th scope="row">'+endName+'</th><td>'+kindSelect+'</td><td>'+source+'</td>'
-    +'<td class="tube-designer-punch-end-summary">'+escapeText(summary)+'</td><td><nav class="tube-designer-punch-end-actions">'+controls+(item.type==="keep"?'':btn("remove-end","恢复",'data-tube-designer-punch-index="'+end+'"'))+'</nav></td></tr>';
-}
-
-function renderEndCard(action,s,view,end,btn,options) {
-  const item=s.ends[end]??{type:"keep"}, descriptor=punchToolDescriptor(s,item), disabled=view.pending||isPunchToolReadOnly(s,item);
-  const endName=end==="start"?"左端面":"右端面";
-  const kind=punchRecordKind(item);
-  const kindSelect=tableActionSelect(action,"record-kind-change",kind,[{value:"tool",label:"端部刀具"},{value:"branch",label:"支管切端"},{value:"dxf",label:"DXF 切端"}],end,disabled,end);
-  const source=kind==="tool"?tableEndToolSelect(action,s,item,end,disabled)
-    :'<div class="tube-designer-punch-source-cell"><span '+(!disabled?'tabindex="0" role="button" data-punch-edit-name title="双击名称编辑截面与刀具姿态"':'')+'>'+escapeText(punchSourceName(item,descriptor))+'</span></div>';
-  const controls=item.type==="keep"?'<span class="tube-designer-punch-sheet-readonly">不修改</span>'
-    :disabled?'<span class="tube-designer-punch-sheet-readonly">固化端部 · 只读</span>':btn("parameters-open","编辑",'data-tube-designer-punch-index="'+end+'" data-tube-designer-punch-end="'+end+'"');
-  const mode=parameterChoiceSummary(descriptor,item,"cutMode");
-  const summary=item.type==="keep"?"保留原端面":(datums.find(d=>d.value===(item.datum??"long"))?.label??item.datum)
-    +(mode?" · "+mode:"")
-    +" · 修剪 "+(item.trim??0)+" mm · 旋转 "+(item.rotation??0)+"°";
-  return '<article class="tube-designer-punch-end-card" data-tube-designer-punch-end-row="'+end+'"><header><strong>'+endName+'</strong><span class="tube-designer-punch-end-summary">'+escapeText(summary)+'</span></header>'
-    +'<div class="tube-designer-punch-end-card-fields"><label><span>加工来源</span>'+kindSelect+'</label><label><span>切形 / 截面</span>'+source+'</label></div>'
-    +'<nav class="tube-designer-punch-end-card-actions">'+controls+'</nav></article>';
+  return '<tr data-punch-row-tone="'+(end==='start'?'even':'odd')+'" data-tube-designer-punch-end-row="'+end+'"><th scope="row">'+endName+'</th><td>'+kindSelect+'</td><td>'+source+'</td>'
+    +'<td class="tube-designer-punch-end-summary"'+parameterCellAttributes(action,s,end,'shape',disabled||item.type==='keep',end)+'>'+escapeText(summary)+'</td></tr>'
+    +renderExpandedShapeRow(action,s,view,item,end,end,btn,options,4);
 }
 
 function renderPunchEndsPanel(action,s,view,options,btn) {
   if(options.showEnds===false)return "";
-  return '<section class="tube-designer-punch-ends" data-punch-end-panel aria-label="端面加工"><header><strong>端面加工</strong><span>两端独立设置，不参与孔数与阵列</span></header><div class="tube-designer-punch-end-cards">'
-    +renderEndCard(action,s,view,"start",btn,options)+renderEndCard(action,s,view,"end",btn,options)+'</div></section>';
+  return '<section class="tube-designer-punch-ends" data-punch-end-panel aria-label="端面加工"><div class="punch-end-table-scroll"><table>'
+    +'<thead><tr><th>端面</th><th>加工来源</th><th>切形 / 截面</th><th>参数</th></tr></thead><tbody>'
+    +renderEndRow(action,s,view,"start",btn,options)+renderEndRow(action,s,view,"end",btn,options)+'</tbody></table></div></section>';
 }
 
-function renderPunchSpreadsheet(action, s, view, options, btn) {
-  const rows=s.features.map((item,index)=>renderPunchTableRow(action,s,view,item,index,btn,options)).join("");
-  const ends=options.showEnds===false?"":'<section class="tube-designer-punch-ends" aria-label="端面加工"><table><caption>端面加工 <small>两端独立设置，不参与孔数与阵列</small></caption>'
-    +'<thead><tr><th>端面</th><th>加工来源</th><th>切形 / 截面</th><th>当前设置</th><th>操作</th></tr></thead><tbody>'
-    +renderEndRow(action,s,view,"start",btn,options)+renderEndRow(action,s,view,"end",btn,options)+'</tbody></table></section>';
+function renderPunchSheetToolbar(s,btn) {
   const selectedCount=(s.selectedFeatureIds??[]).filter(id=>s.features.some(item=>item.id===id)).length;
   const addButton=btn("add","＋ 添加行",(s.catalogueStatus==="ready"?'':'disabled ')+'data-tube-designer-punch-new');
   const selectedIndex=s.features.findIndex(item=>item.id===s.selectedFeatureId);
   const selectedItem=selectedIndex>=0?s.features[selectedIndex]:null;
   const copyButton=btn("copy-selected","复制",selectedItem&&!isPunchToolReadOnly(s,selectedItem)?'':'disabled aria-label="复制当前高亮行"');
   const deleteButton=btn("remove-selected","删除所选",(selectedCount?'':'disabled')+' aria-label="删除所选行"');
-  return '<div class="tube-designer-punch-records has-ends"'+(s.parameterEditor?' inert':'')+'>'+ends+'<section class="tube-designer-punch-sheet"><header><div><strong>'+escapeText(options.featureListTitle??"冲孔清单")+'</strong><span>刀具、位置姿态、多组阵列分别设置</span></div><nav class="tube-designer-punch-sheet-toolbar"><small>'+s.features.length+' 条冲孔记录</small>'+addButton+copyButton+deleteButton+'</nav></header>'
-    +'<div class="tube-designer-punch-sheet-scroll"><table><thead><tr><th>#</th><th>启用</th><th>截面 / 刀具</th><th>位置 / 姿态</th><th>阵列 <small>长度 · 直线 · 圆周可组合</small></th></tr></thead><tbody>'
-    +(rows||'<tr><td class="tube-designer-punch-sheet-empty" colspan="5">暂无冲孔记录，点击“＋ 添加行”开始。</td></tr>')+'</tbody></table></div></section></div>';
+  return '<nav class="tube-designer-punch-sheet-toolbar" aria-label="冲孔行操作">'+addButton+copyButton+deleteButton+'</nav>';
+}
+
+function renderPunchSpreadsheet(action, s, view, options, btn) {
+  const columns=sheetColumnState(s,options);
+  const rows=s.features.map((item,index)=>renderPunchTableRow(action,s,view,item,index,btn,options,columns)).join("");
+  const ends=options.showEnds===false?"":'<section class="tube-designer-punch-ends" aria-label="端面加工"><table>'
+    +'<thead><tr><th>端面</th><th>加工来源</th><th>切形 / 截面</th><th>参数</th></tr></thead><tbody>'
+    +renderEndRow(action,s,view,"start",btn,options)+renderEndRow(action,s,view,"end",btn,options)+'</tbody></table></section>';
+  const draftRow=(s.showDraftRow||s.editingId)?'<tr class="is-new" data-punch-row-tone="'+(s.features.length%2?'odd':'even')+'" data-tube-designer-punch-row="draft"><th data-punch-frozen-column="number">新增</th><td data-punch-frozen-column="enabled"></td>'
+    +'<td data-punch-frozen-column="shape"'+parameterCellAttributes(action,s,'draft','shape',view.pending)+'>'+escapeText(punchSourceName(s.draft,punchToolDescriptor(s,s.draft)))+'</td>'
+    +renderPoseColumns(action,s,s.draft,'draft',view.pending,columns)
+    +renderArrayColumns(action,s,s.draft,'draft',view.pending,columns,btn)+'</tr>'
+    +renderExpandedShapeRow(action,s,view,s.draft,'draft','',btn,options,columns.count)
+    +'<tr data-punch-inline-row="draft-actions"><td colspan="'+columns.count+'">'+btn('add',s.editingId?'保存修改':'加入清单')+'</td></tr>':'';
+  const col=(key,width)=>'<col data-punch-column-key="'+key+'" style="width:'+width+'px"/>';
+  const fieldHeader=field=>'<th data-punch-column-key="'+field.key+'">'+escapeText(field.title)+(field.unit?' <small>/ '+escapeText(field.unit)+'</small>':'')+'</th>';
+  const poseWidth=columns.open.pose?columns.pose.reduce((n,f)=>n+f.width,0):360;
+  const arrayWidth=columns.open.arrays?columns.arrays.reduce((n,f)=>n+f.width,0)+236:360;
+  const colgroup='<colgroup>'+col('number',44)+col('enabled',44)+col('shape',200)+(columns.open.pose?columns.pose.map(f=>col('pose:'+f.key,f.width)).join(''):col('pose',poseWidth))+(columns.open.arrays?col('arrays:mode',96)+columns.arrays.map(f=>col('arrays:'+f.key,f.width)).join('')+col('arrays:skips',140):col('arrays',arrayWidth))+'</colgroup>';
+  const heading='<thead><tr><th rowspan="2" data-punch-frozen-column="number">#</th><th rowspan="2" data-punch-frozen-column="enabled">启用</th><th rowspan="2" data-punch-frozen-column="shape">截面 / 刀具</th><th colspan="'+(columns.open.pose?columns.pose.length:1)+'">'+sheetGroupToggle(action,'pose',columns.open.pose,view.pending)+'</th><th colspan="'+(columns.open.arrays?columns.arrays.length+2:1)+'">'+sheetGroupToggle(action,'arrays',columns.open.arrays,view.pending)+'</th></tr><tr>'+(columns.open.pose?columns.pose.map(fieldHeader).join(''):'<th>位置 / 姿态摘要</th>')+(columns.open.arrays?'<th>阵列维度</th>'+columns.arrays.map(fieldHeader).join('')+'<th>跳过组合位置</th>':'<th>阵列摘要</th>')+'</tr></thead>';
+  return '<div class="tube-designer-punch-records'+(ends?' has-ends':'')+'"'+(s.parameterEditor&&!s.parameterEditor.inline?' inert':'')+'>'+ends+'<section class="tube-designer-punch-sheet" aria-label="'+escapeAttr(options.featureListTitle??'冲孔清单')+'">'+(options.tableMode?'':'<header>'+renderPunchSheetToolbar(s,btn)+'</header>')
+    +'<div class="tube-designer-punch-sheet-scroll"><table class="punch-expanded-columns" style="min-width:'+Math.max(820,288+poseWidth+arrayWidth)+'px">'+colgroup+heading+'<tbody>'
+    +(rows||'<tr><td class="tube-designer-punch-sheet-empty" colspan="'+columns.count+'">暂无冲孔记录，点击“＋ 添加行”开始。</td></tr>')+draftRow+'</tbody></table></div></section></div>';
 }
 
 export function renderPunchWizardDialog(part, view, options = {}) {
   const s = view?.tubeDesignerPunchWizard;
   if (!s || !part || String(s.partId)!==String(part.entityId)) return "";
+  const rememberedControls=s.editingId?"":'[data-tube-designer-punch-index="draft"],[data-tube-designer-punch-field]:not([data-tube-designer-punch-index]):not([data-tube-designer-punch-end])';
+  const memoryDeclaration=' data-window-state-controls="'+escapeText(rememberedControls)+'"';
   const action = name => (options.actionPrefix ?? "tube-designer-punch-")+name;
   const disabled = view.pending ? "disabled" : "";
   const btn = (name,text,extra="") => '<button class="tube-designer-secondary" data-cam-action="'+action(name)+'" '+(disabled?"disabled":"")+' '+extra+'>'+escapeText(text)+'</button>';
@@ -791,27 +904,27 @@ export function renderPunchWizardDialog(part, view, options = {}) {
   const wizardWindowStyle=Number.isFinite(Number(wizardWindowPosition?.left))&&Number.isFinite(Number(wizardWindowPosition?.top))
     ?' style="position:fixed;left:'+Math.round(Number(wizardWindowPosition.left))+'px;top:'+Math.round(Number(wizardWindowPosition.top))+'px;margin:0"':"";
   if(options.tableMode) {
-    const transactionLock=s.parameterEditor?' inert':'';
+    const transactionLock=s.parameterEditor&&!s.parameterEditor.inline?' inert':'';
     const rawSetup=options.introHtml??options.mainSetupHtml??"";
-    const setup=s.parameterEditor?rawSetup.replace(/(<[a-z][\w:-]*)(?=[\s>])/i,'$1 inert'):rawSetup;
+    const setup=transactionLock?rawSetup.replace(/(<[a-z][\w:-]*)(?=[\s>])/i,'$1 inert'):rawSetup;
     const spreadsheet=renderPunchSpreadsheet(action,s,view,{...options,showEnds:false},btn);
     const endsPanel=renderPunchEndsPanel(action,s,view,options,btn);
     const errors=missingHtml
       +(s.catalogueStatus==="loading"?'<div class="tube-designer-punch-sheet-message">正在加载孔型…</div>':"")
       +(s.catalogueErrors?.length?'<div class="tube-designer-punch-error">'+escapeText(s.catalogueErrors.join("；"))+'</div>':"")
       +(s.error?'<div class="tube-designer-punch-error" role="alert">'+escapeText(s.error)+'</div>':"");
-    const leftSidebar='<aside class="tube-designer-punch-sidebar">'+setup+endsPanel+'</aside>';
-    const rightbarWidth=Number.isFinite(Number(s.rightbarWidth))&&Number(s.rightbarWidth)>0
-      ?' style="--tube-designer-punch-rightbar-width:'+Math.round(Number(s.rightbarWidth))+'px"':"";
-    const rightSidebar='<aside class="tube-designer-punch-rightbar"><div class="tube-designer-punch-rightbar-splitter" data-tube-designer-punch-rightbar-splitter role="separator" aria-orientation="vertical" aria-label="调整冲孔清单宽度" tabindex="0"></div>'+spreadsheet+'<nav class="tube-designer-punch-sidebar-actions"'+transactionLock+'>'+btn("cancel","取消")+btn("apply",view.pending?"正在计算…":options.applyLabel??"应用到零件",'data-tube-designer-part-id="'+escapeText(options.partId??part.entityId)+'"')+'</nav></aside>';
-    return '<div class="tube-designer-modal-backdrop tube-designer-punch-backdrop" role="presentation"><section class="tube-designer-punch-dialog '+escapeText(options.dialogClass??"")+' tube-designer-punch-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-punch-title"'+wizardWindowStyle+'>'
-      +'<header class="tube-designer-dialog-header" data-tube-designer-punch-window-drag'+transactionLock+'><div><strong id="tube-designer-punch-title">'+escapeText(title)+'</strong></div>'+btn("cancel","×",'aria-label="关闭向导"')+'</header>'
-      +'<div class="tube-designer-punch-sheet-workspace"'+rightbarWidth+'>'+leftSidebar
-      +'<section class="tube-designer-punch-sheet-scene"><header><div><strong>'+escapeText(previewTitle)+'</strong><span>'+escapeText(previewCountLabel)+'</span></div><nav'+transactionLock+'>'+previewModeButtons(s,btn)+btn("undo","撤销",s.history.length?"":"disabled")+btn("redo","重做",s.future.length?"":"disabled")+'</nav></header>'
+    const split=(before,after)=>'<div class="tube-designer-punch-region-splitter" data-punch-region-splitter="'+before+':'+after+'" role="separator" aria-orientation="horizontal" aria-label="调整区域高度" tabindex="0"></div>';
+    const regionStyle=s.punchRegionSizes?' style="'+['main','ends','holes'].filter(name=>Number.isFinite(s.punchRegionSizes[name])).map(name=>'--punch-'+name+'-height:'+s.punchRegionSizes[name]+'px').join(';')+'"':'';
+    return '<div class="tube-designer-modal-backdrop tube-designer-punch-backdrop" role="presentation"><section class="tube-designer-punch-dialog '+escapeText(options.dialogClass??"")+' tube-designer-punch-sheet-dialog" data-floating-parameter-diagram-scope role="dialog" aria-modal="true" aria-labelledby="tube-designer-punch-title"'+memoryDeclaration+wizardWindowStyle+'>'
+      +'<header class="tube-designer-dialog-header" data-tube-designer-punch-window-drag'+transactionLock+'><div><strong id="tube-designer-punch-title">'+escapeText(title)+'</strong></div>'+renderPunchSheetToolbar(s,btn)+'<button type="button" class="tube-designer-dialog-close" data-cam-action="'+action('cancel')+'" aria-label="关闭向导" title="关闭" '+(disabled?'disabled':'')+'>×</button></header>'
+      +'<div class="tube-designer-punch-sheet-workspace"'+regionStyle+'><section class="tube-designer-punch-main-region" data-punch-region="main" aria-label="主管"><div class="punch-main-scroll">'+setup+'</div></section>'+split('main','ends')
+      +'<div class="tube-designer-punch-ends-region" data-punch-region="ends">'+endsPanel+'</div>'+split('ends','holes')
+      +'<div class="tube-designer-punch-holes-region" data-punch-region="holes">'+spreadsheet+'</div>'+split('holes','scene')
+      +'<section class="tube-designer-punch-sheet-scene" data-punch-region="scene"><header><div><strong>'+escapeText(previewTitle)+'</strong><span>'+escapeText(previewCountLabel)+'</span></div><nav'+transactionLock+'>'+btn("undo","撤销",s.history.length?"":"disabled")+btn("redo","重做",s.future.length?"":"disabled")+'</nav></header>'
       +'<div class="tube-designer-punch-preview-host" data-tube-designer-punch-viewport>'+renderViewCube()+'</div>'
       +'<footer>'+(s.previewMode==="result"?'<span>切割后的零件</span>':options.previewLegendHtml??"")+'<span><strong>'+escapeText(previewStateLabel)+'</strong> · <span data-punch-preview-status>'+escapeText(previewStatus)+'</span></span></footer></section>'
-      +'<div class="tube-designer-punch-sheet-errors">'+errors+'</div>'+rightSidebar+'</div>'
-      +'</section></div>'+renderPunchParameterDialog(action,s,view,options,btn);
+      +'</div><footer class="tube-designer-punch-footer"><div class="tube-designer-punch-sheet-errors">'+errors+'</div><nav class="tube-designer-punch-sidebar-actions"'+transactionLock+'>'+btn("cancel","取消")+btn("apply",view.pending?"正在计算…":"确定",'data-tube-designer-part-id="'+escapeText(options.partId??part.entityId)+'"')+'</nav></footer>'
+      +renderPunchParameterDiagram(view,options,action)+'</section></div>'+renderPunchParameterDialog(action,s,view,options,btn);
   }
   const previewPane = '<main class="tube-designer-punch-preview-pane">'+(options.mainSetupHtml??"")
     +'<div class="tube-designer-pane-title"><strong>'+escapeText(previewTitle)+'</strong><span>'+escapeText(previewCountLabel)+'</span></div>'
@@ -833,7 +946,7 @@ export function renderPunchWizardDialog(part, view, options = {}) {
     +(s.error?'<div class="tube-designer-punch-error" role="alert">'+escapeText(s.error)+'</div>':"")+'</aside>';
   const panes = options.editorFirst ? editorPane+previewPane : previewPane+editorPane;
   const outerIntro = options.introInEditor ? "" : options.introHtml??"";
-  return '<div class="tube-designer-modal-backdrop tube-designer-punch-backdrop" role="presentation"><section class="tube-designer-punch-dialog '+escapeText(options.dialogClass??"")+'" role="dialog" aria-modal="true" aria-labelledby="tube-designer-punch-title"'+wizardWindowStyle+'>'
+  return '<div class="tube-designer-modal-backdrop tube-designer-punch-backdrop" role="presentation"><section class="tube-designer-punch-dialog '+escapeText(options.dialogClass??"")+'" role="dialog" aria-modal="true" aria-labelledby="tube-designer-punch-title"'+memoryDeclaration+wizardWindowStyle+'>'
     +'<header class="tube-designer-dialog-header" data-tube-designer-punch-window-drag><div><strong id="tube-designer-punch-title">'+escapeText(title)+'</strong><span>'+escapeText(options.subtitle??part.name??"独立下料零件")+'</span></div>'+btn("cancel","×",'aria-label="关闭向导"')+'</header>'
     +outerIntro+'<div class="tube-designer-punch-body '+escapeText(options.bodyClass??"")+'">'+panes+'</div>'
     +'<footer class="tube-designer-punch-footer"><span>'+escapeText(options.footerNote??"程式刀具由脚本生成，定式刀具保留固定几何。修改仅影响当前下料零件。")+'</span>'+btn("cancel","取消")+btn("apply",view.pending?"正在计算…":options.applyLabel??"应用到零件",'data-tube-designer-part-id="'+escapeText(options.partId??part.entityId)+'"')+'</footer></section></div>';
@@ -846,7 +959,7 @@ function toolSelect(action,s,item,target,end="") {
     && t.hidden!==true);
   const sectionAnalysis=previewSectionAnalysis(s,item,end);
   const failures=moldApplicability(available,item.toolParameters,sectionAnalysis);
-  const opts=[{value: end?"keep":"",label:end?"保留原端面":"请选择刀具"},...(unresolved?[{value:"__unavailable__",label:"缺少："+(item.toolLabel??item.toolRef.id)+" @ "+(item.toolRef.version??"旧版")}]:[]),...tools.map(t=>{
+  const opts=[{value: end?"keep":"",label:end?"保留原端面":"请选择刀具"},...(unresolved?[{value:"__unavailable__",label:"缺少："+(item.toolLabel??item.toolRef.id)+" @ "+(item.toolRef.version??"未声明版本")}]:[]),...tools.map(t=>{
     const errors=moldApplicability(t,t.defaultParameters,undefined);
     return {value:t.id,label:(t.kind==="fixed"?"定式 · ":"程式 · ")+label(t)+(errors.length?" · "+errors[0].message:"")};
   })];
@@ -855,10 +968,8 @@ function toolSelect(action,s,item,target,end="") {
 }
 export function parameterFields(action,descriptor,item,end="") {
   if(!descriptor)return item.toolRef?'<div class="tube-designer-punch-fixed-note">'+(hasFrozenPunchTool(item)?"退化定式刀具":"缺失刀具")+'：节点只读，仅可删除。'+frozenProvenance(item)+'</div>':"";
-  const shapeFields=(descriptor.parameters??[]).filter(d=>{
-    const c=d.visibleWhen;if(!c)return true;
-    const value=item.toolParameters?.[c.key??c.parameter];return c.op==="ne"?value!==c.value:c.op==="eq"?value===c.value:true;
-  }).map(d=>fieldControl(action,"parameter",label(d),item.toolParameters?.[d.key]??d.defaultValue,d,end,d.key)).join("");
+  const shapeFields=(descriptor.parameters??[]).filter(d=>parameterVisible(d,item.toolParameters??{}))
+    .map(d=>fieldControl(action,"parameter",label(d),item.toolParameters?.[d.key]??d.defaultValue,d,end,d.key)).join("");
   const operationValues={...Object.fromEntries((descriptor.operationParameters??[]).map(definition=>[definition.key,definition.defaultValue])),...item};
   const operationFields=(descriptor.operationParameters??[]).filter(definition=>matchesVisibility(definition.visibleWhen,operationValues))
     .map(definition=>fieldControl(action,definition.key,label(definition),operationValues[definition.key],definition,end)).join("");

@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "ProjectFileCodec.h"
+#include "ProjectFilePerformance.h"
 
 #include "Data/VariantSerializer.h"
 
@@ -13,6 +14,11 @@ namespace
     constexpr std::array<uint8_t, 8> kBinaryIdentifier =
         {'I', 'C', 'A', 'X', 'P', 'B', 'I', 'N'};
     constexpr uint64_t kMaximumStringSize = 64ull * 1024ull * 1024ull;
+    // A component's properties contain one typed document, which can include
+    // several persisted geometry recipes. Ordinary names and strings retain
+    // their existing limit; only this structured document uses the larger cap.
+    constexpr uint64_t kMaximumComponentPropertiesSize =
+        256ull * 1024ull * 1024ull;
     constexpr uint64_t kMaximumRecordCount = 10'000'000ull;
 
     enum class EBinaryRecord : uint8_t
@@ -298,7 +304,7 @@ namespace
             throw std::invalid_argument(
                 std::string(Description_) + " is not an object map");
         }
-        return _Value.To<iCAX::Data::ObjectMap>();
+        return std::move(_Value).To<iCAX::Data::ObjectMap>();
     }
 
     std::string SerializeObjectMap(
@@ -587,9 +593,7 @@ namespace
             _Result.nContainerVersion = ParseUInt32(
                 _Record.Arguments[0],
                 "Container version");
-            if (_Result.nContainerVersion == 0 ||
-                _Result.nContainerVersion >
-                    kCurrentContainerVersion)
+            if (_Result.nContainerVersion != kCurrentContainerVersion)
             {
                 throw std::invalid_argument(
                     "Unsupported project container version");
@@ -709,14 +713,7 @@ namespace
             }
             else if (_Record.Name == "RESOURCE")
             {
-                if (_Record.Arguments.size() != 9 &&
-                    _Record.Arguments.size() != 14)
-                {
-                    throw std::invalid_argument(
-                        "RESOURCE at line " +
-                        std::to_string(_LineNumber) +
-                        " expects 9 legacy or 14 current arguments");
-                }
+                RequireArgumentCount(_Record, 14, _LineNumber);
                 EProjectResourcePersistence _Persistence;
                 if (_Record.Arguments[4] == "EMBEDDED")
                     _Persistence = EProjectResourcePersistence::Embedded;
@@ -734,33 +731,18 @@ namespace
                     _Record.Arguments[3],
                     "Resource schema version");
                 _Resource.Persistence = _Persistence;
-                const bool _bCurrent =
-                    _Record.Arguments.size() == 14;
                 size_t _Index = 5;
-                if (_bCurrent)
-                {
-                    _Resource.Name = _Record.Arguments[_Index++];
-                }
+                _Resource.Name = _Record.Arguments[_Index++];
                 _Resource.MediaType = _Record.Arguments[_Index++];
-                if (_bCurrent)
-                {
-                    _Resource.FlatBufferIdentifier =
-                        _Record.Arguments[_Index++];
-                }
+                _Resource.FlatBufferIdentifier = _Record.Arguments[_Index++];
                 _Resource.ContentHash = _Record.Arguments[_Index++];
                 _Resource.Source = _Record.Arguments[_Index++];
-                if (_bCurrent)
-                {
-                    _Resource.nSize = ParseUInt64(
-                        _Record.Arguments[_Index++],
-                        "Resource size");
-                    _Resource.nMinimumReaderVersion = ParseUInt32(
-                        _Record.Arguments[_Index++],
-                        "Resource minimum reader version");
-                    _Resource.nFlags = ParseUInt32(
-                        _Record.Arguments[_Index++],
-                        "Resource flags");
-                }
+                _Resource.nSize = ParseUInt64(
+                    _Record.Arguments[_Index++], "Resource size");
+                _Resource.nMinimumReaderVersion = ParseUInt32(
+                    _Record.Arguments[_Index++], "Resource minimum reader version");
+                _Resource.nFlags = ParseUInt32(
+                    _Record.Arguments[_Index++], "Resource flags");
                 _Resource.Metadata = ObjectToMetadata(
                     ParseObjectMap(
                         _Record.Arguments[_Index],
@@ -948,10 +930,11 @@ namespace
             return _Result;
         }
 
-        std::string ReadString()
+        std::string ReadString(
+            IN const uint64_t nMaximumSize_ = kMaximumStringSize)
         {
             const auto _Size = ReadUInt64();
-            if (_Size > kMaximumStringSize ||
+            if (_Size > nMaximumSize_ ||
                 _Size > std::numeric_limits<size_t>::max())
             {
                 throw std::invalid_argument(
@@ -1147,8 +1130,7 @@ namespace
                 "Binary project identifier is invalid");
         }
         _Result.nContainerVersion = _Reader.ReadUInt32();
-        if (_Result.nContainerVersion == 0 ||
-            _Result.nContainerVersion > kCurrentContainerVersion)
+        if (_Result.nContainerVersion != kCurrentContainerVersion)
         {
             throw std::invalid_argument(
                 "Unsupported project container version");
@@ -1205,7 +1187,7 @@ namespace
                 }
                 _Component.bEnabled = _Enabled != 0;
                 _Component.Properties = ParseObjectMap(
-                    _Payload.ReadString(),
+                    _Payload.ReadString(kMaximumComponentPropertiesSize),
                     "Component properties");
                 _Result.Document.Components.push_back(
                     std::move(_Component));
@@ -1228,23 +1210,14 @@ namespace
                 }
                 _Resource.Persistence =
                     static_cast<EProjectResourcePersistence>(_Persistence);
-                if (_Result.nContainerVersion >= 2)
-                {
-                    _Resource.Name = _Payload.ReadString();
-                }
+                _Resource.Name = _Payload.ReadString();
                 _Resource.MediaType = _Payload.ReadString();
-                if (_Result.nContainerVersion >= 2)
-                {
-                    _Resource.FlatBufferIdentifier = _Payload.ReadString();
-                }
+                _Resource.FlatBufferIdentifier = _Payload.ReadString();
                 _Resource.ContentHash = _Payload.ReadString();
                 _Resource.Source = _Payload.ReadString();
-                if (_Result.nContainerVersion >= 2)
-                {
-                    _Resource.nSize = _Payload.ReadUInt64();
-                    _Resource.nMinimumReaderVersion = _Payload.ReadUInt32();
-                    _Resource.nFlags = _Payload.ReadUInt32();
-                }
+                _Resource.nSize = _Payload.ReadUInt64();
+                _Resource.nMinimumReaderVersion = _Payload.ReadUInt32();
+                _Resource.nFlags = _Payload.ReadUInt32();
                 _Resource.Metadata = ObjectToMetadata(ParseObjectMap(
                     _Payload.ReadString(),
                     "Resource metadata"));
@@ -1377,6 +1350,33 @@ namespace
                 "Cannot close temporary project file");
         }
     }
+    std::vector<uint8_t> EncodeCanonicalDocument(
+        IN const CProjectDocument& Document_,
+        IN const EProjectFileEncoding Encoding_)
+    {
+        RequireValidProjectDocument(Document_);
+        if (Document_.Info.Magic.find_first_of("\r\n\0", 0, 3) !=
+                std::string::npos ||
+            Document_.Info.Magic.size() > 4096)
+        {
+            throw std::invalid_argument(
+                "Project magic cannot be represented by the container");
+        }
+
+        if (Encoding_ == EProjectFileEncoding::ASCII)
+        {
+            const auto _Text = EncodeASCII(Document_);
+            return std::vector<uint8_t>(
+                _Text.begin(),
+                _Text.end());
+        }
+        if (Encoding_ == EProjectFileEncoding::Binary)
+        {
+            return EncodeBinary(Document_);
+        }
+        throw std::invalid_argument(
+            "Unknown project file encoding");
+    }
 }
 
 std::vector<uint8_t> iCAX::ProjectFile::CProjectFileCodec::Encode(
@@ -1384,28 +1384,7 @@ std::vector<uint8_t> iCAX::ProjectFile::CProjectFileCodec::Encode(
     IN const EProjectFileEncoding Encoding_)
 {
     Document_.Canonicalize();
-    RequireValidProjectDocument(Document_);
-    if (Document_.Info.Magic.find_first_of("\r\n\0", 0, 3) !=
-            std::string::npos ||
-        Document_.Info.Magic.size() > 4096)
-    {
-        throw std::invalid_argument(
-            "Project magic cannot be represented by the container");
-    }
-
-    if (Encoding_ == EProjectFileEncoding::ASCII)
-    {
-        const auto _Text = EncodeASCII(Document_);
-        return std::vector<uint8_t>(
-            _Text.begin(),
-            _Text.end());
-    }
-    if (Encoding_ == EProjectFileEncoding::Binary)
-    {
-        return EncodeBinary(Document_);
-    }
-    throw std::invalid_argument(
-        "Unknown project file encoding");
+    return EncodeCanonicalDocument(Document_,Encoding_);
 }
 
 iCAX::ProjectFile::CProjectFileReadResult
@@ -1474,14 +1453,17 @@ void iCAX::ProjectFile::CProjectFileCodec::WriteAtomic(
     IN CProjectDocument Document_,
     IN const EProjectFileEncoding Encoding_)
 {
+    const detail::CSavePerformance _Performance("atomic");
     if (Path_.empty())
     {
         throw std::invalid_argument(
             "Project file path is empty");
     }
     Document_.Canonicalize();
-    const auto _Bytes = Encode(Document_, Encoding_);
+    const auto _Bytes = EncodeCanonicalDocument(Document_, Encoding_);
+    _Performance.Mark("encoded");
     const auto _Decoded = Decode(_Bytes);
+    _Performance.Mark("decoded");
     if (_Decoded.Document != Document_)
     {
         for (size_t index = 0; index < Document_.Components.size() && index < _Decoded.Document.Components.size(); ++index)
@@ -1498,6 +1480,7 @@ void iCAX::ProjectFile::CProjectFileCodec::WriteAtomic(
         throw std::runtime_error(
             "Project file self-verification failed");
     }
+    _Performance.Mark("verified");
 
     auto _Temporary = Path_;
     _Temporary += L".tmp-" + std::wstring(
@@ -1506,6 +1489,7 @@ void iCAX::ProjectFile::CProjectFileCodec::WriteAtomic(
     try
     {
         WriteAllAndFlush(_Temporary, _Bytes);
+        _Performance.Mark("flushed");
         if (!::MoveFileExW(
                 _Temporary.c_str(),
                 Path_.c_str(),
@@ -1517,6 +1501,7 @@ void iCAX::ProjectFile::CProjectFileCodec::WriteAtomic(
                 std::system_category(),
                 "Cannot atomically replace project file");
         }
+        _Performance.Mark("replaced");
     }
     catch (...)
     {

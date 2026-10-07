@@ -42,7 +42,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)x64\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(MSBuildProjectDirectory)\..\..\..\..\..\tools\test\sync_laser3dcam_test_runtime.ps1" -RepoRoot "$(MSBuildProjectDirectory)\..\..\..\..\.." -OutDir "$(OutDir)." -Configuration "$(Configuration)" -Platform "$(Platform)"</Command>

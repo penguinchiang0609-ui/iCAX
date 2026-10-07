@@ -11,7 +11,7 @@ class MarketTests(unittest.TestCase):
 
     def test_horizontal_infill_geometry(self):
         for layout in ("straight", "left_l", "right_l", "u"):
-            built = MODULE.build_layout(values(layout=layout,infillType="horizontal"))
+            built = MODULE.build_layout(values(layout=layout,barOrientation="horizontal"))
             bars = [t for t in built.tubes if t.category=="guardrail.horizontal_bar"]
             self.assertTrue(bars)
             self.assertFalse(any(t.category=="guardrail.vertical_bar" for t in built.tubes))
@@ -20,7 +20,7 @@ class MarketTests(unittest.TestCase):
                 for other in built.tubes:
                     if other is not t:
                         self.assertFalse(overlap(t,other),(t.key,other.key))
-            json.dumps(MODULE.generate(values(layout=layout,infillType="horizontal"),{}),allow_nan=False)
+            json.dumps(MODULE.generate(values(layout=layout,barOrientation="horizontal"),{}),allow_nan=False)
 
     def test_fixed_count_and_half_edges(self):
         for count in (0,1,8):

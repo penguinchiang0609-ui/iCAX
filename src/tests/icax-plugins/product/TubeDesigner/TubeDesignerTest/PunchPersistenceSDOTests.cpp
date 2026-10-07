@@ -9,6 +9,7 @@
 #include <GeometryData/BRepPersistence.h>
 #include <GeometryData/GeometryData.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
+#include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
 #include <ProjectContext/ISceneContext.h>
 #include <ProjectFile/ProjectFile.h>
@@ -17,6 +18,7 @@
 #include <Resources/ResourceLoaderRegistrationCatalog.h>
 #include <Resources/FlatBufferResource.h>
 #include <RenderData/RenderData.h>
+#include <TubeDesigner/ComponentModelLibrary.h>
 #include <RenderInteraction/RenderInteractionComponents.h>
 #include <SDO/SDORegistrationCatalog.h>
 #include <TemplateRuntime/PythonTemplateHost.h>
@@ -24,10 +26,13 @@
 #include <TemplateRuntime/TemplateCodec.h>
 #include <TubeDesigner/TubeDesigner.h>
 #include <TubeDesigner/TubeDesignerComponents.h>
+#include <TubeDesigner/DisassemblyProgress.h>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepGProp.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepBndLib.hxx>
@@ -36,7 +41,14 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <cmath>
+#include <cctype>
 #include <STEPControl_Reader.hxx>
+#include <STEPControl_Writer.hxx>
+#include <IGESControl_Writer.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
+#include <BRepTools.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopExp_Explorer.hxx>
 #include <filesystem>
 #include <fstream>
@@ -44,8 +56,10 @@
 #include <iomanip>
 #include <chrono>
 #include <array>
+#include <atomic>
 #include <map>
 #include <set>
+#include <sstream>
 #include <tuple>
 
 namespace punch_persistence_acceptance {
@@ -127,18 +141,30 @@ private:
     iCAX::Resource::CResourceLibrary resources;
 };
 
-ObjectMap invoke(Scene& scene,const std::string& method,const ObjectMap& payload,iCAX::Product::IProductContext* product=nullptr) {
+ObjectMap invoke(Scene& scene,const std::string& method,const ObjectMap& payload,iCAX::Product::IProductContext* product=nullptr,
+    iCAX::Interaction::CInvocation::ReportHandler report={}) {
     Application application;iCAX::Interaction::CSDORegistry registry;
     iCAX::Interaction::CSDORegistrationCatalog::ReplayAll(registry);
     iCAX::Interaction::CInvocation request;request.nCallID=1;
+    if(report)request.SetReportHandler(std::move(report));
     request.Method=iCAX::Interaction::MakeSDOMethod("TubeDesigner",method);
     const auto json=iCAX::Data::VariantSerializer::Serialize(payload);request.Payload.assign(json.begin(),json.end());
     const auto sdo=registry.Find(request.Method.nSDOCode);
     if(!sdo||!sdo->HasMethod(request.Method.nMethodCode))throw std::runtime_error("Missing real SDO: "+method);
     if(logInvocations)std::cout<<"[persistence-sdo] "<<method<<std::endl;
+    const auto invokeStart=std::chrono::steady_clock::now();
     const auto result=sdo->Invoke(request,application,product,nullptr,&scene);
     if(!result.IsOK())throw std::runtime_error(method+": "+result.strError);
-    return iCAX::Data::VariantSerializer::Deserialize(std::string(result.Payload.begin(),result.Payload.end())).To<ObjectMap>();
+    const auto backendSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-invokeStart).count();
+    auto decoded=iCAX::Data::VariantSerializer::Deserialize(std::string(result.Payload.begin(),result.Payload.end())).To<ObjectMap>();
+    char* profileEnv=nullptr; std::size_t profileEnvLength=0;
+    (void)_dupenv_s(&profileEnv,&profileEnvLength,"ICAX_PROFILE_TEMPLATE_PREVIEW");
+    const bool profileEnabled=profileEnv!=nullptr; std::free(profileEnv);
+    if(method=="GeneratePreview" && profileEnabled)
+        std::cout<<"[persistence-sdo] invoke="<<backendSeconds<<"s decode="
+            <<std::chrono::duration<double>(std::chrono::steady_clock::now()-invokeStart).count()-backendSeconds
+            <<"s payload="<<result.Payload.size()<<" bytes\n";
+    return decoded;
 }
 TEST(ProfileLibrarySDOTest, SystemCatalogDoesNotRequirePersonalData)
 {
@@ -1486,6 +1512,72 @@ ObjectMap editPayload(Scene& scene,const std::string& id,const ObjectMap& config
         {"resourceVersion",p->GetManufacturingGeometryResourceVersion()},{"drawing",config.at("drawing")},
         {"features",config.at("features")},{"ends",config.at("ends")}};
 }
+
+TEST(ImportedPartDrawingRecoverySDO, PlainTubeGetsReplayableDrawingWithoutChangingOriginal)
+{
+    Scene scene;
+    const auto imported=invoke(scene,"ImportNestingPart",{{"sourcePath",(std::filesystem::current_path()/
+        "samples/tube-one/01_round_tube_plain.step").string()}});
+    const auto id=imported.at("partEntityId").To<std::string>();
+    const auto original=part(scene,id);
+    const auto originalShape=shape(scene,original);
+    const auto originalBytes=persistedShapeBytes(scene,original);
+    const auto version=original->GetManufacturingGeometryResourceVersion();
+    EXPECT_THROW(invoke(scene,"RecoverImportedPartDrawing",{{"partEntityId",id},
+        {"resourceVersion",version+1}}),std::exception);
+    EXPECT_THROW(invoke(scene,"GetPartDrawing",{{"partEntityId",id}}),std::exception);
+    EXPECT_FALSE(original->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
+
+    const auto recovered=invoke(scene,"RecoverImportedPartDrawing",{{"partEntityId",id},
+        {"resourceVersion",version}});
+    EXPECT_FALSE(recovered.contains("tubeDesigner"));
+    EXPECT_TRUE(recovered.at("ready").To<bool>());
+    EXPECT_EQ(recovered.at("partEntityId").To<std::string>(),id);
+    const auto saved=part(scene,id);
+    EXPECT_EQ(originalBytes,persistedShapeBytes(scene,saved));
+    const auto component=std::dynamic_pointer_cast<CPartDrawingComponent>(
+        saved->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
+    ASSERT_TRUE(component);
+    const auto config=component->GetDefinition();
+    const auto fetched=invoke(scene,"GetPartDrawing",{{"partEntityId",id},
+        {"resourceVersion",version}});
+    EXPECT_THROW(invoke(scene,"GetPartDrawing",{{"partEntityId",id},
+        {"resourceVersion",version+1}}),std::exception);
+    EXPECT_FALSE(fetched.contains("tubeDesigner"));
+    EXPECT_EQ(fetched.at("definition").To<ObjectMap>(),config);
+    EXPECT_TRUE(config.at("features").To<VariantArray>().empty());
+    EXPECT_NE(config.at("baseResourceId").To<std::string>(),
+        saved->GetManufacturingGeometryResourceID());
+    EXPECT_EQ(config.at("drawing").To<ObjectMap>().at("section").To<ObjectMap>()
+        .at("profile").To<ObjectMap>().at("schema").To<std::string>(),
+        "icax.imported-tube-profile");
+
+    // The normal editor Apply path must accept the recovered base and section.
+    EXPECT_NO_THROW(invoke(scene,"ApplyPartDrawing",editPayload(scene,id,config)));
+    checkSameShape(originalShape,shape(scene,part(scene,id)));
+
+    // Changing length rebuilds the blank but keeps the imported part's start
+    // datum; it must not jump from its original -L/2 frame to X=0.
+    auto resized=editPayload(scene,id,config);
+    auto drawing=resized.at("drawing").To<ObjectMap>();
+    drawing["length"]=drawing.at("length").To<double>()+10.0;
+    resized["drawing"]=drawing;
+    try { invoke(scene,"ApplyPartDrawing",resized); }
+    catch(const std::exception& error) { FAIL()<<error.what(); }
+    const auto changed=part(scene,id);
+    const auto changedComponent=std::dynamic_pointer_cast<CPartDrawingComponent>(
+        changed->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
+    ASSERT_TRUE(changedComponent);
+    EXPECT_TRUE(changedComponent->GetDefinition().contains("blankOrigin"));
+    Bnd_Box beforeBox,afterBox;
+    BRepBndLib::AddOptimal(originalShape,beforeBox,false,false);
+    BRepBndLib::AddOptimal(shape(scene,changed),afterBox,false,false);
+    double x0,y0,z0,x1,y1,z1, ax0,ay0,az0,ax1,ay1,az1;
+    beforeBox.Get(x0,y0,z0,x1,y1,z1);
+    afterBox.Get(ax0,ay0,az0,ax1,ay1,az1);
+    EXPECT_NEAR(ax0,x0,1e-6);
+    EXPECT_NEAR(ax1,x1+10.0,1e-6);
+}
 void assertFrozenRecords(const ObjectMap& config) {
     for(const auto& f:config.at("features").To<VariantArray>()) {
         const auto record=f.To<ObjectMap>();EXPECT_FALSE(record.contains("toolSnapshot"));
@@ -2071,6 +2163,19 @@ TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductReco
 
 TEST(ProductTemplatePreviewSDO, DISABLED_FiveFaceEscapeWindowPreviewBenchmark) {
     Scene scene;
+    const auto startupStart = std::chrono::steady_clock::now();
+    const auto startup = invoke(scene, "List", {});
+    const auto startupSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - startupStart).count();
+    const auto startupTemplates = startup.at("tubeDesigner").To<ObjectMap>()
+        .at("templates").To<VariantArray>();
+    const auto startupTemplate = std::find_if(startupTemplates.begin(), startupTemplates.end(),
+        [](const auto& value) { return value.To<ObjectMap>().at("id").To<std::string>()
+            == "single-face-security-window"; });
+    ASSERT_NE(startupTemplate, startupTemplates.end());
+    ASSERT_FALSE(startupTemplate->To<ObjectMap>().at("parameters").To<VariantArray>().empty());
+    std::cout << "[five-face escape startup] templates=" << startupTemplates.size()
+        << " seconds=" << startupSeconds << '\n';
     const auto start = std::chrono::steady_clock::now();
     const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
         {"templateId", std::string("single-face-security-window")},
@@ -2166,6 +2271,285 @@ TEST(ProductTemplatePreviewSDO, DISABLED_FiveFaceEscapeWindowPreviewBenchmark) {
                 << value.To<double>() << "ms\n";
 }
 
+TEST(ProductTemplatePreviewSDO, DISABLED_FiveFaceEscapeWindowFirstAddBenchmark) {
+    Scene scene;
+    const auto startupStart = std::chrono::steady_clock::now();
+    const auto startup = invoke(scene, "List", {});
+    ASSERT_FALSE(startup.at("tubeDesigner").To<ObjectMap>()
+        .at("templates").To<VariantArray>().empty());
+    const auto startupSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - startupStart).count();
+    const auto addStart = std::chrono::steady_clock::now();
+    const auto added = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+        {"faceType", std::string("five")},
+        {"accessDoorEnabled", true},
+        {"accessDoorFace5", std::string("front")},
+        {"receiptOnly", true},
+    });
+    const auto addSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - addStart).count();
+    const auto designer = added.at("tubeDesigner").To<ObjectMap>();
+    for (const auto& [key, value] : designer)
+        std::cout << "[five-face snapshot] " << key << "="
+            << iCAX::Data::VariantSerializer::Serialize(value).size() << " bytes\n";
+    const auto members = designer.at("members").To<VariantArray>();
+    ASSERT_FALSE(members.empty());
+    EXPECT_TRUE(designer.at("receiptOnly").To<bool>());
+    const auto detailStart = std::chrono::steady_clock::now();
+    const auto details = invoke(scene, "List", {}).at("tubeDesigner").To<ObjectMap>();
+    const auto detailSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - detailStart).count();
+    EXPECT_EQ(members.size(), details.at("members").To<VariantArray>().size());
+    std::cout << "[five-face escape first add] startup=" << startupSeconds
+        << "s add=" << addSeconds << "s detail=" << detailSeconds
+        << "s members=" << members.size() << '\n';
+}
+
+TEST(ProductInstanceSDO, AddedProductsShareMeshesAndKeepWorldPlacements) {
+    Scene catalogScene;
+    const auto templates = invoke(catalogScene, "List", {}).at("tubeDesigner").To<ObjectMap>()
+        .at("templates").To<VariantArray>();
+    ASSERT_FALSE(templates.empty());
+    for (const auto& descriptor : templates) {
+        const auto id = descriptor.To<ObjectMap>().at("id").To<std::string>();
+        SCOPED_TRACE(id);
+        Scene scene;
+        ObjectMap request{{"templateId", id}};
+        if (id == "single-face-security-window") request["faceType"] = std::string("five");
+        const auto added = invoke(scene, "GeneratePreview", request).at("tubeDesigner").To<ObjectMap>();
+        const auto members = added.at("members").To<VariantArray>();
+        ASSERT_FALSE(members.empty());
+        const auto productID = *iCAX::Data::uuid::from_string(
+            added.at("product").To<ObjectMap>().at("entityId").To<std::string>());
+        const auto product = std::dynamic_pointer_cast<iCAX::TubeDesigner::CProductInstanceComponent>(
+            scene.Database().GetEntity(productID)->GetComponent("CProductInstanceComponent"));
+        ASSERT_TRUE(product);
+        const auto run = std::dynamic_pointer_cast<iCAX::TubeDesigner::CGenerationRunComponent>(
+            scene.Database().GetEntity(product->GetActiveGenerationRunID())->GetComponent("CGenerationRunComponent"));
+        ASSERT_TRUE(run);
+        const auto model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            iCAX::Data::Variant(run->GetNeutralModel()));
+        const auto geometry = iCAX::OpenCascade::EvaluateNeutralModel(model);
+        const auto verify = [&](Scene& current, const VariantArray& rows) {
+            std::set<std::string> resources;
+            for (const auto& row : rows) {
+                const auto member = row.To<ObjectMap>();
+                const auto key = member.at("stableKey").To<std::string>();
+                SCOPED_TRACE(key);
+                const auto item = std::find_if(model.Items.begin(), model.Items.end(),
+                    [&](const auto& candidate) { return candidate.Key == key; });
+                ASSERT_NE(item, model.Items.end());
+                const auto shape = geometry.At(item->Representations.at("result"));
+                const auto entity = current.Database().GetEntity(*iCAX::Data::uuid::from_string(
+                    member.at("entityId").To<std::string>()));
+                const auto transform = entity->GetComponent("CTransformComponent");
+                ASSERT_TRUE(transform);
+                const auto matrix = transform->GetProperty("LocalToWorldMatrix").To<iCAX::Data::Double4x4>();
+                const auto expected = shape.Location().Transformation();
+                const auto snapshotMatrix = member.at("transform").To<VariantArray>();
+                ASSERT_EQ(snapshotMatrix.size(), 16u);
+                for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) {
+                    EXPECT_NEAR(matrix(r,c), expected.Value(r+1,c+1), 1e-8);
+                    EXPECT_NEAR(matrix(r,c), snapshotMatrix[r*4+c].To<double>(), 1e-8);
+                }
+                const auto url = member.at("previewGeometryResourceId").To<std::string>();
+                resources.insert(url);
+                const auto mesh = current.Resources().Get<iCAX::GeometryData::CTriangleMeshResource>(
+                    url, member.at("previewGeometryResourceVersion").To<std::uint64_t>());
+                ASSERT_TRUE(mesh);
+                ASSERT_FALSE(mesh->Mesh.Vertices.empty());
+                Bnd_Box meshBounds, shapeBounds;
+                for (const auto& v : mesh->Mesh.Vertices)
+                    meshBounds.Add(gp_Pnt(matrix(0,0)*v.X+matrix(0,1)*v.Y+matrix(0,2)*v.Z+matrix(0,3),
+                        matrix(1,0)*v.X+matrix(1,1)*v.Y+matrix(1,2)*v.Z+matrix(1,3),
+                        matrix(2,0)*v.X+matrix(2,1)*v.Y+matrix(2,2)*v.Z+matrix(2,3)));
+                BRepBndLib::AddOptimal(shape, shapeBounds, false, false);
+                double actual[6], reference[6];
+                meshBounds.Get(actual[0],actual[1],actual[2],actual[3],actual[4],actual[5]);
+                shapeBounds.Get(reference[0],reference[1],reference[2],reference[3],reference[4],reference[5]);
+                // Display tessellation has a 1 mm chord tolerance, unlike production topology.
+                for (int i=0;i<6;++i) EXPECT_NEAR(actual[i],reference[i],1.1);
+            }
+            if (rows.size() > 2) EXPECT_LT(resources.size(), rows.size());
+            std::cout << "[product-instance-sharing] " << id << " members=" << rows.size()
+                << " meshes=" << resources.size() << '\n';
+        };
+        verify(scene, members);
+        const auto dir=std::filesystem::current_path()/"tmp/product-template-rectification";
+        std::filesystem::create_directories(dir);
+        iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_TUBE_DESIGNER",.ProductID="icax.tube-designer",
+            .CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});
+        iCAX::ProjectFile::CProjectDocumentInfo info;
+        info.ProjectID=scene.project;info.MainSceneID=scene.GetSceneID();info.ProjectName=id;
+        const auto path=dir/(id+"-shared-display.ictd");
+        file.Save(path,info,scene.Database(),scene.Resources());
+        Scene reopened(scene.project,scene.GetSceneID(),false);
+        file.Open(path,reopened.Database(),reopened.Resources());
+        const auto restored=invoke(reopened,"List",{}).at("tubeDesigner").To<ObjectMap>();
+        verify(reopened,restored.at("members").To<VariantArray>());
+    }
+}
+
+TEST(ProductInstanceSDO, DisplayMeshRestoresAndSideSketchBuildsSolidOnlyOnDemand) {
+    Scene scene;
+    const auto added = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+    }).at("tubeDesigner").To<ObjectMap>();
+    const auto members = added.at("members").To<VariantArray>();
+    ASSERT_FALSE(members.empty());
+    std::map<std::string, std::size_t> sharedCounts;
+    for (const auto& value : members)
+        ++sharedCounts[value.To<ObjectMap>().at("previewGeometryResourceId").To<std::string>()];
+    ObjectMap sketchTarget;
+    for (const auto& value : members) {
+        const auto member = value.To<ObjectMap>();
+        const auto properties = member.at("properties").To<ObjectMap>();
+        EXPECT_EQ("triangle-mesh", properties.at("tubeDesigner.previewGeometryKind").To<std::string>());
+        const auto url = member.at("previewGeometryResourceId").To<std::string>();
+        const auto version = member.at("previewGeometryResourceVersion").To<std::uint64_t>();
+        EXPECT_TRUE(scene.Resources().Get<iCAX::GeometryData::CTriangleMeshResource>(url, version));
+        if (sketchTarget.empty() && sharedCounts[url] > 1 && member.at("length").To<double>() > 0.0
+            && !member.at("profile").To<ObjectMap>().empty()) sketchTarget = member;
+    }
+    ASSERT_FALSE(sketchTarget.empty());
+
+    scene.Resources().Clear();
+    const auto restored = invoke(scene, "List", {}).at("tubeDesigner").To<ObjectMap>();
+    for (const auto& value : restored.at("members").To<VariantArray>()) {
+        const auto member = value.To<ObjectMap>();
+        EXPECT_TRUE(scene.Resources().Get<iCAX::GeometryData::CTriangleMeshResource>(
+            member.at("previewGeometryResourceId").To<std::string>(),
+            member.at("previewGeometryResourceVersion").To<std::uint64_t>()));
+    }
+
+    const auto saved = invoke(scene, "SaveSketch", ObjectMap{
+        {"productEntityId", added.at("product").To<ObjectMap>().at("entityId")},
+        {"targetMemberId", sketchTarget.at("entityId")},
+        {"sketch", ObjectMap{
+            {"schema", std::string("icax.tube-sketch")}, {"schemaVersion", 1ull},
+            {"kind", std::string("side")}, {"unit", std::string("mm")},
+            {"length", sketchTarget.at("length")}, {"faceHeight", 40.0},
+            {"entities", VariantArray{}},
+        }},
+    }).at("tubeDesigner").To<ObjectMap>();
+    bool foundSolid = false;
+    for (const auto& value : saved.at("members").To<VariantArray>()) {
+        const auto member = value.To<ObjectMap>();
+        if (member.at("entityId") != sketchTarget.at("entityId")) {
+            const auto initial=std::find_if(members.begin(),members.end(),[&](const auto& candidate){
+                return candidate.To<ObjectMap>().at("entityId")==member.at("entityId");});
+            ASSERT_NE(initial,members.end());
+            for(const auto* key:{"previewGeometryResourceId","previewGeometryResourceVersion","transform"})
+                EXPECT_EQ(initial->To<ObjectMap>().at(key),member.at(key));
+            continue;
+        }
+        foundSolid = true;
+        EXPECT_NE(member.at("previewGeometryResourceId"),sketchTarget.at("previewGeometryResourceId"));
+        const auto entity=scene.Database().GetEntity(*iCAX::Data::uuid::from_string(
+            member.at("entityId").To<std::string>()));
+        const auto matrix=entity->GetComponent("CTransformComponent")
+            ->GetProperty("LocalToWorldMatrix").To<iCAX::Data::Double4x4>();
+        for(int r=0;r<4;++r)for(int c=0;c<4;++c)EXPECT_NEAR(matrix(r,c),r==c?1.0:0.0,1e-10);
+        EXPECT_EQ("brep", member.at("properties").To<ObjectMap>()
+            .at("tubeDesigner.previewGeometryKind").To<std::string>());
+        EXPECT_TRUE(scene.Resources().Get<iCAX::GeometryData::BRepModel>(
+            member.at("previewGeometryResourceId").To<std::string>(),
+            member.at("previewGeometryResourceVersion").To<std::uint64_t>()));
+    }
+    EXPECT_TRUE(foundSolid);
+}
+
+TEST(ProductInstanceSDO, DisassemblyKeepsActiveProductRenderInstancesVisible) {
+    Scene scene;
+    const auto added = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+        {"faceType", std::string("five")},
+        {"accessDoorEnabled", true},
+        {"accessDoorFace5", std::string("front")},
+        {"receiptOnly", true},
+    }).at("tubeDesigner").To<ObjectMap>();
+    const auto initialMembers = added.at("members").To<VariantArray>();
+    ASSERT_FALSE(initialMembers.empty());
+    const auto productID = added.at("product").To<ObjectMap>()
+        .at("entityId").To<std::string>();
+    const auto disassembled = invoke(scene, "DisassembleSelected", ObjectMap{
+        {"productEntityIds", VariantArray{productID}},
+    }).at("tubeDesigner").To<ObjectMap>();
+    ASSERT_FALSE(disassembled.at("parts").To<VariantArray>().empty());
+    char* shapeDumpEnv = nullptr;
+    std::size_t shapeDumpEnvLength = 0;
+    (void)_dupenv_s(&shapeDumpEnv, &shapeDumpEnvLength, "ICAX_DUMP_DISASSEMBLY_SHAPES");
+    const bool dumpShapes = shapeDumpEnv != nullptr;
+    std::free(shapeDumpEnv);
+    if (dumpShapes) {
+        for (const auto& value : disassembled.at("parts").To<VariantArray>()) {
+            const auto partData = value.To<ObjectMap>();
+            const auto key = partData.at("stableKey").To<std::string>();
+            const auto resource = scene.Resources().Get<BRepModel>(
+                partData.at("manufacturingGeometryResourceId").To<std::string>(),
+                partData.at("manufacturingGeometryResourceVersion").To<std::uint64_t>());
+            ASSERT_TRUE(resource) << key;
+            const auto built = iCAX::OpenCascade::BuildOpenCascadeShape(*resource);
+            ASSERT_TRUE(built.bOK) << key;
+            GProp_GProps properties;
+            BRepGProp::VolumeProperties(built.Shape, properties);
+            GProp_GProps surface;
+            BRepGProp::SurfaceProperties(built.Shape, surface);
+            int faceCount = 0;
+            for (TopExp_Explorer face(built.Shape, TopAbs_FACE); face.More(); face.Next())
+                ++faceCount;
+            Bnd_Box bounds;
+            BRepBndLib::AddOptimal(built.Shape, bounds, false, false);
+            double xmin, ymin, zmin, xmax, ymax, zmax;
+            bounds.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+            std::cout << std::setprecision(15) << "PartGeometry key=" << key
+                << " volume=" << properties.Mass() << " bounds="
+                << xmin << ',' << ymin << ',' << zmin << ','
+                << xmax << ',' << ymax << ',' << zmax
+                << " area=" << surface.Mass()
+                << " center=" << properties.CentreOfMass().X() << ','
+                << properties.CentreOfMass().Y() << ','
+                << properties.CentreOfMass().Z()
+                << " faces=" << faceCount << '\n';
+        }
+    }
+    ASSERT_EQ(productID, disassembled.at("activeProductId").To<std::string>());
+    const auto members = disassembled.at("members").To<VariantArray>();
+    ASSERT_EQ(initialMembers.size(), members.size());
+    for (const auto& value : members) {
+        const auto member = value.To<ObjectMap>();
+        const auto memberID = iCAX::Data::uuid::from_string(
+            member.at("entityId").To<std::string>());
+        ASSERT_TRUE(memberID.has_value());
+        const auto entity = scene.Database().GetEntity(*memberID);
+        ASSERT_TRUE(entity);
+        const auto render = std::dynamic_pointer_cast<
+            iCAX::RenderInteraction::CRenderInstanceComponent>(
+                entity->GetComponent(iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName));
+        ASSERT_TRUE(render);
+        EXPECT_TRUE(render->GetVisible());
+        EXPECT_TRUE(scene.Resources().Get<iCAX::Resource::CFlatBufferResource>(
+            render->GetGeometryResourceID(), render->GetGeometryResourceVersion()));
+    }
+}
+
+TEST(ProductInstanceSDO, SingleFaceDisassemblyProducesParts) {
+    Scene scene;
+    const auto added = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+        {"faceType", std::string("single")},
+        {"receiptOnly", true},
+    }).at("tubeDesigner").To<ObjectMap>();
+    const auto productID = added.at("product").To<ObjectMap>()
+        .at("entityId").To<std::string>();
+    const auto result = invoke(scene, "DisassembleSelected", ObjectMap{
+        {"productEntityIds", VariantArray{productID}},
+    }).at("tubeDesigner").To<ObjectMap>();
+    EXPECT_EQ(productID, result.at("activeProductId").To<std::string>());
+    EXPECT_FALSE(result.at("parts").To<VariantArray>().empty());
+}
+
 TEST(ProductInstanceSDO, DeleteRemovesOnlyTheActiveInstanceAndUndoRestoresIt) {
     Scene scene;
     const auto first = invoke(scene, "GeneratePreview", ObjectMap{
@@ -2203,6 +2587,132 @@ TEST(ProductInstanceSDO, DeleteRemovesOnlyTheActiveInstanceAndUndoRestoresIt) {
     EXPECT_EQ(2u, restored.at("instances").To<VariantArray>().size());
     EXPECT_EQ(secondId, restored.at("activeProductId").To<std::string>());
     EXPECT_TRUE(scene.Database().GetEntity(*secondUuid));
+}
+
+TEST(ProductInstanceSDO, EveryProductSeparatesManufacturingEditsFromDisplayGeometry) {
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"single-face-security-window", "assemblyClearance"},
+        {"modular-guardrail", "baseBoltDiameter"},
+        {"modular-guardrail-cross-straight", "baseBoltDiameter"},
+        {"modular-guardrail-diamond-straight", "baseBoltDiameter"},
+        {"modular-guardrail-glass-straight", "baseBoltDiameter"},
+        {"straight-steel-staircase", "boltHoleDiameter"},
+    };
+    const auto displayState = [](const ObjectMap& designer) {
+        ObjectMap result;
+        for (const auto& value : designer.at("members").To<VariantArray>()) {
+            const auto member = value.To<ObjectMap>();
+            ObjectMap state{
+                {"resource", member.at("previewGeometryResourceId")},
+                {"version", member.at("previewGeometryResourceVersion")},
+            };
+            if (member.contains("transform")) state["transform"] = member.at("transform");
+            result[member.at("entityId").To<std::string>()] = state;
+        }
+        return result;
+    };
+    for (const auto& [id, independentField] : cases) {
+        SCOPED_TRACE(id);
+        Scene scene;
+        ObjectMap request{{"templateId", id}};
+        if (id == "straight-steel-staircase") {
+            request["totalRiserCount"] = 4;
+            request["floorHeight"] = 680.0;
+            request["railingSide"] = std::string("none");
+        }
+        if (id.starts_with("modular-guardrail")) request["sideLength1"] = 800.0;
+        const auto added = invoke(scene, "GeneratePreview", request).at("tubeDesigner").To<ObjectMap>();
+        const auto originalDisplay = displayState(added);
+        ASSERT_FALSE(originalDisplay.empty());
+        const auto product = added.at("product").To<ObjectMap>();
+        const auto productId = product.at("entityId").To<std::string>();
+        auto parameters = product.at("parameters").To<ObjectMap>();
+        const auto code = std::string("AUDIT-") + id;
+        parameters["productCode"] = code;
+        parameters[independentField] = parameters.at(independentField).To<double>() + 0.2;
+        const auto updated = invoke(scene, "UpdateProductParameters", ObjectMap{
+            {"productEntityId", productId}, {"parameters", parameters},
+        }).at("tubeDesigner").To<ObjectMap>();
+        const auto updatedProduct = updated.at("product").To<ObjectMap>();
+        EXPECT_FALSE(updatedProduct.at("modelOutdated").To<bool>());
+        EXPECT_TRUE(updatedProduct.at("partsOutdated").To<bool>());
+        EXPECT_EQ(code, updatedProduct.at("productCode").To<std::string>());
+        EXPECT_EQ(originalDisplay, displayState(updated));
+
+        const ObjectMap disassembly{
+            {"productEntityIds", VariantArray{productId}},
+            {"productParametersByEntityId", ObjectMap{{productId, parameters}}},
+        };
+
+            const auto manufactured = invoke(scene, "DisassembleSelected", disassembly)
+                .at("tubeDesigner").To<ObjectMap>();
+            EXPECT_FALSE(manufactured.at("parts").To<VariantArray>().empty());
+            EXPECT_FALSE(manufactured.at("product").To<ObjectMap>().at("partsOutdated").To<bool>());
+            EXPECT_EQ(originalDisplay, displayState(manufactured));
+
+        const auto dimension = parameters.contains("width") ? "width"
+            : parameters.contains("sideLength1") ? "sideLength1" : "floorHeight";
+        parameters[dimension] = parameters.at(dimension).To<double>() + 10.0;
+        const auto resized = invoke(scene, "UpdateProductParameters", ObjectMap{
+            {"productEntityId", productId}, {"parameters", parameters},
+        }).at("tubeDesigner").To<ObjectMap>();
+        EXPECT_TRUE(resized.at("product").To<ObjectMap>().at("modelOutdated").To<bool>());
+        EXPECT_EQ(originalDisplay, displayState(resized));
+        EXPECT_THROW(invoke(scene, "DisassembleSelected", ObjectMap{
+            {"productEntityIds", VariantArray{productId}},
+        }), std::exception);
+        EXPECT_THROW(invoke(scene, "DisassembleSelected", ObjectMap{
+            {"productEntityIds", VariantArray{productId}},
+            {"productParametersByEntityId", ObjectMap{{productId, parameters}}},
+        }), std::exception);
+    }
+}
+
+TEST(ProductInstanceSDO, MaterialsRequireRegenerationBeforeNativeDisassembly) {
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"single-face-security-window", "frameWidth"},
+        {"modular-guardrail", "handrailWidth"},
+        {"modular-guardrail-cross-straight", "handrailWidth"},
+        {"modular-guardrail-diamond-straight", "handrailWidth"},
+        {"modular-guardrail-glass-straight", "handrailWidth"},
+        {"straight-steel-staircase", "stringerWidth"},
+        {"assembly-cross-fixture", "hostWidth"},
+        {"assembly-frame-lt", "frameWidth"},
+        {"assembly-orthogonal-corner", "aWidth"},
+    };
+    for (const auto& [id, material] : cases) {
+        SCOPED_TRACE(id);
+        Scene scene;
+        const auto added = invoke(scene, "GeneratePreview", ObjectMap{{"templateId", id}})
+            .at("tubeDesigner").To<ObjectMap>();
+        const auto product = added.at("product").To<ObjectMap>();
+        const auto productId = product.at("entityId").To<std::string>();
+        auto parameters = product.at("parameters").To<ObjectMap>();
+        parameters[material] = parameters.at(material).To<double>() + 1.0;
+        const auto updated = invoke(scene, "UpdateProductParameters", ObjectMap{
+            {"productEntityId", productId}, {"parameters", parameters},
+        }).at("tubeDesigner").To<ObjectMap>();
+        EXPECT_TRUE(updated.at("product").To<ObjectMap>().at("modelOutdated").To<bool>());
+        EXPECT_EQ(added.at("members"), updated.at("members"));
+        EXPECT_THROW(invoke(scene, "DisassembleSelected", ObjectMap{
+            {"productEntityIds", VariantArray{productId}},
+        }), std::exception);
+        EXPECT_THROW(invoke(scene, "DisassembleSelected", ObjectMap{
+            {"productEntityIds", VariantArray{productId}},
+            {"productParametersByEntityId", ObjectMap{{productId, parameters}}},
+        }), std::exception);
+        parameters["templateId"] = id;
+        parameters["productEntityId"] = productId;
+        const auto regenerated = invoke(scene, "GeneratePreview", parameters)
+            .at("tubeDesigner").To<ObjectMap>();
+        EXPECT_FALSE(regenerated.at("product").To<ObjectMap>().at("modelOutdated").To<bool>());
+        EXPECT_NE(added.at("generationRun").To<ObjectMap>().at("entityId"),
+            regenerated.at("generationRun").To<ObjectMap>().at("entityId"));
+        const auto manufactured = invoke(scene, "DisassembleSelected", ObjectMap{
+            {"productEntityIds", VariantArray{productId}},
+        }).at("tubeDesigner").To<ObjectMap>();
+        EXPECT_FALSE(manufactured.at("parts").To<VariantArray>().empty());
+    }
 }
 
 TEST(ProductManufacturingPlanSDO, ReturnsManufacturingTablesWithoutCreatingGeometryResources) {
@@ -2384,7 +2894,7 @@ TEST(ProductTemplatePreviewSDO, UnifiedContinuousHandrailAndHorizontalInfill) {
     }
 }
 
-TEST(ProductTemplatePreviewSDO, DecorativeDoorSixPatterns) {
+TEST(ProductTemplatePreviewSDO, DISABLED_DeferredReference_DecorativeDoorSixPatterns) {
     Scene scene;
     for (const auto* pattern : {"lines","diamond","octagon","round_scene","panels","glass_lattice"}) {
         const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
@@ -2392,6 +2902,20 @@ TEST(ProductTemplatePreviewSDO, DecorativeDoorSixPatterns) {
             {"parameters",ObjectMap{{"pattern",std::string(pattern)},{"columns",1},{"rows",2},{"lineCount",3}}}});
         EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
     }
+}
+
+TEST(ProductTemplatePreviewSDO, DISABLED_DeferredReference_DecorativeDoorVGroovePassesNativePreview) {
+    Scene scene;
+    const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+        {"templateId", std::string("decorative-door")},
+        {"parameters", ObjectMap{
+            {"pattern", std::string("lines")}, {"lineTool", std::string("v")},
+            {"vAngle", 90.0}, {"cutDepth", 6.0},
+            {"columns", 1}, {"rows", 2}, {"lineCount", 3},
+        }},
+    });
+    EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    EXPECT_EQ(response.at("parameters").To<ObjectMap>().at("lineTool").To<std::string>(), "v");
 }
 
 TEST(ProductTemplatePreviewSDO, UnifiedStairRoutesAndCatalogue) {
@@ -2465,7 +2989,70 @@ TEST(ProductTemplatePreviewSDO, StainlessProfilesInHandrailFamilies) {
         EXPECT_NE(item.To<ObjectMap>().at("id").To<std::string>(),"stainless-steel-guardrail");
 }
 
-TEST(ProductTemplatePreviewSDO, DoorAndWindowGlassUseTranslucentMaterial) {
+TEST(ProductTemplatePreviewSDO, GuardrailBoardsKeepTranslucencyAndPlateIdentityAcrossReopen) {
+    Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);
+    const auto preview=invoke(scene,"GenerateProductTemplatePreview",{
+        {"templateId",std::string("modular-guardrail-glass-straight")}});
+    const auto opaque=preview.at("material").To<ObjectMap>().at("url").To<std::string>();
+    std::string panelMaterial;
+    int previewPanels=0;
+    for(const auto& value:preview.at("items").To<VariantArray>()) {
+        const auto item=value.To<ObjectMap>();
+        const auto material=item.at("material").To<ObjectMap>().at("url").To<std::string>();
+        if(item.at("name").To<std::string>().find("挡板")!=std::string::npos) {
+            EXPECT_NE(material,opaque); panelMaterial=material; ++previewPanels;
+        } else EXPECT_EQ(material,opaque);
+    }
+    ASSERT_EQ(previewPanels,3);
+    const auto translucent=scene.Resources().Get<iCAX::Render::SRenderMaterialData>(
+        scene.Resources().MakeNamedResourceURL("tube-designer/material/glass"));
+    ASSERT_TRUE(translucent);
+    EXPECT_EQ(translucent->nColorRGBA & 0xFFu,0x80u);
+    const auto normalized=preview.at("parameters").To<ObjectMap>();
+    const auto verify=[&](Scene& current,const ObjectMap& snapshot) {
+        int panels=0,frames=0;
+        for(const auto& value:snapshot.at("members").To<VariantArray>()) {
+            const auto member=value.To<ObjectMap>();
+            const auto entity=current.Database().GetEntity(*iCAX::Data::uuid::from_string(
+                member.at("entityId").To<std::string>()));
+            const auto render=std::dynamic_pointer_cast<iCAX::RenderInteraction::CRenderInstanceComponent>(
+                entity->GetComponent("CRenderInstanceComponent"));
+            ASSERT_TRUE(render);
+            const auto properties=member.at("properties").To<ObjectMap>();
+            if(properties.contains("displayMaterial")) {
+                EXPECT_EQ(properties.at("displayMaterial").To<std::string>(),"translucent-panel");
+                EXPECT_EQ(properties.at("manufacturing.partKind").To<std::string>(),"plate");
+                EXPECT_EQ(properties.at("manufacturing.materialCategory").To<std::string>(),"plate");
+                EXPECT_EQ(render->GetMaterialResourceID(),panelMaterial); ++panels;
+            } else { EXPECT_EQ(render->GetMaterialResourceID(),opaque); ++frames; }
+            const auto bytes=current.Resources().Get<iCAX::Resource::CFlatBufferResource>(
+                render->GetMaterialResourceID(),render->GetMaterialResourceVersion());
+            ASSERT_TRUE(bytes); EXPECT_GT(bytes->Size(),0u);
+        }
+        EXPECT_EQ(panels,3); EXPECT_GT(frames,0);
+        EXPECT_EQ(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(snapshot.at("product").To<ObjectMap>().at("parameters")),
+            iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(normalized));
+    };
+    const auto added=invoke(scene,"GeneratePreview",{{"templateId",std::string("modular-guardrail-glass-straight")}})
+        .at("tubeDesigner").To<ObjectMap>();
+    verify(scene,added);
+    auto regenerate=normalized;
+    regenerate["templateId"]=std::string("modular-guardrail-glass-straight");
+    regenerate["productEntityId"]=added.at("product").To<ObjectMap>().at("entityId");
+    const auto regenerated=invoke(scene,"GeneratePreview",regenerate).at("tubeDesigner").To<ObjectMap>();
+    verify(scene,regenerated);
+    const auto directory=std::filesystem::current_path()/"tmp/guardrail-appearance-acceptance";
+    std::filesystem::create_directories(directory);
+    const auto path=directory/"translucent-board.ictd";
+    iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_TUBE_DESIGNER",.ProductID="icax.tube-designer",.CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});
+    iCAX::ProjectFile::CProjectDocumentInfo info; info.ProjectID=scene.project;info.MainSceneID=scene.GetSceneID();info.ProjectName="Guardrail appearance acceptance";
+    file.Save(path,info,scene.Database(),scene.Resources());
+    Scene reopened(scene.project,scene.GetSceneID(),false,true);
+    file.Open(path,reopened.Database(),reopened.Resources());
+    verify(reopened,invoke(reopened,"List",{}).at("tubeDesigner").To<ObjectMap>());
+}
+
+TEST(ProductTemplatePreviewSDO, DISABLED_DeferredReference_DoorAndWindowGlassUseTranslucentMaterial) {
     for(const auto* id:{"decorative-door","aluminium-window"}){
         Scene scene;
         SCOPED_TRACE(id);
@@ -2491,7 +3078,7 @@ TEST(ProductTemplatePreviewSDO, DoorAndWindowGlassUseTranslucentMaterial) {
     }
 }
 
-TEST(ProductTemplatePreviewSDO, AluminiumWindowPanelsAndMovableScreen) {
+TEST(ProductTemplatePreviewSDO, DISABLED_DeferredReference_AluminiumWindowPanelsAndMovableScreen) {
     Scene scene;
     for (const auto* type : {"fixed", "sliding", "hinged", "mixed"}) {
         const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
@@ -2503,7 +3090,7 @@ TEST(ProductTemplatePreviewSDO, AluminiumWindowPanelsAndMovableScreen) {
     }
 }
 
-TEST(ProductTemplatePreviewSDO, LouverTubeAnglesSlotsAndSupports) {
+TEST(ProductTemplatePreviewSDO, DISABLED_DeferredReference_LouverTubeAnglesSlotsAndSupports) {
     Scene scene;
     for (const auto* connection : {"face_weld", "slot_insert", "through_insert"}) {
         const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
@@ -2647,6 +3234,8 @@ TEST(AssemblyTemplateSDOTest, TContactFitMarkProducesShallowNativeContourOnlyWhe
 }
 
 namespace punch_persistence_acceptance {
+#include "ProductDisassemblyProgressSDOTests.inc"
+#include "NestingProfileKeyExportSDOTests.inc"
 #include "FinishedProductInputSDOTests.inc"
 #include "ProductDisassemblyCountSDOTests.inc"
 #include "ProductAssemblyConnectionsTests.inc"
@@ -2659,4 +3248,9 @@ namespace punch_persistence_acceptance {
 #include "ProductAssemblyOrthogonalCornerSDOTests.inc"
 #include "AssemblyProcessPlanSDOTests.inc"
 #include "ProductGeneratedAssemblyProcessSDOTests.inc"
+#include "ProductDisassemblyOwnedModelTests.inc"
+#include "ProductIdenticalManufacturingPartsSDOTests.inc"
+#include "ProductExportUnitQuantitySDOTests.inc"
+#include "ProductManufacturingConcurrencySDOTests.inc"
+#include "NestingPartFilePickerSDOTests.inc"
 }

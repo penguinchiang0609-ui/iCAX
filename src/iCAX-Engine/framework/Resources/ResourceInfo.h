@@ -76,7 +76,7 @@ namespace iCAX
         struct _RESOURCES_EXP CResourceInfo final
         {
             CResourceKey Key;                 //!< 资源唯一键。
-            iCAX::Data::uuid ResourceID;       //!< URL 最后一段的稳定 GUID；旧格式资源可为 nil。
+            iCAX::Data::uuid ResourceID;       //!< URL 中可解析的稳定 GUID；无 GUID 的资源 URL 为 nil。
             std::string Name;                 //!< 展示名称。
             std::string Source;               //!< 原始文件或外部 URI；不参与资源身份。
             std::string MediaType;            //!< 规范资源表示的媒体类型。

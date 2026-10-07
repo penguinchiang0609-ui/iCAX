@@ -60,4 +60,9 @@ namespace iCAX::OpenCascade
             const std::vector<SBRepConversionInput>& Inputs_,
             double dTolerance_ = 0.001,
             std::size_t MaximumConcurrency_ = 0);
+
+    // Read-only display edges: no triangulation, shape copying or resource writes.
+    // Curves are sampled coarsely for a lightweight interactive wireframe.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP std::vector<iCAX::GeometryData::Polyline3>
+        ConvertOpenCascadeShapeToPreviewWireframe(const TopoDS_Shape& Shape_);
 }

@@ -1,6 +1,8 @@
-import { matchesParameterCondition, parameterVisible } from "./parameterConditions.mjs";
+import { matchesParameterCondition, parameterEnabled, parameterVisible } from "./parameterConditions.mjs";
 import { isAdvancedParameter, parameterDiagramLevelAttribute } from './parameterPresentation.mjs';
 import { catalogText, getTemplateVisualAsset } from "./productCatalog.mjs";
+import { productControlFields, productStructureEditors } from "./productControls.mjs";
+import { creationOnlyParameterKeys } from "./productParameterDependencies.mjs";
 
 function escapeText(value) {
   return String(value ?? "")
@@ -12,7 +14,17 @@ function escapeText(value) {
 }
 
 function definitionMap(template) {
-  return new Map((template?.parameters ?? []).map((field) => [String(field?.key ?? field?.name ?? ""), field]));
+  return new Map([...(template?.parameters ?? []), ...productControlFields(template)]
+    .map((field) => [String(field?.key ?? field?.name ?? ""), field]));
+}
+
+// Geometry reads host fields; diagram interactions belong to their declared
+// structure editor. Derive that ownership from the current choice patches.
+function structureParameterForHostField(template, parameter) {
+  const editors = new Set(productStructureEditors(template).map(editor => editor.controlKey));
+  const owners = productControlFields(template).filter(control => editors.has(control.key)
+    && control.choices.some(choice => Object.hasOwn(choice.parameters ?? {}, parameter)));
+  return owners.length === 1 ? owners[0].key : "";
 }
 
 function dimensionValue(value, field) {
@@ -145,9 +157,8 @@ function annotationEditor(field, value) {
 }
 
 /**
- * Merge the防盗窗's generated world-space anchors with its display rules and
- * the active instance draft. Other templates deliberately have no declaration
- * and therefore receive no scene specification annotations yet.
+ * Merge each product's generated world-space anchors with its display rules
+ * and active instance draft. Editing capability comes from the declaration.
  */
 export function resolveProductSpecificationAnnotations(designer = {}, view = {}) {
   const product = designer?.product;
@@ -159,6 +170,7 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
   const committed = { ...(product.parameters ?? {}) };
   const values = { ...committed, ...(view?.tubeDesignerRightDraft ?? {}) };
   const active = String(view?.tubeDesignerLastEditedParameterKey ?? "");
+  const creationOnly = creationOnlyParameterKeys(template);
   return (Array.isArray(designer?.specificationAnnotations)
     ? designer.specificationAnnotations : [])
     .flatMap((anchor, index) => {
@@ -169,8 +181,7 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
       // can still refine the same parameter in display.json.
       const declaration = { ...(anchor ?? {}), ...(declarations?.[parameter] ?? {}) };
       const field = fields.get(parameter);
-      if (!parameter || String(anchor?.kind ?? declaration?.kind ?? "").toLowerCase() === "count"
-          || !field
+      if (!parameter || !field
           || !parameterVisible(field, values)
           || !matchesParameterCondition(anchor?.visibleWhen, values)
           || !matchesParameterCondition(declaration.visibleWhen, values)) return [];
@@ -187,16 +198,15 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
           ? anchor.generatedValue
           : committed[parameter];
       const pending = !sameParameterValue(values[parameter], generatedValue);
-      const editable = declaration.editable !== false
-        && field?.readOnly !== true
-        && matchesParameterCondition(field?.enabledWhen, values);
+      const editable = !creationOnly.has(parameter) && declaration.editable !== false
+        && parameterEnabled(field, values) && matchesParameterCondition(declaration.enabledWhen, values);
       const currentLabel = annotationLabel(declaration, field, values[parameter]);
       const changedLabel = pending
         ? `${annotationLabel(declaration, field, generatedValue)} → ${dimensionValue(values[parameter], field)}${!String(field?.unit ?? "").trim() ? String(declaration?.suffix ?? "") : ""}`
         : currentLabel;
       return [{
         ...anchor,
-        id: `${String(product.entityId ?? "product")}:${String(anchor?.id ?? `security-window.${parameter}.${index}`)}`,
+        id: `${String(product.entityId ?? "product")}:${String(anchor?.id ?? `product.${parameter}.${index}`)}`,
         parameter,
         groupKey: String(declaration?.group
           ?? field?.groupKey
@@ -298,7 +308,7 @@ export function resolveProductSpecificationAnnotationTree(designer = {}, view = 
   const groupKeys = [...new Set(children.flatMap((item) => item.groupKeys))];
   return {
     key: "root",
-    label: "规格标注",
+    label: "尺寸规格",
     count: annotations.length,
     groupKeys,
     state: annotationTreeState(groupKeys, view),
@@ -842,31 +852,60 @@ function guardrailArtwork(template, diagram, values, options) {
   const segmentCount = semanticLayout === "u" ? 3 : semanticLayout === "straight" ? 1 : 2;
   const lengths = lengthParameters.slice(0, segmentCount).map((parameter, index) => Math.max(1, numberValue(values, parameter, index ? 1500 : 3000)));
   const world = guardrailPlan(semanticLayout, lengths);
-  const raw = world.map(({ x, y }) => point(x + y * 0.5, y * 0.32 - x * 0.08));
-  const minX = Math.min(...raw.map(({ x }) => x));
-  const maxX = Math.max(...raw.map(({ x }) => x));
-  const minY = Math.min(...raw.map(({ y }) => y));
-  const maxY = Math.max(...raw.map(({ y }) => y));
-  const scale = Math.min(238 / Math.max(1, maxX - minX), 62 / Math.max(1, maxY - minY || 1));
-  const centeredX = (340 - (maxX - minX) * scale) / 2;
-  const centeredY = 108 - (maxY - minY) * scale / 2;
-  const plan = raw.map(({ x, y }) => point(centeredX + (x - minX) * scale, centeredY + (y - minY) * scale));
+  const height = Math.max(1, numberValue(values, heightParameter, 1200));
   const angles = slopeParameters.slice(0, segmentCount).map((parameter) => pathMode === "level" ? 0 : numberValue(values, parameter, 0));
   const rises = [0];
   for (let index = 0; index < segmentCount; index += 1) {
     rises.push(rises[index] + Math.tan(angles[index] * Math.PI / 180) * lengths[index]);
   }
-  const riseRange = Math.max(1, Math.max(...rises) - Math.min(...rises));
-  const riseScale = pathMode === "level" ? 0 : Math.min(28 / riseRange, 0.04);
-  const minimumRise = Math.min(...rises);
-  const bottom = plan.map((entry, index) => point(entry.x, entry.y - (rises[index] - minimumRise) * riseScale));
-  const height = Math.max(1, numberValue(values, heightParameter, 1200));
-  const heightPixels = clamp(46 + (height / 1200 - 1) * 16, 36, 68);
-  const top = bottom.map((entry) => point(entry.x, entry.y - heightPixels));
+  const endPostWidth = values?.largePostMode === "ends"
+    ? numberValue(values, "largePostSize", 80) : numberValue(values, "postWidth", 38);
+  const startReach = endPostWidth / 2 + Math.max(0, numberValue(values, "startExtension", 0));
+  const finishReach = endPostWidth / 2 + Math.max(0, numberValue(values, "finishExtension", 0));
+  const capRatio = (segment, ratio) => ratio
+    + (segment === 0 && ratio === 0 ? -startReach / lengths[segment] : 0)
+    + (segment === segmentCount - 1 && ratio === 1 ? finishReach / lengths[segment] : 0);
+  // A straight run is an elevation view: horizontal members must stay horizontal.
+  // Fit the complete height and path together so panels keep the product's proportions.
+  const projected = ({ x, y }, z) => point(x + y * 0.5,
+    y * 0.32 - (semanticLayout === "straight" ? 0 : x * 0.08) - z);
+  const raw = world.flatMap((entry, index) => [projected(entry, rises[index]), projected(entry, rises[index] + height)]);
+  raw.push(projected(interpolate(world[0], world[1], capRatio(0, 0)), rises[0] + height),
+    projected(interpolate(world[segmentCount - 1], world[segmentCount], capRatio(segmentCount - 1, 1)), rises[segmentCount] + height));
+  const minX = Math.min(...raw.map(({ x }) => x));
+  const maxX = Math.max(...raw.map(({ x }) => x));
+  const minY = Math.min(...raw.map(({ y }) => y));
+  const maxY = Math.max(...raw.map(({ y }) => y));
+  const scale = Math.min(238 / Math.max(1, maxX - minX), 110 / Math.max(1, maxY - minY));
+  const centeredX = (340 - (maxX - minX) * scale) / 2;
+  const centeredY = 32 + (110 - (maxY - minY) * scale) / 2;
+  const project = (entry, z) => {
+    const rawPoint = projected(entry, z);
+    return point(centeredX + (rawPoint.x - minX) * scale, centeredY + (rawPoint.y - minY) * scale);
+  };
+  const bottom = world.map((entry, index) => project(entry, rises[index]));
+  const sectionDepth = (role, fallback) => Math.max(1, numberValue(values,
+    `${role}${values?.[`${role}ProfileType`] === "round" ? "Width" : "Depth"}`, fallback));
+  const handrailDepth = sectionDepth("handrail", 50.8);
+  const railDepth = sectionDepth("rail", 25.4);
+  const handrailHeight = height - handrailDepth / 2;
+  const top = world.map((entry, index) => project(entry, rises[index] + handrailHeight));
   const infillParameter = binding(diagram, "infillType");
   const railParameter = binding(diagram, "railCount");
-  const infillType = String(values?.[infillParameter] ?? "bars");
+  const declaredInfillType = String(values?.[infillParameter] ?? "bars");
+  const infillType = declaredInfillType === "bars" && values?.barOrientation === "horizontal"
+    ? "horizontal" : declaredInfillType;
+  const handrailStructureParameter = structureParameterForHostField(template, "handrailMode");
+  const postStructureParameter = structureParameterForHostField(template, "largePostMode");
+  const railStructureParameter = structureParameterForHostField(template, railParameter);
+  const infillStructureParameter = structureParameterForHostField(template, "barOrientation");
   const railCount = clamp(Math.round(numberValue(values, railParameter, 2)), 2, 4);
+  const bottomClearance = Math.max(0, numberValue(values, "bottomClearance", 80));
+  const upperRailHeight = height - numberValue(values, "upperRailDrop", 200);
+  const lowerRailHeight = bottomClearance + railDepth / 2;
+  const panelGap = Math.max(0, numberValue(values, "panelEdgeClearance", 5));
+  const panelBottom = bottomClearance + railDepth + panelGap;
+  const panelTop = (railCount === 2 ? height - handrailDepth : upperRailHeight - railDepth / 2) - panelGap;
   const bayCounts = Array.from({ length: segmentCount }, (_, index) => clamp(
     Math.round(numberValue(values, bayParameters[index], index ? 2 : 3)), 1, 8,
   ));
@@ -879,32 +918,59 @@ function guardrailArtwork(template, diagram, values, options) {
     const segmentTopA = top[segment];
     const segmentTopB = top[segment + 1];
     const infill = [];
+    const handrails = [];
     const rails = [];
     const posts = [];
     for (let bay = 0; bay < bays; bay += 1) {
       const start = bay / bays;
       const finish = (bay + 1) / bays;
-      const bottomA = interpolate(segmentBottomA, segmentBottomB, start);
-      const bottomB = interpolate(segmentBottomA, segmentBottomB, finish);
-      const topA = interpolate(segmentTopA, segmentTopB, start);
-      const topB = interpolate(segmentTopA, segmentTopB, finish);
+      const riseA = rises[segment] + (rises[segment + 1] - rises[segment]) * start;
+      const riseB = rises[segment] + (rises[segment + 1] - rises[segment]) * finish;
+      const baseA = pathMode === "stepped" ? Math.max(riseA, riseB) : riseA;
+      const baseB = pathMode === "stepped" ? Math.max(riseA, riseB) : riseB;
+      const at = (ratio, z) => project(interpolate(world[segment], world[segment + 1], ratio), z);
+      const bottomA = at(start, baseA + panelBottom);
+      const bottomB = at(finish, baseB + panelBottom);
+      const topA = at(start, baseA + panelTop);
+      const topB = at(finish, baseB + panelTop);
       infill.push(guardrailInfill(infillType, bottomA, bottomB, topA, topB, bay));
+      if (pathMode === "stepped") {
+        handrails.push(svgLine(at(capRatio(segment, start), baseA + handrailHeight), at(capRatio(segment, finish), baseB + handrailHeight), "product-diagram-handrail"));
+        rails.push(svgLine(at(start, baseA + lowerRailHeight), at(finish, baseB + lowerRailHeight), "product-diagram-rail"));
+        if (railCount > 2) rails.push(svgLine(at(start, baseA + upperRailHeight), at(finish, baseB + upperRailHeight), "product-diagram-rail"));
+      }
     }
-    for (let rail = 0; rail < railCount; rail += 1) {
-      const ratio = rail / (railCount - 1);
-      rails.push(svgLine(interpolate(segmentTopA, segmentBottomA, ratio), interpolate(segmentTopB, segmentBottomB, ratio), rail === 0 ? "product-diagram-handrail" : "product-diagram-rail"));
+    if (pathMode !== "stepped") {
+      handrails.push(svgLine(
+        project(interpolate(world[segment], world[segment + 1], capRatio(segment, 0)), rises[segment] + handrailHeight),
+        project(interpolate(world[segment], world[segment + 1], capRatio(segment, 1)), rises[segment + 1] + handrailHeight), "product-diagram-handrail"));
+      for (let rail = 1; rail < railCount; rail += 1) {
+        const z = rail === railCount - 1 ? lowerRailHeight : upperRailHeight;
+        rails.push(svgLine(project(world[segment], rises[segment] + z), project(world[segment + 1], rises[segment + 1] + z), "product-diagram-rail"));
+      }
     }
     for (let post = 0; post <= bays; post += 1) {
       const ratio = post / bays;
-      posts.push(svgLine(interpolate(segmentTopA, segmentTopB, ratio), interpolate(segmentBottomA, segmentBottomB, ratio), "product-diagram-post"));
+      const postBottom = interpolate(segmentBottomA, segmentBottomB, ratio);
+      let postTop = interpolate(segmentTopA, segmentTopB, ratio);
+      if (pathMode === "stepped") {
+        const adjacent = [Math.max(0, post - 1), Math.min(bays - 1, post)];
+        const high = Math.max(...adjacent.flatMap(bay => [bay / bays, (bay + 1) / bays])
+          .map(t => rises[segment] + (rises[segment + 1] - rises[segment]) * t));
+        postTop = project(interpolate(world[segment], world[segment + 1], ratio), high + handrailHeight);
+      }
+      posts.push(svgLine(postTop, postBottom, "product-diagram-post"));
     }
     const lengthParameter = lengthParameters[segment];
     const bayParameter = bayParameters[segment];
     const slopeParameter = pathMode === "level" ? pathModeParameter : slopeParameters[segment];
-    geometry.push(linkedGroup(infill.join(""), infillParameter, active, mode, "product-diagram-guardrail-infill"));
-    geometry.push(linkedGroup(rails.join(""), railParameter, active, mode, "product-diagram-guardrail-rails"));
-    geometry.push(linkedGroup(posts.join(""), bayParameter, active, mode, "product-diagram-guardrail-bays"));
-    geometry.push(linkedGroup(svgLine(segmentTopA, segmentTopB, "product-diagram-slope-guide"), slopeParameter, active, mode, "product-diagram-guardrail-slope"));
+    geometry.push(linkedGroup(infill.join(""), infillStructureParameter || infillParameter, active, mode, "product-diagram-guardrail-infill"));
+    geometry.push(linkedGroup(handrails.join(""), handrailStructureParameter, active, mode, "product-diagram-guardrail-handrail"));
+    geometry.push(linkedGroup(rails.join(""), railStructureParameter, active, mode, "product-diagram-guardrail-rails"));
+    geometry.push(linkedGroup(posts.join(""), [postStructureParameter, bayParameter], active, mode, "product-diagram-guardrail-bays"));
+    // Keep the path guide above the handrail so it cannot intercept clicks on
+    // the handrail's independently editable structure.
+    if (showDimensions) geometry.push(linkedGroup(svgLine(point(segmentTopA.x, segmentTopA.y - 12), point(segmentTopB.x, segmentTopB.y - 12), "product-diagram-slope-guide"), slopeParameter, active, mode, "product-diagram-guardrail-slope"));
     if (showDimensions) {
       const middle = interpolate(segmentTopA, segmentTopB, 0.5);
       geometry.push(`<g class="product-diagram-measure product-diagram-side-measure${activeClass(lengthParameter, active)}"${actionAttributes(lengthParameter, mode)}><text x="${middle.x.toFixed(2)}" y="${(middle.y - 7).toFixed(2)}" text-anchor="middle">第${segment + 1}边 ${escapeText(dimensionValue(values?.[lengthParameter], fields.get(lengthParameter)))}</text></g>`);
@@ -925,6 +991,15 @@ function declaredArtwork(template, values, options) {
   if (!diagram) return "";
   if (diagram.kind === "security-window") return securityWindowArtwork(template, diagram, values, options);
   if (diagram.kind === "guardrail") return guardrailArtwork(template, diagram, values, options);
+  if (diagram.kind === "layered-svg") {
+    const layers = (diagram.layers ?? []).filter(layer => matchesParameterCondition(layer.visibleWhen, values));
+    const artwork = layers.map(layer => linkedGroup(String(layer.svg ?? ""), layer.parameters ?? [],
+      String(options.activeParameter ?? ""), options.mode, "product-diagram-structure")).join("");
+    const labels = layers.filter(layer => layer.label).map(layer => `<text class="product-diagram-layout-label" x="${Number(layer.labelX ?? 12)}"
+      y="${Number(layer.labelY ?? 18)}">${escapeText(catalogText(layer.label))}</text>`).join("");
+    return `<svg class="tube-designer-product-structure-svg" viewBox="${escapeText(diagram.viewBox ?? '0 0 320 160')}"
+      role="img" aria-label="${escapeText(catalogText(template.displayName))}结构示意">${artwork}${labels}</svg>`;
+  }
   return "";
 }
 
@@ -972,6 +1047,7 @@ export function renderProductParameterDiagram(template, values = {}, options = {
 
 /** Keep product diagram highlighting local to the editor that owns its fields. */
 const productDiagramBindings = new WeakMap();
+const productSceneFocus = new WeakMap();
 
 export function bindProductParameterDiagrams(mount) {
   for (const scope of mount?.querySelectorAll?.("[data-tube-designer-product-parameter-scope]") ?? []) {
@@ -1009,7 +1085,6 @@ export function bindProductParameterDiagrams(mount) {
       key: initialKey,
       profileRole: initialKey.startsWith("profile:") ? initialKey.split(":")[1] ?? "" : "",
     };
-    let lastSceneSignature = null;
     const highlight = ({ key = "", profileRole = "", category = "" } = {}) => {
       for (const node of interactionNodes()) {
         if (!owns(node)) continue;
@@ -1021,8 +1096,18 @@ export function bindProductParameterDiagrams(mount) {
         }
       }
       const signature = `${key}\u0000${profileRole}\u0000${category}`;
-      if (mode === "right" && signature !== lastSceneSignature) {
-        lastSceneSignature = signature;
+      if (mode === "right") {
+        const focusedScope = scope.ownerDocument.activeElement
+          ?.closest?.("[data-tube-designer-product-parameter-scope]");
+        // A rebind or pointer exit in another editor must restore the editor
+        // that currently owns focus, rather than clearing its scene emphasis.
+        if (!key && focusedScope && focusedScope !== scope) {
+          productDiagramBindings.get(focusedScope)?.();
+          return;
+        }
+        const previous = productSceneFocus.get(mount);
+        if (previous?.scope === scope && previous.signature === signature) return;
+        productSceneFocus.set(mount, { scope, signature });
         scope.dispatchEvent(new CustomEvent("tube-designer-product-parameter-focus", {
           bubbles: true,
           detail: { key, mode, profileRole, category },

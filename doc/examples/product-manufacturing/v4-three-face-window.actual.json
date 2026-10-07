@@ -1,0 +1,403 @@
+{
+  "schema": "icax.manufacturing-model",
+  "schemaVersion": 4,
+  "connections": [
+    {
+      "key": "footprint.corner.0001",
+      "kind": "corner",
+      "items": [
+        "outer_frame.vertical.0002",
+        "outer_frame.top.0001",
+        "outer_frame.top.0002"
+      ],
+      "properties": {
+        "origin": [
+          -581.0,
+          -19.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": "footprint.corner.0002",
+      "kind": "corner",
+      "items": [
+        "outer_frame.vertical.0003",
+        "outer_frame.top.0002",
+        "outer_frame.top.0003"
+      ],
+      "properties": {
+        "origin": [
+          581.0,
+          -19.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": "outer_frame.corner.top.0001",
+      "kind": "assembly",
+      "items": [
+        "outer_frame.top.0001",
+        "outer_frame.top.0002",
+        "outer_frame.vertical.0002"
+      ],
+      "properties": {
+        "topology": "orthogonal-corner",
+        "centerlinePoint": [
+          -581.0,
+          -19.0,
+          1781.0
+        ],
+        "origin": [
+          -581.0,
+          -19.0,
+          1781.0
+        ],
+        "participantAnchors": [
+          {
+            "itemKey": "outer_frame.top.0001",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 562.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              1781.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.top.0002",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              1781.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.vertical.0002",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 1762.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              1781.0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "outer_frame.corner.bottom.0001",
+      "kind": "assembly",
+      "items": [
+        "outer_frame.bottom.0001",
+        "outer_frame.bottom.0002",
+        "outer_frame.vertical.0002"
+      ],
+      "properties": {
+        "topology": "orthogonal-corner",
+        "centerlinePoint": [
+          -581.0,
+          -19.0,
+          19.0
+        ],
+        "origin": [
+          -581.0,
+          -19.0,
+          19.0
+        ],
+        "participantAnchors": [
+          {
+            "itemKey": "outer_frame.bottom.0001",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 562.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              19.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.bottom.0002",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              19.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.vertical.0002",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              -581.0,
+              -19.0,
+              19.0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "outer_frame.corner.top.0002",
+      "kind": "assembly",
+      "items": [
+        "outer_frame.top.0002",
+        "outer_frame.top.0003",
+        "outer_frame.vertical.0003"
+      ],
+      "properties": {
+        "topology": "orthogonal-corner",
+        "centerlinePoint": [
+          581.0,
+          -19.0,
+          1781.0
+        ],
+        "origin": [
+          581.0,
+          -19.0,
+          1781.0
+        ],
+        "participantAnchors": [
+          {
+            "itemKey": "outer_frame.top.0002",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 1162.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              1781.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.top.0003",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              1781.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.vertical.0003",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 1762.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              1781.0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "outer_frame.corner.bottom.0002",
+      "kind": "assembly",
+      "items": [
+        "outer_frame.bottom.0002",
+        "outer_frame.bottom.0003",
+        "outer_frame.vertical.0003"
+      ],
+      "properties": {
+        "topology": "orthogonal-corner",
+        "centerlinePoint": [
+          581.0,
+          -19.0,
+          19.0
+        ],
+        "origin": [
+          581.0,
+          -19.0,
+          19.0
+        ],
+        "participantAnchors": [
+          {
+            "itemKey": "outer_frame.bottom.0002",
+            "kind": "end",
+            "end": "end",
+            "anchor": {
+              "kind": "end",
+              "end": "end"
+            },
+            "localAxialStation": 1162.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              19.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.bottom.0003",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              19.0
+            ]
+          },
+          {
+            "itemKey": "outer_frame.vertical.0003",
+            "kind": "end",
+            "end": "start",
+            "anchor": {
+              "kind": "end",
+              "end": "start"
+            },
+            "localAxialStation": 0.0,
+            "centerlinePoint": [
+              581.0,
+              -19.0,
+              19.0
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "processes": [
+    {
+      "key": "window.assembly",
+      "kind": "assembly-process",
+      "definition": {
+        "templateId": "security-window-assembly",
+        "processInput": {
+          "schema": "icax.assembly-process-input",
+          "schemaVersion": 3,
+          "parts": {
+            "members": {
+              "scope": "design",
+              "itemKeys": [
+                "outer_frame.vertical.0001",
+                "outer_frame.vertical.0002",
+                "outer_frame.vertical.0003",
+                "outer_frame.vertical.0004",
+                "outer_frame.bottom.0001",
+                "outer_frame.top.0001",
+                "main_grid.horizontal.0001",
+                "main_grid.horizontal.0002",
+                "main_grid.horizontal.0003",
+                "main_grid.horizontal.0004",
+                "main_grid.vertical.0001",
+                "main_grid.vertical.0002",
+                "outer_frame.bottom.0002",
+                "outer_frame.top.0002",
+                "main_grid.horizontal.0005",
+                "main_grid.horizontal.0006",
+                "main_grid.horizontal.0007",
+                "main_grid.horizontal.0008",
+                "main_grid.vertical.0003",
+                "main_grid.vertical.0004",
+                "main_grid.vertical.0005",
+                "outer_frame.bottom.0003",
+                "outer_frame.top.0003",
+                "main_grid.horizontal.0009",
+                "main_grid.horizontal.0010",
+                "main_grid.horizontal.0011",
+                "main_grid.horizontal.0012",
+                "main_grid.vertical.0006",
+                "main_grid.vertical.0007"
+              ]
+            }
+          },
+          "geometry": {
+            "layout": {
+              "faceType": "three",
+              "accessDoorEnabled": false
+            }
+          },
+          "resources": {
+            "outerFrameGroove": {
+              "ref": {
+                "scope": "system",
+                "id": "v-notch-sharp"
+              }
+            }
+          }
+        },
+        "parameters": {
+          "assemblyPlanningMode": "legacy_processed",
+          "frameManufacturingMode": "spatial_v_notch",
+          "frameJoinType": "miter_45",
+          "frameCornerJoin": "post_butt",
+          "frameButtWrapMode": "side_wraps_horizontal",
+          "doorFrameJoinType": "miter_45",
+          "doorFrameButtWrapMode": "side_wraps_horizontal",
+          "doorLeafFrameJoinType": "miter_45",
+          "doorLeafFrameButtWrapMode": "side_wraps_horizontal",
+          "assemblyClearance": 0.1,
+          "horizontalBranchReserve": 5,
+          "verticalBranchReserve": 10
+        },
+        "processDrafts": {
+          "outerFrameGroove": {
+            "v-notch-sharp": {}
+          }
+        },
+        "outputs": {
+          "manufacturing": {
+            "kind": "manufacturing-set",
+            "key": "window.manufacturing"
+          }
+        },
+        "dependencies": []
+      }
+    }
+  ]
+}

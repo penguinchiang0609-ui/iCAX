@@ -22,6 +22,12 @@
       "M11.2 14.4 L36.8 14.4 A16 16 0 0 1 36.8 33.6 L11.2 33.6 A16 16 0 0 1 11.2 14.4 Z"
     ]
   },
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    }
+  },
   "parameters": [
     {
       "key": "diameter",

@@ -2,7 +2,7 @@ import json
 import math
 import unittest
 import sys
-from ModularGuardrailTests import MODULE as PACKAGE, values as package_values
+from ModularGuardrailTests import MODULE as PACKAGE, values as package_values, process_node
 
 # This suite exercises the shared legacy spacing kernel, not the new fixed
 # family wrapper and explicit per-side bay-count contract.
@@ -37,10 +37,14 @@ class ElevationTests(unittest.TestCase):
                     nodes = {node["key"]:node for node in document["geometry"]}
                     for item in document["items"]:
                         if item["key"] in {t.key for t in built.tubes if t.keep_volume}:
-                            for ref in item["representations"].values():
-                                self.assertEqual(nodes[ref]["arguments"]["operation"], "subtract")
-                                bounded = nodes[item["key"] + ".bounded"]
-                                self.assertEqual(bounded["arguments"]["operation"], "intersect")
+                            if purpose=="display":
+                                self.assertEqual(nodes[item["representations"]["result"]]["operator"],"transform")
+                                self.assertNotIn("tubeDesigner.assemblyGeometryProcesses",document.get("extensions",{}))
+                            else:
+                                reference=item["representations"]["result"] if purpose=="manufacturing" else item["representations"]["export"]
+                                self.assertEqual(nodes[reference]["arguments"]["operation"],"subtract")
+                                self.assertEqual(process_node(document,item["key"]+".process.bound")["arguments"]["operation"],"intersect")
+                                if purpose is None:self.assertEqual(nodes[item["representations"]["display"]]["operator"],"transform")
 
     def test_steps_have_separate_horizontal_caps_and_vertical_posts(self):
         for angle in (-30,30):
@@ -93,7 +97,9 @@ class ElevationTests(unittest.TestCase):
             for item in document["items"]:
                 for cap_key in item["properties"].get("manufacturing.clearanceComponents",[]):
                     node=nodes[item["representations"]["result"]]
-                    self.assertIn(cap_key+".placed",node["arguments"]["tools"])
+                    if purpose=="manufacturing":
+                        self.assertIn(cap_key+".placed",node["arguments"]["tools"])
+                    else:self.assertEqual(node["operator"],"transform")
 
     def test_actual_tread_centres_and_maximum_post_spacing(self):
         for mode in ("continuous", "stepped"):

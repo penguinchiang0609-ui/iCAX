@@ -1,6 +1,6 @@
 # ProjectFile 外部使用
 
-普通 target 不需要构造 `CProjectDocument`，也不需要依次调用 Decode、Migration 和运行时物化。一个产品只创建一个 `CProjectFile` 入口，保存和打开时直接传入 Database 与 ResourceLibrary。
+普通 target 不需要构造 `CProjectDocument`，也不需要依次调用 Decode 和运行时物化。一个产品只创建一个 `CProjectFile` 入口，保存和打开时直接传入 Database 与 ResourceLibrary。
 
 ## 1. 产品级初始化
 
@@ -18,7 +18,7 @@ CProjectFile g_ProjectFile({
 });
 ```
 
-构造时会自动回放当前进程已经注册的项目升级器。多产品宿主可通过 `MigrationModulePaths` 只回放当前产品 DLL 提供的升级器。
+构造时指定当前产品格式；打开时要求产品格式名称和修订号都与当前定义一致。
 
 ## 2. 保存
 
@@ -61,7 +61,7 @@ Project.SetSettings(_Result.Info.ProjectSettings);
 Scene.SetSettings(_Result.Info.MainSceneSettings);
 ```
 
-`Open` 自动完成：读取、完整性校验、旧版本向当前版本升级、依赖优先恢复 Resource、基线填充 Database。任何一步失败都会回滚 Database 并清空本次恢复的 Resource，不会留下半加载状态。
+`Open` 自动完成：读取、当前容器和产品格式校验、完整性校验、依赖优先恢复 Resource、基线填充 Database。任何一步失败都会回滚 Database 并清空本次恢复的 Resource，不会留下半加载状态。
 
 ## 4. 业务资源只注册一次 codec
 
@@ -79,14 +79,6 @@ Scene.Resources().RegisterPersistenceCodec<CBrepResource>(
 
 注册之后，所有项目的 `Save/Open` 都由文件模块自动处理该资源。项目文件只保存稳定的 `ResourceTypeID`，不保存编译器相关的 C++ 类型名。
 
-## 5. 版本升级
+## 5. 格式边界
 
-产品 DLL 继续通过静态宏贡献单向升级器：
-
-```cpp
-ICAX_REGISTER_PROJECT_DOCUMENT_MIGRATION(CDocumentMigration1To2)
-ICAX_REGISTER_PROJECT_RESOURCE_MIGRATION(CBrepMigration1To2)
-ICAX_REGISTER_CURRENT_PROJECT_RESOURCE_SCHEMA("geometry.brep", 2)
-```
-
-正常调用 `Open` 时会自动执行这些升级器。只有迁移工具、格式诊断器和单元测试才需要直接使用 `CProjectDocument`、`CProjectFileCodec` 或 `CProjectMigrationRegistry`。
+只支持当前容器及当前产品定义的项目格式，旧版本和未知版本直接报错，不自动迁移文档或资源。资源 URL 与内容版本仍用于当前项目的精确依赖、保存和撤销，与项目格式升级无关。

@@ -1,0 +1,58 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "curve-pocket",
+  "version": "1.0.0",
+  "displayName": "曲线切除",
+  "kind": "programmatic",
+  "target": "side",
+  "requiresSection": true,
+  "category": "孔型",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M9 15 C13 6 24 8 28 12 C31 6 42 9 40 19 C46 25 39 39 30 37 C24 43 8 40 8 31 C3 25 4 18 9 15 Z"
+    ],
+    "circles": [{ "cx": 24, "cy": 24, "r": 6 }]
+  },
+  "inputs": [
+    { "key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true }
+  ],
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    },
+    "section": {
+      "profileRef": {
+        "scope": "system",
+        "id": "round"
+      },
+      "parameters": {
+        "width": 20,
+        "wallThickness": 2
+      }
+    }
+  },
+  "parameters": [],
+  "operationParameters": [
+    { "key": "blindHole", "displayName": "定深切除", "valueType": "boolean", "defaultValue": true },
+    { "key": "cutDepth", "displayName": "切除深度", "valueType": "number", "defaultValue": 0.2, "min": 0.001, "max": 100000, "step": 0.1, "unit": "mm", "visibleWhen": { "op": "eq", "parameter": "blindHole", "value": true } },
+    { "key": "opposite", "displayName": "对侧同时切除", "valueType": "boolean", "defaultValue": false }
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 240 170",
+    "paths": [
+      { "d": "M18 12 H222 V156 H18 Z", "className": "tool-diagram-material" },
+      { "d": "M64 46 C80 26 103 32 118 45 C139 25 169 35 166 59 C193 72 181 108 159 112 C144 137 111 128 100 112 C72 127 47 110 51 90 C32 71 45 51 64 46 Z", "className": "tool-diagram-cut" }
+    ],
+    "circles": [{ "cx": 127, "cy": 83, "r": 19, "className": "tool-diagram-material" }],
+    "labels": [
+      { "x": 185, "y": 143, "text": "目标管壁" },
+      { "x": 76, "y": 84, "text": "切除区域" },
+      { "x": 127, "y": 87, "text": "保留岛" }
+    ],
+    "annotations": []
+  }
+}

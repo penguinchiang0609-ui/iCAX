@@ -162,13 +162,15 @@ class AssemblySurfaceMachiningTests(unittest.TestCase):
 
     def test_product_scripts_do_not_build_machining_boolean_or_cutters(self):
         for name in ("aluminium_window", "decorative_door"):
-            source = SRC / "apps/tube-designer/templates/product" / name / "template.py"
+            reference_id = {"aluminium_window": "aluminium-window", "decorative_door": "decorative-door"}[name]
+            source = SRC / "apps/tube-designer/docs/deferred-products" / reference_id / "reference/template.py"
             tree = ast.parse(source.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and
                         node.func.attr == "geometry" and len(node.args) > 1 and isinstance(node.args[1], ast.Constant)):
                     self.assertNotIn(node.args[1].value, ("boolean", "extrude", "profile2d"), (name, node.lineno))
 
+    @unittest.skip("Deferred product reference; no current active product generation")
     def test_products_record_each_local_call_and_display_is_independent(self):
         descriptor, defaults, door = package("decorative_door")
         values = dict(defaults, doorType="single", pattern="lines", lineCount=3, machiningSide="both", protectHardware=False)

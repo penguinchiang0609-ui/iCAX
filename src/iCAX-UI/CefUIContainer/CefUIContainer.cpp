@@ -5,6 +5,7 @@
 #include "PDO/PDOLease.h"
 #include "PDO/SharedPDOArena.h"
 
+#include <include/base/cef_logging.h>
 #include <boost/json/src.hpp>
 
 
@@ -22,6 +23,8 @@ namespace
     std::atomic_bool g_bDisableGPU = false;
     std::atomic_int g_nRemoteDebuggingPort = 0;
     std::mutex g_CefRuntimeMutex;
+    std::thread::id g_CefRuntimeInitializationThread;
+    std::atomic_uint g_nCefBrowserOwners = 0;
     constexpr int g_nMinWindowWidthDIP = 1024;
     constexpr int g_nMinWindowHeightDIP = 680;
     constexpr wchar_t g_szOriginalWindowProcProperty[] = L"iCAX.CefUIContainer.OriginalWindowProc";
@@ -1790,7 +1793,21 @@ namespace
         {
             CEF_REQUIRE_UI_THREAD();
             EnsureMessageRouterOnUI();
-            m_pBrowser = Browser_;
+            m_Browsers.emplace(Browser_->GetIdentifier(), Browser_);
+            {
+                std::lock_guard<std::mutex> _Lock(m_BrowserWindowMutex);
+                m_BrowserWindows.emplace(Browser_->GetIdentifier(), Browser_->GetHost()->GetWindowHandle());
+            }
+            if (!m_bPrimaryCreated)
+            {
+                m_bPrimaryCreated = true;
+                m_pBrowser = Browser_;
+            }
+            if (m_bCloseRequested)
+            {
+                CloseBrowserOnUI();
+                return;
+            }
             // Startup chooses the single-product or platform icon from configuration.
             if (const HWND _Window = Browser_->GetHost()->GetWindowHandle())
             {
@@ -1801,8 +1818,8 @@ namespace
                     if (!_Icon) _Icon = static_cast<HICON>(LoadImageW(_Module, MAKEINTRESOURCEW(101), IMAGE_ICON, Width, Height, 0));
                     return _Icon;
                 };
-                m_SmallIcon = _Load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
-                m_LargeIcon = _Load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+                if (!m_SmallIcon) m_SmallIcon = _Load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+                if (!m_LargeIcon) m_LargeIcon = _Load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
                 if (m_SmallIcon) SendMessageW(_Window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_SmallIcon));
                 if (m_LargeIcon) SendMessageW(_Window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_LargeIcon));
             }
@@ -1830,11 +1847,28 @@ namespace
             {
                 m_pMessageRouter->OnBeforeClose(Browser_);
             }
-            m_pBrowser = nullptr;
-            if (m_OnBrowserClosed)
+            const bool _PrimaryClosing = m_pBrowser && m_pBrowser->IsSame(Browser_);
+            m_Browsers.erase(Browser_->GetIdentifier());
             {
-                m_OnBrowserClosed();
+                std::lock_guard<std::mutex> _Lock(m_BrowserWindowMutex);
+                m_BrowserWindows.erase(Browser_->GetIdentifier());
             }
+            if (_PrimaryClosing)
+            {
+                m_pBrowser = nullptr;
+                CloseBrowserOnUI();
+            }
+            NotifyClosedOnUI();
+        }
+
+        bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
+            const CefString&, const CefString&, CefLifeSpanHandler::WindowOpenDisposition, bool,
+            const CefPopupFeatures&, CefWindowInfo&, CefRefPtr<CefClient>&,
+            CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&, bool*) override
+        {
+            CEF_REQUIRE_UI_THREAD();
+            if (m_bCloseRequested) return true;
+            return false;
         }
 
         bool OnBeforeBrowse(
@@ -1890,20 +1924,42 @@ namespace
 
         void CloseBrowser()
         {
+            // Also covers an accepted CreateBrowser whose OnAfterCreated has
+            // not arrived yet. It must close on creation even if posting fails.
+            m_bCloseRequested = true;
             auto _TaskRunner = CefTaskRunner::GetForThread(TID_UI);
-            if (!_TaskRunner)
+            if (!_TaskRunner || !_TaskRunner->PostTask(new CCloseBrowserTask(this)))
             {
-                return;
+                LOG(WARNING) << "CEF close task could not be posted; waiting for native browser close";
+                // Native WM_CLOSE follows the same non-forced close path. Keep
+                // the container alive until OnBeforeClose, rather than throwing
+                // from Stop and then destroying its bridge callbacks.
+                std::vector<HWND> _Windows;
+                {
+                    std::lock_guard<std::mutex> _Lock(m_BrowserWindowMutex);
+                    for (const auto& _Entry : m_BrowserWindows) _Windows.push_back(_Entry.second);
+                }
+                for (const auto _Window : _Windows)
+                {
+                    if (_Window && !PostMessageW(_Window, WM_CLOSE, 0, 0))
+                    {
+                        LOG(ERROR) << "CEF native close request failed, Windows error " << GetLastError();
+                    }
+                }
             }
-            _TaskRunner->PostTask(new CCloseBrowserTask(this));
         }
 
         void CloseBrowserOnUI()
         {
             CEF_REQUIRE_UI_THREAD();
-            if (m_pBrowser && m_pBrowser->GetHost())
+            m_bCloseRequested = true;
+            // Keep the request even when CreateBrowser has not delivered
+            // OnAfterCreated yet. Close every popup owned by this client too.
+            std::vector<CefRefPtr<CefBrowser>> _Browsers;
+            for (const auto& _Entry : m_Browsers) _Browsers.push_back(_Entry.second);
+            for (const auto& _Browser : _Browsers)
             {
-                m_pBrowser->GetHost()->CloseBrowser(false);
+                if (_Browser->GetHost()) _Browser->GetHost()->CloseBrowser(false);
             }
         }
 
@@ -1951,6 +2007,19 @@ namespace
         }
 
     private:
+        void NotifyClosedOnUI()
+        {
+            // Match CEF's active-browser lifecycle. An aborted popup need not
+            // deliver a callback after its opener is destroyed, so pending
+            // popup requests cannot be used as a shutdown completion count.
+            if (m_bPrimaryCreated && m_Browsers.empty() && !m_bClosed)
+            {
+                m_bClosed = true;
+                --g_nCefBrowserOwners;
+                if (m_OnBrowserClosed) m_OnBrowserClosed();
+            }
+        }
+
         void EnsureMessageRouterOnUI()
         {
             CEF_REQUIRE_UI_THREAD();
@@ -1966,6 +2035,12 @@ namespace
 
     private:
         CefRefPtr<CefBrowser> m_pBrowser;
+        std::unordered_map<int, CefRefPtr<CefBrowser>> m_Browsers;
+        std::mutex m_BrowserWindowMutex;
+        std::unordered_map<int, HWND> m_BrowserWindows;
+        bool m_bPrimaryCreated = false;
+        std::atomic_bool m_bCloseRequested = false;
+        bool m_bClosed = false;
         CefRefPtr<CefMessageRouterBrowserSide> m_pMessageRouter;
         std::unique_ptr<CInternalBridgeQueryHandler> m_pBridgeQueryHandler;
         iCAX::Frontend::IFrontendBridge* m_pBridge = nullptr;
@@ -2109,6 +2184,12 @@ public:
         ExitCondition.wait(_Lock, [this]() { return bExitRequested || !bStarted; });
     }
 
+    bool HasExited()
+    {
+        std::lock_guard<std::mutex> _Lock(ExitMutex);
+        return bExitRequested;
+    }
+
     void StartPolling(IN int nIntervalMS_)
     {
         bStopPolling = false;
@@ -2211,6 +2292,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::InitializeRuntime(IN const CCefRuntim
     }
 
     g_bCefRuntimeInitialized = true;
+    g_CefRuntimeInitializationThread = std::this_thread::get_id();
 }
 
 void iCAX::Frontend::Cef::CCefUIContainer::ShutdownRuntime()
@@ -2221,8 +2303,13 @@ void iCAX::Frontend::Cef::CCefUIContainer::ShutdownRuntime()
         return;
     }
 
+    if (g_CefRuntimeInitializationThread != std::this_thread::get_id())
+        throw std::logic_error("CEF runtime shutdown must run on its initialization thread");
+    if (g_nCefBrowserOwners.load() != 0)
+        throw std::logic_error("CEF runtime shutdown requires all browsers to close first");
     CefShutdown();
     g_bCefRuntimeInitialized = false;
+    g_CefRuntimeInitializationThread = {};
 }
 
 void iCAX::Frontend::Cef::CCefUIContainer::SetConfig(IN const CUIContainerConfig& Config_)
@@ -2278,14 +2365,16 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
 
     CefBrowserSettings _BrowserSettings;
     const auto _StartURL = _ResolveStartURL(m_pImpl->Config);
+    ++g_nCefBrowserOwners;
     if (!CefBrowserHost::CreateBrowser(_WindowInfo, m_pImpl->Client, _StartURL, _BrowserSettings, nullptr, nullptr))
     {
+        --g_nCefBrowserOwners;
         m_pImpl->Client = nullptr;
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");
     }
 
-    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "sdoPollIntervalMS", 16));
     m_pImpl->bStarted = true;
+    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "sdoPollIntervalMS", 16));
 }
 
 void iCAX::Frontend::Cef::CCefUIContainer::Stop()
@@ -2299,7 +2388,10 @@ void iCAX::Frontend::Cef::CCefUIContainer::Stop()
 
     if (m_pImpl->Client)
     {
-        m_pImpl->Client->CloseBrowser();
+        // A window close already waits for every OnBeforeClose callback. Do
+        // not post a second close while the UI thread is winding down.
+        if (!m_pImpl->HasExited()) m_pImpl->Client->CloseBrowser();
+        m_pImpl->WaitForExit();
         m_pImpl->Client = nullptr;
     }
 
@@ -2322,4 +2414,5 @@ void iCAX::Frontend::Cef::CCefUIContainer::PollSDOFrames()
     m_pImpl->PollSDOFrames();
 }
 
-ICAX_REGISTER_UI_CONTAINER_WITH_SUBPROCESS("cef", iCAX::Frontend::Cef::CCefUIContainer, &_ExecuteCefUISubProcess)
+ICAX_REGISTER_UI_CONTAINER_WITH_LIFECYCLE("cef", iCAX::Frontend::Cef::CCefUIContainer,
+    &_ExecuteCefUISubProcess, &iCAX::Frontend::Cef::CCefUIContainer::ShutdownRuntime)

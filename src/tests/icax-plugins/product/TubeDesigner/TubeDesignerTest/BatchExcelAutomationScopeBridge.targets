@@ -1,0 +1,9 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ICAXInspectionBridgeSource>$(MSBuildProjectDirectory)\BatchExcelAutomationScopeBridge.cpp</ICAXInspectionBridgeSource>
+  </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)SecurityWindowFramesBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>BatchExcelAutomationScopeBridge</TargetName>
+  </PropertyGroup>
+</Project>

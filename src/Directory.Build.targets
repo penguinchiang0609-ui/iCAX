@@ -1,5 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <!-- The desktop Debug runtime is used for interactive modelling too. Keep
+       symbols, _DEBUG and STL checks, while optimizing the document/geometry
+       computation units so template-heavy value handling does not dominate
+       normal edits and disassembly. Other units retain ordinary Debug builds. -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'Data'">Variant.cpp;VariantSerializer.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'Database'">Repository.cpp;OperationLog.cpp;ComponentBase.cpp;Entity.cpp;ChangeSet.cpp;RepositoryUndoRedoHistory.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'TemplateRuntime'">TemplateCodec.cpp;StandardJsonCodec.cpp;PythonTemplateHost.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'ProjectFile'">ProjectDocument.cpp;ProjectFileCodec.cpp;ProjectFileStore.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'ProjectFile'">ProjectDocument.cpp;ProjectFileCodec.cpp;ProjectFileStore.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'OpenCascadeResourceImport'">OpenCascadeNeutralModelEvaluator.cpp;OpenCascadeResourceImporter.cpp;OpenCascadeBRepBuilder.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'TubeDesigner'">TubeDesignerSDO.cpp;TubeDesigner.cpp</ICAXDebugComputationSources>
+    <!-- Native fixtures register the same inline component metadata as the
+         product DLL. Compile those registrations with the product's settings
+         so the test EXE cannot substitute an unoptimized field handler. -->
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">TubeDesignerTests.cpp;PunchPersistenceSDOTests.cpp;PunchGeometryTests.cpp;NestingAdapterTests.cpp;NestingStandardPartSDOTests.cpp;ImportedPartBatchRecoveryTests.cpp;ImportedPartHoleRecoveryTests.cpp</ICAXDebugComputationSources>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64' and '$(ICAXDebugComputationSources)' != ''">
+    <ClCompile Update="$(ICAXDebugComputationSources)">
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
   <UsingTask TaskName="ICAXCheckWritableBuildOutputs"
              TaskFactory="RoslynCodeTaskFactory"
              AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
@@ -26,13 +53,13 @@
             catch (IOException exception)
             {
                 Log.LogError("iCAX", "ICAXBUILD001", null, path, 0, 0, 0, 0,
-                    "无法更新生成文件。请先保存并关闭正在运行的 iCAX 或测试程序，再重新生成。原因：{0}", exception.Message);
+                    "无法更新生成文件。请先保存并关闭正在运行的 TubeDesigner 或测试程序，再重新生成。原因：{0}", exception.Message);
                 return false;
             }
             catch (UnauthorizedAccessException exception)
             {
                 Log.LogError("iCAX", "ICAXBUILD001", null, path, 0, 0, 0, 0,
-                    "无法写入生成文件。请关闭正在运行的 iCAX 或测试程序，并检查文件是否只读及目录权限。原因：{0}", exception.Message);
+                    "无法写入生成文件。请关闭正在运行的 TubeDesigner 或测试程序，并检查文件是否只读及目录权限。原因：{0}", exception.Message);
                 return false;
             }
         }
@@ -46,7 +73,7 @@
           BeforeTargets="CoreCppClean"
           Condition="'$(VCProjectVersion)' != '' and '$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <_ICAXWritableBuildOutput Include="$(OutDir)Application.exe" />
+      <_ICAXWritableBuildOutput Include="$(OutDir)TubeDesigner.exe" />
       <_ICAXWritableBuildOutput Include="$(TargetPath)" Condition="'$(TargetPath)' != ''" />
     </ItemGroup>
     <ICAXCheckWritableBuildOutputs OutputPaths="@(_ICAXWritableBuildOutput)" />
@@ -58,7 +85,7 @@
           BeforeTargets="Link"
           Condition="'$(VCProjectVersion)' != '' and '$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <_ICAXWritableLinkOutput Include="$(OutDir)Application.exe" />
+      <_ICAXWritableLinkOutput Include="$(OutDir)TubeDesigner.exe" />
       <_ICAXWritableLinkOutput Include="$(TargetPath)" Condition="'$(TargetPath)' != ''" />
     </ItemGroup>
     <ICAXCheckWritableBuildOutputs OutputPaths="@(_ICAXWritableLinkOutput)" />
@@ -67,24 +94,16 @@
   <!-- TubeDesigner templates and webpage modules are runtime data, not
        compiled sources. Keep complete copies beside the Debug/Release
        binaries so the running application and browser regressions exercise
-       the same files. Only the Application project owns this copy to avoid
-       every project racing to write the same output tree. -->
+       the same files. TubeDesigner owns its template deployment, including
+       standalone plugin builds. Both builds also deploy the current webpage.
+       Application depends on TubeDesigner and may safely repeat the sync;
+       other projects do not write the output tree. -->
   <Target Name="ICAXCopyTubeDesignerTemplates"
           AfterTargets="Build"
-          Condition="'$(MSBuildProjectName)' == 'Application' and '$(DesignTimeBuild)' != 'true'">
-    <ItemGroup>
-      <_ICAXTubeDesignerTemplateFiles Include="$(ICAXSourceRoot)apps\tube-designer\templates\**\*.*" />
-      <_ICAXTubeDesignerWebpageFiles Include="$(ICAXSourceRoot)apps\tube-designer\webpage\**\*.*" />
-    </ItemGroup>
-    <!-- These packages were intentionally removed from the built-in catalogue.
-         Copy is incremental and does not delete files removed from the source,
-         so clear the two obsolete output directories before copying templates. -->
-    <RemoveDir Directories="$(OutDir)apps\tube-designer\templates\mold\v-notch-asymmetric;$(OutDir)apps\tube-designer\templates\mold\v-notch-relief" />
-    <Copy SourceFiles="@(_ICAXTubeDesignerTemplateFiles)"
-          DestinationFiles="@(_ICAXTubeDesignerTemplateFiles-&gt;'$(OutDir)apps\tube-designer\templates\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_ICAXTubeDesignerWebpageFiles)"
-          DestinationFiles="@(_ICAXTubeDesignerWebpageFiles-&gt;'$(OutDir)apps\tube-designer\webpage\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+          Condition="('$(MSBuildProjectName)' == 'TubeDesigner' or '$(MSBuildProjectName)' == 'Application') and '$(DesignTimeBuild)' != 'true'">
+    <!-- Mirror templates so removed packages disappear from the running catalogue. -->
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ICAXSourceRoot)tools\build\sync_tube_designer_templates.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ICAXSourceRoot)tools\build\sync_tube_designer_web_assets.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ICAXSourceRoot)tools\build\deploy_tube_designer_manifest.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />
   </Target>
 </Project>

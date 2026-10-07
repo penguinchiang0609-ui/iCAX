@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "ComponentBase.h"
+#include "Entity.h"
 #include "IEntity.h"
 #include "ComponentMask.h"
 #include "MaskRegistry.h"
@@ -106,6 +107,28 @@ bool iCAX::Database::CComponentBase::SetProperty(IN const std::string& strProper
 //!< 设置属性集
 bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Properties_, OUT std::string& strError_)
 {
+    return SetPropertiesImpl(Properties_, nullptr, strError_);
+}
+
+bool iCAX::Database::CComponentBase::SetPropertiesOwned(
+    IN PropertySet&& Properties_, OUT std::string& strError_)
+{
+    return SetPropertiesImpl(Properties_, &Properties_, strError_);
+}
+
+bool iCAX::Database::CComponentBase::SetPropertiesImpl(IN const PropertySet& Properties_,
+    IN PropertySet* pOwnedProperties_, OUT std::string& strError_)
+{
+    const bool _Profile = GetComponentClass() == "CGenerationRunComponent"
+        && GetEnvironmentVariableA("ICAX_PROFILE_DISASSEMBLY", nullptr, 0) != 0;
+    auto _ProfileLast = std::chrono::steady_clock::now();
+    const auto _Mark = [&](const char* Phase_) {
+        if (!_Profile) return;
+        const auto now = std::chrono::steady_clock::now();
+        std::fprintf(stderr, "Disassembly/generation-properties/%s %.3f s\n", Phase_,
+            std::chrono::duration<double>(now - _ProfileLast).count());
+        _ProfileLast = now;
+    };
     strError_.clear();
     auto _pMeta = ResolveMetaRegistryForComponent(*this);
     for (auto& [_strName, _] : Properties_)
@@ -116,17 +139,24 @@ bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
         }
     }
 
+    _Mark("validate");
     PropertySet _PrivousProperties;
     PropertySet _NewProperties;
-    for (auto& [_strName, _Value] : Properties_)
+    for (auto _Ite = Properties_.begin(); _Ite != Properties_.end(); )
     {
+        const auto _Current = _Ite++;
+        const auto& [_strName, _Value] = *_Current;
         auto _Previous = GetProperty(_strName);
         if (_Previous != _Value)
         {
-            _PrivousProperties[_strName] = _Previous;
-            _NewProperties[_strName] = _Value;
+            _PrivousProperties.emplace(_strName, std::move(_Previous));
+            if (pOwnedProperties_)
+                _NewProperties.insert(pOwnedProperties_->extract(_Current));
+            else
+                _NewProperties.emplace(_strName, _Value);
         }
     }
+    _Mark("select");
     if (_PrivousProperties.empty())
     {
         return true;
@@ -137,16 +167,25 @@ bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
         return false;
     }
 
+    _Mark("filter");
     TriggerComponentChanging(ComponentEventArgs::kModifyComponent, _PrivousProperties, _NewProperties);
-    std::vector<std::pair<std::string, PropertyValue>> _AppliedProperties;
+    _Mark("changing");
+    std::vector<std::string> _AppliedProperties;
+    _AppliedProperties.reserve(_NewProperties.size());
     {
         ComponentChangeNotificationSuppressor _Suppressor(this);
         try
         {
             for (auto& [_strName, _Value] : _NewProperties)
             {
+                const auto _SetterStart = _Profile ? std::chrono::steady_clock::now()
+                    : std::chrono::steady_clock::time_point{};
                 OnSetProperty(_strName, _Value);
-                _AppliedProperties.emplace_back(_strName, _PrivousProperties.at(_strName));
+                _AppliedProperties.push_back(_strName);
+                if (_Profile)
+                    std::fprintf(stderr, "Disassembly/generation-properties/field %s %.3f s\n",
+                        _strName.c_str(), std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - _SetterStart).count());
             }
         }
         catch (...)
@@ -155,7 +194,7 @@ bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
             {
                 try
                 {
-                    OnSetProperty(_Ite->first, _Ite->second);
+                    OnSetProperty(*_Ite, _PrivousProperties.at(*_Ite));
                 }
                 catch (...)
                 {
@@ -179,7 +218,11 @@ bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
             return false;
         }
     }
-    TriggerComponentChanged(ComponentEventArgs::kModifyComponent, _PrivousProperties, _NewProperties);
+    _Mark("set");
+    if (!pOwnedProperties_
+        || !TryTriggerComponentChangedOwned(std::move(_PrivousProperties), std::move(_NewProperties)))
+        TriggerComponentChanged(ComponentEventArgs::kModifyComponent, _PrivousProperties, _NewProperties);
+    _Mark("changed");
     return true;
 }
 
@@ -187,6 +230,61 @@ bool iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
 {
     std::string _strError;
     return SetProperties(Properties_, _strError);
+}
+
+bool iCAX::Database::CComponentBase::InitializeNewComponentProperties(
+    IN const PropertySet& Properties_, OUT std::string& strError_)
+{
+    strError_.clear();
+    auto meta = ResolveMetaRegistryForComponent(*this);
+    const auto componentClass = GetComponentClass();
+    PropertySet changed;
+    std::vector<std::pair<std::string, PropertyValue>> previous;
+    previous.reserve(Properties_.size());
+    for (const auto& [name, value] : Properties_)
+    {
+        if (!ValidateWritableValueProperty(*meta, componentClass, name, strError_))
+            return false;
+        auto oldValue = GetProperty(name);
+        if (oldValue != value)
+        {
+            changed.emplace(name, value);
+            previous.emplace_back(name, std::move(oldValue));
+        }
+    }
+    if (changed.empty()) return true;
+    if (!CModifyFilter::AllowModifyComponent(*this, changed, strError_))
+        return false;
+
+    // An initial add has no independent modify event. On any setter failure
+    // the composite-entity transaction removes the entire new entity.
+    ComponentChangeNotificationSuppressor suppressor(this);
+    try
+    {
+        for (const auto& [name, value] : changed)
+            OnSetProperty(name, value);
+    }
+    catch (const std::exception& exception)
+    {
+        for (auto entry = previous.rbegin(); entry != previous.rend(); ++entry)
+        {
+            try { OnSetProperty(entry->first, entry->second); }
+            catch (...) {}
+        }
+        strError_ = exception.what();
+        return false;
+    }
+    catch (...)
+    {
+        for (auto entry = previous.rbegin(); entry != previous.rend(); ++entry)
+        {
+            try { OnSetProperty(entry->first, entry->second); }
+            catch (...) {}
+        }
+        strError_ = "Component property setter threw a non-standard exception";
+        return false;
+    }
+    return true;
 }
 
 //!< 获取属性
@@ -318,11 +416,26 @@ void iCAX::Database::CComponentBase::RemoveObserver(IN std::shared_ptr<IComponen
 //!< 预通知
 void iCAX::Database::CComponentBase::TriggerComponentChanging(IN const ComponentEventArgs::EventType& nEventType_, IN const PropertySet& Previous_, IN const PropertySet& New_)
 {
-    const ComponentEventArgs _Args{ nEventType_, GetComponentClass(), Previous_, New_, shared_from_this() };
+    std::optional<ComponentEventArgs> _Args;
+    const auto _GetArgs = [&]() -> const ComponentEventArgs& {
+        if (!_Args)
+        {
+            _Args.emplace();
+            _Args->nType = nEventType_;
+            _Args->strClassName = GetComponentClass();
+            _Args->PreviousProperties = Previous_;
+            _Args->NewProperties = New_;
+            _Args->pComponent = shared_from_this();
+        }
+        return *_Args;
+    };
     auto _pCoreListener = std::dynamic_pointer_cast<IComponentEventListener>(GetEntity());
-    if (_pCoreListener)
+    if (const auto _Entity = std::dynamic_pointer_cast<CEntity>(GetEntity()))
+        _Entity->TriggerEntityChanging(static_cast<EntityEventArgs::EventType>(nEventType_),
+            GetComponentClass(), Previous_, New_, shared_from_this());
+    else if (_pCoreListener)
     {
-        _pCoreListener->OnComponentChanging(this, _Args);
+        _pCoreListener->OnComponentChanging(this, _GetArgs());
     }
 
     //!< 遍历观察者列表
@@ -339,7 +452,7 @@ void iCAX::Database::CComponentBase::TriggerComponentChanging(IN const Component
 
             try
             {
-                _Observer->OnComponentChanging(this, _Args);
+                _Observer->OnComponentChanging(this, _GetArgs());
             }
             catch (...)
             {
@@ -358,11 +471,26 @@ void iCAX::Database::CComponentBase::TriggerComponentChanging(IN const Component
 //!< 后通知
 void iCAX::Database::CComponentBase::TriggerComponentChanged(IN const ComponentEventArgs::EventType& nEventType_, IN const PropertySet& Previous_, IN const PropertySet& New_)
 {
-    const ComponentEventArgs _Args{ nEventType_, GetComponentClass(), Previous_, New_, shared_from_this() };
+    std::optional<ComponentEventArgs> _Args;
+    const auto _GetArgs = [&]() -> const ComponentEventArgs& {
+        if (!_Args)
+        {
+            _Args.emplace();
+            _Args->nType = nEventType_;
+            _Args->strClassName = GetComponentClass();
+            _Args->PreviousProperties = Previous_;
+            _Args->NewProperties = New_;
+            _Args->pComponent = shared_from_this();
+        }
+        return *_Args;
+    };
     auto _pCoreListener = std::dynamic_pointer_cast<IComponentEventListener>(GetEntity());
-    if (_pCoreListener)
+    if (const auto _Entity = std::dynamic_pointer_cast<CEntity>(GetEntity()))
+        _Entity->TriggerEntityChanged(static_cast<EntityEventArgs::EventType>(nEventType_),
+            GetComponentClass(), Previous_, New_, shared_from_this());
+    else if (_pCoreListener)
     {
-        _pCoreListener->OnComponentChanged(this, _Args);
+        _pCoreListener->OnComponentChanged(this, _GetArgs());
     }
 
     //!< 遍历观察者列表
@@ -379,7 +507,7 @@ void iCAX::Database::CComponentBase::TriggerComponentChanged(IN const ComponentE
 
             try
             {
-                _Observer->OnComponentChanged(this, _Args);
+                _Observer->OnComponentChanged(this, _GetArgs());
             }
             catch (...)
             {
@@ -393,6 +521,55 @@ void iCAX::Database::CComponentBase::TriggerComponentChanged(IN const ComponentE
             _Ite = m_Observers.erase(_Ite);
         }
     }
+}
+
+bool iCAX::Database::CComponentBase::TryTriggerComponentChangedOwned(
+    IN PropertySet&& Previous_, IN PropertySet&& New_)
+{
+    const auto entity = std::dynamic_pointer_cast<CEntity>(GetEntity());
+    if (!entity || !entity->CanTransferChangedProperties()) return false;
+    const auto core = std::dynamic_pointer_cast<IComponentEventListener>(entity);
+    const bool hasComponentObservers = std::any_of(m_Observers.begin(), m_Observers.end(),
+        [&](const auto& weak) {
+            const auto observer = weak.lock();
+            return observer && observer != core;
+        });
+    std::optional<ComponentEventArgs> args;
+    // An entity callback may add a component observer or modify this component
+    // reentrantly. Prepare its independent snapshot before ownership transfers,
+    // even when no component observer has been registered yet.
+    if (hasComponentObservers || entity->HasExternalChangedObservers())
+    {
+        args.emplace();
+        args->nType = ComponentEventArgs::kModifyComponent;
+        args->strClassName = GetComponentClass();
+        args->PreviousProperties = Previous_;
+        args->NewProperties = New_;
+        args->pComponent = shared_from_this();
+    }
+    if (!entity->TryTriggerEntityChangedOwned(GetComponentClass(),
+        std::move(Previous_), std::move(New_), shared_from_this())) return false;
+    for (auto it = m_Observers.begin(); it != m_Observers.end(); )
+    {
+        if (auto observer = it->lock())
+        {
+            if (observer != core)
+            {
+                try
+                {
+                    observer->OnComponentChanged(this, args.value());
+                }
+                catch (...)
+                {
+                    // Notification-only failures cannot undo committed data.
+                }
+            }
+            ++it;
+        }
+        else
+            it = m_Observers.erase(it);
+    }
+    return true;
 }
 
 //!< 构造函数

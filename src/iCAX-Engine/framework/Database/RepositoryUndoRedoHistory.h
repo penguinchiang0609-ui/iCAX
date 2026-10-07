@@ -124,6 +124,12 @@ namespace iCAX
             std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const;
 
         private:
+            friend class CRepository;
+            // Repository-owned committed facts are immutable and already
+            // own all values. Defer the existing metadata projection to End
+            // without cloning fields that cannot belong to the undo step.
+            void HandleSharedCommittedOperationBatch(
+                IN std::shared_ptr<const COperationBatch> pBatch_);
             /*
             * @brief 获取用于字段过滤的 meta 注册表。
             * @return 当前记录器使用的 meta 注册表引用。
@@ -176,6 +182,7 @@ namespace iCAX
         private:
             std::shared_ptr<IMetaRegistry> m_pMetaRegistry;
             std::unique_ptr<COperationBatchBuilder> m_pCommandBuilder;
+            std::vector<std::shared_ptr<const COperationBatch>> m_CommandBatches;
             std::deque<std::shared_ptr<CHistoryStep>> m_UndoStack;
             std::deque<std::shared_ptr<CHistoryStep>> m_RedoStack;
         };

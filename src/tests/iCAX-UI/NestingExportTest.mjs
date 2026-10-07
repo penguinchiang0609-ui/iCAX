@@ -4,8 +4,7 @@ import { buildNestingRequest, getNestingInputSignature, handleNestingRibbonComma
 import { handleNestingExportAction, selectedNestingPlanIds } from "../../apps/tube-designer/webpage/nestingExport.mjs";
 import { groupNestingPlans } from "../../apps/tube-designer/webpage/nestingGroups.mjs";
 
-function fixture() {
-  const profile = { id: "rect", kind: "rect", width: 30, depth: 20, wallThickness: 2, specification: "30 × 20 × 2" };
+function fixture(profile = { id: "rect", kind: "rect", width: 30, depth: 20, wallThickness: 2, specification: "30 × 20 × 2" }) {
   const parts = ["a", "b"].map((entityId) => ({ entityId, name: entityId, profile, length: 1200, quantity: 1 }));
   const group = buildProfileGroups(parts)[0];
   const view = { activeAreaId: "nesting", pending: false, scene: { tubeDesigner: {
@@ -45,8 +44,7 @@ function fixture() {
   assert.equal(f.view.tubeDesignerActiveNestingPlanId, first, "export selection does not change the 3D active plan");
   await f.act("export-selected");
   assert.equal(f.calls.at(-1).method, "TubeDesigner.ExportNesting");
-  assert.deepEqual(f.calls.at(-1).payload.plans.map((plan) => plan.id), ["plan-1"]);
-  assert.equal(f.calls.at(-1).payload.parameters.partGap, 3);
+  assert.deepEqual(f.calls.at(-1).payload.plans, ["plan-1"]);
   await f.act("toggle-all-plans", { checked: true });
   await f.act("export-selected");
   assert.equal(f.calls.at(-1).payload.plans.length, 2, "selecting all rows exports all results through the same action");
@@ -96,6 +94,46 @@ function fixture() {
   assert.equal(f.view.tubeDesignerNestingResult.plans.length, 2);
 }
 
+// A section identity is a complete stable JSON snapshot, not a short resource
+// ID. Normal parameterized sections and imported contours both exceed 160
+// bytes and must survive the nesting-to-export workflow unchanged.
+for (const profile of [
+  { id: "rect", kind: "rect", width: 30, depth: 20, wallThickness: 2,
+    cornerRadius: 3, packageVersion: 1, contentDigest: "a".repeat(64),
+    parameters: { width: 30, depth: 20, wallThickness: 2, cornerRadius: 3 },
+    specification: "30 × 20 × 2" },
+  { id: "imported-section", kind: "custom", specification: "导入轮廓",
+    contours: [{ points: Array.from({ length: 200 }, (_, index) =>
+      ({ x: index, y: index % 17 })) }] },
+]) {
+  const f = fixture(profile);
+  const request = buildNestingRequest(f.view);
+  const key = request.parts[0].profileKey;
+  const keyBytes = Buffer.byteLength(key, "utf8");
+  assert.ok(keyBytes > 160 && keyBytes <= 65536, "real section snapshots exceed the short-ID limit");
+  assert.deepEqual(JSON.parse(key).parameters ?? JSON.parse(key).contours,
+    profile.parameters ?? profile.contours);
+  assert.ok(request.parts.every((part) => part.profileKey === key));
+  assert.ok(request.stocks.every((stock) => stock.profileKey === key));
+  await f.run();
+  assert.equal(f.view.error, "");
+  assert.ok(f.view.tubeDesignerNestingResult.plans.every((plan) => plan.profileKey === key));
+  assert.equal(groupNestingPlans(f.view.tubeDesignerNestingResult.plans)[0].key, key);
+  await f.act("toggle-all-plans", { checked: false });
+  await f.act("toggle-group", { checked: true, dataset: { tubeDesignerNestingGroupKey: key } });
+  assert.deepEqual([...selectedNestingPlanIds(f.view)], ["plan-0", "plan-1"]);
+  await f.act("export-group", { dataset: { tubeDesignerNestingGroupKey: key } });
+  assert.deepEqual(f.calls.at(-1).payload.plans, ["plan-0", "plan-1"]);
+  assert.equal(Object.hasOwn(f.calls.at(-1).payload, "profileKey"), false,
+    "native export resolves the full section identity from the saved plan");
+  assert.equal(f.view.error, "");
+  await f.act("toggle-plan", { checked: false, dataset: { tubeDesignerNestingPlanId: "plan-0" } });
+  await f.act("export-selected");
+  assert.deepEqual(f.calls.at(-1).payload.plans, ["plan-1"]);
+  assert.ok(f.view.tubeDesignerNestingResult.plans.every((plan) => plan.profileKey === key),
+    "export does not shorten, hash or replace the section identity");
+}
+
 {
   const f = fixture(); await f.run();
   const plans = f.view.tubeDesignerNestingResult.plans;
@@ -108,9 +146,9 @@ function fixture() {
   await f.act('toggle-group', { checked: true, dataset: { tubeDesignerNestingGroupKey: 'section-a' } });
   assert.deepEqual([...selectedNestingPlanIds(f.view)], ['plan-0', 'plan-2']);
   await f.act('export-selected');
-  assert.deepEqual(f.calls.at(-1).payload.plans.map(p => p.id), ['plan-0', 'plan-2']);
+  assert.deepEqual(f.calls.at(-1).payload.plans, ['plan-0', 'plan-2']);
   await f.act('export-group', { dataset: { tubeDesignerNestingGroupKey: 'section-b' } });
-  assert.deepEqual(f.calls.at(-1).payload.plans.map(p => p.id), ['plan-1']);
+  assert.deepEqual(f.calls.at(-1).payload.plans, ['plan-1']);
   assert.deepEqual([...selectedNestingPlanIds(f.view)], ['plan-0', 'plan-2'], 'group export preserves checked selection');
   f.view.tubeDesignerClosedNestingResultGroups = ['section-a'];
   const dock = renderNestingResultDock(f.context, f.view);

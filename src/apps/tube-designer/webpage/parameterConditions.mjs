@@ -1,5 +1,5 @@
 // Shared by catalogue, embedded editors and diagrams. Both descriptor and
-// native presentation spellings are supported; unknown conditions fail closed.
+// native presentation conditions use parameter + op; unknown conditions fail closed.
 export function matchesParameterCondition(condition, values = {}) {
   if (condition == null || Object.keys(condition).length === 0) return true;
   const all = condition.op === "all" ? (condition.conditions ?? condition.all) : condition.all;
@@ -8,17 +8,23 @@ export function matchesParameterCondition(condition, values = {}) {
   if (Array.isArray(any)) return any.some(item => matchesParameterCondition(item, values));
   const not = condition.op === "not" ? (condition.condition ?? condition.not) : condition.not;
   if (not) return !matchesParameterCondition(not, values);
-  const key = condition.parameter ?? condition.key ?? condition.name;
+  const key = condition.parameter;
   if (!key || !Object.hasOwn(values, key)) return false;
-  if (condition.op === "eq" || (!condition.op && condition.name)) return Object.is(values[key], condition.value);
+  if (condition.op === "eq") return Object.is(values[key], condition.value);
   if (condition.op === "ne") return !Object.is(values[key], condition.value);
   if (condition.op === "in") return (condition.values ?? []).some(value => Object.is(values[key], value));
   if (condition.op === "notIn") return !(condition.values ?? []).some(value => Object.is(values[key], value));
   return false;
 }
 
+// Permanent exposure is shared by editors and interchange column selection.
+// A row-dependent condition does not remove a field from an Excel contract.
+export function parameterExposed(definition) {
+  return definition?.presentation?.visible !== false;
+}
+
 export function parameterVisible(definition, values = {}) {
-  return definition?.presentation?.visible !== false
+  return parameterExposed(definition)
     && matchesParameterCondition(definition?.visibleWhen, values);
 }
 

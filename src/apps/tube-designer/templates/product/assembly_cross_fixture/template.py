@@ -13,7 +13,7 @@ from icax_template_sdk import manufacturing_context, manufacturing_declaration, 
 
 
 TEMPLATE_ID = "assembly-cross-fixture"
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.0.1"
 SHARED_ROOT = Path(__file__).resolve().parents[2] / "_shared"
 
 

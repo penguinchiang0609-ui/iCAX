@@ -24,19 +24,23 @@ class MarketLibraryTests(unittest.TestCase):
                     if pattern!='horizontal':self.assertTrue(vertical)
                     self.assertEqual(pattern,doc['parameters']['infillPattern'])
 
-    def test_project_rules_not_universal_threshold(self):
+    def test_clear_opening_targets_do_not_imply_project_certification(self):
         for name in NAMES:
             with self.subTest(name=name):
                 doc=build(name,doorClearWidth=700,doorClearHeight=900,
-                    projectEscapeMinWidth=700,projectEscapeMinHeight=900,
-                    projectRuleReference='项目确认输入（测试）',installationMode='recessed')
+                    doorHorizontalTopCenterOffset=424,
+                    doorHorizontalBottomCenterOffset=424)
                 review=doc['extensions'][REVIEW]
                 self.assertEqual((700,900),(review['designClearWidth'],review['designClearHeight']))
-                self.assertEqual('recessed',review['installationMode'])
+                self.assertEqual((730,900),(review['fixedClearWidth'],review['fixedClearHeight']))
+                self.assertFalse(review['complianceCertified'])
+                self.assertEqual('required',review['siteVerification'])
                 self.assertTrue(all(v=='not_verified' for v in review['performance'].values()))
-                self.assertIn('SW_PROJECT_ESCAPE_RULE',{d['code'] for d in doc['diagnostics']})
-                with self.assertRaisesRegex(ValueError,'项目设计下限'):
-                    build(name,projectEscapeMinWidth=801)
+                self.assertIn('SW_SITE_REVIEW',{d['code'] for d in doc['diagnostics']})
+                for removed in ('projectEscapeMinWidth','projectEscapeMinHeight',
+                                'projectRuleReference','installationMode'):
+                    self.assertNotIn(removed,doc['parameters'])
+                    self.assertNotIn(removed,review)
 
     def test_fixed_variants_and_cap_preservation(self):
         name='five_face_security_window'
@@ -51,9 +55,15 @@ class MarketLibraryTests(unittest.TestCase):
         self.assertEqual(caps(docs[0]),caps(docs[2]))
         for d in docs:self.assertEqual('FIXED',d['extensions'][REVIEW]['openingSystem'])
 
-    def test_invalid_pattern_and_project_limits_rejected(self):
-        for values in ({'infillPattern':'mesh'},{'projectEscapeMinWidth':0},{'projectEscapeMinHeight':float('nan')}):
-            with self.assertRaises(ValueError):build(NAMES[0],**values)
+    def test_invalid_pattern_and_active_clear_dimensions_rejected(self):
+        cases = (
+            ({'infillPattern':'mesh'},'填充结构不支持'),
+            ({'doorClearWidth':0},'净开口尺寸必须大于0'),
+            ({'doorClearHeight':float('nan')},'doorClearHeight 必须是有限数值'),
+        )
+        for values, reason in cases:
+            with self.subTest(values=values), self.assertRaisesRegex(ValueError,reason):
+                build(NAMES[0],**values)
 
 
 if __name__=='__main__':unittest.main()

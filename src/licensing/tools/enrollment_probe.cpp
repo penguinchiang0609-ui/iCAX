@@ -32,7 +32,7 @@ int wmain(int argc, wchar_t** argv) {
         if (argc == 4 && std::wstring_view(argv[1]) == L"--activation-package-test") {
             const auto pub = ReadFileBounded(argv[2], 72), package = ReadFileBounded(argv[3], 16384);
             const auto certificate = DecryptActivation(package, "hardware-test-only", pub);
-            VerifyTpmAtSite<9001, Feature::Design>(certificate, "hardware-test-only", pub, 0);
+            VerifyTpmAtSite<9001, Feature::ProductDesign>(certificate, "hardware-test-only", pub, 0);
             auto tampered = package; tampered.back() ^= 1;
             bool rejected = false; try { DecryptActivation(tampered, "hardware-test-only", pub); } catch (...) { rejected = true; }
             Require(rejected, "Tampered activation accepted");

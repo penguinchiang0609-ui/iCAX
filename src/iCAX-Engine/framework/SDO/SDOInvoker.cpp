@@ -3,6 +3,7 @@
 
 #include "SDOEndpoint.h"
 #include "SDOFrame.h"
+#include "ProjectContext/ISceneContext.h"
 
 iCAX::Interaction::CSDOInvoker::CSDOInvoker(IN std::shared_ptr<CSDORegistry> pRegistry_)
     : m_pRegistry(std::move(pRegistry_))
@@ -111,6 +112,9 @@ size_t iCAX::Interaction::CSDOInvoker::DispatchAvailableFrames(
     auto _Frames = Endpoint_.Receive();
     for (const auto& _Frame : _Frames)
     {
+        // A canceled in-flight request must not be followed by more queued
+        // mutations after the scene has begun shutting down.
+        if (pSceneContext_ && pSceneContext_->IsStopRequested()) break;
         switch (_Frame.nKind)
         {
         case ESDOFrameKind::Request:

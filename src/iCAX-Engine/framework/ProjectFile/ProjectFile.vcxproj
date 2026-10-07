@@ -51,8 +51,6 @@
     <ClInclude Include="ProjectFileCodec.h" />
     <ClInclude Include="ProjectFileExport.h" />
     <ClInclude Include="ProjectFileStore.h" />
-    <ClInclude Include="ProjectMigration.h" />
-    <ClInclude Include="ProjectMigrationRegistration.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -60,8 +58,6 @@
     <ClCompile Include="ProjectDocument.cpp" />
     <ClCompile Include="ProjectFileCodec.cpp" />
     <ClCompile Include="ProjectFileStore.cpp" />
-    <ClCompile Include="ProjectMigration.cpp" />
-    <ClCompile Include="ProjectMigrationRegistration.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj"><Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project></ProjectReference>

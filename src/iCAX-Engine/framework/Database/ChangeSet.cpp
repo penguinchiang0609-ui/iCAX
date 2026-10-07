@@ -259,6 +259,32 @@ iCAX::Database::CChangeSet iCAX::Database::CChangeSetBuilder::Build() const
     return _Result;
 }
 
+iCAX::Database::CChangeSet iCAX::Database::CChangeSetBuilder::Take()
+{
+    CChangeSet result;
+    result.Kind = m_Kind;
+    result.Name = std::move(m_strName);
+    result.CreatedEntities.reserve(m_CreatedEntities.size());
+    result.DeletedEntities.reserve(m_DeletedEntities.size());
+    result.AddedComponents.reserve(m_AddedComponents.size());
+    result.RemovedComponents.reserve(m_RemovedComponents.size());
+    result.ModifiedProperties.reserve(m_ModifiedProperties.size());
+    result.ModifiedComponentStates.reserve(m_ModifiedComponentStates.size());
+    for (auto& [_, change] : m_CreatedEntities)
+        result.CreatedEntities.push_back(std::move(change));
+    for (auto& [_, change] : m_DeletedEntities)
+        result.DeletedEntities.push_back(std::move(change));
+    for (auto& [_, change] : m_AddedComponents)
+        result.AddedComponents.push_back(std::move(change));
+    for (auto& [_, change] : m_RemovedComponents)
+        result.RemovedComponents.push_back(std::move(change));
+    for (auto& [_, change] : m_ModifiedProperties)
+        result.ModifiedProperties.push_back(std::move(change));
+    for (auto& [_, change] : m_ModifiedComponentStates)
+        result.ModifiedComponentStates.push_back(std::move(change));
+    return result;
+}
+
 void iCAX::Database::CChangeSetBuilder::EraseEntityChanges(IN const CChangeEntityKey& Key_)
 {
     for (auto _Ite = m_AddedComponents.begin(); _Ite != m_AddedComponents.end(); )

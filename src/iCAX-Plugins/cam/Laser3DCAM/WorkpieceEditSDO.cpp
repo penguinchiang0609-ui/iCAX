@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseSDOGuard.h"
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "RenderInteraction/RenderInteraction.h"
@@ -15,9 +16,9 @@ class CWorkpieceEditSDO final : public iCAX::Interaction::CSDO
 public:
     CWorkpieceEditSDO() : CSDO("WorkpieceEdit")
     {
-        ExposeMethod("Begin", &iCAX::CAM::SDO::HandleBeginWorkpieceEdit);
-        ExposeMethod("Inspect", &iCAX::CAM::SDO::HandleInspectWorkpieceEdit);
-        ExposeMethod("Commit", &iCAX::CAM::SDO::HandleCommitWorkpieceEdit);
+        ExposeMethod("Begin", tube::license::ProtectProductMethod<11042, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleBeginWorkpieceEdit));
+        ExposeMethod("Inspect", tube::license::ProtectProductMethod<11043, tube::license::Feature::PageMachining>(&iCAX::CAM::SDO::HandleInspectWorkpieceEdit));
+        ExposeMethod("Commit", tube::license::ProtectProductMethod<11044, tube::license::Feature::MachiningToolpath>(&iCAX::CAM::SDO::HandleCommitWorkpieceEdit));
         ExposeMethod("Discard", &iCAX::CAM::SDO::HandleDiscardWorkpieceEdit);
     }
 };

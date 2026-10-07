@@ -86,7 +86,7 @@ spec = importlib.util.spec_from_file_location("security_window_scene_linkage_bro
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
-document = module.generate(parameters, {"template": descriptor, "geometryPurpose": "display"})
+document = module.display(parameters)
 print(json.dumps([{
     "stableKey": item["key"],
     "role": item.get("properties", {}).get("group", ""),
@@ -144,7 +144,6 @@ try {
     const topCards = [
       pane.querySelector(".tube-designer-instance-quantity"),
       pane.querySelector(".tube-designer-scene-product-identity"),
-      pane.querySelector(".tube-designer-structure-summary"),
       pane.querySelector(".tube-designer-parameter-sections"),
     ];
     const topCardGaps = topCards.slice(1).map((node, index) => Math.round(
@@ -152,14 +151,13 @@ try {
     ));
     pane.querySelectorAll(".tube-designer-parameter-section,.tube-designer-parameter-subsection")
       .forEach((details) => { details.open = true; });
-    const fixedFrameField = pane.querySelector('[data-tube-designer-parameter="doorFrameJoinType"]')
-      .closest(".tube-designer-field");
-    const leafFrameField = pane.querySelector('[data-tube-designer-parameter="doorLeafFrameJoinType"]')
-      .closest(".tube-designer-field");
+    const fixedFrameField = pane.querySelector('[data-product-control-editor="doorFrameConnection"]');
+    const leafFrameField = pane.querySelector('[data-product-control-editor="doorLeafFrameConnection"]');
     const doorProcessGroup = fixedFrameField.closest("details");
     const mergedDoorProcess = {
       sameGroup: doorProcessGroup === leafFrameField.closest("details"),
       title: doorProcessGroup.querySelector(":scope > summary")?.textContent.trim(),
+      leafTitle: leafFrameField.closest("details").querySelector(":scope > summary")?.textContent.trim(),
       directFields: !doorProcessGroup.querySelector(".tube-designer-parameter-subsection-list"),
       separateRows: leafFrameField.getBoundingClientRect().top >= fixedFrameField.getBoundingClientRect().bottom,
       fullRows: [fixedFrameField, leafFrameField].every((field) => field.classList.contains("is-line-full")),
@@ -183,7 +181,7 @@ try {
     const productCodeInput = productCodeField?.querySelector("input");
     const numberInput = pane.querySelector('[data-tube-designer-profile-parameter="width"]');
     const materialSection = [...pane.querySelectorAll(".tube-designer-parameter-section")]
-      .find((node) => node.querySelector(":scope > summary > span")?.textContent?.trim() === "材料");
+      .find((node) => node.querySelector(":scope > summary > span")?.textContent?.trim() === "用料");
     const materialGrid = materialSection?.querySelector(".tube-designer-field-grid");
     const structureSummary = pane.querySelector(".tube-designer-structure-summary");
     const forbiddenKeys = [
@@ -203,7 +201,12 @@ try {
       stringInputWidth: productCodeInput?.getBoundingClientRect().width ?? 0,
       numberInputWidth: numberInput?.getBoundingClientRect().width ?? 0,
       structureSummaryText: structureSummary?.textContent?.replace(/\s+/g, " ").trim() ?? "",
-      structureSummaryControlCount: structureSummary?.querySelectorAll("input,select,textarea,button").length ?? -1,
+      structureSummaryControlCount: structureSummary?.querySelectorAll("input,select,textarea,button").length ?? 0,
+      roleStructures: ["outerFrameStructure", "doorFrameStructure", "doorLeafFrameStructure"].map(key => {
+        const field = pane.querySelector(`[data-product-control-editor="${key}"]`);
+        return { key, current: field?.querySelector("[data-tube-designer-current-structure]")?.textContent.trim(),
+          hasChange: Boolean(field?.querySelector('[data-cam-action="tube-designer-open-product-structure"]')), hasInlineSelect: Boolean(field?.querySelector("select")) };
+      }),
       forbiddenControlCount: forbiddenKeys
         .filter((key) => pane.querySelector(`[data-tube-designer-parameter="${key}"]`)).length,
       removedParameterCount: ["installationMode", "projectRuleReference", "projectEscapeMinWidth", "projectEscapeMinHeight", "doorUse", "doorHingeSide", "doorHingeCount"]
@@ -276,7 +279,7 @@ try {
     state.scene.tubeDesigner.product.parameters.faceType = "two";
     pane.innerHTML = renderDesignerRightPane({}, state);
     pane.querySelectorAll("details").forEach((details) => { details.open = true; });
-    const input = pane.querySelector('[data-tube-designer-parameter="frameCornerJoin"]');
+    const input = pane.querySelector('[data-product-control-editor="outerFrameConnection"] select');
     const field = input.closest(".tube-designer-field");
     return {
       fullLine: field.classList.contains("is-line-full"),
@@ -288,15 +291,16 @@ try {
   assert.equal(cornerLayout.fullLine, true, "外框转角连接必须独占一行");
   assert.ok(cornerLayout.width >= cornerLayout.gridWidth * 0.9);
   assert.equal(cornerLayout.noOverflow, true);
-  assert.deepEqual(result.sectionTitles, ["材料", "工艺"],
-    "防盗窗实例右侧的可编辑参数区只应显示材料和工艺");
+  assert.deepEqual(result.sectionTitles, ["用料", "装配"],
+    "防盗窗实例右侧的可编辑参数区只应显示用料和装配");
   assert.ok(result.topCardGaps.every((gap) => gap >= 0 && gap <= 8),
     `右侧顶部卡片之间不应浪费纵向空间: ${result.topCardGaps.join(", ")}`);
   assert.equal(result.diagramDefaultClosed, true);
   assert.equal(result.diagramOpenAfterRefresh, true);
   assert.equal(result.wideChoice, true);
-  assert.equal(result.mergedDoorProcess.sameGroup, true);
-  assert.match(result.mergedDoorProcess.title, /^逃生窗\s*2 项$/);
+  assert.equal(result.mergedDoorProcess.sameGroup, false, "fixed frame and leaf settings belong to separate product parts");
+  assert.match(result.mergedDoorProcess.title, /^逃生窗框/);
+  assert.match(result.mergedDoorProcess.leafTitle, /^窗扇/);
   assert.equal(result.mergedDoorProcess.directFields, true);
   assert.equal(result.mergedDoorProcess.separateRows, true);
   assert.equal(result.mergedDoorProcess.fullRows, true);
@@ -309,9 +313,11 @@ try {
     "a full-line field must not stretch its input to the full row");
   assert.equal(result.displayLayout.structureSummaryControlCount, 0,
     "实例页结构摘要必须只读");
-  assert.match(result.displayLayout.structureSummaryText, /结构摘要/);
-  assert.match(result.displayLayout.structureSummaryText, /单面/);
-  assert.match(result.displayLayout.structureSummaryText, /逃生窗/);
+  assert.equal(result.displayLayout.structureSummaryText, "", "redundant whole-product structure summary stays removed");
+  for (const role of result.displayLayout.roleStructures) {
+    assert.ok(role.current && role.hasChange, `${role.key}: current structure and change entry must be visible`);
+    assert.equal(role.hasInlineSelect, false, `${role.key}: main structure is edited in its dialog`);
+  }
   assert.equal(result.displayLayout.forbiddenControlCount, 0,
     "结构和规格参数不得继续出现在右侧编辑区");
   assert.equal(result.displayLayout.removedParameterCount, 0);
@@ -323,7 +329,7 @@ try {
   ]) assert.ok(result.generatedStableKeys.some((key) => key.startsWith(prefix)), `missing generated ${prefix}`);
   assert.equal(result.focusRestored, true);
   assert.deepEqual(result.selectionRestored, [1, 4, "backward"]);
-  console.log("Product parameter panel browser regression passed: material/process-only editor, structure summary, responsive fields, focus and selection.");
+  console.log("Product parameter panel browser regression passed: material/assembly editor, role-specific structure entries, responsive fields, focus and selection.");
 } finally {
   await browser.close();
 }

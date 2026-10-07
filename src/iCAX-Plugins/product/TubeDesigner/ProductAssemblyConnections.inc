@@ -193,13 +193,23 @@ VariantArray ProductAssemblyStockRows(iCAX::Project::ISceneContext& Scene_,
         else
             throw std::runtime_error("制造下料件未声明成品构件映射: " + _Key);
         const auto _StockID = GetString(_Properties, "tubeDesigner.assemblyProcessStockId");
+        VariantArray _SourceStockIDs;
+        std::set<std::string> _StockIDs;
+        if (const auto _IDs = _Properties.find("manufacturing.sourceStockIds"); _IDs != _Properties.end())
+            for (const auto& _Value : _IDs->second.To<VariantArray>()) {
+                const auto _ID = _Value.To<std::string>();
+                if (_ID.empty() || !_StockIDs.insert(_ID).second)
+                    throw std::runtime_error("制造零件的来源母材身份无效");
+                _SourceStockIDs.emplace_back(_ID);
+            }
+        else if (!_StockID.empty()) { _StockIDs.insert(_StockID); _SourceStockIDs.emplace_back(_StockID); }
         VariantArray _Operations;
         if (const auto _It = _Plan.find("operations"); _It != _Plan.end())
             for (const auto& _Value : _It->second.To<VariantArray>()) {
                 const auto _Operation = _Value.To<ObjectMap>();
-                if (GetString(_Operation, "stockId") == _StockID) _Operations.emplace_back(_Operation);
+                if (_StockIDs.contains(GetString(_Operation, "stockId"))) _Operations.emplace_back(_Operation);
             }
-        _Rows.emplace_back(ObjectMap{{"itemKey", _Key}, {"stockId", _StockID},
+        _Rows.emplace_back(ObjectMap{{"itemKey", _Key}, {"stockId", _StockID}, {"sourceStockIds", std::move(_SourceStockIDs)},
             {"stockEntityId", _Found == _Saved.end() ? std::string{} : _Found->second.ID},
             {"name", _Item.DisplayName.Resolve("zh-CN")},
             {"partLength", _Found == _Saved.end() ? GetDouble(_Properties, "length", 0) : _Found->second.Length},

@@ -20,6 +20,11 @@ try {
   const page = await browser.newPage({viewport:{width:1100,height:900}});
   for (const toolId of ['edge-arc-groove','v-notch-sharp']) {
     const tool = {...json(`../../apps/tube-designer/templates/mold/${toolId}/tool.json`),libraryScope:'system'};
+    // Layout stress uses an explicit, small product field list. It must not
+    // open the generic resource schema merely because the tool is available.
+    for(const role of Object.values(template.extensions.resourceRoles.tools))role.productParameterUIByResource={
+      [`system:${toolId}`]:{displayName:{'zh-CN':'产品开槽设置'},fixedParameters:{angle:90},
+        fields:toolId==='edge-arc-groove'?[{key:'bridge'},{key:'leftArc'}]:[{key:'leaveBottom'},{key:'bottomStrategy'}]}};
     const values = {...Object.fromEntries(raw.parameters.map(p=>[p.key,p.defaultValue])),
       faceType:'three',frameManufacturingMode:'spatial_v_notch',accessDoorEnabled:true,
       doorFrameJoinType:'v_groove_90:tool_library',tubeDesignerToolBindings:{}};

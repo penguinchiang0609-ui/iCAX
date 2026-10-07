@@ -1,5 +1,5 @@
 // Capture immediately before DOM replacement, never when an async request starts.
-const panes = [".cam-context-pane", ".cam-info-pane"];
+const panes = [".cam-context-pane", ".cam-info-pane", "[data-tube-designer-scene-settings]"];
 function identity(node) {
   if (node.id) return "id:" + node.id;
   const attributes = [...node.attributes].filter(a =>
@@ -11,9 +11,9 @@ function locate(root, saved) {
   const matches = [...root.querySelectorAll("*")].filter(n=>identity(n)===saved.key);
   return matches.length === 1 ? matches[0] : null;
 }
-export function capturePaneInteraction(mount) {
+export function capturePaneInteraction(mount, selectors = panes) {
   const active = mount.ownerDocument?.activeElement;
-  const snapshots = panes.map(selector => {
+  const snapshots = selectors.map(selector => {
     const root=mount.querySelector(selector);
     if (!root) return null;
     const scrolls=[root,...root.querySelectorAll("*")].filter(n=>n.scrollTop || n.scrollLeft)

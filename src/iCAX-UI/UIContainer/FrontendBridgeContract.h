@@ -63,7 +63,7 @@ namespace iCAX
         /*
         * @brief UI 容器依赖的前端桥接口。
         * @details
-        *   UI 容器不能反向链接 Application.exe。Application.exe 持有具体实现，
+        *   UI 容器不能反向链接 TubeDesigner.exe。TubeDesigner.exe 持有具体实现，
         *   并通过该接口双向传递 SDO 调用帧。
         */
         class _UI_CONTAINER_EXP IFrontendBridge

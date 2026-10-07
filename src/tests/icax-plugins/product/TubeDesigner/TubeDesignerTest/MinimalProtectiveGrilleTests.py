@@ -17,6 +17,15 @@ def package():
     return descriptor, defaults, module
 
 
+def process_result(document, instance_id):
+    records=document["extensions"]["tubeDesigner.assemblyGeometryProcesses"]["instances"]
+    return next(record["result"] for record in records if record["instanceId"]==instance_id)
+
+
+def process_geometry(document, instance_id):
+    return {node["key"]:node for node in process_result(document,instance_id)["geometry"]}
+
+
 class MinimalProtectiveGrilleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -46,6 +55,17 @@ class MinimalProtectiveGrilleTests(unittest.TestCase):
             "key": "result", "purpose": "result",
             "items": [item["key"] for item in manufacturing["items"]], "properties": {},
         }])
+
+    def test_model_identity_matches_the_shipped_descriptor(self):
+        descriptor = {**self.descriptor, "packageDigest": "identity-regression"}
+        for purpose in ("display", "manufacturing"):
+            with self.subTest(purpose=purpose):
+                model = self.module.generate(dict(self.defaults), {
+                    "template": descriptor, "geometryPurpose": purpose})
+                self.assertEqual(model["template"], {
+                    "id": descriptor["id"], "version": descriptor["version"],
+                    "packageDigest": descriptor["packageDigest"],
+                })
 
     def test_all_layout_modes_and_handle_reference_modes(self):
         fixed = self.build({"barLayoutMode": "fixed_count", "barCount": 7,
@@ -93,25 +113,42 @@ class MinimalProtectiveGrilleTests(unittest.TestCase):
 
     def test_half_holes_cut_only_near_wall_and_male_tips_are_mirrored(self):
         result = self.build({"installHoleEnabled": False, "maleCornerType": "chamfer"})
-        geometry = {node["key"]: node for node in result["geometry"]}
-        left_cutters = [node for key, node in geometry.items()
-                        if key.startswith("frame.left.0001.half-hole.") and key.endswith(".solid")]
+        geometry = process_geometry(result,"frame.left.0001.apertures")
+        left_cutters = [node for node in geometry.values() if node["operator"]=="extrude"]
         self.assertEqual(len(left_cutters), 10)
         self.assertTrue(all(abs(node["arguments"]["vector"][0]
                                 - (self.defaults["frameWallThickness"] + 2e-7)) < 1e-9
                             for node in left_cutters))
-        left_points = geometry["inner.bar.0001.male.left.profile"]["arguments"]["contours"][0]["points"]
-        right_points = geometry["inner.bar.0001.male.right.profile"]["arguments"]["contours"][0]["points"]
+        heads=process_geometry(result,"inner.bar.0001.male-head")
+        left_points = [segment["start"] for segment in heads["left.profile"]["arguments"]["contours"][0]["segments"]]
+        right_points = [segment["start"] for segment in heads["right.profile"]["arguments"]["contours"][0]["segments"]]
         self.assertGreater(left_points[1][0], left_points[0][0])
         self.assertLess(right_points[1][0], right_points[2][0])
         self.assertTrue(all(relationship["properties"]["halfHole"]
                             for relationship in result["relationships"]
                             if relationship["key"].startswith("joint.")))
 
+    def test_every_male_corner_choice_changes_processing_without_changing_finished_stock(self):
+        display=None
+        for corner in ("round","chamfer","square"):
+            with self.subTest(corner=corner):
+                current=self.build({"maleCornerType":corner,"installHoleEnabled":False},"display")
+                if display is None:display=current["geometry"]
+                else:self.assertEqual(current["geometry"],display)
+                manufactured=self.build({"maleCornerType":corner,"installHoleEnabled":False})
+                heads=process_geometry(manufactured,"inner.bar.0001.male-head")
+                segments=heads["left.profile"]["arguments"]["contours"][0]["segments"]
+                self.assertEqual(any(segment["kind"]=="arc" for segment in segments),corner=="round")
+                self.assertEqual(process_result(manufactured,"inner.bar.0001.male-head")["operations"][0]["operation"],"intersect")
+
     def test_installation_holes_have_two_faces_and_explicit_conflict_policy(self):
         result = self.build({"handleEnabled": False})
-        keys = [node["key"] for node in result["geometry"]]
-        self.assertEqual(len([key for key in keys if ".install." in key and key.endswith(".solid")]), 12)
+        installation=[]
+        for side in ("left","right"):
+            geometry=process_geometry(result,f"frame.{side}.0001.apertures")
+            installation.extend(node for node in geometry.values() if node["operator"]=="profile2d"
+                                and all(segment["kind"]=="arc" for segment in node["arguments"]["contours"][0]["segments"]))
+        self.assertEqual(len(installation),12)
         self.assertEqual(len(result["tables"][0]["rows"]), 2,
                          "front holes leave the left and right rails as identical parts")
         with self.assertRaisesRegex(ValueError, "冲突"):
@@ -156,12 +193,12 @@ class MinimalProtectiveGrilleTests(unittest.TestCase):
                      if relationship["key"] == "joint.0001.left")
         self.assertAlmostEqual(joint["properties"]["totalClearanceDepth"],
                                self.defaults["holeTotalClearanceDepth"])
-        cutter = next(node for node in result["geometry"]
-                      if node["key"] == "frame.left.0001.half-hole.0001.profile")
+        cutter = process_geometry(result,"frame.left.0001.apertures")["hole.0.profile"]
         contour = cutter["arguments"]["contours"][0]
-        self.assertAlmostEqual(contour["width"],
+        points = [segment["start"] for segment in contour["segments"]]
+        self.assertAlmostEqual(max(point[0] for point in points) - min(point[0] for point in points),
                                self.defaults["innerWidth"] + self.defaults["holeTotalClearanceDepth"])
-        self.assertAlmostEqual(contour["height"],
+        self.assertAlmostEqual(max(point[1] for point in points) - min(point[1] for point in points),
                                self.defaults["innerDepth"] + self.defaults["holeTotalClearanceHeight"])
 
     def test_descriptor_uses_three_semantic_sections_and_library_profiles(self):

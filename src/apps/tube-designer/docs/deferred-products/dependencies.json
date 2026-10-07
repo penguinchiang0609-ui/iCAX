@@ -1,0 +1,71 @@
+{
+  "scope": "Direct shared imports plus inspected SDK/condition boundary; not a transitive runtime lockfile.",
+  "capturedAt": "2026-10-05T00:34:11.965071+00:00",
+  "files": [
+    {
+      "path": "src/apps/tube-designer/templates/_shared/assembly_geometry_process_runtime.py",
+      "bytes": 25243,
+      "sha256": "1387f61ffc9987fba52747afd44738155eedbfcb79eafa0b2cfba75c07a2d857"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/assembly_stock_allowance.py",
+      "bytes": 6020,
+      "sha256": "bb8d05a88bdf667e72e2e8ef747edcfdb62d252f368619c6da00680190ef0316"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/door_display_geometry.py",
+      "bytes": 7468,
+      "sha256": "85a98c6bc8a88230779d3e07bcc8f2024e600ce4cdb64c8de98c7ec177b86402"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/plate_geometry.py",
+      "bytes": 5617,
+      "sha256": "32c193beac8c89043441f4d4ea0010243b81f2dc03fdbf1e921ad31d9b593dca"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/security_window_frame_geometry.py",
+      "bytes": 37252,
+      "sha256": "af8d88c6e429859502d50111365c0940ec9d15fda967992af825d54effe99817"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/shared_tube_geometry.py",
+      "bytes": 9599,
+      "sha256": "1bb2c983b0fb9f90052da9a548088f7cbe517f0cd9b50bcb9a9fe55ef67d3765"
+    },
+    {
+      "path": "src/apps/tube-designer/templates/_shared/tube_profile_catalog.py",
+      "bytes": 19346,
+      "sha256": "465137da6fbdfa32e657712bfffb7fc1d2000b0c69a96161eeaf4df4fe7569de"
+    },
+    {
+      "path": "src/apps/tube-designer/webpage/parameterConditions.mjs",
+      "bytes": 2459,
+      "sha256": "6dde5d5609380ce19df5e2f5b525d3333ed0e6db9e62efab6d2f5bbe9099969d"
+    },
+    {
+      "path": "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_sdk/__init__.py",
+      "bytes": 821,
+      "sha256": "374ec05f800472f138e16135936c6b58875f22d2ce83cdbaa653262c952e92b1"
+    },
+    {
+      "path": "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_sdk/display.py",
+      "bytes": 13685,
+      "sha256": "cafe44df739ac1042a8160e29960d9b768a9173f02d72c70278e642c9a9acc74"
+    },
+    {
+      "path": "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_sdk/manufacturing.py",
+      "bytes": 49195,
+      "sha256": "655ececa833203588031242345823791e7c6b670d66a16c8434a397e51cad8ae"
+    },
+    {
+      "path": "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_sdk/model.py",
+      "bytes": 5672,
+      "sha256": "ca24623d8b2644a14b6248f805142282883b7d37eaf0efe2baf66cf11ddb70b3"
+    },
+    {
+      "path": "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_sdk/resources.py",
+      "bytes": 12361,
+      "sha256": "017805bc2027373cf2a406b4a0052c80e4a76319e6789bb9f9fffd8bbac2aa45"
+    }
+  ]
+}

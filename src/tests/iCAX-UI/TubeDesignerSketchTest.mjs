@@ -59,7 +59,7 @@ for (const area of ["profiles", "tools", "components"]) {
 
 {
   const state = { tool: "line", command: null };
-  const draft = { entities: [], selectedId: "", selectedIds: [], history: [], future: [], dirty: false };
+  const draft = { entities: [], selectedIds: [], history: [], future: [], dirty: false };
   handleCadPoint(state, draft, [0, 0], metrics);
   assert.equal(draft.entities.length, 0, "the first click starts a CAD command");
   handleCadPoint(state, draft, [20, 0], metrics);
@@ -202,7 +202,7 @@ for (const area of ["profiles", "tools", "components"]) {
 }
 
 {
-  const draft = { entities: [line("whole", [0, 0], [40, 0])], selectedId: "whole", history: [], future: [], dirty: false };
+  const draft = { entities: [line("whole", [0, 0], [40, 0])], selectedIds: ["whole"], history: [], future: [], dirty: false };
   const split = breakEntityAtPoint(draft, "whole", [15, 2]);
   assert.equal(split.changed, true);
   assert.equal(draft.entities.length, 2);
@@ -215,7 +215,7 @@ for (const area of ["profiles", "tools", "components"]) {
   assert.equal(draft.entities[0].kind, "line");
   assert.deepEqual([draft.entities[0].x1, draft.entities[0].x2], [0, 40]);
 
-  const circleDraft = { entities: [{ id: "round", kind: "circle", cx: 0, cy: 0, radius: 10, closed: true }], selectedId: "round", history: [], future: [], dirty: false };
+  const circleDraft = { entities: [{ id: "round", kind: "circle", cx: 0, cy: 0, radius: 10, closed: true }], selectedIds: ["round"], history: [], future: [], dirty: false };
   const opened = breakEntityAtPoint(circleDraft, "round", [10, 0]);
   assert.equal(opened.changed, true);
   assert.equal(circleDraft.entities[0].kind, "circleArc");
@@ -275,7 +275,7 @@ for (const area of ["profiles", "tools", "components"]) {
   ] });
   assert.equal(ellipse.kind, "ellipse");
   assert.equal("points" in ellipse, false, "profile ellipses enter the sketch as analytic ellipses");
-  const draft = { entities: [ellipse], selectedId: ellipse.id, history: [], future: [], dirty: false };
+  const draft = { entities: [ellipse], selectedIds: [ellipse.id], history: [], future: [], dirty: false };
   const opened = breakEntityAtPoint(draft, ellipse.id, [23, -2]);
   assert.equal(opened.changed, true);
   assert.equal(draft.entities[0].kind, "ellipseArc");
@@ -288,7 +288,7 @@ for (const area of ["profiles", "tools", "components"]) {
 }
 
 {
-  const draft = { entities: [line("edge", [0, 0], [20, 0])], selectedId: "edge", selectedIds: ["edge"], selectedPoints: [], history: [], future: [], dirty: false };
+  const draft = { entities: [line("edge", [0, 0], [20, 0])], selectedIds: ["edge"], selectedPoints: [], history: [], future: [], dirty: false };
   const inserted = insertPointOnEntity(draft, "edge", [8, 2]);
   assert.equal(inserted.changed, true);
   assert.equal(draft.entities.length, 1, "inserting a point does not split the entity");
@@ -437,7 +437,7 @@ for (const area of ["profiles", "tools", "components"]) {
   const draft = state.sideByMember["new-member-id"];
   assert.equal(draft.persisted, true, "stored sketches reattach through the stable member key");
   draft.entities = [];
-  draft.selectedId = "";
+  draft.selectedIds = [];
   draft.dirty = true;
   assert.match(renderSketchRightPane({}, view), /确认后将移除已应用的侧面草图/);
 

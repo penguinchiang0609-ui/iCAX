@@ -8,6 +8,7 @@ const DEFAULT_AREA_LAYOUT = Object.freeze({
 export function getProjectView(projectId) {
   if (!projectViews.has(projectId)) {
     projectViews.set(projectId, {
+      disposed: false,
       scene: null,
       pending: false,
       error: "",
@@ -31,6 +32,41 @@ export function getProjectView(projectId) {
     });
   }
   return projectViews.get(projectId);
+}
+
+export function findProjectView(projectId) {
+  return projectViews.get(projectId) ?? null;
+}
+
+// Remove the session immediately. A reopened file keeps its project ID but
+// must receive fresh scene state, drafts and viewport readers.
+export async function releaseProjectView(projectId) {
+  const view = findProjectView(projectId);
+  if (!view) return false;
+  view.disposed = true;
+  projectViews.delete(projectId);
+  if (view.noticeDismissTimer != null) globalThis.clearTimeout(view.noticeDismissTimer);
+  view.noticeDismissTimer = null;
+  view.notice = "";
+  const cleanups = [];
+  const release = (resource, method) => {
+    if (typeof resource?.[method] !== "function") return;
+    try { cleanups.push(Promise.resolve(resource[method]())); } catch {}
+  };
+  for (const area of Object.values(view.areas ?? {})) {
+    release(area.viewReader, "stop");
+    area.viewReader = null;
+    area.viewContent = null;
+    area.viewContentRequest = null;
+    area.viewApplyByRevision?.clear?.();
+  }
+  release(view.viewport, "dispose");
+  view.viewport = null;
+  view.viewportSceneProxy = null;
+  view.sceneProxy = null;
+  view.scene = null;
+  await Promise.allSettled(cleanups);
+  return true;
 }
 
 export function activateProjectArea(view, areaId) {

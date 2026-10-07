@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const source=readFileSync(new URL("../../apps/_shared/workbench/utils/paneInteractionState.mjs",import.meta.url),"utf8");
+import { serveBrowserAsset } from './browserPackageRuntime.mjs';
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const browser=await chromium.launch({headless:true,channel:"msedge"});
 try {
   const page=await browser.newPage();
-  const results=await page.evaluate(async source=>{
-    const {capturePaneInteraction}=await import("data:text/javascript;charset=utf-8,"+encodeURIComponent(source));
+  await page.route('http://pane-interaction.test/**', serveBrowserAsset);
+  await page.goto('http://pane-interaction.test/');
+  const results=await page.evaluate(async ()=>{
+    const {capturePaneInteraction}=await import('/src/apps/_shared/workbench/utils/paneInteractionState.mjs');
     document.body.innerHTML='<main></main>';
     const mount=document.querySelector("main");
     const html=extra=>`<aside class="cam-context-pane" style="height:180px;overflow:auto"><div style="height:1000px">left</div></aside>
@@ -41,7 +42,7 @@ try {
     restore();
     result.noWrongFocus=document.activeElement!==mount.querySelector("input");
     return result;
-  },source);
+  });
   assert.deepEqual(results,{left:310,right:85,nested:380,focus:true,value:"12345",
     selection:[1,4,"backward"],noWrongFocus:true});
   console.log("Pane refresh preserves both scroll positions, nested scroll, focus, text and selection; latest async state wins.");

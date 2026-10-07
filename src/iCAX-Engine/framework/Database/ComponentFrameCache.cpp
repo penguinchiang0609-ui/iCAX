@@ -31,6 +31,32 @@ void iCAX::Database::CComponentFrameCache::OnRepositoryChanged(IN void* pSender_
             return;
         }
 
+        // A pure insertion batch already carries the affected entities and
+        // component pointers. Rebuilding every class cache scans the entire
+        // repository once per class and becomes quadratic across imports.
+        const auto& records = Args_.pBatch->Records;
+        const bool additionsOnly = std::all_of(records.begin(), records.end(),
+            [](const RepositoryEventRecord& record) {
+                return record.nType == RepositoryEventArgs::kAddEntity
+                    || record.nType == RepositoryEventArgs::kAddComponent
+                    || record.nType == RepositoryEventArgs::kModifyComponent;
+            });
+        if (additionsOnly)
+        {
+            for (const auto& record : records)
+            {
+                if (record.nType == RepositoryEventArgs::kAddEntity)
+                    m_EntityMask[record.EntityID] = CComponentMask();
+                else if (record.nType == RepositoryEventArgs::kAddComponent)
+                {
+                    m_EntityMask[record.EntityID].Set(record.strClassName);
+                    const auto code = CMaskRegistry::GetComponentIndex(record.strClassName);
+                    m_Cache[code].insert(record.pComponent);
+                }
+            }
+            return;
+        }
+
         std::set<std::string> _AffectedComponentClasses;
         for (const auto& _Record : Args_.pBatch->Records)
         {

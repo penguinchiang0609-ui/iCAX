@@ -1,12 +1,109 @@
 // Isolated browser regression: shipped editor, renderer, picking and handlers.
 import assert from "node:assert/strict";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, sep } from "node:path";
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
+
+async function checkPublicPageNavigation(browser) {
+  const source = fileURLToPath(new URL("../../", import.meta.url));
+  const output = resolve(source, "../output/tests/tube-designer-page-navigation");
+  mkdirSync(output, { recursive: true });
+  const descriptor = JSON.parse(readFileSync(resolve(source, "apps/tube-designer/templates/product/single_face_security_window/template.json"), "utf8"));
+  const display = JSON.parse(readFileSync(resolve(source, "apps/tube-designer/templates/product/single_face_security_window/display.json"), "utf8"));
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("http://navigation.test/**", route => {
+    const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+    if (pathname === "/") return route.fulfill({ contentType: "text/html", body: '<!doctype html><html><head><link rel="stylesheet" href="/src/iCAX-UI/SDK/AppShell/theme/workbench.css"></head><body><div id="app"></div></body></html>' });
+    if (pathname === "/src/iCAX-UI/SDK/runtime.mjs") return route.fulfill({ contentType: "text/javascript", body: "export async function connectApplication(){return globalThis.__pageNavigation.appProxy;}" });
+    const path = resolve(source, pathname.replace(/^\/src\//, ""));
+    if (!pathname.startsWith("/src/") || !path.startsWith(source.replace(/[\\/]$/, "") + sep)) return route.abort();
+    try { return route.fulfill({ contentType: pathname.endsWith(".css") ? "text/css" : "text/javascript", body: readFileSync(path, "utf8") }); } catch { return route.abort(); }
+  });
+  await page.goto("http://navigation.test/");
+  await page.evaluate(async ({ descriptor, display }) => {
+    const { getProjectView } = await import("/src/apps/_shared/workbench/state/projectViewStore.mjs");
+    const { catalogText } = await import("/src/apps/tube-designer/webpage/productCatalog.mjs");
+    const template = { ...descriptor, display, available: true, descriptorLoaded: true, name: catalogText(descriptor.displayName),
+      groups: descriptor.groups.map(group => ({ ...group, displayName: catalogText(group.displayName) })),
+      parameters: descriptor.parameters.map(field => ({ ...field, type: { enum: "select", string: "text" }[field.valueType] ?? field.valueType,
+        displayName: catalogText(field.displayName), groupKey: field.group,
+        options: field.choices?.map(choice => ({ ...choice, label: catalogText(choice.displayName) })) })) };
+    const projectId = "32b5d8b2-a984-40ac-bc23-653b39a65001", sceneId = "32b5d8b2-a984-40ac-bc23-653b39a65002";
+    const parameters = Object.fromEntries(template.parameters.map(field => [field.key, field.defaultValue]));
+    const instance = { entityId: "32b5d8b2-a984-40ac-bc23-653b39a65003", name: "防盗窗", templateId: template.id, quantity: 1, parameters };
+    const state = { sceneId, undoRedo: { revision: 1, canUndo: false }, tubeDesigner: { templates: [template],
+      instances: [instance], product: instance, activeProductId: instance.entityId, members: [], joints: [], parts: [], manufacturingGroups: [] } };
+    const view = getProjectView(projectId), requests = [];
+    Object.assign(view, { scene: structuredClone(state), tubeDesignerLoaded: true, tubeDesignerUserDataLoaded: true,
+      tubeDesignerParameterPanelProductId: instance.entityId, tubeDesignerParameterDisclosureState: { initialized: true } });
+    const snapshot = { viewId: "navigation-view", revision: "1", rows: [] };
+    const sceneProxy = { state, pdo: { enabled: false }, resources: { get() { throw new Error("Navigation should not load empty geometry"); } },
+      views: { async start() { return { snapshot, async poll() { return snapshot; }, async stop() {} }; } },
+      async getState() { return structuredClone(state); }, async invoke(method) { requests.push(method);
+        if (method === "TubeDesigner.GetProductTemplateDescriptor") return { template };
+        if (method === "TubeDesigner.GetPunchTools") return { tools: [] };
+        if (method === "TubeDesigner.List") return { tubeDesigner: structuredClone(state.tubeDesigner) };
+        throw new Error("Unexpected native request while navigating: " + method); } };
+    const projectState = { projectId, projectName: "页面导航回归", mainScene: state };
+    const projectProxy = { projectId, state: projectState, getMainScene() { return sceneProxy; } };
+    const productState = { productId: "icax.tube-designer", productName: "TubeDesigner", isStarted: true,
+      frontendEntry: "/src/apps/tube-designer/webpage/entry.mjs", catalogs: [{ mainProject: projectState }], projectFile: { fileExtensions: ["icax"] } };
+    const productProxy = { productId: productState.productId, state: productState, async getState() { return productState; },
+      getProject() { return projectProxy; }, async openProjectCatalog() { return { projectProxy, sceneProxy, catalog: { mainProject: projectState } }; } };
+    const appProxy = { bridge: {}, products: new Map([[productState.productId, productProxy]]), async getState() { return { products: [productState] }; },
+      getProduct() { return productProxy; }, async startProduct() { return productProxy; } };
+    globalThis.__pageNavigation = { appProxy, view, state, requests };
+    await import("/src/iCAX-UI/SDK/AppShell/app/bootstrap.mjs");
+  }, { descriptor, display });
+  const tab = id => page.locator('[data-action="select-ribbon-tab"][data-tab-id="' + id + '"]');
+  await page.waitForFunction(() => globalThis.__icaxAppShell?.getState().activeProjectId && !globalThis.__icaxAppShell.getState().pendingCount && document.querySelector('[data-tube-designer-parameter-form]'));
+  assert.deepEqual((await page.locator('[data-action="select-ribbon-tab"]').allTextContents()).map(text => text.trim()), ["产品", "下料", "加工", "资源库", "关于"]);
+  await page.evaluate(() => {
+    const f = globalThis.__pageNavigation;
+    f.viewport = f.view.viewport; f.canvas = f.view.viewport.renderer.domElement;
+    f.canvasEvents = 0; f.canvas.addEventListener("navigation-probe", () => f.canvasEvents++);
+    f.parameters = JSON.stringify(f.view.scene.tubeDesigner.product.parameters);
+    f.draft = { ...f.view.scene.tubeDesigner.product.parameters, productCode: "NAV-DRAFT" };
+    f.view.tubeDesignerRightDraft = structuredClone(f.draft);
+    f.view.tubeDesignerRightDraftsByProductId = { [f.view.scene.tubeDesigner.product.entityId]: structuredClone(f.draft) };
+  });
+  await tab("machining").click();
+  await page.waitForFunction(() => globalThis.__pageNavigation.view.activeAreaId === "machining" && document.querySelector(".tube-machining-empty-stage"));
+  assert.match(await page.locator(".cam-context-pane").innerText(), /加工清单/);
+  assert.match(await page.locator(".tube-machining-empty-stage").innerText(), /准备三维加工/);
+  assert.ok(await page.locator('[data-command-id="machining.receive"]').isVisible());
+  await page.screenshot({ path: resolve(output, "machining.png") });
+  await tab("about").click();
+  await page.waitForFunction(() => globalThis.__pageNavigation.view.activeAreaId === "about" && document.querySelector(".tube-designer-about-viewport"));
+  assert.match(await page.locator(".cam-info-pane").innerText(), /软件授权/);
+  assert.equal(await page.locator('[data-command-id="licensing.status"]').count(), 0);
+  await page.screenshot({ path: resolve(output, "about.png") });
+  await tab("view").click();
+  await page.waitForFunction(() => globalThis.__pageNavigation.view.activeAreaId === "view" && document.querySelector('[data-tube-designer-parameter-form]'));
+  assert.equal(await page.locator('[data-tube-designer-parameter="productCode"]').inputValue(), "NAV-DRAFT");
+  const result = await page.evaluate(() => {
+    const f = globalThis.__pageNavigation;
+    f.canvas.dispatchEvent(new Event("navigation-probe"));
+    return { sameViewport: f.view.viewport === f.viewport, sameCanvas: f.view.viewport.renderer.domElement === f.canvas && f.canvas.isConnected,
+      canvasEvents: f.canvasEvents, productUnchanged: JSON.stringify(f.view.scene.tubeDesigner.product.parameters) === f.parameters,
+      draftUnchanged: JSON.stringify(f.view.tubeDesignerRightDraft) === JSON.stringify(f.draft), nativeRequests: f.requests,
+      nativeRegeneration: f.requests.some(method => /GeneratePreview|UpdateProduct/.test(method)), tabs: ["产品", "下料", "加工", "资源库", "关于"] };
+  });
+  assert.equal(result.sameViewport, true); assert.equal(result.sameCanvas, true); assert.equal(result.canvasEvents, 1);
+  assert.equal(result.productUnchanged, true); assert.equal(result.draftUnchanged, true); assert.equal(result.nativeRegeneration, false);
+  assert.deepEqual(errors, []);
+  writeFileSync(resolve(output, "browser-report.json"), JSON.stringify({ ...result, errors }, null, 2));
+  await page.close();
+  console.log("Public page navigation passed: five tabs, existing machining/about pages, retained product draft, same viewport/canvas/listener, no native regeneration.");
+}
+
 const browser = await chromium.launch({ headless: true, ...(process.env.ICAX_BROWSER_CHANNEL ? { channel: process.env.ICAX_BROWSER_CHANNEL } : {}) });
 const errors = [];
 try {
+  await checkPublicPageNavigation(browser);
+  if (!process.argv.includes("--navigation-only")) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on("pageerror", error => errors.push(error.message));
   const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -108,4 +205,5 @@ try {
   }
   assert.deepEqual(errors,[]);
   console.log("Machining browser tests passed: real 2D/3D drawing, ray picking, list/property linkage, copy, transform, split, merge, undo/redo and responsive layout.");
+  }
 } finally { await browser.close(); }

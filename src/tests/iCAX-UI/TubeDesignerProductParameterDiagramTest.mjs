@@ -184,6 +184,21 @@ assert.deepEqual(productSceneMemberIds(
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "doorClearWidth"), ["door"]);
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "accessDoorFace3"), ["door"]);
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "faceType"), ["frame", "horizontal", "vertical", "door"]);
+const reserveMembers = [
+  { entityId: "outer", stableKey: "outer_frame.left.0001" },
+  { entityId: "main-horizontal", stableKey: "main_grid.horizontal.0001" },
+  { entityId: "cap-horizontal", stableKey: "cap_grid.horizontal.0001" },
+  { entityId: "main-vertical", stableKey: "main_grid.vertical.0001" },
+  { entityId: "cap-vertical", stableKey: "cap_grid.vertical.0001" },
+  { entityId: "leaf-frame", stableKey: "access_door.leaf.frame.left.0001" },
+  { entityId: "leaf-vertical", stableKey: "access_door.leaf.vertical.0001" },
+];
+assert.deepEqual(productSceneMemberIds(securityWindow, reserveMembers, "horizontalBranchReserve"),
+  ["outer", "main-horizontal", "cap-horizontal"],
+  "main insertion depth covers all facade grids");
+assert.deepEqual(productSceneMemberIds(securityWindow, reserveMembers, "verticalBranchReserve"),
+  ["outer", "main-vertical", "cap-vertical"],
+  "main insertion depth must not highlight the independently inserted escape-window leaf");
 const horizontalTargets = productParameterTargetsForSceneMember(securityWindow, securitySceneMembers[1]);
 assert.ok(horizontalTargets.profileRoles.includes("horizontal"));
 assert.ok(horizontalTargets.parameters.includes("horizontalWidth"));
@@ -215,7 +230,7 @@ for (const directory of [
     "sideLength1", "sideLength2", "sideLength3", "guardHeight",
   ]);
   const structuralHighlight = renderProductParameterDiagram(template, uValues, { mode: "right", activeParameter: "sideBayCount2" });
-  assert.match(structuralHighlight, /data-product-diagram-parameter="sideBayCount2"[^>]*is-active|is-active[^>]*data-product-diagram-parameter="sideBayCount2"/);
+  assert.match(structuralHighlight, /<g[^>]*class="[^"]*product-diagram-guardrail-bays[^"]*\bis-active\b[^"]*"[^>]*data-product-diagram-parameter="[^"]*\bsideBayCount2\b[^"]*"/);
 }
 
 const cross = renderProductParameterDiagram(loadTemplate("modular_guardrail_cross-straight"),
@@ -237,46 +252,14 @@ assert.deepEqual(productSceneMemberIds(guardrail, guardrailSceneMembers, "infill
 assert.deepEqual(productSceneMemberIds(guardrail, guardrailSceneMembers, "sideLength1"), ["handrail", "post", "rail", "bar"]);
 
 const sceneBindingCases = [
-  {
-    directory: "aluminium_window",
-    members: [
-      { entityId: "frame", stableKey: "frame.left" },
-      { entityId: "sash", stableKey: "aperture.1.1.sliding.1.left" },
-      { entityId: "glass", stableKey: "aperture.1.1.sliding.1.glass" },
-    ],
-    parameter: "cell11",
-    expected: ["sash", "glass"],
-  },
-  {
-    directory: "decorative_door",
-    members: [{ entityId: "leaf-1", stableKey: "leaf.1" }, { entityId: "leaf-2", stableKey: "leaf.2" }],
-    parameter: "pattern",
-    expected: ["leaf-1", "leaf-2"],
-  },
-  {
-    directory: "louver_window",
-    members: [
-      { entityId: "frame", stableKey: "frame.left" },
-      { entityId: "support", stableKey: "post.1" },
-      { entityId: "blade", stableKey: "blade.1" },
-    ],
-    parameter: "bladeWidth",
-    expected: ["blade"],
-  },
-  {
-    directory: "minimal_protective_grille",
-    members: [
-      { entityId: "frame", stableKey: "frame.left.0001" },
-      { entityId: "bar", stableKey: "inner.bar.0001" },
-    ],
-    parameter: "innerWidth",
-    expected: ["bar"],
-  },
+
+
+
   {
     directory: "straight_steel_staircase",
     members: [
       { entityId: "beam", stableKey: "flight.1.beam.1" },
-      { entityId: "tread", stableKey: "flight.1.tread.1.deck" },
+      { entityId: "tread", stableKey: "flight.1.step.1.deck" },
       { entityId: "post", stableKey: "flight.1.guard.left.post.1" },
     ],
     parameter: "stringerWidth",

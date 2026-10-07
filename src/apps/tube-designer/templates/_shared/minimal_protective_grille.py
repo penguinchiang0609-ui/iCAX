@@ -20,7 +20,7 @@ from icax_template_sdk.manufacturing import is_manufacturing_declaration
 
 
 TEMPLATE_ID = "minimal-protective-grille"
-TEMPLATE_VERSION = "1.2.0"
+TEMPLATE_VERSION = "1.2.1"
 EPS = 1.0e-7
 
 
@@ -279,8 +279,10 @@ def _frame_parts(width: float, height: float, profile: Profile, frame_type: str,
         ProductPart(Part("frame.bottom.0001", "下边框", (horizontal_left, 0, half),
                          (horizontal_right, 0, half), profile, "frame", "frame.horizontal", "边框横管", cut, cut),
                     "frame.bottom", ""),
-        ProductPart(Part("frame.top.0001", "上边框", (horizontal_left, 0, height-half),
-                         (horizontal_right, 0, height-half), profile, "frame", "frame.horizontal", "边框横管", cut, cut),
+        # The shared design traverses the upper member from right to left.
+        # Keep the prepared blank and its end datums on that same directed axis.
+        ProductPart(Part("frame.top.0001", "上边框", (horizontal_right, 0, height-half),
+                         (horizontal_left, 0, height-half), profile, "frame", "frame.horizontal", "边框横管", cut, cut),
                     "frame.top", ""),
     ])
     return parts

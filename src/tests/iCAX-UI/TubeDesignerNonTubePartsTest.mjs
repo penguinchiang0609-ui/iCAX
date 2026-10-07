@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { isPlatePart, isSheetPart, isComponentPart, isTubeNestingPart } from "../../apps/tube-designer/webpage/manufacturingParts.mjs";
+import { nativeSectionIdentity } from "./fixtures/nestingSectionIdentity.mjs";
+import { isPlatePart, isSheetPart, isComponentPart, isTubeNestingPart,
+  importableProductManufacturingGroups, tubeNestingExclusionReason } from "../../apps/tube-designer/webpage/manufacturingParts.mjs";
 import { buildAutomaticDimensionReport } from "../../apps/tube-designer/webpage/partInspection.mjs";
 import { buildMaterialProfileGroups, buildProfileGroups, filterManufacturingParts, renderNestingLeftPane,
   renderNestingRightPane, renderPartsViewportOverlay, handlePartsAreaAction } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildNestingRequest } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
 
-const tube = { entityId: "tube", name: "横管", quantity: 2, length: 1234, status: "ready", profile: { kind: "rect", width: 40, depth: 40, wallThickness: 2 },
+const tube = { entityId: "tube", name: "横管", quantity: 2, length: 1234, status: "ready", profile: { kind: "rect", width: 40, depth: 40, wallThickness: 2, sectionIdentity: nativeSectionIdentity("rect-40-40-t2") },
   properties: { "manufacturing.partKind": "tube", "manufacturing.sourcing": "made", "tubeDesigner.endProcess": { startCut: "square", endCut: "square" } } };
 const glass = { entityId: "glass", name: "玻璃填充", quantity: 1, length: 9999, status: "ready", properties: {
   "manufacturing.partKind": "glass", "manufacturing.materialCategory": "glass", "manufacturing.sourcing": "purchased",
@@ -28,6 +30,21 @@ assert.equal(isTubeNestingPart({ ...tube, properties: { ...tube.properties, "tub
   "A continuous frame exported as an unfolded straight blank remains eligible for nesting");
 assert.equal(isTubeNestingPart({ ...tube, properties: { ...tube.properties, "manufacturing.sourcing": null } }), false);
 assert.equal(isTubeNestingPart({ ...tube, properties: { ...tube.properties, "manufacturing.requiresBending": "false" } }), false);
+const unverifiedAssemblyTube = { ...tube, entityId: "assembly-pending",
+  properties: { ...tube.properties, "tubeDesigner.assemblyPlanning": { ready: false } } };
+assert.equal(isTubeNestingPart(unverifiedAssemblyTube), false);
+assert.equal(isTubeNestingPart({ ...tube, properties: {
+  ...tube.properties, "assemblyFrame.member": { start: [0, 0, 0], end: [100, 0, 0] },
+} }), false, "Declared assembly stock stays pending if its readiness marker is missing");
+assert.equal(isTubeNestingPart({ ...tube, properties: {
+  ...tube.properties, "assemblyFrame.member": { start: [0, 0, 0], end: [100, 0, 0] },
+  "tubeDesigner.assemblyPlanning": { ready: true },
+} }), false, "A template cannot certify its own assembly fit");
+assert.match(tubeNestingExclusionReason(unverifiedAssemblyTube), /装配待验证/);
+assert.deepEqual(importableProductManufacturingGroups({
+  instances: [{ entityId: "product-1", hasDisassembly: true }],
+  manufacturingGroups: [{ productEntityId: "product-1", parts: [unverifiedAssemblyTube] }],
+}), []);
 assert.deepEqual(filterManufacturingParts(parts, { filter: "straight" }), [tube]);
 assert.deepEqual(filterManufacturingParts(parts, { filter: "glass" }), [glass]);
 assert.deepEqual(filterManufacturingParts(parts, { filter: "accessory" }), [accessory]);
@@ -63,8 +80,8 @@ assert.match(left, /玻璃 600 × 900 × 8 mm/);
 assert.match(left, /玻璃固定夹 30 × 24 × 40 mm · 外购/);
 assert.doesNotMatch(left, /9,999|9999/);
 const right = renderNestingRightPane({}, view);
-assert.match(right, /配件尺寸/);
-assert.match(right, /供料方式/);
+assert.match(right, /data-tube-designer-part-field="name"/);
+assert.doesNotMatch(right, /基本信息|下料信息|配件尺寸|供料方式|<dt>截面<\/dt>/);
 assert.doesNotMatch(right, /成品长度|起始端|结束端/);
 view.tubeDesignerPartMeasurementState = { key: "accessory@0", status: "ready", report: componentReport };
 const overlay = renderPartsViewportOverlay({}, view);

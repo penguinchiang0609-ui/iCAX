@@ -5,6 +5,44 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from issuance import Issuer, read_request
 from production import ProductionIssuer
+from feature_catalog import FEATURES, labels_for_mask, validate_mask
+
+
+class PermissionSelection(ttk.LabelFrame):
+    """Real parent/child checkboxes, driven only by the shared descriptor."""
+    def __init__(self, parent):
+        super().__init__(parent, text="授权页面与操作", padding=10)
+        self.variables = {feature.id: tk.BooleanVar(master=self, value=False) for feature in FEATURES}
+        self.buttons = {}
+        pages = [feature for feature in FEATURES if feature.parent is None]
+        for column, page in enumerate(pages):
+            group = ttk.Frame(self)
+            group.grid(row=0, column=column, sticky="nsew", padx=8)
+            self.columnconfigure(column, weight=1)
+            button = ttk.Checkbutton(group, text=page.label, variable=self.variables[page.id],
+                                     command=lambda identifier=page.id: self.update_page(identifier))
+            button.pack(anchor="w")
+            self.buttons[page.id] = button
+            for feature in FEATURES:
+                if feature.parent == page.id:
+                    child = ttk.Checkbutton(group, text=feature.label, variable=self.variables[feature.id])
+                    child.pack(anchor="w", padx=(18, 0), pady=(4, 0))
+                    self.buttons[feature.id] = child
+            self.update_page(page.id)
+
+    def update_page(self, identifier):
+        enabled = self.variables[identifier].get()
+        for feature in FEATURES:
+            if feature.parent == identifier:
+                if not enabled:
+                    self.variables[feature.id].set(False)
+                self.buttons[feature.id].state(["!disabled" if enabled else "disabled"])
+
+    def mask(self):
+        return validate_mask(sum(feature.bit for feature in FEATURES if self.variables[feature.id].get()))
+
+    def summary(self):
+        return "、".join(labels_for_mask(self.mask()))
 
 
 class TestWindow:
@@ -13,7 +51,8 @@ class TestWindow:
         self.issuer = None
         self.request = None
         root.title("TubeDesigner 离线签发工具 — 测试版")
-        root.geometry("1000x650")
+        root.geometry("1120x780")
+        root.minsize(960, 720)
         frame = ttk.Frame(root, padding=16)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="仅供联调：设备硬件可信证明尚未接入，不得签发正式授权。",
@@ -38,13 +77,8 @@ class TestWindow:
             else:
                 entry = ttk.Entry(form, textvariable=variable, width=40)
             entry.grid(row=row, column=1, sticky="w", padx=12)
-        features = ttk.Frame(frame)
-        features.pack(fill="x", pady=12)
-        self.features = []
-        for title in ["设计", "拆单", "STEP 导出", "下料排样"]:
-            variable = tk.BooleanVar(value=True)
-            self.features.append(variable)
-            ttk.Checkbutton(features, text=title, variable=variable).pack(side="left", padx=6)
+        self.permission_selection = PermissionSelection(frame)
+        self.permission_selection.pack(fill="x", pady=12)
         ttk.Button(frame, text="审核并签发测试证书", command=lambda: self.guard(self.issue)).pack(anchor="w")
         self.table = ttk.Treeview(frame, columns=("customer", "request", "device"), show="tree headings", height=10)
         for col, title in [("#0", "授权编号"), ("customer", "客户"), ("request", "申请编号"), ("device", "设备公钥摘要")]:
@@ -101,10 +135,12 @@ class TestWindow:
         if self.issuer is None or self.request is None:
             raise ValueError("请先打开签发库并导入申请")
         kind = 1 if self.fields["授权类型"].get() == "永久" else 2
-        if not messagebox.askyesno("确认签发", "确认签发测试证书？这不是可分发的正式授权。"):
+        features = self.permission_selection.mask()
+        if not messagebox.askyesno("确认签发", "确认签发测试证书？这不是可分发的正式授权。\n权限："
+                                  + self.permission_selection.summary()):
             return
         identifier = self.issuer.issue(self.request, self.password(), customer=self.fields["客户名称"].get(),
-            kind=kind, features=sum(1 << i for i, var in enumerate(self.features) if var.get()),
+            kind=kind, features=features,
             min_major=int(self.fields["最低主版本"].get()), max_major=int(self.fields["最高主版本"].get()),
             days=int(self.fields["试用天数"].get()))
         self.refresh()
@@ -179,11 +215,13 @@ class Window(TestWindow):
     def issue(self):
         if self.issuer is None or self.request is None:
             raise ValueError("请先打开签发库并验证申请")
-        if not messagebox.askyesno("确认签发", "确认客户、版本及功能范围无误？签发后离线永久授权无法远程撤销。"):
+        features = self.permission_selection.mask()
+        if not messagebox.askyesno("确认签发", "确认客户、版本及功能范围无误？签发后离线永久授权无法远程撤销。\n权限："
+                                  + self.permission_selection.summary()):
             return
         identifier = self.issuer.issue(self.request, self.password(), customer=self.fields["客户名称"].get(),
             kind=1 if self.fields["授权类型"].get() == "永久" else 2,
-            features=sum(1 << i for i, var in enumerate(self.features) if var.get()),
+            features=features,
             min_major=int(self.fields["最低主版本"].get()), max_major=int(self.fields["最高主版本"].get()),
             days=int(self.fields["试用天数"].get()))
         self.refresh()

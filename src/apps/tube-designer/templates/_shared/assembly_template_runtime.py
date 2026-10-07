@@ -13,6 +13,7 @@ import re
 
 ROOT = Path(__file__).resolve().parent.parent / "assembly"
 PROCESS_ROOT = Path(__file__).resolve().parent.parent / "mold"
+USER_ROOT = None
 SCHEMA = "icax.assembly-template"
 MAX_BYTES = 4 * 1024 * 1024
 
@@ -1022,10 +1023,19 @@ def _validate_template(descriptor, directory):
     return descriptor
 
 
-def _template_by_id(template_id):
+def _template_directory(template_id):
     if not isinstance(template_id, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", template_id):
         raise ValueError("装配模板 id 无效")
-    manifest = ROOT / template_id / "assembly.json"
+    for root in (ROOT, USER_ROOT):
+        if root is not None:
+            directory = root / template_id
+            if not directory.is_symlink() and (directory / "assembly.json").is_file():
+                return directory
+    raise ValueError(f"装配模板不存在：{template_id}")
+
+
+def _template_by_id(template_id):
+    manifest = _template_directory(template_id) / "assembly.json"
     if not manifest.is_file():
         raise ValueError(f"装配模板不存在：{template_id}")
     raw = manifest.read_bytes()
@@ -1233,7 +1243,7 @@ def _validated_formed_mesh(mesh):
 
 
 def _load_assembly_script(template_id):
-    path = ROOT / template_id / "assembly.py"
+    path = _template_directory(template_id) / "assembly.py"
     if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_BYTES:
         raise ValueError("assembly.py 不存在或超过 4 MB")
     module_name = "icax_assembly_" + hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
@@ -1241,6 +1251,7 @@ def _load_assembly_script(template_id):
     if spec is None or spec.loader is None:
         raise ValueError("无法加载 assembly.py")
     module = importlib.util.module_from_spec(spec)
+    module.TEMPLATE_ROOT = ROOT.parent
     spec.loader.exec_module(module)
     return module
 
@@ -1256,7 +1267,7 @@ def _same_input(left, right):
 
 
 def _load_applicability_script(template_id):
-    path = ROOT / template_id / "applicability.py"
+    path = _template_directory(template_id) / "applicability.py"
     if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_BYTES:
         raise ValueError("该模板未提供有效的成品适用性函数")
     name = "icax_assembly_applicability_" + hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
@@ -1264,6 +1275,7 @@ def _load_applicability_script(template_id):
     if spec is None or spec.loader is None:
         raise ValueError("无法加载模板的成品适用性函数")
     module = importlib.util.module_from_spec(spec)
+    module.TEMPLATE_ROOT = ROOT.parent
     try:
         spec.loader.exec_module(module)
     except Exception as error:
@@ -1325,7 +1337,7 @@ def check_applicability(template_id, finished_product=None, supplied_values=None
 
 
 def _load_example_product_script(template_id):
-    path = ROOT / template_id / "example.py"
+    path = _template_directory(template_id) / "example.py"
     if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_BYTES:
         raise ValueError("该模板未提供有效的示例成品函数")
     name = "icax_assembly_example_" + hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
@@ -1333,6 +1345,7 @@ def _load_example_product_script(template_id):
     if spec is None or spec.loader is None:
         raise ValueError("无法加载模板的示例成品函数")
     module = importlib.util.module_from_spec(spec)
+    module.TEMPLATE_ROOT = ROOT.parent
     spec.loader.exec_module(module)
     provider = getattr(module, "get_example_product", None)
     if not callable(provider):
@@ -2476,7 +2489,7 @@ def _bound_template_digest(descriptor, active_processes):
     if descriptor.get("productBinding", {}).get("operationScript"):
         # Only script-backed bindings gain script identity. Existing declarative
         # bindings retain their established digest and persistence contract.
-        for path in sorted((ROOT / descriptor["id"]).glob("*.py")):
+        for path in sorted(_template_directory(descriptor["id"]).glob("*.py")):
             if path.is_symlink() or path.stat().st_size > MAX_BYTES:
                 raise ValueError("实际装配脚本依赖无效")
             digest.update((path.name + "\0").encode("utf-8"))
@@ -3172,7 +3185,8 @@ def validate_existing_bindings(bindings):
 def _generation_file_digest(paths, root):
     digest = hashlib.sha256()
     for path in sorted(set(paths)):
-        if path.is_file() and not path.is_symlink():
+        if (path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts
+                and path.suffix not in (".pyc", ".pyo")):
             digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
             digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -3192,7 +3206,8 @@ def _assembly_generation_digest(directory, descriptor, shared_digest):
         files.extend(path for path in package.rglob("*") if path.is_file()
                      and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"))
     digest = hashlib.sha256(shared_digest.encode("ascii"))
-    digest.update(_generation_file_digest(files, ROOT.parent).encode("ascii"))
+    digest.update(_generation_file_digest(directory.rglob("*"), directory).encode("ascii"))
+    digest.update(_generation_file_digest([path for path in files if path.is_relative_to(ROOT.parent)], ROOT.parent).encode("ascii"))
     return digest.hexdigest()
 
 
@@ -3203,8 +3218,16 @@ def catalogue():
     shared_digest = _generation_file_digest(
         list((ROOT.parent / "_shared").glob("*.py"))
         + list((ROOT.parent / "finished-product").glob("*.json")), ROOT.parent)
-    for manifest in sorted(ROOT.glob("*/assembly.json")):
+    manifests = [(manifest, "builtin") for manifest in sorted(ROOT.glob("*/assembly.json"))]
+    if USER_ROOT is not None and USER_ROOT.is_dir():
+        manifests.extend((manifest, "user") for manifest in sorted(USER_ROOT.glob("*/assembly.json")))
+    seen = set()
+    for manifest, scope in manifests:
         try:
+            if manifest.parent.name in seen:
+                raise ValueError("装配模板 ID 与已有模板重复")
+            if manifest.is_symlink() or manifest.parent.is_symlink():
+                raise ValueError("装配模板不能使用链接路径")
             raw = manifest.read_bytes()
             if len(raw) > MAX_BYTES:
                 raise ValueError("装配模板超过 4 MB")
@@ -3215,13 +3238,18 @@ def catalogue():
                 public["previewScene"].pop("designParts", None)
                 public["parameters"] = [p for p in public["parameters"] if p.get("scope") != "scene"]
                 public["generationDigest"] = _assembly_generation_digest(manifest.parent, validated, shared_digest)
+                public["libraryScope"] = scope
                 templates.append(public)
+                seen.add(validated["id"])
         except (ValueError, OSError, json.JSONDecodeError, KeyError, TypeError) as error:
             errors.append(f"{manifest.parent.name}: {error}")
     return {"assemblies": templates, "finishedShapes": finished_products.catalogue(), "errors": errors}
 
 
 def generate(parameters, _context):
+    global USER_ROOT
+    root = _context.get("userAssemblyRoot")
+    USER_ROOT = Path(root) if isinstance(root, str) and root else None
     if parameters.get("action") == "catalogue":
         return catalogue()
     if parameters.get("action") == "validate-existing-bindings":

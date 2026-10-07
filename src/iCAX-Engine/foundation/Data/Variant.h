@@ -12,6 +12,8 @@
 #include "Array1.h"
 #include "Array2.h"
 #include <vector>
+#include <utility>
+#include <type_traits>
 
 namespace iCAX
 {
@@ -68,11 +70,27 @@ namespace iCAX
             */
             Variant();
 
+            // Keep recursive value ownership in the Data module. Otherwise
+            // every consumer emits its own copy/destruction implementation
+            // for the same nested document, including unoptimized callers.
+            Variant(const Variant& Other_);
+            Variant(Variant&& Other_) noexcept(std::is_nothrow_move_constructible_v<VariantType>);
+            Variant& operator=(const Variant& Other_);
+            Variant& operator=(Variant&& Other_) noexcept(std::is_nothrow_move_assignable_v<VariantType>);
+            ~Variant() noexcept(std::is_nothrow_destructible_v<VariantType>);
+
             /*
             * @brief 构造函数，允许直接初始化任意支持的类型
             */
             template <typename T>
             Variant(IN const T& Value_) : m_Value(Value_) {}
+
+            // Transfer completed documents without recursively copying every
+            // nested parameter, recipe and operation. Lvalue construction
+            // continues to own an independent value.
+            Variant(ObjectMap&& Value_) : m_Value(std::move(Value_)) {}
+            Variant(VariantArray&& Value_) : m_Value(std::move(Value_)) {}
+            Variant(std::string&& Value_) : m_Value(std::move(Value_)) {}
 
             /*
             * @brief 检查是否存储特定类型
@@ -87,7 +105,7 @@ namespace iCAX
             * @brief 获取值的模板方法，抛出异常如果类型不匹配
             */
             template <typename T>
-            T To() const
+            T To() const &
             {
                 //return std::visit([](auto&& arg) -> T
                 //    {
@@ -127,6 +145,14 @@ namespace iCAX
                 //            throw std::bad_variant_access();
                 //        }
                 //    }, m_Value);
+            }
+
+            template <typename T>
+            T To() &&
+            {
+                if (!std::holds_alternative<T>(m_Value))
+                    throw std::bad_variant_access();
+                return std::move(std::get<T>(m_Value));
             }
 
             /*

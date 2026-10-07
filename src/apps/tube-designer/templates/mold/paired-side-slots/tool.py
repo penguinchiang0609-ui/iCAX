@@ -146,6 +146,11 @@ def generate(parameters, context):
     branch_profile = context.get("feature", {}).get("section", {}).get("profile")
     branch = _shell(branch_profile, "插入管")
     feature = context["feature"]
+    # Manufacturing can explicitly request an open edge socket for equal-size
+    # tubes. The public standalone tool continues to require closed flat slots.
+    allow_side_opening = parameters.get("allowSideOpening", False)
+    if type(allow_side_opening) is not bool:
+        raise ValueError("母槽侧边开口策略须为布尔值")
     face = _face(host, feature.get("face", "top"), context["bounds"])
     branch_z, branch_y, pair_rotation = _branch_pair_axes(
         branch_profile, face, parameters.get("pairRotation", 0))
@@ -225,8 +230,22 @@ def generate(parameters, context):
             # An end-opening socket may cross one stock end, but its center
             # must still cut the host wall; never accept an off-stock cutter.
             raise ValueError("端部开口母槽中心须位于长管内，且不能贯通两端")
-        if stock_across - across_extent <= face["flat"][0] + EPS or stock_across + across_extent >= face["flat"][1] - EPS:
+        crosses_flat = (stock_across - across_extent <= face["flat"][0] + EPS
+                        or stock_across + across_extent >= face["flat"][1] - EPS)
+        if allow_side_opening:
+            across_lo, across_hi = lo[face["acrossIndex"]], hi[face["acrossIndex"]]
+            if (not across_lo + EPS < stock_across < across_hi - EPS
+                    or (stock_across - across_extent <= across_lo + EPS
+                        and stock_across + across_extent >= across_hi - EPS)):
+                raise ValueError("侧边开口母槽中心须落在实际管壁范围内，且不能贯通两侧")
+        elif crosses_flat:
             raise ValueError("母槽越过长管平直侧壁，须调整管型或横移")
+        # A side channel still contains material at the rounded ear tip. The
+        # outside EPS must not shorten its inward reach and leave interference.
+        # Closed sockets already exit into the cavity, so their tool is intact.
+        cut_depth = depth + 2 * EPS if allow_side_opening and crosses_flat else depth
+        if cut_depth >= available - EPS:
+            raise ValueError("母槽切削余量会碰到承接管对侧壁")
         origin = [stock_x, 0, 0]
         origin[face["acrossIndex"]] = stock_across
         origin[face["normalIndex"]] = face["outside"] + EPS * face["outward"][face["normalIndex"]]
@@ -235,7 +254,7 @@ def generate(parameters, context):
             "placement": {"origin": origin, "xAxis": x_axis, "yAxis": y_axis},
             "contours": [_capsule(opening_length, opening_width)]}})
         nodes.append({"key": key, "operator": "extrude", "inputs": [key + "-profile"],
-                      "arguments": {"vector": [-depth * component for component in face["outward"]]}})
+                      "arguments": {"vector": [-cut_depth * component for component in face["outward"]]}})
         slots.append(key)
     nodes.append({"key": "tool", "operator": "boolean", "inputs": slots,
                   "arguments": {"operation": "union"}})

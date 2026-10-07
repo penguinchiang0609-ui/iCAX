@@ -226,24 +226,51 @@ def allocate_window_manufacturing(document, execution_context=None):
                     'resources':deepcopy(definition['processInput'].get('resources',{}))}
                 instances.append({'instanceId':bend['call']['key'],'templateId':definition['templateId'],'processInput':local,
                     'parameters':deepcopy(definition['parameters']),'processDrafts':deepcopy(definition['processDrafts']),'targets':{'stock':key}})
+            instances.sort(key=lambda instance:instance['processInput']['geometry']['sequence'])
             plan=runtime.resolve_process_plan([_stock_input(stock)],instances,runtime_context={'userMouldRoot':context.get('userMouldRoot','')})
             return stock,plan,instances
         stock,sizing,_=resolve(length)
         allowances=adapter.bend_allowances(sizing)
         by_instance={fold['instanceId']:fold for fold in sizing['forming']}
         for bend in bends:
-            reserve=adapter.corner_reserve(by_instance[bend['call']['key']])
-            spans[bend['index']].end_reserve=spans[bend['index']+1].start_reserve=reserve
+            reserves=adapter.corner_reserves(by_instance[bend['call']['key']])
+            spans[bend['index']].end_reserve=reserves['incoming']
+            spans[bend['index']+1].start_reserve=reserves['outgoing']
             bend['lengthAddition']=allowances[bend['call']['key']]
-            bend['cornerReserve']=reserve
+            bend['cornerReserves']=reserves
         amounts=[bend['lengthAddition'] for bend in bends]
         length=allocated_spans(spans,bends,amounts)
         stock,plan,instances=resolve(length)
         # Preserve the established target-centreline check and original mould geometry.
         target_check=_load('security_window_frame_paths')._target_span_check(SimpleNamespace(spans=spans),plan,amounts)
         plan['targetSpanCheck']=target_check
+        if key=='outer_frame.spatial.continuous' and item['manufacturingInput']['path']['closed']:
+            # Use the resolved tool recipe, including saved library moulds.
+            # V-root rounding remains local cutter relief and keeps this hinge.
+            # Distributed-root moulds have a different local deformation model
+            # and are outside this rigid motion check.
+            features=[operation['requestFeature'] for operation in plan['operations'] if 'requestFeature' in operation]
+            if len(features)==len(bends) and all(feature['toolParameters'].get('bottomStrategy') in {'sharp', 'rounded'}
+                                               for feature in features):
+                ranges={check['instanceId']:check['interval'] for check in plan['checks']
+                        if check.get('id')=='material-range' and check.get('status')=='pass'}
+                intervals=[ranges[bend['call']['key']] for bend in bends]
+                rigid=[{'segmentKey':span.key,'interval':[
+                    intervals[index-1][1] if index else 0.,
+                    intervals[index][0] if index<len(intervals) else length]}
+                    for index,span in enumerate(spans)]
+                chosen=_load('security_window_forming_sequence').choose_forming_order(
+                    rigid,plan['forming'],profiles[key],True)
+                rank={identity:index+1 for index,identity in enumerate(chosen['order'])}
+                for bend in bends: bend['sequence']=rank[bend['call']['key']]
+                # Re-resolve rather than editing a hashed plan after validation.
+                stock,plan,instances=resolve(length)
+                plan['targetSpanCheck']=target_check
+                plan['formingMotionCheck']=chosen['motionCheck']
+                plan['formingOrder']=chosen['order']
         material_bends[key]=[{'instanceId':bend['call']['key'],'station':bend['station'],
-                             'lengthAddition':bend['lengthAddition'],'cornerReserve':bend['cornerReserve']} for bend in bends]
+                             'lengthAddition':bend['lengthAddition'],
+                             'cornerReserves':deepcopy(bend['cornerReserves'])} for bend in bends]
         parts[key]=stock; fold_plans[key]=plan
         fold_instances.extend(instances)
         fold_keys.update(call['key'] for call in related)
@@ -411,10 +438,24 @@ def allocate_window_manufacturing(document, execution_context=None):
             new_origin=[current['matrix'][4*i+3] for i in range(3)]; axis=[current['matrix'][4*i] for i in range(3)]
             geometry=deepcopy(geometry); geometry['station']-=dot(sub(new_origin,old_origin),axis)
             if geometry.get('mode')=='miter': roles.pop('mate',None)
-        elif template=='tube-profile-aperture':
+        elif template in ('tube-profile-aperture','tube-post-aperture') and 'receiverSource' in geometry:
             receiver=geometry.pop('receiverSource')
             if target in fold_plans:
                 entries=next(entry for entry in mapping_spans[target] if entry['itemKey']==receiver)['spans']
+                path=items[target]['manufacturingInput']['path']
+                first,last=paths[target][0],paths[target][-1]
+                source_segments={value['segmentKey'] for value in sources[receiver]['segments']}
+                # Only a real straight closure can share a socket across the
+                # two raw-stock ends. An ordinary open or mitered end cannot
+                # acquire this permission merely by having a clip interval.
+                seam_receiver=(template=='tube-post-aperture' and path['closed']
+                    and path.get('closure')=='straight-mid-edge-seam'
+                    and {first.key,last.key}<=source_segments
+                    and math.dist(first.start,last.end)<1.e-7
+                    and all(math.dist(getattr(first,name),getattr(last,name))<1.e-7
+                            for name in ('direction','y_axis','z_axis'))
+                    and not geometry['sharedCorner'] and not geometry['keepPlanes'])
+                observations=[]
                 # One seam-split receiving member needs one clipped observation per interval.
                 for index,entry in enumerate(entries):
                     instance=deepcopy(copied); detail=instance['definition']; branch=deepcopy(roles['branch']); pose=entry['placement']
@@ -434,11 +475,27 @@ def allocate_window_manufacturing(document, execution_context=None):
                     clearance=float(detail['parameters'].get('clearance',0.))
                     if support[1]+clearance<=interval[0]+1.e-7 or support[0]-clearance>=interval[1]-1.e-7:
                         continue
+                    observed={'clipInterval':interval}
+                    if template=='tube-post-aperture':
+                        observed.update({name:deepcopy(geometry[name]) for name in ('branchEnd','sharedCorner','keepPlanes')})
+                        observed['node']=[pose['origin'][i]+sum(axes[j][i]*geometry['node'][j] for j in range(3)) for i in range(3)]
                     detail['processInput']={'schema':'icax.assembly-process-input','schemaVersion':1,
                         'parts':{'stock':deepcopy(roles['stock']),'branch':branch},
-                        'geometry':{'clipInterval':interval}}
+                        'geometry':observed}
                     if len(entries)>1: instance['key']+='.'+str(index)
-                    pending.append(instance)
+                    observations.append(instance)
+                if seam_receiver:
+                    length=roles['stock']['length']
+                    start_calls=[value for value in observations if abs(
+                        value['definition']['processInput']['geometry']['clipInterval'][0])<1.e-7]
+                    end_calls=[value for value in observations if abs(
+                        value['definition']['processInput']['geometry']['clipInterval'][1]-length)<1.e-7]
+                    # Both actual observations must touch their allocated
+                    # intervals; the support check above discards misses.
+                    if len(start_calls)==len(end_calls)==1 and start_calls[0] is not end_calls[0]:
+                        start_calls[0]['definition']['processInput']['geometry']['endOpening']='start'
+                        end_calls[0]['definition']['processInput']['geometry']['endOpening']='end'
+                pending.extend(observations)
                 continue
         definition['processInput']={'schema':'icax.assembly-process-input','schemaVersion':1,'parts':roles,'geometry':geometry}
         pending.append(copied)
@@ -460,6 +517,11 @@ def allocate_window_manufacturing(document, execution_context=None):
         material_plan['stocks'].append({'stockId':key,'length':part['length'],'matrix':deepcopy(part['matrix']),
             'lengthBeforeBendCompensation':part['length']-sum(bend['lengthAddition'] for bend in bends),
             'bends':bends,'sourceMembers':deepcopy(mapping_spans[key])})
+        if key in fold_plans:
+            material_plan['stocks'][-1]['targetSpanCheck']=deepcopy(fold_plans[key]['targetSpanCheck'])
+        if key in fold_plans and 'formingMotionCheck' in fold_plans[key]:
+            material_plan['stocks'][-1].update(formingOrder=deepcopy(fold_plans[key]['formingOrder']),
+                formingMotionCheck=deepcopy(fold_plans[key]['formingMotionCheck']))
     stage_plan['materializedProcessKeys']=[instance['instanceId'] for instance in instances]
     neutral['extensions']['tubeDesigner.assemblyStagePlan']=deepcopy(stage_plan)
     neutral['extensions']['tubeDesigner.assemblyMaterialPlan']=deepcopy(material_plan)

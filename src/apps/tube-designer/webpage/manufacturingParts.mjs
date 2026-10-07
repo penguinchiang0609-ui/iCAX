@@ -1,5 +1,12 @@
 const NON_LINEAR_OR_PURCHASED_PROCESSES = new Set(["purchased", "bent", "curved", "bending", "tube-bending", "bent-tube", "curved-tube"]);
 
+export function partAwaitingAssemblyValidation(part) {
+  const properties = part?.properties ?? {};
+  return Object.hasOwn(properties, "assemblyFrame.member")
+    || (Object.hasOwn(properties, "tubeDesigner.assemblyPlanning")
+      && properties["tubeDesigner.assemblyPlanning"]?.ready !== true);
+}
+
 export function importableProductManufacturingGroups(designer = {}, productsRequiringDisassembly = []) {
   const requiresDisassembly = new Set((productsRequiringDisassembly ?? []).map(String));
   const completeProductIds = new Set((designer.instances ?? [])
@@ -11,7 +18,8 @@ export function importableProductManufacturingGroups(designer = {}, productsRequ
       && !requiresDisassembly.has(productId)
       && Array.isArray(group?.parts)
       && group.parts.length > 0
-      && group.parts.every((part) => String(part?.entityId ?? "").trim());
+      && group.parts.every((part) => String(part?.entityId ?? "").trim()
+        && !partAwaitingAssemblyValidation(part));
   });
 }
 
@@ -49,6 +57,7 @@ export function componentBounds(part) {
 
 export function tubeNestingExclusionReason(part) {
   const properties = part?.properties ?? {};
+  if (partAwaitingAssemblyValidation(part)) return "装配待验证，暂不可排样";
   if (isSheetPart(part) || isComponentPart(part)) return `${manufacturingPartKindLabel(part)}不参与管材排样，可导出 STEP`;
   if (partSourcingLabel(part) === "外购") return "外购件不参与管材排样";
   const process = String(properties["manufacturing.process"] ?? part?.process ?? "").toLowerCase();
@@ -59,6 +68,7 @@ export function tubeNestingExclusionReason(part) {
 
 export function isTubeNestingPart(part) {
   const properties = part?.properties ?? {};
+  if (partAwaitingAssemblyValidation(part)) return false;
   if (Object.hasOwn(properties, "manufacturing.plate")) return false;
   if (partSourcingLabel(part) === "外购") return false;
   for (const key of ["manufacturing.sourcing", "manufacturing.process"]) {

@@ -108,7 +108,7 @@ try {
   // Parameter windows no longer have a second preview action. Close the
   // live-edit window, then use the scene-level refresh to retry failed
   // resources through the normal preview pipeline.
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();assert.equal(await popup.count(),0);
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();assert.equal(await popup.count(),0);
   await page.locator('[data-cam-action="tube-designer-punch-preview"]').click();await idle();s=await snap();checkUnchanged(s);assert.equal(s.ready,"true");assert.deepEqual(s.objects.find(o=>o.id==="punch-preview-tool:side:A")?.x,[-325,-315]);
   assert.equal(await page.evaluate(()=>window.fixture.requests.length),beforeRetry+1,"Scene refresh retries the failed resource preview");
   await page.screenshot({path:resolve(artifacts,"03-resources-recovered.png")});
@@ -119,7 +119,7 @@ try {
   assert.match((await snap()).error,/最终切割产生多个独立实体/);assert.equal(await row.getByRole("button",{name:"编辑位置 / 姿态",exact:true}).isEnabled(),true);
   await page.screenshot({path:resolve(artifacts,"04-final-apply-failure-editable.png")});
   await row.getByRole("button",{name:"编辑位置 / 姿态",exact:true}).click();await idle();await station().fill("190");await station().press("Tab");await idle();
-  await popup.locator('[data-cam-action$="parameters-cancel"]').click();await idle();s=await snap();checkUnchanged(s);assert.equal(s.error,"");assert.equal(s.ready,"true");assert.equal(s.applyDisabled,false);
+  await popup.locator('[data-cam-action$="parameters-close"]').click();await idle();s=await snap();checkUnchanged(s);assert.equal(s.error,"");assert.equal(s.ready,"true");assert.equal(s.applyDisabled,false);
   assert.equal(await page.evaluate(()=>window.fixture.requests.every(r=>r.toolsOnly===true)),true);assert.equal(await page.evaluate(()=>window.fixture.applies.length),1);
   assert.deepEqual(await page.evaluate(()=>window.fixture.errors),["最终切割产生多个独立实体，请调整刀具后重试。"]);assert.deepEqual(pageErrors,[]);assert.deepEqual(externalRequests,[]);
   assert.equal(await page.evaluate(()=>window.fixture.mounts),1);

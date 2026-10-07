@@ -2,10 +2,12 @@ import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { libraryProfiles, profileRef, profileSelectionKey, profileScope } from "./profileLibrary.mjs";
 import { checkpointPunchWizard, selectPunchTool, isPunchToolReadOnly } from "./punchWizard.mjs";
 import { beginPunchOperation, finishPunchOperation } from "./punchEditor.mjs";
+import { syncPunchBatch, punchBatchSectionInputKey, installPunchBatchSectionPreview } from "./punchBatch.mjs";
 
 const clone = value => structuredClone(value);
 const sourceRequests=new WeakMap();
 const profileRequests = new WeakMap();
+const batchProfileGenerations = new WeakMap();
 const localized = value => typeof value === "object"
   ? String(value?.["zh-CN"] ?? value?.["en-US"] ?? Object.values(value ?? {})[0] ?? "")
   : String(value ?? "");
@@ -22,6 +24,38 @@ async function runSourceOperation(context,view,ops,title,work) {
   } finally {
     if(view.tubeDesignerOperation===operation)finishPunchOperation(view,operation);
     ops?.renderProject?.(context,view);
+  }
+}
+
+function batchGenerationState(view, batch) {
+  let state = batchProfileGenerations.get(view);
+  if (!state || state.owner !== batch) {
+    state = { owner: batch, latest: new Map(), flights: new Set() };
+    batchProfileGenerations.set(view, state);
+  }
+  return state;
+}
+
+export async function waitForPunchProfileSources(view) {
+  const batch = view.tubeDesignerPunchBatch;
+  if (!batch) return;
+  const generation = batchProfileGenerations.get(view);
+  if (generation?.owner !== batch) return;
+  while (view.tubeDesignerPunchBatch === batch && generation.flights.size) {
+    await Promise.allSettled([...generation.flights]);
+  }
+}
+
+async function runBatchProfileGeneration(context, view, ops, batch, generation, work) {
+  // Generating a display contour is independent of the save lock. The draft's
+  // null profile gates geometry submission while the latest input stays live.
+  const flight = Promise.resolve().then(() => work({ timeoutMs: 180000 }));
+  generation.flights.add(flight);
+  ops?.renderProject?.(context, view);
+  try { return await flight; }
+  finally {
+    generation.flights.delete(flight);
+    if (view.tubeDesignerPunchBatch === batch) ops?.renderProject?.(context, view);
   }
 }
 
@@ -216,11 +250,26 @@ export async function updatePunchProfileParameter(context, view, target, ops) {
   // Until the matching result arrives, neither Confirm nor a concurrent preview
   // may submit these new parameters with the previous contour geometry.
   section.profile=null;
-  const current=()=>view.tubeDesignerPunchWizard===state
-    &&punchFeatureForTarget(view,target)===item&&item.section===section
-    &&profileRequests.get(section)===request&&JSON.stringify(section.parameters)===signature;
-  return runSourceOperation(context,view,ops,
-    target?.dataset?.tubeDesignerPunchEnd?"正在生成端部刀具截面":"正在生成冲孔截面",async options=>{
+  const batch = view.tubeDesignerPunchBatch;
+  const end = target?.dataset?.tubeDesignerPunchEnd;
+  const definitionId = !end ? item.batchDefinitionId : "";
+  const generation = batch ? batchGenerationState(view, batch) : null;
+  const requestKey = definitionId || state.batchPartId + ":" + (end || item.id);
+  const inputKey = punchBatchSectionInputKey(section);
+  if (batch) {
+    generation.latest.set(requestKey, request);
+    // Publish the new shared values before a following cell edit can select
+    // this definition again and otherwise reload its previous parameters.
+    syncPunchBatch(view);
+  }
+  const current=()=>profileRequests.get(section)===request&&JSON.stringify(section.parameters)===signature
+    &&(batch ? view.tubeDesignerPunchBatch===batch
+      &&generation.latest.get(requestKey)===request
+      &&(definitionId
+        ? punchBatchSectionInputKey(batch.definitions.find(definition=>definition.id===definitionId)?.recipe.section)===inputKey
+        : batch.parts.some(part=>part.wizard===state&&!part.completedPartId)&&item.section===section)
+      : view.tubeDesignerPunchWizard===state&&punchFeatureForTarget(view,target)===item&&item.section===section);
+  const work = async options=>{
     try {
       if(!current())return false;
       const response = await context.sceneProxy.invoke("TubeDesigner.GenerateProfilePreview", {
@@ -230,13 +279,16 @@ export async function updatePunchProfileParameter(context, view, target, ops) {
       if (!response?.profile?.contours?.length) throw new Error("支管参数没有生成有效截面。");
       section.profile = clone(response.profile);
       section.name = profileName(choice.profile);
+      if (batch && definitionId && !installPunchBatchSectionPreview(view, batch, definitionId, section, inputKey)) return false;
       return true;
     } catch(error) {
       if(!current())return false;
       state.error=error?.message??String(error);
       throw error;
     }
-  });
+  };
+  return batch ? runBatchProfileGeneration(context,view,ops,batch,generation,work)
+    : runSourceOperation(context,view,ops,end?"正在生成端部刀具截面":"正在生成冲孔截面",work);
 }
 
 export function visiblePunchProfileDefinitions(choice, values) {

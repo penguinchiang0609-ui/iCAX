@@ -33,6 +33,7 @@
 #include <gp_Trsf.hxx>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <iomanip>
@@ -423,8 +424,10 @@ namespace iCAX::TubeDesigner
             if (!BRepCheck_Analyzer(_Result).IsValid()) throw std::invalid_argument("CSG 运算产生了无效实体");
             return _Result;
         }
-        TopoDS_Shape ShapeFromFile(const std::filesystem::path& Source_)
+        TopoDS_Shape ShapeFromFile(const std::filesystem::path& Source_,
+            SManufacturingPartReadTiming* Timing_ = nullptr, bool PreviewOnly_ = false)
         {
+            const auto _ReadStart = std::chrono::steady_clock::now();
             if (!std::filesystem::is_regular_file(Source_) || std::filesystem::file_size(Source_) > kMaximumModelBytes)
                 throw std::invalid_argument("配件模型不存在或超过 32 MiB 大小限制");
             auto _Extension = Source_.extension().string();
@@ -435,6 +438,9 @@ namespace iCAX::TubeDesigner
             if (_Extension == ".step" || _Extension == ".stp")
             {
                 STEPControl_Reader _Reader;
+                // Preview does not publish manufacturing BRep. Avoid the
+                // expensive optional shape-healing pass on this local reader.
+                if (PreviewOnly_) _Reader.SetShapeProcessFlags({});
                 if (_Reader.ReadFile(PathText(Source_).c_str()) != IFSelect_RetDone || _Reader.TransferRoots() <= 0)
                     throw std::invalid_argument("无法读取 STEP 配件实体");
                 _Shape = _Reader.OneShape();
@@ -442,6 +448,7 @@ namespace iCAX::TubeDesigner
             else if (_Extension == ".iges" || _Extension == ".igs")
             {
                 IGESControl_Reader _Reader;
+                if (PreviewOnly_) _Reader.SetShapeProcessFlags({});
                 if (_Reader.ReadFile(PathText(Source_).c_str()) != IFSelect_RetDone || _Reader.TransferRoots() <= 0)
                     throw std::invalid_argument("无法读取 IGES 三维实体");
                 _Shape = _Reader.OneShape();
@@ -481,9 +488,29 @@ namespace iCAX::TubeDesigner
             }
             else throw std::invalid_argument("配件仅支持 STEP、STP、BREP 或模板内置几何 JSON");
             if (_Shape.IsNull()) throw std::invalid_argument("配件模型没有实体");
+            const auto _ValidationStart = std::chrono::steady_clock::now();
+            if (PreviewOnly_)
+            {
+                // File selection only needs display geometry, not a fully
+                // checked, serialized manufacturing component snapshot.
+                iCAX::OpenCascade::ValidateSolidPreviewShape(_Shape, "文件预览模型");
+                if (Timing_) {
+                    Timing_->ReadMilliseconds = std::chrono::duration<double, std::milli>(_ValidationStart - _ReadStart).count();
+                    Timing_->ValidationMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _ValidationStart).count();
+                    Timing_->SerializedBytes = 0;
+                }
+                return _Shape;
+            }
             // Reuse the generic resource validator so imports and template
             // resources obey exactly the same shape validity contract.
-            return ComponentModelShape({ { "brep", SerializeShape(_Shape) } });
+            auto _Serialized = SerializeShape(_Shape);
+            auto _Validated = ComponentModelShape({ { "brep", _Serialized } });
+            if (Timing_) {
+                Timing_->ReadMilliseconds = std::chrono::duration<double, std::milli>(_ValidationStart - _ReadStart).count();
+                Timing_->ValidationMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _ValidationStart).count();
+                Timing_->SerializedBytes = _Serialized.size();
+            }
+            return _Validated;
         }
 
         ObjectMap ManufacturingPartSnapshotFromFile(const std::filesystem::path& Source_)
@@ -650,6 +677,17 @@ namespace iCAX::TubeDesigner
             _Updates[_Key] = std::move(_Value);
         }
         for (auto& [_Key, _Value] : _Updates) Snapshot_[_Key] = std::move(_Value);
+    }
+
+    TopoDS_Shape ReadManufacturingPartPreviewFile(const std::filesystem::path& Source_, SManufacturingPartReadTiming* Timing_)
+    {
+        auto _Extension = Source_.extension().string();
+        std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char C_) {
+            return static_cast<char>(std::tolower(C_));
+        });
+        if (_Extension != ".step" && _Extension != ".stp" && _Extension != ".iges" && _Extension != ".igs")
+            throw std::invalid_argument("加工模型仅支持 STEP / STP / IGES / IGS 文件");
+        return ShapeFromFile(Source_, Timing_, true);
     }
 
     TopoDS_Shape ImportMachiningAssemblyFile(const std::filesystem::path& Source_)

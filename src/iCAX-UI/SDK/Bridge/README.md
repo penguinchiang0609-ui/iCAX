@@ -15,3 +15,5 @@
 
 CEF 同时提供 `saveFileDialog({ title, defaultPath, defaultExtension, filters })`。`defaultExtension` 不带点；`filters` 为 `{ name, extensions }` 数组。返回所选本地路径，取消返回 `null`，覆盖已有文件由原生对话框确认。该方法只选择路径；实际保存通过主场景上的 `Project.Save` 完成，可调用 `ProjectProxy.save(projectPath)`。AppShell 首次保存选位置，后续保存使用现有路径；Ctrl+Shift+S 另存为，Ctrl+O 打开，Ctrl+S 保存。
 
+SDK 对 `openFileDialog`、`saveFileDialog` 和 `openDirectoryDialog` 记忆最近成功选择的目录。页面可用 `memoryKey: "稳定操作标识"` 指定独立记忆身份；未指定时按方法、标题、筛选器和默认扩展名区分。传 `memoryKey: false` 可关闭该次调用的目录记忆：不读取或写入记忆，原生路径参数按调用者传值保留。`memoryKey` 仅用于 SDK，不传给原生选择器。取消或选择器报错均不覆盖已记忆的目录。
+

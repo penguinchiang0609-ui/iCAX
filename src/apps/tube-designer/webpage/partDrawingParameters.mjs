@@ -58,5 +58,7 @@ export function fieldControl(action, field, title, value, definition = {}, end =
     }).join("");
     control = `<input type="${type}"${type === "number" ? ` step="${escapeAttr(step)}"${limits}` : ""} value="${escapeAttr(number)}"${attributes}/>`;
   }
-  return `<label><span>${escapeText(label(title))}</span>${control}${definition.unit ? `<small>${escapeText(label(definition.unit))}</small>` : ""}</label>`;
+  const unit = label(definition.unit);
+  const fieldTitle = label(title) + (unit ? `（${unit}）` : "");
+  return `<label><span>${escapeText(fieldTitle)}</span>${control}</label>`;
 }

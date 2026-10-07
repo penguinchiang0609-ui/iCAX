@@ -113,7 +113,7 @@ def _script_context(script_source, digest, resources=None, descriptor=None, *, e
                 if "__init__.py" in members:
                     package.__file__ = str(root / "__init__.py")
                     exec(compile(members["__init__.py"], package.__file__, "exec"), package.__dict__)
-                if entry not in ("profile", "recognize", "fitting"):
+                if entry not in ("profile", "fitting"):
                     raise ValueError("管型执行入口无效")
                 source = script_source if entry == "profile" else members.get(entry + ".py", b"").decode("utf-8-sig")
                 yield _load_script(source, digest, root / (entry + ".py"), prefix, entry=entry)
@@ -234,6 +234,38 @@ def _validate_parameter_diagram(descriptor: dict[str, Any]) -> None:
                 _diagram_expression(coordinate, numeric_keys, f"{label}.{field}")
 
 
+def _condition_matches(condition, parameters):
+    """Use the same descriptor conditions for applicability and diagrams."""
+    if not condition:
+        return True
+    if not isinstance(condition, dict):
+        return False
+    operation = condition.get("op")
+    for name in ("all", "any"):
+        children = condition.get("conditions", condition.get(name)) if operation == name else condition.get(name)
+        if isinstance(children, list):
+            return (all if name == "all" else any)(_condition_matches(child, parameters) for child in children)
+    negated = condition.get("condition", condition.get("not")) if operation == "not" else condition.get("not")
+    if negated is not None:
+        return not _condition_matches(negated, parameters)
+    key = condition.get("parameter", condition.get("key", condition.get("name")))
+    if key not in parameters:
+        return False
+    actual, expected = parameters[key], condition.get("value")
+
+    def equal(value):
+        return actual == value and isinstance(actual, bool) == isinstance(value, bool)
+
+    if operation == "eq":
+        return equal(expected)
+    if operation == "ne":
+        return not equal(expected)
+    if operation in ("in", "notIn"):
+        found = any(equal(value) for value in condition.get("values", []))
+        return found if operation == "in" else not found
+    return False
+
+
 def _evaluate_parameter_diagram(
     descriptor: dict[str, Any], parameters: dict[str, Any], contours: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -289,29 +321,11 @@ def _evaluate_parameter_diagram(
             raise ValueError("坐标必须为绝对值不超过 10 亿的有限数值")
         return result
 
-    def condition_matches(condition):
-        if not condition:
-            return True
-        operation = condition.get("op")
-        for name in ("all", "any"):
-            children = condition.get("conditions", condition.get(name)) if operation == name else condition.get(name)
-            if isinstance(children, list):
-                return (all if name == "all" else any)(condition_matches(child) for child in children)
-        negated = condition.get("condition", condition.get("not")) if operation == "not" else condition.get("not")
-        if negated is not None:
-            return not condition_matches(negated)
-        key = condition.get("parameter", condition.get("key", condition.get("name")))
-        if key not in parameters:
-            return False
-        actual, expected = parameters[key], condition.get("value")
-        equal = actual == expected and isinstance(actual, bool) == isinstance(expected, bool)
-        return equal if operation == "eq" else not equal if operation == "ne" else False
-
     definitions_by_key = {item["key"]: item for item in descriptor["parameters"]}
     annotations = []
     for index, source in enumerate(diagram["annotations"]):
-        if (not condition_matches(source.get("visibleWhen"))
-                or not condition_matches(definitions_by_key[source["parameter"]].get("visibleWhen"))):
+        if (not _condition_matches(source.get("visibleWhen"), parameters)
+                or not _condition_matches(definitions_by_key[source["parameter"]].get("visibleWhen"), parameters)):
             continue
         annotation = {field: source[field] for field in ("parameter", "kind", "side")}
         if source["kind"] == "linear":
@@ -359,7 +373,7 @@ def _finite_number(value: Any, name: str) -> float:
     return result
 
 
-def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
+def _normalize_value(definition: dict[str, Any], value: Any, *, validate_bounds=True) -> Any:
     key = str(definition["key"])
     value_type = definition["valueType"]
     if value_type == "number":
@@ -378,7 +392,7 @@ def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
             raise ValueError(f"{key} 必须是布尔值")
         result = value
 
-    if value_type in ("number", "integer"):
+    if validate_bounds and value_type in ("number", "integer"):
         minimum = definition.get("min", definition.get("minimum"))
         maximum = definition.get("max", definition.get("maximum"))
         if minimum is not None and result < _finite_number(minimum, f"{key}.min"):
@@ -412,10 +426,8 @@ def _parameter_diagram(descriptor):
 def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(value, dict):
         raise ValueError("profile.json 必须是 JSON 对象")
-    if "recognition" in value and value["recognition"] not in (
-            {"schemaVersion":1,"entryPoint":"recognize.py"},
-            {"schemaVersion":1,"entryPoint":"fitting.py"}):
-        raise ValueError("管型逆向协议必须声明 schemaVersion=1 和有效的逆向入口")
+    if "recognition" in value and value["recognition"] != {"schemaVersion":1,"entryPoint":"fitting.py"}:
+        raise ValueError("管型逆向协议必须声明 schemaVersion=1 和 fitting.py 直接反解入口")
     if value.get("schema") != DESCRIPTOR_SCHEMA:
         raise ValueError("profile.json schema 不受支持")
     if value.get("schemaVersion") != DESCRIPTOR_SCHEMA_VERSION:
@@ -467,10 +479,20 @@ def _normalize_parameters(
     for definition in descriptor["parameters"]:
         key = definition["key"]
         source = values[key] if key in values else definition["defaultValue"]
-        result[key] = _normalize_value(definition, source)
+        result[key] = _normalize_value(definition, source, validate_bounds=False)
     unknown = sorted(set(values) - set(result))
     if unknown:
         raise ValueError(f"管型包含未知参数：{', '.join(unknown[:5])}")
+    # Retain inactive values after their type, finiteness and choices were
+    # checked. Only applicable fields constrain numeric bounds, matching the
+    # host TemplateCodec's two-stage normalization contract.
+    for definition in descriptor["parameters"]:
+        if (definition.get("presentation", {}).get("visible") is False
+                or not _condition_matches(definition.get("visibleWhen"), result)
+                or not _condition_matches(definition.get("enabledWhen"), result)):
+            continue
+        key = definition["key"]
+        result[key] = _normalize_value(definition, result[key])
     return result
 
 
@@ -490,7 +512,7 @@ def _load_script(script_source: str, digest: str, source_path=None, package=None
     if package:
         sys.modules[module_name] = module
     exec(compile(script_source, namespace["__file__"], "exec"), namespace)
-    if entry in ("recognize", "fitting"):
+    if entry == "fitting":
         if not callable(namespace.get(entry)):
             raise ValueError(entry + ".py 缺少 " + entry + "(section, context)")
         return namespace

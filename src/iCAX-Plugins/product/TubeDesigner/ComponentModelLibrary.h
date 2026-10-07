@@ -26,6 +26,16 @@ namespace iCAX::TubeDesigner
     // the actual geometry before committing it to the nesting area.
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ImportManufacturingPartFile(
         const std::filesystem::path& Source_);
+    // Read-only file selection preview. Retains the CAD placements and all
+    // valid solids, without normalizing stock or creating a library snapshot.
+    struct SManufacturingPartReadTiming final
+    {
+        double ReadMilliseconds = 0;
+        double ValidationMilliseconds = 0;
+        std::size_t SerializedBytes = 0;
+    };
+    _TUBE_DESIGNER_EXP TopoDS_Shape ReadManufacturingPartPreviewFile(
+        const std::filesystem::path& Source_, SManufacturingPartReadTiming* Timing_ = nullptr);
     // A pre-nested assembly keeps its CAD coordinate system and every placement.
     // Unlike a single nesting part, it must never be normalized independently.
     _TUBE_DESIGNER_EXP TopoDS_Shape ImportMachiningAssemblyFile(

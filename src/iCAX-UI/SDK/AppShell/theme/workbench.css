@@ -212,7 +212,9 @@ button:disabled {
 .project-tab {
   min-width: 0;
   height: 26px;
-  padding: 0 9px;
+  display: flex;
+  align-items: stretch;
+  padding: 0 2px 0 0;
   border: 1px solid #6a6a6a;
   background: #4a4a4a;
   color: #f1f3f3;
@@ -220,6 +222,36 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.project-tab-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-tab-close {
+  flex: 0 0 22px;
+  width: 22px;
+  margin: 2px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.project-tab-select:hover { background: rgba(128, 128, 128, 0.15); }
+.project-tab-close:hover { background: #c42b1c; color: #ffffff; }
+.project-tab-close:disabled { opacity: 0.4; }
+.project-tab-select:focus-visible,
+.project-tab-close:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 .project-tab.active {
   border-color: #d8d8d8;
@@ -1178,6 +1210,19 @@ button:disabled {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.project-close-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+.project-close-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.project-close-dialog strong { font-size: 15px; }
+.project-close-dialog p { margin: 14px 0 18px; overflow-wrap: anywhere; }
+.project-close-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
 
 .primary-button,
 .tool-button {

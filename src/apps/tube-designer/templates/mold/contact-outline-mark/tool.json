@@ -7,7 +7,31 @@
   "kind": "programmatic",
   "target": "side",
   "requiresSection": true,
+  "inputs": [{"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}],
   "category": "打标",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M12 8 H36 Q40 8 40 12 V36 Q40 40 36 40 H12 Q8 40 8 36 V12 Q8 8 12 8 Z",
+      "M14 13 H34 Q35 13 35 14 V34 Q35 35 34 35 H14 Q13 35 13 34 V14 Q13 13 14 13 Z"
+    ]
+  },
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    },
+    "section": {
+      "profileRef": {
+        "scope": "system",
+        "id": "round"
+      },
+      "parameters": {
+        "width": 20,
+        "wallThickness": 2
+      }
+    }
+  },
   "parameters": [
     {
       "key": "markMode",

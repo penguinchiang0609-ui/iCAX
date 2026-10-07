@@ -8,10 +8,13 @@
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 #include <OpenCascadeResourceImport/OpenCascadeTubeCSGConverter.h>
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
+#include <GeometryData/BRepPersistence.h>
 #include <TemplateRuntime/PythonTemplateHost.h>
 #include <TemplateRuntime/TemplateCodec.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepCheck_Analyzer.hxx>
 
 #include <STEPControl_Reader.hxx>
 #include <BRepGProp.hxx>
@@ -21,6 +24,7 @@
 #include <array>
 #include <limits>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -128,6 +132,59 @@ namespace
             _Edge.Range = { 0.0, 10.0 };
             _Model.Edges.push_back(_Edge);
         }
+        return _Model;
+    }
+
+    BRepModel MakeTrimmedSplineEvidenceModel(double SupportSpan_, bool WithMesh_)
+    {
+        auto _Model = MakeStraightEdgeEvidenceModel();
+        BSplineSurface3 _Surface;
+        _Surface.UDegree = 2;
+        _Surface.VDegree = 1;
+        _Surface.UCount = 3;
+        _Surface.VCount = 2;
+        _Surface.Poles = {
+            { 0.0, 0.0, 0.0 }, { SupportSpan_, 0.0, 0.0 },
+            { 0.0, 0.5, 1.0 }, { SupportSpan_, 0.5, 1.0 },
+            { 0.0, 1.0, 0.0 }, { SupportSpan_, 1.0, 0.0 }
+        };
+        _Surface.UKnots = { 0.0, 1.0 };
+        _Surface.VKnots = { 0.0, SupportSpan_ };
+        _Surface.UMultiplicities = { 3, 3 };
+        _Surface.VMultiplicities = { 2, 2 };
+        _Model.Surfaces3.push_back({ 1, _Surface });
+
+        // The face is only 0.2 mm deep. Enlarging the supporting surface must
+        // not turn this small marking into the dominant extrusion evidence.
+        const std::array<Point3, 4> _Corners{
+            Point3{ 0.0, 0.0, 0.0 }, Point3{ 0.2, 0.0, 0.0 },
+            Point3{ 0.2, 1.0, 0.0 }, Point3{ 0.0, 1.0, 0.0 }
+        };
+        BRepWire _Wire;
+        _Wire.Id = 1;
+        for (std::size_t _Index = 0; _Index < _Corners.size(); ++_Index)
+        {
+            const auto _ID = static_cast<std::uint64_t>(_Index + 10);
+            _Model.Vertices.push_back({ _ID, _Corners[_Index] });
+            BRepCoedge _Coedge;
+            _Coedge.StartVertexId = _ID;
+            _Coedge.EndVertexId = static_cast<std::uint64_t>((_Index + 1) % 4 + 10);
+            _Wire.Coedges.push_back(_Coedge);
+        }
+        _Model.Wires.push_back(_Wire);
+        BRepFace _Face;
+        _Face.Id = 1;
+        _Face.Surface3Id = 1;
+        _Face.WireIds = { 1 };
+        if (WithMesh_)
+        {
+            Triangulation3 _Mesh;
+            _Mesh.Vertices.assign(_Corners.begin(), _Corners.end());
+            _Mesh.Triangles = { { 0, 1, 2 }, { 0, 2, 3 } };
+            _Model.Triangulations3.push_back({ 1, _Mesh });
+            _Face.Triangulation3Id = 1;
+        }
+        _Model.Faces.push_back(_Face);
         return _Model;
     }
 
@@ -578,6 +635,58 @@ namespace
         ~SForbidForwardFitting() { DirectFittingTestRuntime("unguard"); }
     };
 
+    // A real direct rectangle fitter restricted to large section dimensions.
+    // A 120 x 110 x 100 box has three comparably strong evidence directions,
+    // a rejected primary section and two legitimate alternative sections.
+    // No test fitter returns invented parameters.
+    struct SAxisFittingCatalog final
+    {
+        std::filesystem::path Root;
+
+        explicit SAxisFittingCatalog(const std::string& Mode_)
+        {
+            Root = std::filesystem::temp_directory_path() / ("icax-axis-fitting-"
+                + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64()));
+            if (!std::filesystem::create_directory(Root))
+                throw std::runtime_error("Axis-fitting temporary catalogue already exists");
+            const auto _Package = Root / "rect-bar";
+            std::filesystem::create_directory(_Package);
+            const auto _Source = RepositoryRoot() / "src/apps/tube-designer/templates/profile/rect-bar";
+            for (const auto* _Name : { "profile.json", "display.json" })
+                std::filesystem::copy_file(_Source / _Name, _Package / _Name);
+            std::ofstream(_Package / "profile.py") << "raise AssertionError('forward module executed')\n";
+            std::ofstream _Fitter(_Package / "fitting.py");
+            _Fitter << "MODE = '" << Mode_ << "'\n" << R"PY(
+IMPLEMENTED = True
+def fitting(section, context):
+    q, g, t = context['geometry'], context['curves'], context['tolerance']
+    if len(section) != 1:
+        return False
+    for loops, pose in g.frames(section):
+        measured = q.box(loops[0], g, t)
+        if not measured:
+            continue
+        large = max(measured['width'], measured['depth'])
+        small = min(measured['width'], measured['depth'])
+        if large <= 115 and MODE != 'all-match':
+            if MODE == 'primary-error':
+                raise RuntimeError('deliberate primary-axis failure')
+            return False
+        if MODE == 'fallback-error' and small > 105:
+            raise RuntimeError('deliberate later-axis failure')
+        return q.result({'width': measured['width'], 'depth': measured['depth'],
+                         'cornerRadius': measured['radius'], 'useHotRolled': False}, pose)
+    return False
+)PY";
+        }
+
+        ~SAxisFittingCatalog()
+        {
+            std::error_code _Error;
+            std::filesystem::remove_all(Root, _Error);
+        }
+    };
+
     BRepModel ExtrudedProfileFixture(const ObjectMap& Profile_)
     {
         const auto _Angle = 37.0 * 3.14159265358979323846 / 180.0;
@@ -657,6 +766,37 @@ TEST(ExtrusionRecognitionTest, RecognizesDirectionFromStraightEdgeLengthVotes)
     EXPECT_NEAR(-5.0, _AlignedLine.Axis.Location.X, 1.0e-12);
     EXPECT_NEAR(0.0, _AlignedLine.Axis.Location.Y, 1.0e-12);
     EXPECT_NEAR(0.0, _AlignedLine.Axis.Location.Z, 1.0e-12);
+}
+
+TEST(ExtrusionRecognitionTest, TrimmedSplineSupportExtensionDoesNotChangeAxis)
+{
+    for (const bool _WithMesh : { false, true })
+    {
+        for (const double _SupportSpan : { 10.0, 160.0, 1600.0 })
+        {
+            SCOPED_TRACE(::testing::Message()
+                << "mesh=" << _WithMesh << ", support span=" << _SupportSpan);
+            const auto _Result = CExtrudeRecognizesService().Recognize(
+                MakeTrimmedSplineEvidenceModel(_SupportSpan, _WithMesh));
+            ASSERT_TRUE(_Result.bSuccess);
+            EXPECT_NEAR(0.6, _Result.Direction.X, 1.0e-12);
+            EXPECT_NEAR(0.8, _Result.Direction.Y, 1.0e-12);
+            EXPECT_NEAR(0.0, _Result.Direction.Z, 1.0e-12);
+        }
+    }
+}
+
+TEST(ExtrusionRecognitionTest, RecognizesMarkedProductionAngleWithoutFollowingLetteringDepth)
+{
+    const auto _Read = iCAX::OpenCascade::ReadBRepFile(
+        (RepositoryRoot() / "samples/structural-steel/vendors-angle-channel/unistrut-P1026-two-hole-angle.step").string(),
+        0.001);
+    ASSERT_TRUE(_Read.bOK);
+    const auto _Result = CExtrudeRecognizesService().Recognize(_Read.Geometry);
+    ASSERT_TRUE(_Result.bSuccess);
+    EXPECT_NEAR(0.0, _Result.Direction.X, 1.0e-9);
+    EXPECT_NEAR(1.0, std::abs(_Result.Direction.Y), 1.0e-9);
+    EXPECT_NEAR(0.0, _Result.Direction.Z, 1.0e-9);
 }
 
 TEST(ExtrusionRecognitionTest, ExtractsOuterSectionWireFromProjectedSideFaces)
@@ -1198,6 +1338,33 @@ TEST(ExtrusionRecognitionTest, MatchesImportedStepThroughOrderedDirectFitters)
         _Result.Section.Bounds.Max.Y - _Result.Section.Bounds.Min.Y, 1e-6);
 }
 
+TEST(ExtrusionRecognitionTest, MatchesMachinedRoundTubeThroughOrderedDirectFitters)
+{
+    const auto _Read = iCAX::OpenCascade::ReadBRepFile(
+        (RepositoryRoot() / "samples/tube-one/03_round_tube_through_hole.step").string(), 0.001);
+    ASSERT_TRUE(_Read.bOK);
+    const auto _Fitters = DiscoverPythonSectionFitters(
+        (RepositoryRoot() / "src/apps/tube-designer/templates/profile").string());
+    SForbidForwardFitting _Guard;
+    const auto _Axis = CExtrudeRecognizesService().Recognize(_Read.Geometry);
+    ASSERT_TRUE(_Axis.bSuccess);
+    const auto _Wires = CExtrudeRecognizesService().ExtractSectionWires(_Axis.AlignedGeometry);
+    ASSERT_TRUE(_Wires.bSuccess);
+    EXPECT_EQ(2u, _Wires.Wires.size());
+    EXPECT_TRUE(std::any_of(_Wires.Diagnostics.begin(), _Wires.Diagnostics.end(),
+        [](const auto& _Text) {
+            return _Text.find("local side-face cut wires") != std::string::npos;
+        }));
+    const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Read.Geometry, _Fitters);
+    std::string _Diagnostics;
+    for (const auto& _Text : _Result.Diagnostics) _Diagnostics += _Text + " | ";
+    ASSERT_TRUE(_Result.IsOK()) << _Diagnostics;
+    EXPECT_EQ("round", _Result.SectionTypeID);
+    EXPECT_EQ(1u, _Result.Section.nCavityCount);
+    EXPECT_GT(_Result.SectionParameters.at("width").To<double>(), 0.0);
+    EXPECT_GT(_Result.SectionParameters.at("wallThickness").To<double>(), 0.0);
+}
+
 TEST(ExtrusionRecognitionTest, RecognizesMachinedProductionTubeWithoutFollowingHoleAxes)
 {
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
@@ -1254,6 +1421,163 @@ TEST(ExtrusionRecognitionTest, PrefersSquareTubeProfileOverGenericRegularPolygon
     EXPECT_NEAR(100.0, _Result.SectionParameters.at("width").To<double>(), 1e-6);
     EXPECT_NEAR(100.0, _Result.SectionParameters.at("depth").To<double>(), 1e-6);
     EXPECT_NEAR(2.5, _Result.SectionParameters.at("wallThickness").To<double>(), 1e-6);
+}
+
+TEST(ExtrusionRecognitionTest, FitsOriginalTekSpanAnglesOnUniqueAlternativeEvidenceAxesWithoutForwardCalls)
+{
+    struct SFixture { const char* Directory; double Width, Depth, Wall, Free1, Free2; };
+    for (const auto& _Fixture : {
+        SFixture{ "vendors-angle-channel__tekspan-60250-three-hole-angle.step-cba4a03f", 95, 145, 10, 6, 8 },
+        SFixture{ "vendors-angle-channel__tekspan-60260-cross-mount-angle.step-7bfa4511", 70.5, 145.5, 9, 6, 6 } })
+    {
+        SCOPED_TRACE(_Fixture.Directory);
+        // Original exported solid occurrences, never regenerated test samples.
+        const auto _Source = RepositoryRoot() / "samples/structural-steel/recovery/report/solids"
+            / _Fixture.Directory / "solid-1.step";
+        const auto _Read = iCAX::OpenCascade::ReadBRepFile(_Source.string(), 0.001);
+        ASSERT_TRUE(_Read.bOK);
+        const auto _OriginalBytes = iCAX::GeometryData::Persistence::Serialize(_Read.Geometry);
+        const auto _Voted = CExtrudeRecognizesService().Recognize(_Read.Geometry);
+        ASSERT_TRUE(_Voted.bSuccess);
+        ASSERT_EQ(2u, _Voted.CandidateDirections.size());
+        EXPECT_NEAR(1.0, std::abs(_Voted.Direction.Z), 1e-9);
+        SForbidForwardFitting _Guard;
+        const auto _Fitters = DiscoverPythonSectionFitters(
+            (RepositoryRoot() / "src/apps/tube-designer/templates/profile").string());
+        ASSERT_EQ(21u, _Fitters.size());
+        const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Read.Geometry, _Fitters);
+        std::string _Diagnostics;
+        for (const auto& _Text : _Result.Diagnostics) _Diagnostics += _Text + " | ";
+        ASSERT_TRUE(_Result.IsOK()) << _Diagnostics;
+        EXPECT_EQ("angle", _Result.SectionTypeID);
+        EXPECT_NEAR(1.0, std::abs(_Result.Direction.X), 1e-9);
+        EXPECT_NEAR(70.0, _Result.dLength, 1e-6);
+        const auto& _Parameters = _Result.SectionParameters;
+        const auto _Width = _Parameters.at("width").To<double>();
+        const auto _Depth = _Parameters.at("depth").To<double>();
+        EXPECT_NEAR(_Fixture.Width, std::min(_Width, _Depth), 1e-6);
+        EXPECT_NEAR(_Fixture.Depth, std::max(_Width, _Depth), 1e-6);
+        EXPECT_NEAR(_Fixture.Wall, _Parameters.at("wallThickness").To<double>(), 1e-6);
+        EXPECT_NEAR(0.0, _Parameters.at("outerRadius").To<double>(), 1e-6);
+        EXPECT_NEAR(12.0, _Parameters.at("innerRadius").To<double>(), 1e-6);
+        const auto _Free1 = _Parameters.at("freeEndRadius1").To<double>();
+        const auto _Free2 = _Parameters.at("freeEndRadius2").To<double>();
+        EXPECT_NEAR(_Fixture.Free1, std::min(_Free1, _Free2), 1e-6);
+        EXPECT_NEAR(_Fixture.Free2, std::max(_Free1, _Free2), 1e-6);
+        EXPECT_EQ(0u, _Result.Section.nCavityCount);
+        EXPECT_NE(std::string::npos, _Diagnostics.find("unique matching alternative extrusion axis"));
+        EXPECT_EQ(_OriginalBytes, iCAX::GeometryData::Persistence::Serialize(_Read.Geometry));
+        const auto _Normalized = iCAX::OpenCascade::BuildOpenCascadeShape(_Result.NormalizedGeometry);
+        ASSERT_TRUE(_Normalized.bOK);
+        ASSERT_TRUE(BRepCheck_Analyzer(_Normalized.Shape).IsValid());
+        const auto _Section = CExtrudeRecognizesService().ExtractSectionWires(_Result.NormalizedGeometry);
+        ASSERT_TRUE(_Section.bSuccess);
+        ASSERT_EQ(1u, _Section.Wires.size());
+        for (const auto& _Edge : _Section.Wires.front().Edges)
+        {
+            EXPECT_GE(_Edge.Start.X, _Result.Section.Bounds.Min.X - 1e-3);
+            EXPECT_LE(_Edge.Start.X, _Result.Section.Bounds.Max.X + 1e-3);
+            EXPECT_GE(_Edge.Start.Y, _Result.Section.Bounds.Min.Y - 1e-3);
+            EXPECT_LE(_Edge.Start.Y, _Result.Section.Bounds.Max.Y + 1e-3);
+        }
+        GProp_GProps _Before, _After;
+        BRepGProp::VolumeProperties(iCAX::OpenCascade::BuildOpenCascadeShape(_Read.Geometry).Shape, _Before);
+        BRepGProp::VolumeProperties(_Normalized.Shape, _After);
+        EXPECT_NEAR(_Before.Mass(), _After.Mass(), std::abs(_Before.Mass()) * 1e-8);
+        EXPECT_GT(DirectFittingTestRuntime("unguard").at("fittingCalls").To<std::int64_t>(), 21);
+    }
+}
+
+TEST(ExtrusionRecognitionTest, RejectsMultipleMatchingAlternativeAxesWithoutPartialResult)
+{
+    const SAxisFittingCatalog _Catalog("large-sections");
+    const auto _Geometry = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+        BRepPrimAPI_MakeBox(120.0, 110.0, 100.0).Shape(), "axis-ambiguity", "", 0.001);
+    const auto _Primary = CExtrudeRecognizesService().Recognize(_Geometry);
+    ASSERT_TRUE(_Primary.bSuccess);
+    ASSERT_EQ(3u, _Primary.CandidateDirections.size());
+    EXPECT_NEAR(1.0, std::abs(_Primary.Direction.X), 1e-9);
+    SForbidForwardFitting _Guard;
+    const auto _Fitters = DiscoverPythonSectionFitters(_Catalog.Root.string());
+    ASSERT_EQ(1u, _Fitters.size());
+    const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Geometry, _Fitters);
+    EXPECT_EQ(ERecognitionStatus::SectionTypeNotMatched, _Result.Status);
+    EXPECT_TRUE(_Result.SectionTypeID.empty());
+    EXPECT_TRUE(_Result.SectionParameters.empty());
+    EXPECT_NEAR(120.0, _Result.dLength, 1e-6);
+    EXPECT_EQ(iCAX::GeometryData::Persistence::Serialize(_Primary.AlignedGeometry),
+        iCAX::GeometryData::Persistence::Serialize(_Result.NormalizedGeometry));
+    EXPECT_TRUE(std::any_of(_Result.Diagnostics.begin(), _Result.Diagnostics.end(), [](const auto& Text_) {
+        return Text_ == "Ambiguous direct section matches on multiple extrusion axes";
+    }));
+    EXPECT_EQ(3, DirectFittingTestRuntime("unguard").at("fittingCalls").To<std::int64_t>());
+}
+
+TEST(ExtrusionRecognitionTest, DoesNotReinterpretOriginalDoubleCavityTubeAsWeakTransverseSolidBar)
+{
+    const auto _Read = iCAX::OpenCascade::ReadBRepFile(
+        (RepositoryRoot() / "samples/tube-one/05_double_cavity_blind_hole.step").string(), 0.001);
+    ASSERT_TRUE(_Read.bOK);
+    const auto _OriginalBytes = iCAX::GeometryData::Persistence::Serialize(_Read.Geometry);
+    const auto _Primary = CExtrudeRecognizesService().Recognize(_Read.Geometry);
+    ASSERT_TRUE(_Primary.bSuccess);
+    EXPECT_NEAR(1080000.0, _Primary.dPrimaryEvidenceWeight, 1e-3);
+    EXPECT_NEAR(76032.0, _Primary.dSecondaryEvidenceWeight, 1e-3);
+    EXPECT_FALSE(_Primary.bUsedFaceNormalDisambiguation);
+    ASSERT_EQ(1u, _Primary.CandidateDirections.size());
+    EXPECT_NEAR(1.0, std::abs(_Primary.Direction.Z), 1e-9);
+
+    SForbidForwardFitting _Guard;
+    const auto _Fitters = DiscoverPythonSectionFitters(
+        (RepositoryRoot() / "src/apps/tube-designer/templates/profile").string());
+    ASSERT_EQ(21u, _Fitters.size());
+    const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Read.Geometry, _Fitters);
+    EXPECT_EQ(ERecognitionStatus::SectionTypeNotMatched, _Result.Status);
+    EXPECT_TRUE(_Result.SectionTypeID.empty());
+    EXPECT_TRUE(_Result.SectionParameters.empty());
+    EXPECT_NEAR(300.0, _Result.dLength, 1e-6);
+    EXPECT_NEAR(1.0, std::abs(_Result.Direction.Z), 1e-9);
+    EXPECT_EQ(2u, _Result.Section.nCavityCount);
+    EXPECT_EQ(iCAX::GeometryData::Persistence::Serialize(_Primary.AlignedGeometry),
+        iCAX::GeometryData::Persistence::Serialize(_Result.NormalizedGeometry));
+    EXPECT_EQ(_OriginalBytes, iCAX::GeometryData::Persistence::Serialize(_Read.Geometry));
+    EXPECT_EQ(21, DirectFittingTestRuntime("unguard").at("fittingCalls").To<std::int64_t>());
+}
+
+TEST(ExtrusionRecognitionTest, DoesNotHideFitterErrorsBehindAlternativeAxisMatches)
+{
+    for (const auto* _Mode : { "primary-error", "fallback-error" })
+    {
+        SCOPED_TRACE(_Mode);
+        const SAxisFittingCatalog _Catalog(_Mode);
+        const auto _Geometry = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+            BRepPrimAPI_MakeBox(120.0, 110.0, 100.0).Shape(), "axis-fitter-error", "", 0.001);
+        const auto _Primary = CExtrudeRecognizesService().Recognize(_Geometry);
+        SForbidForwardFitting _Guard;
+        const auto _Fitters = DiscoverPythonSectionFitters(_Catalog.Root.string());
+        const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Geometry, _Fitters);
+        EXPECT_EQ(ERecognitionStatus::SectionTypeDefinitionInvalid, _Result.Status);
+        EXPECT_TRUE(_Result.SectionTypeID.empty());
+        EXPECT_TRUE(_Result.SectionParameters.empty());
+        EXPECT_EQ(iCAX::GeometryData::Persistence::Serialize(_Primary.AlignedGeometry),
+            iCAX::GeometryData::Persistence::Serialize(_Result.NormalizedGeometry));
+        const auto _Calls = DirectFittingTestRuntime("unguard").at("fittingCalls").To<std::int64_t>();
+        EXPECT_EQ(std::string(_Mode) == "primary-error" ? 1 : 3, _Calls);
+    }
+}
+
+TEST(ExtrusionRecognitionTest, KeepsSuccessfulPrimaryAxisWithoutTryingAlternatives)
+{
+    const SAxisFittingCatalog _Catalog("all-match");
+    const auto _Geometry = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+        BRepPrimAPI_MakeBox(120.0, 110.0, 100.0).Shape(), "axis-primary-match", "", 0.001);
+    SForbidForwardFitting _Guard;
+    const auto _Fitters = DiscoverPythonSectionFitters(_Catalog.Root.string());
+    const auto _Result = CExtrusionRecognitionService().RecognizePythonFitters(_Geometry, _Fitters);
+    ASSERT_TRUE(_Result.IsOK());
+    EXPECT_NEAR(120.0, _Result.dLength, 1e-6);
+    EXPECT_NEAR(1.0, std::abs(_Result.Direction.X), 1e-9);
+    EXPECT_EQ(1, DirectFittingTestRuntime("unguard").at("fittingCalls").To<std::int64_t>());
 }
 
 TEST(ExtrusionRecognitionTest, DistinguishesUnsupportedAndFailedFittersFromNonMatchingGeometry)

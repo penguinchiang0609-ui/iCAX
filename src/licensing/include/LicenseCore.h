@@ -13,16 +13,15 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "ProductCatalog.h"
 
 namespace tube::license {
 using Bytes = std::vector<unsigned char>;
 using Digest = std::array<unsigned char, 32>;
-inline constexpr std::string_view Product = "icax.tube-designer";
+inline constexpr std::string_view Product = TubeDesignerProduct.id;
 inline constexpr std::size_t MaxCertificateBytes = 8192;
 enum class Strategy : std::uint32_t { Tpm2 = 1, Dongle = 2 };
 enum class Kind : std::uint32_t { Permanent = 1, Trial = 2 };
-enum class Feature : std::uint32_t { Design = 1, Breakdown = 2, StepExport = 4, Production = 8 };
-inline constexpr std::uint32_t KnownFeatures = 15;
 
 inline void Require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
@@ -143,33 +142,34 @@ struct Certificate final {
 };
 // Caller supplies a trusted public key compiled into the release, NOT a key
 // from a certificate, request, writable configuration or environment variable.
-inline Certificate VerifyCertificate(std::span<const unsigned char> file,
+inline Certificate VerifyCertificateForProduct(std::span<const unsigned char> file,
+    const ProductDescriptor& product,
     std::string_view trustedIssuerId, std::span<const unsigned char> trustedPublicKey) {
+    Require(product.certificateFormat.size() == 8 && !product.id.empty(), "Invalid product descriptor");
     Require(file.size() <= MaxCertificateBytes && file.size() > 64, "Invalid certificate size");
     auto body = file.first(file.size() - 64);
     VerifySignature(trustedPublicKey, body, file.last(64));
     Reader reader(body);
     const auto magic = reader.Take(8);
-    const bool v2 = std::memcmp(magic.data(), "TDLIC002", 8) == 0;
-    Require(v2 || std::memcmp(magic.data(), "TDLIC001", 8) == 0, "Unknown certificate format");
+    Require(std::memcmp(magic.data(), product.certificateFormat.data(), product.certificateFormat.size()) == 0, "Unknown certificate format");
     Certificate c;
     c.issuerId = reader.Text(128);
     Require(c.issuerId == trustedIssuerId, "Untrusted issuer");
     c.licenseId = reader.Text(128); c.requestId = reader.Text(128); c.customerId = reader.Text(128);
     c.product = reader.Text(128);
-    Require(c.product == Product, "Wrong product");
+    Require(c.product == product.id, "Wrong product");
     c.strategy = static_cast<Strategy>(reader.U32()); c.kind = static_cast<Kind>(reader.U32());
     c.features = reader.U32(); c.minMajor = reader.U32(); c.maxMajor = reader.U32();
     c.issuedAt = reader.U64(); c.notBefore = reader.U64(); c.expiresAt = reader.U64();
     c.devicePublicKey = reader.Field(72);
-    if (v2) {
+    if (c.kind == Kind::Trial) {
         c.trialNvPublic = reader.Field(128); c.trialInitialCounter = reader.U64(); c.trialQuantumSeconds = reader.U32();
         Require(c.kind == Kind::Trial && c.trialNvPublic.size() == 14 && c.trialInitialCounter > 0
             && c.trialQuantumSeconds == 3600, "Invalid TPM trial binding");
     }
     Require(reader.End(), "Trailing certificate data");
     Require(c.strategy == Strategy::Tpm2 || c.strategy == Strategy::Dongle, "Unknown strategy");
-    Require(c.features != 0 && (c.features & ~KnownFeatures) == 0, "Invalid feature set");
+    Require(IsValidFeatureSet(product, c.features), "Invalid feature set or missing parent page");
     Require(c.minMajor <= c.maxMajor, "Invalid version range");
     Require(c.issuedAt != 0, "Invalid issue date");
     Require(c.kind == Kind::Permanent || c.kind == Kind::Trial, "Unknown license kind");
@@ -178,6 +178,12 @@ inline Certificate VerifyCertificate(std::span<const unsigned char> file,
     ValidatePublicBlob(c.devicePublicKey);
     c.bodyDigest = Hash(body);
     return c;
+}
+// The TubeDesigner client always verifies its own product, even when the
+// issuer executable has additional compiled products in its catalog.
+inline Certificate VerifyCertificate(std::span<const unsigned char> file,
+    std::string_view trustedIssuerId, std::span<const unsigned char> trustedPublicKey) {
+    return VerifyCertificateForProduct(file, TubeDesignerProduct, trustedIssuerId, trustedPublicKey);
 }
 inline std::array<unsigned char, 104> DeviceChallenge(const Certificate& certificate,
     Feature feature, const Digest& nonce, std::uint32_t site = 1) {
@@ -253,7 +259,7 @@ __forceinline void VerifyAtSite(std::span<const unsigned char> file,
     static_assert(Site != 0);
     const auto certificate = VerifyCertificate(file, issuer, publicKey);
     Require(productMajor >= certificate.minMajor && productMajor <= certificate.maxMajor, "Version not licensed");
-    Require((certificate.features & static_cast<std::uint32_t>(Required)) != 0, "Feature not licensed");
+    Require(HasFeature(certificate.features, Required), "Page or operation not licensed");
     // Never silently fall back to disk-only trial records or a software device.
     Require(certificate.kind == Kind::Permanent, "Trial NV provider has not passed qualification");
     ProveDevice(certificate, Required, deviceKeyName, Site);
