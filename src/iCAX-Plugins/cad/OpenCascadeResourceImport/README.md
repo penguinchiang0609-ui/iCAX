@@ -2,6 +2,14 @@
 
 本目录提供基于 Open CASCADE Technology 的通用资源导入插件。
 
+## DWG / DXF 文档加载 service
+
+`ICadDocumentImportService` 继承框架 `IService`，由 `AUTO_REGIST_SERVICE` 注册，调用方通过自己的 `ServiceProvider::Resolve<ICadDocumentImportService>()` 获取。`Load(absolutePath)` 返回 `SCadExchangeDocument`：来源格式与版本，以及已经解码的 `SCadDocument` 文档头、图块和实体记录。ASCII、二进制 DXF 和 DWG 使用相同记录契约，字符串统一为 UTF-8；调用方无需再解析文件字节。
+
+service 不接收应用、产品或场景上下文，不生成草图 ID、不缩放到业务单位、不选择切割区域，也不写数据库。业务 target / SDO 负责取得中性数据并处理本领域映射与持久化。测试中的独立 provider 可直接加载文档，不创建产品或场景。
+
+DWG 由独立 LibreDWG 进程转换，保留源版本，再进入公共解码器。运行组件固定在本模块同级 `runtime/cad/libredwg`，不联网、不搜索 `PATH`，不链接进本模块。构建部署使用 `src/tools/build/prepare_sketch_cad_runtime.ps1`；固定文件清单、许可证和对应源码见 `src/third_party/libredwg`。
+
 ## 职责
 
 - 注册 `IResourceImporter`，为当前产品的 `ResourceLibrary` 增加 STEP/STP、IGS/IGES 导入能力。

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="ICAXDeployCadDrawingRuntime" AfterTargets="Build" Condition="'$(Platform)' == 'x64'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\tools\build\prepare_sketch_cad_runtime.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />
+  </Target>
+</Project>

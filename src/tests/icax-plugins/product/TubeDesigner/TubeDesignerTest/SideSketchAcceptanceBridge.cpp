@@ -1,6 +1,9 @@
 // Test-only stdio adapter: real SDO scopes, resources and project persistence.
 #include "pch.h"
 #include "PunchPersistenceSDOTests.cpp"
+#include "OpenCascadeResourceImport/CadDocumentImportService.h"
+#include "Services/ServiceRegistrationCatalog.h"
+#include "Services/ServiceProvider.h"
 #include <crtdbg.h>
 
 namespace {
@@ -12,12 +15,13 @@ public:
         definition.ProductID = "icax.tube-designer";
         store = std::make_shared<iCAX::Application::CProductUserDataStore>(
             std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"), definition.ProductID);
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services);
     }
     const iCAX::Product::CProductDefinition& GetDefinition() const override { return definition; }
     const std::string& GetProductID() const override { return definition.ProductID; }
     std::shared_ptr<iCAX::Application::IProductUserDataStore> GetUserDataStore() const override { return store; }
     iCAX::Product::CProductData GetProductData() const override { return {}; }
-    iCAX::Services::CServiceProvider& GetServiceProvider() const override { throw std::logic_error("No test product services"); }
+    iCAX::Services::CServiceProvider& GetServiceProvider() const override { return services; }
     iCAX::Database::IMetaRegistry& GetMetaRegistry() const override { throw std::logic_error("No test product registry"); }
     iCAX::Behaviour::IBehaviourRegistry& GetBehaviourRegistry() const override { throw std::logic_error("No test behaviors"); }
     iCAX::Resource::CResourceLoaderRegistry& GetResourceLoaderRegistry() const override { throw std::logic_error("No test resource loaders"); }
@@ -25,7 +29,26 @@ public:
 private:
     iCAX::Product::CProductDefinition definition;
     std::shared_ptr<iCAX::Application::IProductUserDataStore> store;
+    mutable iCAX::Services::CServiceProvider services;
 };
+ObjectMap cadDocument(const iCAX::CAD::SCadExchangeDocument& loaded) {
+    const auto groups = [](const std::vector<iCAX::CAD::SCadGroup>& values) {
+        iCAX::Data::VariantArray result;
+        for (const auto& group : values) result.emplace_back(iCAX::Data::VariantArray{group.Code, group.Value});
+        return result;
+    };
+    ObjectMap header, sections;
+    for (const auto& [name, values] : loaded.Document.Header) header[name] = groups(values);
+    for (const auto& [name, records] : loaded.Document.Sections) {
+        iCAX::Data::VariantArray result;
+        for (const auto& record : records) result.emplace_back(ObjectMap{{"type", record.Type}, {"values", groups(record.Values)}});
+        sections[name] = std::move(result);
+    }
+    const auto path = loaded.SourcePath.u8string();
+    return {{"sourcePath", std::string(path.begin(), path.end())}, {"format", loaded.SourceFormat},
+        {"sourceVersion", loaded.SourceVersion}, {"converterVersion", loaded.ConverterVersion},
+        {"document", ObjectMap{{"header", std::move(header)}, {"sections", std::move(sections)}, {"sourceFormat", loaded.Document.SourceFormat}}}};
+}
 std::string text(const ObjectMap& value, const std::string& key, const std::string& fallback = {}) {
     const auto it = value.find(key); return it == value.end() ? fallback : it->second.To<std::string>();
 }
@@ -92,6 +115,14 @@ int main() {
             const auto payload = input.contains("payload") ? input.at("payload").To<ObjectMap>() : ObjectMap{};
             ObjectMap result;
             if (action == "exit") { result = {{"exited", true}}; exiting = true; }
+            else if (action == "read-cad-document") {
+                // A fresh generic service container, with no Product/Scene/SDO.
+                iCAX::Services::CServiceProvider provider;
+                iCAX::Services::CServiceRegistrationCatalog::ReplayAll(provider);
+                const auto service = provider.Resolve<iCAX::CAD::ICadDocumentImportService>();
+                const auto path = text(payload, "sourcePath");
+                result = cadDocument(service->Load(std::filesystem::path(std::u8string(path.begin(), path.end()))));
+            }
             else {
                 if (!scene || action == "reset") scene = std::make_unique<Scene>();
                 if (action == "reset") result = {{"reset", true}};

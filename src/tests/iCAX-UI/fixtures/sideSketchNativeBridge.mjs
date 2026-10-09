@@ -1,7 +1,7 @@
 // Test-only transport for production SDOs, BRep models, GPU resources and .ictd files.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { copyFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,8 @@ export async function startSideSketchNativeBridge(artifacts) {
   mkdirSync(runtime, { recursive: true });
   for (const name of readdirSync(dllDirectory).filter(name => /\.dll$/i.test(name)))
     copyFileSync(resolve(dllDirectory, name), resolve(runtime, name));
+  const cadRuntime = resolve(dllDirectory, 'runtime/cad/libredwg');
+  if (existsSync(cadRuntime)) cpSync(cadRuntime, resolve(runtime, 'runtime/cad/libredwg'), { recursive: true });
   copyFileSync(bridgePath, resolve(runtime, 'SideSketchAcceptanceBridge.exe'));
   const dllHash = createHash('sha256').update(readFileSync(resolve(runtime, 'TubeDesigner.dll'))).digest('hex');
   const importerHash = createHash('sha256').update(readFileSync(resolve(runtime, 'OpenCascadeResourceImport.dll'))).digest('hex');

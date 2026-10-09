@@ -29,6 +29,7 @@
 #include "GeometryData/GeometryData.h"
 #include "GeometryData/BRepPersistence.h"
 #include "OpenCascadeResourceImport/OpenCascadeBRepReader.h"
+#include "OpenCascadeResourceImport/CadDocumentImportService.h"
 #include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
 #include "OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h"
 #include "OpenCascadeResourceImport/OpenCascadeTubeCSGConverter.h"
@@ -12791,38 +12792,33 @@ namespace
         return MakeResponse(ObjectMap{{"targetPath", PathToUTF8(_Target)}});
     }
 
-    iCAX::Interaction::CInvocationResult HandleReadSketchDxf(
+    iCAX::Interaction::CInvocationResult HandleReadSketchCad(
         const iCAX::Interaction::CInvocation& Request_, const iCAX::Application::IApplicationContext&,
-        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+        iCAX::Product::IProductContext* ProductContext_, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
-        if (Request_.Payload.size() > 65536) throw std::invalid_argument("DXF读取请求过大");
+        if (!ProductContext_ || Request_.Payload.size() > 65536) throw std::invalid_argument("CAD读取请求无效");
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _Path = Utf8Path(GetRequiredText(_Payload, "sourcePath", 4096));
-        auto _Extension = PathToUTF8(_Path.extension());
-        std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char C) { return static_cast<char>(std::tolower(C)); });
-        if (_Extension != ".dxf" || !_Path.is_absolute() || !std::filesystem::is_regular_file(_Path))
-            throw std::invalid_argument("请选择有效的DXF图纸");
-        const auto _Size = std::filesystem::file_size(_Path);
-        const auto _Modified = std::filesystem::last_write_time(_Path);
-        if (_Size == 0 || _Size > 32 * 1024 * 1024) throw std::invalid_argument("DXF文件大小须在32MB内");
-        std::ifstream _File(_Path, std::ios::binary);
-        std::string _Content(static_cast<std::size_t>(_Size), '\0');
-        _File.read(_Content.data(), static_cast<std::streamsize>(_Content.size()));
-        if (!_File || std::filesystem::file_size(_Path) != _Size || std::filesystem::last_write_time(_Path) != _Modified)
-            throw std::runtime_error("读取期间DXF文件发生变化，请重新导入");
-        if (_Content.find('\0') != std::string::npos) throw std::invalid_argument("请使用文本格式DXF图纸");
-        if (_Content.starts_with("\xef\xbb\xbf")) _Content.erase(0, 3);
-        if (!::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, _Content.data(), static_cast<int>(_Content.size()), nullptr, 0))
+        const auto _Import = ProductContext_->GetServiceProvider().Resolve<iCAX::CAD::ICadDocumentImportService>();
+        const auto _Loaded = _Import->Load(_Path);
+        const auto _Groups = [](const std::vector<iCAX::CAD::SCadGroup>& Groups_) {
+            VariantArray _Result; _Result.reserve(Groups_.size());
+            for (const auto& _Group : Groups_) _Result.emplace_back(VariantArray{_Group.Code, _Group.Value});
+            return _Result;
+        };
+        ObjectMap _Header, _Sections;
+        for (const auto& [_Name, _Values] : _Loaded.Document.Header) _Header[_Name] = _Groups(_Values);
+        for (const auto& [_Name, _Records] : _Loaded.Document.Sections)
         {
-            const auto _Count = ::MultiByteToWideChar(54936, MB_ERR_INVALID_CHARS, _Content.data(), static_cast<int>(_Content.size()), nullptr, 0);
-            if (_Count <= 0) throw std::invalid_argument("DXF文字编码须为UTF-8或GB18030");
-            std::wstring _Wide(static_cast<std::size_t>(_Count), L'\0');
-            ::MultiByteToWideChar(54936, MB_ERR_INVALID_CHARS, _Content.data(), static_cast<int>(_Content.size()), _Wide.data(), _Count);
-            const auto _Bytes = ::WideCharToMultiByte(CP_UTF8, 0, _Wide.data(), _Count, nullptr, 0, nullptr, nullptr);
-            _Content.resize(static_cast<std::size_t>(_Bytes));
-            ::WideCharToMultiByte(CP_UTF8, 0, _Wide.data(), _Count, _Content.data(), _Bytes, nullptr, nullptr);
+            VariantArray _Entities; _Entities.reserve(_Records.size());
+            for (const auto& _Record : _Records)
+                _Entities.emplace_back(ObjectMap{{"type", _Record.Type}, {"values", _Groups(_Record.Values)}});
+            _Sections[_Name] = std::move(_Entities);
         }
-        return MakeResponse(ObjectMap{{"sourcePath", PathToUTF8(_Path)}, {"content", _Content}});
+        return MakeResponse(ObjectMap{{"sourcePath", PathToUTF8(_Loaded.SourcePath)}, {"format", _Loaded.SourceFormat},
+            {"sourceVersion", _Loaded.SourceVersion}, {"converterVersion", _Loaded.ConverterVersion},
+            {"document", ObjectMap{{"header", std::move(_Header)}, {"sections", std::move(_Sections)},
+                {"sourceFormat", _Loaded.Document.SourceFormat}}}});
     }
 
     iCAX::Interaction::CInvocationResult HandleGenerateSketchTextOutline(
@@ -15475,7 +15471,7 @@ namespace
             ExposeMethod("SaveSketch", tube::license::ProtectMethod<10048, tube::license::Feature::ProductDesign>(&HandleSaveSketch));
             ExposeMethod("SavePartSketch", tube::license::ProtectMethod<10049, tube::license::Feature::NestingEdit>(&HandleSavePartSketch));
             ExposeMethod("ExportSketchDxf", tube::license::ProtectMethod<10210, tube::license::Feature::NestingEdit>(&HandleExportSketchDxf));
-            ExposeMethod("ReadSketchDxf", tube::license::ProtectMethod<10212, tube::license::Feature::NestingEdit>(&HandleReadSketchDxf));
+            ExposeMethod("ReadSketchCad", tube::license::ProtectMethod<10212, tube::license::Feature::NestingEdit>(&HandleReadSketchCad));
             ExposeMethod("GenerateSketchTextOutline", tube::license::ProtectMethod<10211, tube::license::Feature::NestingEdit>(&HandleGenerateSketchTextOutline));
             ExposeMethod("GeneratePreview", tube::license::ProtectMethod<10050, tube::license::Feature::ProductDesign>(&HandleGeneratePreview));
             ExposeMethod("GenerateProductTemplatePreview", tube::license::ProtectAnyMethod<10051, tube::license::Feature::ProductDesign, tube::license::Feature::NestingEdit>(&HandleGenerateProductTemplatePreview));

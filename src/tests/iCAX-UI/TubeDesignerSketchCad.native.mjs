@@ -89,9 +89,13 @@ try {
   report.scenarios.push({name:'Mixed BO8 Chinese exact glyph outlines generate valid independent solids; invalid font, empty and missing glyph rejected',groups:[...groups.values()],solids:mixedAdded.splitPartCount});
   const targetPath=resolve(artifacts,'二维图纸.dxf'),content='0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n';
   await bridge.invoke('ExportSketchDxf',{targetPath,content},'product'); assert.equal(readFileSync(targetPath,'utf8'),content);
-  assert.equal((await bridge.invoke('ReadSketchDxf',{sourcePath:targetPath},'product')).content,content);
-  const gbPath=resolve(artifacts,'gb18030.dxf');writeFileSync(gbPath,Buffer.concat([Buffer.from('999\r\n'),Buffer.from([0xd6,0xd0,0xce,0xc4]),Buffer.from('\r\n0\r\nEOF\r\n')]));
-  assert.equal((await bridge.invoke('ReadSketchDxf',{sourcePath:gbPath},'product')).content,'999\r\n中文\r\n0\r\nEOF\r\n');
+  const emptyDocument=await bridge.invoke('ReadSketchCad',{sourcePath:targetPath},'product');
+  assert.equal(emptyDocument.format,'dxf'); assert.deepEqual(emptyDocument.document.sections.ENTITIES,[]);
+  const gbPath=resolve(artifacts,'gbk.dxf');writeFileSync(gbPath,Buffer.concat([
+    Buffer.from('0\r\nSECTION\r\n2\r\nHEADER\r\n9\r\n$ACADVER\r\n1\r\nAC1015\r\n9\r\n$DWGCODEPAGE\r\n3\r\nANSI_936\r\n0\r\nENDSEC\r\n0\r\nSECTION\r\n2\r\nENTITIES\r\n0\r\nTEXT\r\n1\r\n'),
+    Buffer.from([0xd6,0xd0,0xce,0xc4]),Buffer.from('\r\n0\r\nENDSEC\r\n0\r\nEOF\r\n')]));
+  const gbDocument=await bridge.invoke('ReadSketchCad',{sourcePath:gbPath},'product');
+  assert.deepEqual(gbDocument.document.sections.ENTITIES[0].values,[[1,'中文']]);
   await assert.rejects(bridge.invoke('ExportSketchDxf',{targetPath:resolve(artifacts,'invalid.txt'),content},'product'),/DXF/);
   assert.ok(!existsSync(resolve(artifacts,'invalid.txt')));
   writeFileSync(targetPath,'previous-content');

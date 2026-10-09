@@ -1,0 +1,19 @@
+{
+  "version": "0.14.8601",
+  "release": "https://github.com/LibreDWG/libredwg/releases/tag/0.14.8601",
+  "runtimeDirectory": "runtime/cad/libredwg",
+  "artifacts": [
+    {"name":"libredwg-0.14.8601-win64.zip","url":"https://github.com/LibreDWG/libredwg/releases/download/0.14.8601/libredwg-0.14.8601-win64.zip","sha256":"439cd08d888f3bc2f643cabade0374dfd8670f18d2098cd039cbe64d12a57b19"},
+    {"name":"libredwg-0.14.8601.tar.xz","url":"https://github.com/LibreDWG/libredwg/releases/download/0.14.8601/libredwg-0.14.8601.tar.xz","sha256":"f1140a219d6edb291e55fad740be6c5e49c046fee558860575aeef110caa4ef9"},
+    {"name":"libiconv-1.18.tar.gz","url":"https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.18.tar.gz","sha256":"3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8"}
+  ],
+  "deployFiles": [
+    {"relative":"dwg2dxf.exe","source":"windows/dwg2dxf.exe","sha256":"d6d4560fcad56880e2a6ba0633786a73f20d82738af20c9bb16798b4e25d412d"},
+    {"relative":"libredwg-0.dll","source":"windows/libredwg-0.dll","sha256":"b975b95e287bfeeac67c2a4cb3dcbda5a809a42c58a4492b11cdc1280035c47e"},
+    {"relative":"libiconv-2.dll","source":"windows/libiconv-2.dll","sha256":"ff31fa811f9c07cc7fdaa68c9e8bca3a7b4fdf6e0a079a58175ea58ba139c7ae"},
+    {"relative":"licenses/LibreDWG-COPYING.txt","source":"sources/libredwg-0.14.8601/COPYING","sha256":"8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"},
+    {"relative":"licenses/libiconv-COPYING.LIB.txt","source":"sources/libiconv-1.18/COPYING.LIB","sha256":"20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"},
+    {"relative":"source/libredwg-0.14.8601.tar.xz","source":"archives/libredwg-0.14.8601.tar.xz","sha256":"f1140a219d6edb291e55fad740be6c5e49c046fee558860575aeef110caa4ef9"},
+    {"relative":"source/libiconv-1.18.tar.gz","source":"archives/libiconv-1.18.tar.gz","sha256":"3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8"}
+  ]
+}

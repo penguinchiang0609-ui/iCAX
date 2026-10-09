@@ -9,7 +9,7 @@ import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { arrayTransformMatrix, buildArrayTransforms, transformArrayEntity, validateArraySpec } from "./sketchArray.mjs";
 import { CAD_TOOLS, CAD_TRANSFORMS, CAD_SHAPES, beginCadOperation, isCadOperation, cadOperationKind, cadPrompt, cadNumber, cadNumericSpec, cadTransformMatrix, updateCadPointer, renderCadOperationPanel, renderNumericPointPanel, numericPoint } from "./sketchCadCommands.mjs";
 import { boundsOfEntities, transformSketchEntities, trimSketchEntity, extendSketchEntity, offsetSketchEntity, filletSketchEntities, repairSketchEntities, diagnoseSketchEntities } from "./sketchCadGeometry.mjs";
-import { parseSketchDxf, buildSketchDxf, createRegularPolygon, createStar, createRacetrack } from "./sketchCadExchange.mjs";
+import { mapSketchCadDocument, buildSketchDxf, createRegularPolygon, createStar, createRacetrack } from "./sketchCadExchange.mjs";
 
 const SECTION_MODE = "section";
 const SIDE_MODE = "side";
@@ -151,6 +151,7 @@ export function ensureSketchState(view) {
 
 export function beginNewSectionSketch(view) {
   const state = ensureSketchState(view);
+  clearCadImport(state);
   state.mode = SECTION_MODE;
   state.tool = "select";
   state.command = null;
@@ -168,6 +169,7 @@ export function beginProfileSectionSketch(view, source) {
   const entities = entitiesFromProfile(snapshot);
   if (!entities.length) throw new Error("所选管型没有可编辑的截面轮廓。");
   const state = ensureSketchState(view);
+  clearCadImport(state);
   const directUpdate = source?.directUpdate === true;
   const sourceName = String(source?.name ?? snapshot?.name ?? "未命名管型").trim() || "未命名管型";
   state.mode = SECTION_MODE;
@@ -199,6 +201,7 @@ export function beginPartSideSketch(view, part, report) {
     throw new Error("当前下料零件没有可编辑的侧面尺寸。");
   }
   const state = ensureSketchState(view);
+  clearCadImport(state);
   const resourceVersion = Number(part?.manufacturingGeometryResourceVersion ?? 0);
   const versionKey = `${partId}@${resourceVersion}`;
   if (!state.sideByPart[partId] || state.sidePartVersions[partId] !== versionKey) {
@@ -303,15 +306,15 @@ export function renderSectionSketchDialog(context, view) {
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
   const title = sidePart ? (state.sideCreationPayload ? "二维绘制零件" : "下料零件二维编辑") : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "单件工艺截面草图" : "截面轮廓草图"));
   const error = (state.mode === SIDE_MODE && state.sideSaveError) || view.error || "";
-  const progress = view.pending ? view.progress : null;
+  const progress = view.pending ? view.progress : state.cadImportProgress;
   return `<dialog class="tube-section-sketch-dialog" aria-label="${title}" data-window-state-controls="${escapeAttr(sketchCreationMemoryControls(view,state))}">
     <header class="tube-section-sketch-title">${title}</header>
-    <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.id === "sketch.commit" && state.sideSavePending ? "保存中…" : command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
+    <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending || state.cadImportPending && ["sketch.import", "sketch.commit"].includes(command.id) ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.id === "sketch.commit" && state.sideSavePending ? "保存中…" : command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
     <div class="tube-section-sketch-feedback">
       <div role="alert" class="tube-section-sketch-error" data-sketch-save-error ${error ? "" : "hidden"}>${escapeText(error)}</div>
       <div role="status" aria-live="polite" class="tube-section-sketch-progress" data-sketch-save-progress ${progress ? "" : "hidden"}>
         <span class="tube-designer-export-spinner" aria-hidden="true"></span>
-        <div><strong>${escapeText(progress?.title || "正在保存草图")}</strong><span>${escapeText(progress?.detail || "")}</span><small>正在生成三维模型，完成后会自动退出绘图界面。</small></div>
+        <div><strong>${escapeText(progress?.title || "正在保存草图")}</strong><span>${escapeText(progress?.detail || "")}</span><small>${progress?.mode === "SketchImport" ? "读取完成后直接加入当前草图，可继续编辑。" : "正在生成三维模型，完成后会自动退出绘图界面。"}</small></div>
       </div>
     </div>
     <div class="tube-section-sketch-body"><aside>${renderSketchLeftPane(context, view)}</aside><main>${renderSketchViewportOverlay(context, view)}</main><aside>${renderSketchRightPane(context, view)}</aside></div>
@@ -427,6 +430,7 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
   if (!String(action).startsWith("tube-designer-sketch-")) return { handled: false };
   if (view.pending) return { handled: true };
   const state = ensureSketchState(view);
+  if (state.cadImportPending && action === "tube-designer-sketch-commit") return { handled: true };
   if (action.startsWith("tube-designer-sketch-cad-") || action.startsWith("tube-designer-sketch-numeric-")) {
     await handleCadOperationAction(context, view, action, target, ops);
     return { handled: true };
@@ -462,6 +466,7 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
   }
   if (action === "tube-designer-sketch-switch-mode") {
     if (view.tubeDesignerSketchDialogOpen) return { handled: true };
+    clearCadImport(state);
     state.mode = target?.dataset?.tubeSketchMode === SIDE_MODE ? SIDE_MODE : SECTION_MODE;
     state.tool = "select";
     state.command = null;
@@ -470,6 +475,7 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     return { handled: true };
   }
   if (action === "tube-designer-sketch-target-member") {
+    clearCadImport(state);
     state.sideTargetKind = "member";
     state.targetPartId = "";
     state.sideTargetSnapshot = null;
@@ -565,6 +571,7 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
   if (!String(commandId).startsWith("sketch.")) return false;
   if (view.pending) return true;
   const state = ensureSketchState(view);
+  if (state.cadImportPending && ["sketch.import", "sketch.commit"].includes(commandId)) return true;
   const cadKind = String(commandId).replace(/^sketch\./, "");
   if (commandId === "sketch.export") { await exportSketchDxf(context, view, ops); return true; }
   if (commandId === "sketch.array-edit") {
@@ -593,6 +600,7 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
   }
   if (commandId === "sketch.mode-section" || commandId === "sketch.mode-side") {
     if (view.tubeDesignerSketchDialogOpen) return true;
+    clearCadImport(state);
     state.mode = commandId.endsWith("side") ? SIDE_MODE : SECTION_MODE;
     state.tool = "select";
     state.command = null;
@@ -600,9 +608,7 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
     return true;
   }
   if (commandId === "sketch.import") {
-    state.command = null;
-    state.tool = "select";
-    await importSketchDxf(context, view, ops);
+    await importSketchCad(context, view, ops);
     return true;
   }
   if (commandId === "sketch.undo") {
@@ -3719,6 +3725,7 @@ function curvePath(points, kind, closed) {
 
 function renderEntityProperties(entity, arcLengthAxial = false) {
   const controls = [];
+  const field = (...args) => entityPropertyField(entity.id, ...args);
   const xLabel = arcLengthAxial ? "U" : "X", yLabel = arcLengthAxial ? "S" : "Y";
   if (entity.kind === "rectangle") {
     controls.push(field(`中心 ${xLabel}`, "centerX", entity.x + entity.width / 2));
@@ -3781,8 +3788,8 @@ function renderEntityProperties(entity, arcLengthAxial = false) {
     </div></section>` : ""}`;
 }
 
-function field(label, key, value, unit = "mm", step = 0.1) {
-  return `<label><span>${label}</span><span class="tube-sketch-property-input"><input type="number" step="${step}" value="${escapeAttr(roundCoordinate(value))}" data-sketch-field="${key}" data-cam-change-action="tube-designer-sketch-property"/><small>${unit}</small></span></label>`;
+function entityPropertyField(entityId, label, key, value, unit = "mm", step = 0.1) {
+  return `<label><span>${label}</span><span class="tube-sketch-property-input"><input type="number" step="${step}" value="${escapeAttr(roundCoordinate(value))}" data-sketch-field="${key}" data-sketch-entity-id="${escapeAttr(entityId)}" data-cam-change-action="tube-designer-sketch-property"/><small>${unit}</small></span></label>`;
 }
 
 function renderSectionPreview(analysis) {
@@ -4376,29 +4383,52 @@ function draftSnapshot(draft) {
   return JSON.stringify({ entities:draft.entities, arrays:draft.arrays??[],endCuts:draft.endCuts??null,splitParts:draft.splitParts===true,trajectoryWidth:draft.trajectoryWidth,selectedIds:draftSelectionIds(draft),selectedPoints:draftSelectedPoints(draft) });
 }
 
-async function importSketchDxf(context, view, ops) {
+function clearCadImport(state) {
+  state.cadImportRequest = null;
+  state.cadImportPending = false;
+  state.cadImportProgress = null;
+}
+
+async function importSketchCad(context, view, ops) {
   const state = ensureSketchState(view);
   const draft = currentDraft(view, state), sceneProxy = context.sceneProxy;
+  const areaId = view.activeAreaId, dialogOpen = view.tubeDesignerSketchDialogOpen;
+  const request = {};
+  const current = () => state.cadImportRequest === request && view.tubeDesignerSketch === state && context.sceneProxy === sceneProxy
+    && view.activeAreaId === areaId && currentDraft(view, state) === draft
+    && (!dialogOpen || view.tubeDesignerSketchDialogOpen);
   const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge;
   if (typeof bridge?.openFileDialog !== "function") throw new Error("当前宿主没有提供文件选择能力。");
-  const sourcePath = String(await bridge.openFileDialog({ title: "选择草图 DXF", filters: [{ name: "DXF 二维图形", extensions: ["dxf"] }] }) ?? "").trim();
-  if (!sourcePath) return null;
-  view.pending = true;
-  view.progress = { title: "正在导入草图", detail: "正在识别二维曲线", stage: "DXF 解析", mode: "Sketch" };
+  state.cadImportRequest = request;
+  state.cadImportPending = true;
+  state.cadImportProgress = { title: "正在导入草图", detail: "选择 DWG 或 DXF 文件", mode: "SketchImport" };
   ops.renderProject(context, view);
   try {
-    const response = await context.productProxy.invoke("TubeDesigner.ReadSketchDxf", { sourcePath }, { timeoutMs: 120000 });
-    if (view.tubeDesignerSketch !== state || context.sceneProxy !== sceneProxy || currentDraft(view,state) !== draft) return null;
-    const parsed = parseSketchDxf(response?.content ?? "");
-    const entities = Array.isArray(parsed) ? parsed : parsed.entities;
-    if (!entities?.length) throw new Error("DXF 中没有可编辑的二维图形。");
-    replaceCadEntities(draft, [], entities, true);
-    view.error = "";
-    return parsed;
-  } finally {
-    view.pending = false;
-    view.progress = null;
+    const sourcePath = String(await bridge.openFileDialog({ title: "导入二维草图", memoryKey: "tube-designer-sketch-cad-import",
+      filters: [{ name: "DWG / DXF 二维图形", extensions: ["dwg", "dxf"] }] }) ?? "").trim();
+    if (!sourcePath || !current()) return null;
+    if (!/\.(dwg|dxf)$/i.test(sourcePath)) throw new Error("请选择 DWG 或 DXF 二维图形文件。");
+    state.cadImportProgress.detail = `正在读取 ${sourcePath.split(/[\\/]/).pop()}`;
     ops.renderProject(context, view);
+    const response = await context.productProxy.invoke("TubeDesigner.ReadSketchCad", { sourcePath }, { timeoutMs: 120000 });
+    if (!current()) return null;
+    if (!response?.document || typeof response.document !== "object") throw new Error("读取的二维图形文件内容为空。");
+    const parsed = mapSketchCadDocument(response.document);
+    const entities = parsed.entities;
+    if (!entities?.length) throw new Error("文件中没有可编辑的二维图形。");
+    replaceCadEntities(draft, [], entities, true);
+    state.command = null;
+    state.tool = "select";
+    view.error = "";
+    ops.showNotice?.(context, view, `已导入 ${entities.length} 个图形。${parsed.warnings?.length ? ` ${parsed.warnings.join("；")}` : ""}`);
+    return parsed;
+  } catch (error) {
+    if (!current()) return null;
+    throw error;
+  } finally {
+    const refresh = current();
+    if (state.cadImportRequest === request) clearCadImport(state);
+    if (refresh) ops.renderProject(context, view);
   }
 }
 
@@ -4549,6 +4579,7 @@ async function cancelSketch(context, view, ops) {
   const draft = currentDraft(view, state);
   if (draft.dirty && typeof globalThis.confirm === "function"
       && !globalThis.confirm("当前草图还有未保存的修改，确定取消吗？")) return false;
+  clearCadImport(state);
   state.command = null;
   state.saveChoiceDialogOpen = false;
   view.tubeDesignerSketchDialogOpen = false;

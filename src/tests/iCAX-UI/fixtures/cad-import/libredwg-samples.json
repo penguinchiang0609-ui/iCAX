@@ -1,0 +1,107 @@
+[
+  {
+    "id": "2000-Ellipse",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2000/Ellipse.dwg",
+    "sha256": "fef994a4ace40c6c88fede633d4c671acb81fe272eba4a3d8cd6fb86b75d2062",
+    "sourceFormatVersion": 2000,
+    "expectedKind": "ellipse"
+  },
+  {
+    "id": "2000-Line",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2000/Line.dwg",
+    "sha256": "358fc09c7c27737ba3b500eac122caee4c83c270f5ccb8a9f7f8f3d4b763d937",
+    "sourceFormatVersion": 2000,
+    "expectedKind": "line"
+  },
+  {
+    "id": "2000-circle",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2000/circle.dwg",
+    "sha256": "d2c2e592c4d501aa416bf41383b8067f7f72c32af558d1dea8481bb7d884b6dc",
+    "sourceFormatVersion": 2000,
+    "expectedKind": "circle"
+  },
+  {
+    "id": "2004-Ellipse",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2004/Ellipse.dwg",
+    "sha256": "75078807a12554f0f83167cdea1d905c1eb35f249fa744ee06637f6246c1ca99",
+    "sourceFormatVersion": 2004,
+    "expectedKind": "ellipse"
+  },
+  {
+    "id": "2004-Line",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2004/Line.dwg",
+    "sha256": "60c86e1d4f038a3f1755d15bd22710c34608900957af61282432e4719b730c24",
+    "sourceFormatVersion": 2004,
+    "expectedKind": "line"
+  },
+  {
+    "id": "2004-circle",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2004/circle.dwg",
+    "sha256": "40744fae8c68234f1259afc25a4d172ba70477a7de6a7f18b1cc97ac39a31efb",
+    "sourceFormatVersion": 2004,
+    "expectedKind": "circle"
+  },
+  {
+    "id": "2007-Ellipse",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2007/Ellipse.dwg",
+    "sha256": "ac3d8be420fb4c9d3920bcc8056bebb15257ef6446ce6f973400dc7b3572bd0e",
+    "sourceFormatVersion": 2007,
+    "expectedKind": "ellipse"
+  },
+  {
+    "id": "2007-Line",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2007/Line.dwg",
+    "sha256": "75ed6e8ad65af25133def49823a33bb8754b6626881d5fa3d9ed5436c4645bde",
+    "sourceFormatVersion": 2007,
+    "expectedKind": "line"
+  },
+  {
+    "id": "2007-circle",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2007/circle.dwg",
+    "sha256": "2dbaacba3ec90eb1c81c4e8b31f98df649aa0e019524076131eedc5b375ad661",
+    "sourceFormatVersion": 2007,
+    "expectedKind": "circle"
+  },
+  {
+    "id": "2013-Ellipse",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2013/Ellipse.dwg",
+    "sha256": "5ba988ddcca91e915e2130e3b43509befa794c54fe3b5dddd4248fb0001d0b1a",
+    "sourceFormatVersion": 2013,
+    "expectedKind": "ellipse"
+  },
+  {
+    "id": "2013-Line",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2013/Line.dwg",
+    "sha256": "351a239cdae05894fe11863aabecfde171bd4d1758a3dd1c9868d8fe534fe6c1",
+    "sourceFormatVersion": 2013,
+    "expectedKind": "line"
+  },
+  {
+    "id": "2013-circle",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2013/circle.dwg",
+    "sha256": "e6b00316de1360f5bfd550aa8a2c3b9b25ec898b921a351ac044f56d96441d82",
+    "sourceFormatVersion": 2013,
+    "expectedKind": "circle"
+  },
+  {
+    "id": "2018-Ellipse",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2018/Ellipse.dwg",
+    "sha256": "212d1f1a228a597b9f1897572b6c4aae01ae3e1159d4838cb6277c03ccd1d715",
+    "sourceFormatVersion": 2018,
+    "expectedKind": "ellipse"
+  },
+  {
+    "id": "2018-Line",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2018/Line.dwg",
+    "sha256": "1f4edd4c11aaf28b3295fd69fa59376f9cb911c637aa47a6073408ecac4797a3",
+    "sourceFormatVersion": 2018,
+    "expectedKind": "line"
+  },
+  {
+    "id": "2018-circle",
+    "url": "https://raw.githubusercontent.com/LibreDWG/libredwg/a3d51f1/test/test-data/2018/circle.dwg",
+    "sha256": "003bbd8925ae17962814e31293a401655409a3576220922dea747ace928e1020",
+    "sourceFormatVersion": 2018,
+    "expectedKind": "circle"
+  }
+]

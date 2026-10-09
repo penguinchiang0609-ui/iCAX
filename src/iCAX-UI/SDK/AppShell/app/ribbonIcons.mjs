@@ -18,6 +18,8 @@ const RIBBON_ICON_SHAPES = Object.freeze({
   nest: `<path d="M3 5h8v6H3zM13 13h8v6h-8z"/><path class="accent" d="M13 5h8v6h-8zM3 13h8v6H3z"/>`,
   array: `<rect x="3" y="3" width="4" height="4"/><path class="accent" d="M10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4zM17 17h4v4h-4z"/>`,
   export: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M12 17V8m-3 3 3-3 3 3"/>`,
+  save: `<path d="M4 3h13l3 3v15H4zM7 3v6h10V3M7 21v-8h10v8"/><path class="accent" d="M14 4v3M9 16h6"/>`,
+  "view-fit": `<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/><path class="accent" d="m4 4 6 6m10-6-6 6m6 10-6-6M4 20l6-6"/>`,
   report: `<path d="M6 4h12v17H6z"/><path class="accent" d="M9 8h6M9 12h6M9 16h4"/><path d="M9 2.5h6V6H9z"/>`,
   select: `<path d="m5 3 12 9-6 1.5L8 19z"/><path class="accent" d="m12 14 4 6"/>`,
   display: `<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11"/><circle class="accent fill" cx="6" cy="6.5" r="1"/>`,

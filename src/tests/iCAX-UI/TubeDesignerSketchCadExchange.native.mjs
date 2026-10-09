@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSketchDxf, parseSketchDxf } from "../../apps/tube-designer/webpage/sketchCadExchange.mjs";
+import { buildSketchDxf, parseSketchDxf, mapSketchCadDocument } from "../../apps/tube-designer/webpage/sketchCadExchange.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const output = resolve(root, "output/tests/sketch-cad-exchange-native"), runtime = resolve(output, "runtime");
@@ -49,8 +49,8 @@ try {
   const content = buildSketchDxf(sources), targetPath = resolve(output, "roundtrip.dxf");
   await invoke("ExportSketchDxf", { targetPath, content });
   assert.equal(readFileSync(targetPath, "utf8"), content);
-  const response = await invoke("ReadSketchDxf", { sourcePath: targetPath });
-  assert.equal(response.content, content); assert.equal(parseSketchDxf(response.content).entities.length, 3);
+  const response = await invoke("ReadSketchCad", { sourcePath: targetPath });
+  assert.equal(response.format, 'dxf'); assert.equal(mapSketchCadDocument(response.document).entities.length, 3);
   results.push({ case: "real native DXF file write read", entities: 3 });
   await rpc({ action: "exit" }); processBridge.stdin.end();
   writeFileSync(resolve(output, "report.json"), JSON.stringify({ dllSha256: createHash("sha256").update(readFileSync(resolve(dllDirectory, "TubeDesigner.dll"))).digest("hex"), nativeTransport: "production SDO", results, stderr }, null, 2));

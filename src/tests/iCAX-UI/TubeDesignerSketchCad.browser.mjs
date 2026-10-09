@@ -121,7 +121,11 @@ try {
     Object.assign(check, { sketch, standard, context, ops, render });
     context.productProxy = { async invoke(method, payload) {
       calls.push({ method, payload: structuredClone(payload) });
-      if (method === "TubeDesigner.ReadSketchDxf") return { content: "0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n10\n63\n20\n155\n40\n3\n0\nLINE\n10\n70\n20\n150\n11\n80\n21\n156\n0\nENDSEC\n0\nEOF\n" };
+      if (method === "TubeDesigner.ReadSketchCad") return { format: "dxf", sourcePath: payload.sourcePath, document: {
+        header: {}, sourceFormat: "ascii", sections: { ENTITIES: [
+          { type: "CIRCLE", values: [[10, "63"], [20, "155"], [40, "3"]] },
+          { type: "LINE", values: [[10, "70"], [20, "150"], [11, "80"], [21, "156"]] },
+        ] } } };
       if (method === "TubeDesigner.ExportSketchDxf") return { targetPath: payload.targetPath };
       if (method === "TubeDesigner.GenerateSketchTextOutline") return { bOK: true, entities: [
         { kind: "circle", cx: payload.x, cy: payload.y, radius: 6, closed: true, fillGroup: "text-0", fillRule: "evenodd" },

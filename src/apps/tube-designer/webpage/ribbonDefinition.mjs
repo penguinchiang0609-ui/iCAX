@@ -142,7 +142,7 @@ const allRibbonDefinition = {
         {
           title: "文件",
           commands: [
-            command("sketch.import", "导入 DXF", "new", { iconTone: "green" }),
+            command("sketch.import", "导入 DWG / DXF", "new", { iconTone: "green" }),
             command("sketch.export", "导出 DXF", "save", { iconTone: "green" }),
           ],
         },

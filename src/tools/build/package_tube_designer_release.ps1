@@ -164,6 +164,7 @@ foreach ($relative in $nativeFiles.Keys) {
 & (Join-Path $PSScriptRoot 'deploy_tube_designer_manifest.ps1') -OutputDirectory $outputRoot -ValidateOnly:$ValidateOnly
 & (Join-Path $PSScriptRoot 'sync_tube_designer_templates.ps1') -OutputDirectory $outputRoot -ValidateOnly:$ValidateOnly
 & (Join-Path $PSScriptRoot 'sync_tube_designer_web_assets.ps1') -OutputDirectory $outputRoot -ValidateOnly:$ValidateOnly
+& (Join-Path $PSScriptRoot 'prepare_sketch_cad_runtime.ps1') -OutputDirectory $outputRoot -ValidateOnly:$ValidateOnly
 & (Join-Path $PSScriptRoot 'prepare_embedded_python_runtime.ps1') -OutputDirectory (Join-Path $outputRoot 'runtime') -ValidateOnly:$ValidateOnly
 if (-not $ValidateOnly) {
     & (Join-Path $PSScriptRoot 'prepare_embedded_python_runtime.ps1') -OutputDirectory (Join-Path $outputRoot 'runtime') -ValidateOnly
@@ -173,6 +174,14 @@ if (-not $ValidateOnly) {
 # managed by the individual deployment scripts. Never remove unknown user data.
 $expectedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($relative in $nativeFiles.Keys) { [void]$expectedFiles.Add($relative) }
+$cadRuntimeManifest = Get-Content -LiteralPath (Join-Path $sourceRoot 'third_party/libredwg/libredwg.json') -Raw | ConvertFrom-Json
+foreach ($cadFile in $cadRuntimeManifest.deployFiles) {
+    $relative = [string]$cadFile.relative
+    if (-not $relative -or $relative -match '(^|[\\/])\.\.?([\\/]|$)' -or [IO.Path]::IsPathRooted($relative)) {
+        throw "Invalid CAD runtime file in deployment manifest: $relative"
+    }
+    [void]$expectedFiles.Add('runtime\cad\libredwg\' + $relative.Replace('/', '\'))
+}
 foreach ($relative in @('apps\Branding.Setting', 'apps\branding\icax.ico', 'apps\tube-designer\product.manifest.json')) {
     [void]$expectedFiles.Add($relative)
 }

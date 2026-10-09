@@ -48,6 +48,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CadDocumentImportService.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="OpenCascadeBRepReader.h" />
     <ClInclude Include="OpenCascadeBRepBuilder.h" />
@@ -59,6 +60,7 @@
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CadDocumentImportService.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="OpenCascadeResourceImporter.cpp" />
     <ClCompile Include="OpenCascadeBRepBuilder.cpp" />
@@ -76,6 +78,9 @@
     <None Include="Schema\TubePreviewMesh.fbs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj">
+      <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj">
       <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
     </ProjectReference>
@@ -91,5 +96,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
+  <Import Project="..\..\..\third_party\libredwg\LibreDwg.Runtime.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

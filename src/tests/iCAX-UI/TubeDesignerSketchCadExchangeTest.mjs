@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./TubeDesignerSketchCadDxfImportTest.mjs";
 import { buildSketchDxf, createRacetrack, createRegularPolygon, createStar, parseSketchDxf } from "../../apps/tube-designer/webpage/sketchCadExchange.mjs";
 import { curvePoint, editableSegments } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
 import { sketchRibbonGroups } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
@@ -138,7 +139,7 @@ function deBoor(t) {
 for (const t of [0, 0.13, 0.39, 0.4, 0.71, 1]) near(curvePoint(bs.segments[t < 0.4 ? 0 : 1], t < 0.4 ? t / 0.4 : (t - 0.4) / 0.6), deBoor(t));
 assert.throws(() => parseSketchDxf(recordDxf([[0, "TEXT"], [1, "O"]])), /TEXT/);
 assert.throws(() => parseSketchDxf(bsDxf.replace("70\n8", "70\n10")), /周期/);
-assert.throws(() => parseSketchDxf("AutoCAD Binary DXF"), /ASCII/);
+assert.throws(() => parseSketchDxf("AutoCAD Binary DXF"), /原始字节/);
 assert.throws(() => parseSketchDxf("0\nSECTION\n2"), /成对/);
 const commands = sketchRibbonGroups.flatMap(group => group.commands.map(command => command.id));
 assert.equal(new Set(commands).size, commands.length);
