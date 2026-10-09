@@ -5,6 +5,7 @@ import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { chooseNestingProfileDxf } from "./nestingPartFilePicker.mjs";
 import { patchDomNode } from './punchDomPatch.mjs';
+import { beginNewPartSideSketch } from './sketchArea.mjs';
 
 const PREFIX = "tube-designer-nesting-standard-";
 const DXF_KEY = "__dxf__";
@@ -77,12 +78,12 @@ function selectProfile(draft, profile) {
   draft.error = "";
 }
 
-function openDialog(view) {
+function openDialog(view, creationKind = "standard") {
   const profiles = standardPartProfiles(view);
   const current = String(view.tubeDesignerSelectedProfileId ?? "");
   const profile = profiles.find((item) => profileSelectionKey(item) === current)
     ?? profiles.find((item) => String(item.id) === current) ?? profiles[0];
-  const draft = { profileKey: "", length: "1000", parameters: {}, error: "" };
+  const draft = { profileKey: "", length: "1000", parameters: {}, error: "", creationKind };
   if (profile) selectProfile(draft, profile);
   view.tubeDesignerNestingStandardPartDraft = draft;
   view.error = "";
@@ -97,10 +98,11 @@ export function renderNestingStandardPartDialog(view) {
   const preview = draft.previewInvalid ? null : draft.profile ?? snapshot(source);
   const disabled = view.pending ? "disabled" : "";
   const definitions = definitionsOf(profile).filter((item) => parameterVisible(item, draft.parameters));
+  const sideSketch = draft.creationKind === "side-sketch";
   return `<div class="tube-designer-modal-backdrop tube-designer-preset-dialog-backdrop tube-nesting-standard-part-backdrop" role="presentation">
     <section class="tube-designer-preset-dialog tube-nesting-standard-part-dialog" data-standard-part-profile="${escapeAttr(draft.profileKey)}" data-profile-parameter-scope role="dialog" aria-modal="true" aria-labelledby="nesting-standard-part-title" data-window-state-controls="[data-cam-change-action='tube-designer-nesting-standard-profile-select'],[data-standard-part-parameter],[data-cam-change-action='tube-designer-nesting-standard-length']">
       <header class="tube-designer-dialog-header">
-        <strong id="nesting-standard-part-title">添加标准零件</strong>
+        <strong id="nesting-standard-part-title">${sideSketch ? "二维绘制零件" : "添加标准零件"}</strong>
         <button class="tube-designer-dialog-close" data-cam-action="${action("cancel")}" aria-label="取消添加" ${disabled}>×</button>
       </header>
       <div class="tube-nesting-standard-part-body">
@@ -116,15 +118,15 @@ export function renderNestingStandardPartDialog(view) {
               const items = profiles.filter((item) => profileScope(item) === scope);
               return items.length ? `<optgroup label="${label}">${items.map((item) => `<option value="${escapeAttr(profileSelectionKey(item))}" ${draft.profileKey === profileSelectionKey(item) ? "selected" : ""}>${escapeText(nameOf(item))} · ${parametric(item) ? "程式" : "定式"}</option>`).join("")}</optgroup>` : "";
             }).join("")}
-            <option value="${DXF_KEY}" ${draft.profileKey === DXF_KEY ? "selected" : ""}>${draft.importedProfile ? `本地 DXF · ${escapeText(nameOf(draft.importedProfile))}` : "从本地 DXF 导入…"}</option>
+            ${sideSketch ? "" : `<option value="${DXF_KEY}" ${draft.profileKey === DXF_KEY ? "selected" : ""}>${draft.importedProfile ? `本地 DXF · ${escapeText(nameOf(draft.importedProfile))}` : "从本地 DXF 导入…"}</option>`}
           </select></label>
-          <div class="tube-nesting-standard-part-source"><button class="tube-designer-secondary" data-cam-action="${action("import-dxf")}" ${disabled}>导入 DXF</button></div>
+          ${sideSketch ? `<p class="tube-nesting-standard-part-note">设置管型和长度后，横向按截面周长周期无限绘制，竖向为管长；竖向超出的部分生成时自动截断。闭合轮廓镂空，开放线条按切缝宽度切除。</p>` : `<div class="tube-nesting-standard-part-source"><button class="tube-designer-secondary" data-cam-action="${action("import-dxf")}" ${disabled}>导入 DXF</button></div>`}
           ${definitions.length ? `<section class="tube-nesting-standard-part-parameters"><strong>截面参数</strong><div>${renderProfileParameterGroups(profile, definitions, draft.parameters, view.pending, { keyPrefix: "nesting-standard", disclosures: draft.disclosures?.[draft.profileKey] ?? {}, renderControl: (definition, values, pending) => renderProfileParameterControl(definition, values, pending, { changeAction: action("parameter"), attributes: { "data-standard-part-parameter": definition.key } }) })}</div></section>` : source ? `<p class="tube-nesting-standard-part-note">${parametric(profile) ? "此程式管型未提供可编辑参数，使用默认截面。" : "定式截面保持原始轮廓，直接设置长度即可。"}</p>` : ""}
           <label class="tube-designer-field"><span>长度（mm）</span><input aria-label="长度（mm）" type="number" min="1" max="100000" step="any" value="${escapeAttr(draft.length)}" data-cam-change-action="${action("length")}" ${disabled} /></label>
           ${draft.error ? `<div class="tube-designer-punch-error" role="alert">${escapeText(draft.error)}</div>` : ""}
         </div>
       </div>
-      <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${action("cancel")}" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${action("confirm")}" ${disabled || (!source ? "disabled" : "")}>${view.pending ? "处理中…" : "添加零件"}</button></footer>
+      <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${action("cancel")}" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${action("confirm")}" ${disabled || (!source ? "disabled" : "")}>${view.pending ? "处理中…" : sideSketch ? "开始绘制" : "添加零件"}</button></footer>
     </section>
   </div>`;
 }
@@ -258,6 +260,34 @@ async function confirmPart(context, view, draft, ops) {
     payload = { profileRef: profileRef(profile), parameters: parametersFor(profile, draft), length };
   }
   if (typeof context.sceneProxy?.invoke !== "function") throw new Error("当前项目未连接，无法添加标准零件。");
+  if (draft.creationKind === "side-sketch") {
+    payload.previewResourceKey = draft.sideSketchPreviewResourceKey ??= `side-sketch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const sceneProxy = context.sceneProxy;
+    let transferred = false;
+    const operationId = beginOperation(context, view, ops, {
+      kind: "nesting-side-sketch", title: "正在准备二维绘制", phase: "unfolding",
+      phaseLabel: "计算管材展开矩形", message: "正在按截面真实周长创建侧壁绘图区域…",
+    });
+    try {
+      await waitForProgressPaint();
+      const response = await sceneProxy.invoke("TubeDesigner.PreviewNestingSideSketchPart", payload, { timeoutMs: 180000 });
+      if (view.disposed || context.isCurrentProject?.() === false
+        || view.tubeDesignerNestingStandardPartDraft !== draft || context.sceneProxy !== sceneProxy || view.activeAreaId !== "nesting") return null;
+      if (response?.available !== true || response?.unfolding?.available !== true || !response.profile) {
+        throw new Error(response?.message || "当前管型无法生成有效的侧壁展开矩形。");
+      }
+      beginNewPartSideSketch(view, payload, response);
+      transferred = true;
+      view.tubeDesignerNestingStandardPartDraft = null;
+      view.tubeDesignerSketchDialogOpen = true;
+      return response;
+    } finally {
+      if (!transferred) {
+        try { await sceneProxy.invoke("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey: payload.previewResourceKey }); } catch {}
+      }
+      finishOperation(context, view, ops, operationId);
+    }
+  }
   const operationId = beginOperation(context, view, ops, {
     kind: "nesting-standard-part", title: "正在添加标准零件", phase: "generating",
     phaseLabel: "生成直管实体", message: "正在按截面和长度创建下料零件…",
@@ -336,7 +366,9 @@ export async function handleNestingStandardPartAction(context, view, command, ta
 }
 
 export async function handleNestingStandardPartRibbonCommand(context, view, commandId, ops) {
-  if (commandId !== "nesting.add-standard-part") return false;
-  await handleNestingStandardPartAction(context, view, action("open"), null, ops);
+  if (!["nesting.add-standard-part", "nesting.draw-2d-part"].includes(commandId)) return false;
+  if (view.pending) return true;
+  openDialog(view, commandId === "nesting.draw-2d-part" ? "side-sketch" : "standard");
+  ops.renderProject(context, view);
   return true;
 }

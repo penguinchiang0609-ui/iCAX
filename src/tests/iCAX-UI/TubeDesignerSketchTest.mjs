@@ -87,6 +87,35 @@ for (const area of ["profiles", "tools", "components"]) {
 }
 
 {
+  const remote = Array.from({ length: 300 }, (_, index) => line(`remote-${index}`,
+    [1000 + index, 1000], [1000 + index, 1100]));
+  const draft = { entities: [...remote,
+    line("horizontal", [-100, 0], [100, 0]), line("vertical", [0, -100], [0, 100])] };
+  assert.equal(findSnapCandidate(draft, [0.05, 0.04], 0.1).type, "intersection",
+    "Distant geometry must not disable a local crossing snap");
+  const bowed = { id: "bowed", kind: "path", closed: false,
+    segments: [{ kind: "bezier", points: [[0, 0], [5, 10], [10, 0]] }] };
+  assert.equal(findSnapCandidate({ entities: [bowed] }, [5, 5.05], 0.1).type, "midpoint",
+    "Curved snap bounds must contain the control hull, not just the endpoints");
+  const rotated = { id: "rotated", kind: "ellipse", cx: 0, cy: 0,
+    radiusX: 10, radiusY: 2, rotation: Math.PI / 2, closed: true };
+  assert.equal(findSnapCandidate({ entities: [rotated] }, [0, 10.05], 0.1).type, "quadrant",
+    "Rotated ellipses must retain their real quadrant snaps");
+  const arc = { id: "arc-center", kind: "circleArc", cx: 50, cy: 50, radius: 10,
+    startAngle: 0, sweep: Math.PI / 2, closed: false };
+  assert.equal(findSnapCandidate({ entities: [arc] }, [50.02, 50], 0.1).type, "center",
+    "The parent-curve center stays snappable outside the trimmed arc bounds");
+  const moving = line("moving", [0, 0], [10, 0]);
+  assert.equal(findSnapCandidate({ entities: [moving] }, [0, 0], 0.1).type, "endpoint");
+  moving.x1 = 200; moving.x2 = 210;
+  assert.equal(findSnapCandidate({ entities: [moving] }, [0, 0], 0.1), null);
+  assert.equal(findSnapCandidate({ entities: [moving] }, [200, 0], 0.1).type, "endpoint",
+    "Editing geometry must immediately update snap bounds");
+  assert.equal(findSnapCandidate({ entities: remote }, [0, 0], 0.1, "", [
+    { point: [0, 0], type: "endpoint", label: "闭合" }]).label, "闭合");
+}
+
+{
   const entities = [line("inside", [2, 2], [8, 8]), line("crossing", [-2, 5], [4, 5]), line("outside", [20, 20], [30, 30])];
   assert.deepEqual(selectEntitiesInWindow(entities, [0, 0], [10, 10]), ["inside"], "left-to-right selection requires full containment");
   assert.deepEqual(selectEntitiesInWindow(entities, [10, 10], [0, 0]), ["inside", "crossing"], "right-to-left selection includes crossing objects");

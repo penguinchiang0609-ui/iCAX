@@ -8,6 +8,11 @@
     <ClInclude Include="ComponentModelLibrary.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FinalGeometryMeasurement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="BRepTubeUnfoldingService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeSideSketchCurveService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeSideSketchPlanarCurves.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeSideSketchKerf.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeSideSketchCadService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SketchTextOutlineService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PunchGeometry.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PartDrawingDefinition.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RecoveredPartDrawingFeatures.h"><Filter>Header Files</Filter></ClInclude>
@@ -25,6 +30,11 @@
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FinalGeometryMeasurement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="BRepTubeUnfoldingService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeSideSketchCurveService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeSideSketchPlanarCurves.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeSideSketchKerf.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeSideSketchCadService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SketchTextOutlineService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PunchGeometry.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="RecoveredPartDrawingFeatures.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="NestingAdapter.cpp"><Filter>Source Files</Filter></ClCompile>

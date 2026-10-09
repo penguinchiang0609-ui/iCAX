@@ -51,6 +51,11 @@
     <ClInclude Include="ComponentModelLibrary.h" />
     <ClInclude Include="FinalGeometryMeasurement.h" />
     <ClInclude Include="BRepTubeUnfoldingService.h" />
+    <ClInclude Include="TubeSideSketchCurveService.h" />
+    <ClInclude Include="TubeSideSketchCadService.h" />
+    <ClInclude Include="SketchTextOutlineService.h" />
+    <ClInclude Include="TubeSideSketchPlanarCurves.h" />
+    <ClInclude Include="TubeSideSketchKerf.h" />
     <ClInclude Include="BatchExcel.h" />
     <ClInclude Include="BatchExcelAutomation.h" />
     <ClInclude Include="PunchGeometry.h" />
@@ -72,6 +77,11 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FinalGeometryMeasurement.cpp" />
     <ClCompile Include="BRepTubeUnfoldingService.cpp"><DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
+    <ClCompile Include="TubeSideSketchCurveService.cpp" />
+    <ClCompile Include="TubeSideSketchCadService.cpp" />
+    <ClCompile Include="SketchTextOutlineService.cpp" />
+    <ClCompile Include="TubeSideSketchPlanarCurves.cpp" />
+    <ClCompile Include="TubeSideSketchKerf.cpp" />
     <ClCompile Include="BatchExcel.cpp" />
     <ClCompile Include="BatchExcelAutomation.cpp" />
     <ClCompile Include="MachiningToolpaths.cpp" />

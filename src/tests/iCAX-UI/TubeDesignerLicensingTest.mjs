@@ -46,13 +46,14 @@ assert.match(logs.at(-1).message, /产品拆单未授权/);
 assert.equal(view.tubeDesignerLicenseNotice, undefined);
 
 const ribbon = getRibbonDefinition({ licenseContext: context, licenseView: view });
-assert.equal(ribbon.tabs.some(tab => tab.id === 'nesting'), false);
+assert.equal(ribbon.tabs.find(tab => tab.id === 'nesting').authorizationRequired, false);
 assert.equal(ribbon.tabs.find(tab => tab.id === 'view').authorizationRequired, false);
 assert.equal(ribbon.tabs.find(tab => tab.id === 'about').authorizationRequired, false);
 const commands = ribbon.tabs.flatMap(tab => tab.groups.flatMap(group => group.commands));
 assert.equal(commands.find(c => c.id === 'designer.add').authorizationRequired, false);
 assert.equal(commands.find(c => c.id === 'designer.disassemble').authorizationRequired, true);
 assert.match(commands.find(c => c.id === 'designer.disassemble').unavailableReason, /产品拆单未授权/);
+assert.ok(commands.filter(c => c.id.startsWith('nesting.')).every(c => c.authorizationRequired));
 assert.ok(commands.filter(c => c.id.startsWith('licensing.')).every(c => !c.authorizationRequired));
 assert.equal(commandLicenseFeature('nesting.start'), 'nesting.calculate');
 assert.equal(commandLicenseFeature('machining.export'), 'machining.export');
@@ -71,13 +72,18 @@ nativeStatus = status(['page.nesting', 'nesting.edit']);
 await handleLicenseCommand(context, view, 'licensing.activate', ops);
 assert.equal(calls.at(-1)[0], 'TubeDesignerLicensing.Activate');
 assert.deepEqual(calls.at(-1)[1], { path: 'D:\\激活.tdact' });
-assert.deepEqual(fileDialogs.at(-1).filters[0].extensions, ['tdact', 'tdupg']);
-selectedAuthorization = 'D:\\升级.tdupg';
+assert.deepEqual(fileDialogs.at(-1).filters[0].extensions, ['tdact']);
+selectedAuthorization = 'D:\\升级.tdact';
 nativeStatus = status(['page.nesting', 'nesting.edit', 'nesting.calculate']);
 await handleLicenseCommand(context, view, 'licensing.activate', ops);
 assert.deepEqual(calls.at(-1), ['TubeDesignerLicensing.Activate', { path: selectedAuthorization }]);
 assert.equal(hasLicenseFeature(context, otherView, 'nesting.edit'), true);
 assert.equal(hasLicenseFeature(context, otherView, 'nesting.calculate'), true);
+const nestingRibbon = getRibbonDefinition({ licenseContext: context, licenseView: otherView });
+assert.ok(nestingRibbon.tabs.find(tab => tab.id === 'nesting').groups
+  .flatMap(group => group.commands)
+  .filter(command => ['nesting.start', 'nesting.add-standard-part'].includes(command.id))
+  .every(command => !command.authorizationRequired));
 nativeStatus = status(['page.nesting', 'nesting.edit']);
 await handleLicenseCommand(context, view, 'licensing.status', ops);
 assert.equal(view.tubeDesignerLicenseBusy, false);
@@ -135,6 +141,6 @@ assert.ok(readOnlyRibbon.tabs.flatMap(tab => tab.groups.flatMap(group => group.c
   .every(command => command.authorizationRequired === !command.id.startsWith('licensing.')));
 
 assert.deepEqual(ribbonDefinition.tabs.find(tab => tab.id === 'about').groups.flatMap(group => group.commands).map(c => c.id), [
-  'licensing.request', 'licensing.request-trial', 'licensing.activate',
+  'licensing.request', 'licensing.request-trial', 'licensing.activate', 'licensing.export-license',
 ]);
 console.log('TubeDesigner licensing UI checks passed');

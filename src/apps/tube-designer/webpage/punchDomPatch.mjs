@@ -18,6 +18,8 @@ export function closePunchDom(view,mount) {
 }
 function key(node) {
   if(node.nodeType!==1)return null;
+  for (const name of ["data-tube-sketch-cad-panel","data-tube-sketch-numeric-panel","data-tube-sketch-side-cut-settings"])
+    if(node.hasAttribute(name))return node.tagName+":"+name+":"+node.getAttribute(name);
   if(node.hasAttribute("data-tube-designer-library-profile-row"))return node.tagName+":profile:"+node.dataset.tubeDesignerProfileId;
   if(!node.matches("input,select,textarea,button") && (node.hasAttribute("data-row-id")||node.hasAttribute("data-profile-key")))
     return node.tagName+":stock:"+(node.dataset.profileKey??"")+":"+(node.dataset.rowId??"");
@@ -27,7 +29,7 @@ function key(node) {
   // Conditional fields insert/remove entire labels. Match their containers by
   // the control's stable identity, not by position, so following inputs and
   // listeners survive when a preceding field appears or disappears.
-  if(node.matches("label.tube-designer-field,label.punch-pose-field,label.punch-array-field,label.tube-designer-punch-layout-field,label.tube-designer-punch-layout-text")) {
+  if(node.matches("label.tube-designer-field,label.tube-sketch-cad-checkbox,label.punch-pose-field,label.punch-array-field,label.tube-designer-punch-layout-field,label.tube-designer-punch-layout-text")) {
     const control=node.querySelector("input,select,textarea");
     if(control)return node.tagName+":"+key(control);
   }
@@ -61,7 +63,8 @@ function patch(oldNode,nextNode) {
   }
   // This subtree belongs to the viewport, not the HTML renderer. In particular
   // retain its exact canvas, cube and event bindings across parameter edits.
-  if(oldNode.hasAttribute("data-tube-designer-punch-viewport"))return;
+  if(oldNode.hasAttribute("data-tube-designer-punch-viewport")
+    ||oldNode.hasAttribute("data-side-sketch-viewport"))return;
   const control=oldNode.matches("input,select,textarea");
   const nextValue=control?nextNode.value:null, nextChecked=nextNode.checked;
   const draft=control?activeControlDraft(oldNode,nextNode):null;

@@ -1,4 +1,5 @@
-// Real WebGL regression for the nesting part/annotation visibility lifecycle.
+// Real WebGL regression for the nesting geometry visibility lifecycle.
+// Nesting intentionally does not measure parts or display dimension annotations.
 import assert from "node:assert/strict";
 import { readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -47,16 +48,9 @@ try {
     const counters = { reads: 0, measures: 0, snapshots: 0 };
     const delays = {};
     delays.geometry = new Promise(resolve => { delays.finishGeometry = resolve; });
-    delays.measurement = new Promise(resolve => { delays.finishMeasurement = resolve; });
     const context = { mount: document.body, sceneProxy: {
       resources: { async get() { counters.reads++; await delays.geometry; return new Response(bytes); } },
-      async invoke(method) {
-        if (method !== "TubeDesigner.MeasurePartGeometry") throw new Error(`Unexpected method: ${method}`);
-        counters.measures++;
-        await delays.measurement;
-        return { available: true, source: "final-brep", length: 1000, section: { kind: "round", width: 100, height: 100, diameter: 100 }, features: [],
-          linearReference: { start: [-500, 0, 0], end: [500, 0, 0], sectionAxes: [[0, 1, 0], [0, 0, 1]], dimensionOffsetDirection: [0, 1, 0] } };
-      },
+      async invoke(method) { counters.measures++; throw new Error(`Nesting must not invoke measurement: ${method}`); },
     } };
     view.viewport = createThreeViewport({ continuousRender: false });
     view.viewport.mount(document.querySelector("#scene"));
@@ -76,14 +70,8 @@ try {
   assert.match(await progress.innerText(), /正在加载三维模型/);
   assert.equal(await progress.locator('[role="progressbar"]').getAttribute("aria-valuenow"), null);
   await page.waitForFunction(() => window.fixture.counters.reads === 1);
-  await page.evaluate(() => window.fixture.delays.finishGeometry());
-  await page.waitForFunction(() => window.fixture.view.tubeDesignerPartProgress?.phase === "measurement");
-  assert.match(await progress.innerText(), /正在复尺并生成标注/);
-  assert.equal(await progress.isVisible(), true);
   assert.equal(await progress.locator('[role="progressbar"] > i').evaluate(element => getComputedStyle(element).animationName), "tube-designer-export-indeterminate");
   assert.notEqual(await progress.locator('[role="progressbar"] > i').evaluate(element => getComputedStyle(element).backgroundColor), "rgba(0, 0, 0, 0)");
-  assert.equal(await page.evaluate(() => window.fixture.view.viewport.getDebugState().visibleObjectCount), 1);
-  await page.waitForFunction(() => window.fixture.counters.measures === 1);
   if (process.env.ICAX_ARTIFACT_DIR) {
     mkdirSync(process.env.ICAX_ARTIFACT_DIR, { recursive: true });
     await page.waitForFunction(() => {
@@ -91,20 +79,22 @@ try {
       const box = band.getBoundingClientRect(), track = band.parentElement.getBoundingClientRect();
       return box.left > track.left + 8 && box.right < track.right - 8;
     });
-    await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "nesting-standard-part-measuring.png") });
+    await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "nesting-standard-part-loading.png") });
   }
-  await page.evaluate(() => window.fixture.delays.finishMeasurement());
-  await page.waitForFunction(() => window.fixture.view.tubeDesignerPartMeasurementState?.status === "ready");
+  await page.evaluate(() => window.fixture.delays.finishGeometry());
+  await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().visibleObjectCount === 1
+    && window.fixture.view.tubeDesignerPartProgress === null);
   await progress.waitFor({ state: "hidden" });
   const inspect = () => page.evaluate(() => ({
     debug: window.fixture.view.viewport.getDebugState({ samplePixels: true }),
     ids: [...window.fixture.view.viewport.visibleEntityIds], counters: { ...window.fixture.counters },
   }));
-  assert.equal((await inspect()).debug.dimensionAnnotationCount, 0, "new nesting parts initially hide every annotation");
-  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); });
   const first = await inspect();
   assert.equal(first.debug.visibleObjectCount, 1);
-  assert.ok(first.debug.dimensionAnnotationCount > 0);
+  assert.equal(first.debug.dimensionAnnotationCount, 0, "nesting displays geometry without annotations");
+  assert.equal(first.counters.measures, 0, "nesting does not measure geometry in the background");
+  assert.equal(await page.locator('[data-cam-action="tube-designer-parts-toggle-dimensions"]').count(), 0,
+    "nesting does not offer a dimension control");
   assert.ok(first.debug.renderInfo.triangles > 500, "tube surfaces are actual rendered triangles");
   assert.deepEqual(first.ids, ["standard-1"]);
   for (let index = 0; index < 12; index++) {
@@ -118,34 +108,43 @@ try {
     assert.equal(hiddenCount, 0, "workbench mount hides the previous solid synchronously");
     const cached = await inspect();
     assert.equal(cached.debug.visibleObjectCount, 1, "cached render restores the real Three.js mesh before the next frame");
-    assert.ok(cached.debug.dimensionAnnotationCount > 0);
+    assert.equal(cached.debug.dimensionAnnotationCount, 0);
     assert.deepEqual(cached.ids, ["standard-1"]);
     assert.deepEqual(cached.counters, first.counters, "no backend, resource or remeshing work on a cached render");
     assert.equal(await progress.isVisible(), false, "cached redraws must not flash the progress bar");
   }
   await page.evaluate(() => { const f = window.fixture; f.view.tubeDesignerActivePartId = "standard-2"; f.render(); });
-  await page.waitForFunction(() => window.fixture.view.tubeDesignerPartMeasurementState?.key === "standard-2@1");
+  await page.waitForFunction(() => window.fixture.view.tubeDesignerPartViewportKey?.startsWith("standard-2@")
+    && window.fixture.view.tubeDesignerPartProgress === null);
   const second = await inspect();
   assert.deepEqual(second.ids, ["standard-2"]);
   assert.equal(second.debug.visibleObjectCount, 1);
-  assert.equal(second.debug.dimensionAnnotationCount, 0, "a different part has independent hidden defaults");
-  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); });
-  assert.ok((await inspect()).debug.dimensionAnnotationCount > 0);
-  await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); f.render(); });
-  await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().dimensionAnnotationCount === 0);
-  assert.equal((await inspect()).debug.visibleObjectCount, 1, "turning off annotations keeps tube surfaces visible");
+  assert.equal(second.debug.dimensionAnnotationCount, 0, "a different nesting part also has no annotations");
+  assert.equal(second.counters.measures, 0);
+  assert.equal(second.counters.reads, 2, "switching parts reads only the selected geometry");
+  await page.evaluate(async () => {
+    const f = window.fixture;
+    await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {});
+    f.render();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  });
+  const afterIgnoredDimensionAction = await inspect();
+  assert.equal(afterIgnoredDimensionAction.debug.visibleObjectCount, 1);
+  assert.equal(afterIgnoredDimensionAction.debug.dimensionAnnotationCount, 0);
+  assert.deepEqual(afterIgnoredDimensionAction.counters, second.counters,
+    "a dimension action outside the nesting UI cannot trigger backend work");
   if (process.env.ICAX_ARTIFACT_DIR) {
-    await page.evaluate(async () => { const f = window.fixture; await f.area.handlePartsAreaAction(f.context, f.view, 'tube-designer-parts-toggle-dimensions', {}, {}); f.render(); });
-    await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().dimensionAnnotationCount > 0);
     mkdirSync(process.env.ICAX_ARTIFACT_DIR, { recursive: true });
     await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "nesting-standard-part-visible.png") });
   }
   await page.evaluate(() => { const f = window.fixture; f.render(); f.view.scene.tubeDesigner.nestingGroups = []; f.render(); });
-  await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().dimensionAnnotationCount === 0);
+  await page.waitForFunction(() => window.fixture.view.viewport.getDebugState().visibleObjectCount === 0);
   assert.equal((await inspect()).debug.visibleObjectCount, 0);
+  assert.equal((await inspect()).debug.dimensionAnnotationCount, 0);
+  assert.equal((await inspect()).counters.measures, 0);
   assert.deepEqual(errors, []);
   await page.evaluate(() => window.fixture.view.viewport.dispose());
-  console.log("Nesting visibility browser regression passed: actual tube surfaces and dimensions remain visible after cached remounts.");
+  console.log("Nesting visibility browser regression passed: real tube geometry survives cached remounts, with no background measurements or dimension annotations.");
 } finally {
   await browser.close();
 }

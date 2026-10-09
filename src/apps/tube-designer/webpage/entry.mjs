@@ -9,6 +9,7 @@ import { cancelDesignerPartThumbnailHydration, scheduleDesignerPartThumbnailHydr
 import { disposeDesignerPartInspection, scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
 import { attachPartDrawingEditor, renderPartDrawingDialog } from "./partDrawing.mjs";
 import { attachPartDrawingPreview, disposePartDrawingPreview } from "./partDrawingPreview.mjs";
+import { disposeSideSketchPreview } from "./sideSketchPreview.mjs";
 import { patchPartDrawingDom, rememberPartDrawingDom } from "./partDrawingDom.mjs";
 import { patchLibraryDom, rememberLibraryDom } from "./libraryDomPatch.mjs";
 import { bindFloatingEditorWindows, patchFloatingEditorDom, rememberFloatingEditorDom } from "./floatingEditorDom.mjs";
@@ -110,6 +111,8 @@ import {
 } from "./partsArea.mjs";
 import {
   attachSketchAreaInteractions,
+  patchSketchDialogDom,
+  rememberSketchDialogDom,
   renderSectionSketchDialog,
   renderSketchLeftPane,
   renderSketchRightPane,
@@ -129,6 +132,24 @@ import {
 } from "./templateLibrary.mjs";
 
 export const TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS = 500;
+const sketchBackgroundRendering = new WeakMap();
+
+function synchronizeSketchBackgroundRendering(view) {
+  const viewport = view?.viewport;
+  if (!viewport) return;
+  const previous = sketchBackgroundRendering.get(view);
+  if (view.tubeDesignerSketchDialogOpen) {
+    if (previous?.viewport !== viewport) sketchBackgroundRendering.set(view, {
+      viewport, continuous: viewport.continuousRendering !== false,
+    });
+    viewport.setContinuousRendering?.(false);
+  } else if (previous) {
+    sketchBackgroundRendering.delete(view);
+    if (previous.viewport === viewport)
+      viewport.setContinuousRendering?.(previous.continuous);
+  }
+}
+
 export function getRibbonDefinition(context = {}) {
   const projectId = context.project?.projectId ?? "";
   const view = getProjectView(projectId);
@@ -182,6 +203,7 @@ export async function releaseProject(context) {
     cleanup(() => cancelDesignerPartThumbnailHydration(context));
     cleanup(() => disposeDesignerPartInspection(context));
     cleanup(() => disposePartDrawingPreview(context.mount));
+    cleanup(() => disposeSideSketchPreview(context.mount));
     cleanup(() => stopBatchExcelAutomation());
   }
   return released;
@@ -524,6 +546,7 @@ function withDesignerContext(context) {
       return handleDesignerRibbonCommand(context, view, commandId, ops);
     },
     tryRenderProjectPatch(context,view,mount,ops) {
+      if (patchSketchDialogDom(context, view, mount, ops)) return true;
       if(view.activeAreaId==='nesting' && !view.tubeDesignerPartDrawing && !view.tubeDesignerPunchWizard
         && !view.tubeDesignerNestingStandardPartDraft && patchFloatingEditorDom(view,mount,{
         suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
@@ -578,6 +601,7 @@ function withDesignerContext(context) {
       return true;
     },
     beforeProjectRender(context, view) {
+      synchronizeSketchBackgroundRendering(view);
       captureNestingStandardPartDisclosures(view, context.mount);
       restoreLibraryNavigation(view);
       disposeInactiveNestingPartFilePicker(context, view);
@@ -608,6 +632,7 @@ function withDesignerContext(context) {
       rememberFloatingEditorDom(view,mount,{suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         sceneProxy:context.resolveSceneProxy?.(context,view) ?? context.sceneProxy ?? null});
       rememberNestingStandardPartDom(view, mount, context.sceneProxy);
+      rememberSketchDialogDom(view, mount, context.sceneProxy);
       connectBatchExcelAutomation(context, view, { ...ops, refreshDesignerState, fitDesignerDefaultView });
       synchronizeBatchExcelTemplateSelection(view, mount);
       bindDesignerProductPartsInspection(context, view, ops);
@@ -743,7 +768,9 @@ function configureDesignerViewport(_context, view, areaId) {
   // Product members can be selected directly to locate their realised parts.
   // Specification annotations keep their own double-click editing path.
   viewport.setPickingEnabled?.(!["profiles", "assemblies", "sketch", "about"].includes(normalizedAreaId));
-  viewport.setContinuousRendering?.(!["sketch", "assemblies"].includes(normalizedAreaId));
+  synchronizeSketchBackgroundRendering(view);
+  viewport.setContinuousRendering?.(!view.tubeDesignerSketchDialogOpen
+    && !["sketch", "assemblies"].includes(normalizedAreaId));
   viewport.setProjectionChangeHandler?.((mode) => {
     const currentAreaId = ["view", "templates", "profiles", "tools", "assemblies", "components", "nesting", "machining"].includes(view.activeAreaId)
       ? view.activeAreaId : "view";

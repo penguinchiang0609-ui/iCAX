@@ -59,9 +59,9 @@ webPageRoot=.../src/iCAX-UI/SDK/AppShell
 sdoPollIntervalMS=16
 remoteDebuggingPort=9223
 allowFileAccessFromFiles=true
-disableGpu=true
+disableGpu=false
 ```
 
 `TubeDesigner.exe` 会先启动后端，再加载 `modulePath`，触发 CEF 容器静态注册，最后由工厂构造 `CCefUIContainer`。
 
-`allowFileAccessFromFiles=true` 用于允许本地 `AppShell` 以 ES module 方式加载；`disableGpu=true` 适合当前开发环境，避免 GPU 子进程在没有稳定图形环境时反复崩溃。
+`allowFileAccessFromFiles=true` 用于允许本地 `AppShell` 以 ES module 方式加载。默认启用硬件加速；只有机器的图形驱动不稳定时，才在该机器配置 `disableGpu=true`，改用软件渲染。

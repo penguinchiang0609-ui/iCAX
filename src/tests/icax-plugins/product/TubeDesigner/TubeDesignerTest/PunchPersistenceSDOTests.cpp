@@ -3253,4 +3253,5 @@ namespace punch_persistence_acceptance {
 #include "ProductExportUnitQuantitySDOTests.inc"
 #include "ProductManufacturingConcurrencySDOTests.inc"
 #include "NestingPartFilePickerSDOTests.inc"
+#include "NestingSideSketchSDOTests.inc"
 }

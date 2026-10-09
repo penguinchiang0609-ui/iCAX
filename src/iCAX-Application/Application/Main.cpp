@@ -182,7 +182,6 @@ namespace
         _Config.Properties.emplace_back("userDataPath", ToUTF8(_BrowserDataPath));
         _Config.Properties.emplace_back("cachePath", ToUTF8(_CachePath));
         _Config.Properties.emplace_back("logFile", ToUTF8(_LogPath / "cef.log"));
-        _Config.Properties.emplace_back("disableGpu", "true");
 
         return _Config;
     }

@@ -35,10 +35,10 @@ import {
 export { isTubeNestingPart } from "./manufacturingParts.mjs";
 import { nestingSectionIdentity } from "./profileIdentity.mjs";
 
-// Temporarily keep final-part 2D sketch editing out of the product workflow.
-// The implementation and saved data remain intact so the feature can be
-// restored from this single switch when it is ready to return.
-export const PART_2D_EDITING_ENABLED = false;
+export function canEditNestingSideSketch(part) {
+  return !!(part?.independentNesting && isTubeNestingPart(part)
+    && part.properties?.["tubeDesigner.sideSketchRecipe"]);
+}
 
 const hydrationTokens = new WeakMap();
 const partViewportOwners = new WeakMap();
@@ -422,7 +422,7 @@ export function renderNestingViewportOverlay(context, view) {
           : `${partMaterial(part)} · ${partProfile(part)}`)}</small>
       </div>
       <div class="tube-designer-cutting-scene-actions">
-        ${PART_2D_EDITING_ENABLED && punchPart && isTubeNestingPart(punchPart) && !showPlan ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>` : ""}
+        ${canEditNestingSideSketch(punchPart) && !showPlan ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}" ${view.pending ? "disabled" : ""}>二维编辑</button>` : ""}
         ${renderNestingPartEditActions(punchPart, view)}
       </div>
     </div>
@@ -579,8 +579,8 @@ function renderNestingPartInspector(part, view = {}) {
   return `<div class="tube-designer-cutting-inspector">
     <header class="tube-designer-cutting-pane-header">
       <div><strong>当前零件</strong><span>${escapeText(partDisplayName(part))}</span></div>
-      ${PART_2D_EDITING_ENABLED && isTubeNestingPart(part) ? `<div class="tube-designer-cutting-pane-header-actions">
-        <button type="button" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>
+      ${canEditNestingSideSketch(part) ? `<div class="tube-designer-cutting-pane-header-actions">
+        <button type="button" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>二维编辑</button>
       </div>` : ""}
       ${processLabel ? `<em class="tube-designer-process-badge ${escapeAttribute(partProcessKind(part))}">${escapeText(processLabel)}</em>` : ""}
     </header>
@@ -985,9 +985,6 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     return {handled:true};
   }
   if (view.tubeDesignerNestingContextMenu) view.tubeDesignerNestingContextMenu = null;
-  if (action === "tube-designer-part-open-sketch" && !PART_2D_EDITING_ENABLED) {
-    return { handled: true };
-  }
   if (action === "tube-designer-part-open-sketch") {
     if (view.pending) return { handled: true };
     const partId = String(target?.dataset?.tubeDesignerPartId
@@ -995,74 +992,39 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
       ?? view.tubeDesignerActivePartId ?? "").trim();
     const part = listNestingParts(view.scene?.tubeDesigner ?? {})
       .find((item) => String(item.entityId) === partId);
-    if (!part || !isTubeNestingPart(part)) {
-      throw new Error("请选择一个管材下料零件后再进入二维编辑。");
-    }
-    const measurementKey = partMeasurementKey(part);
-    let report = view.tubeDesignerPartMeasurementState?.key === measurementKey
-      ? view.tubeDesignerPartMeasurementState?.report : null;
-    report ??= view.tubeDesignerPartMeasurementCache?.get?.(measurementKey) ?? null;
-    let unfolding = view.tubeDesignerPartUnfoldingCache?.get?.(measurementKey) ?? null;
-    if (!unfolding && report?.unfolding?.available === true) unfolding = report.unfolding;
+    if (!canEditNestingSideSketch(part)) return { handled: true };
+    const sceneProxy = context.sceneProxy;
+    if (typeof sceneProxy?.invoke !== "function") throw new Error("当前项目未连接，无法打开二维编辑。");
+    const previewResourceKey = `side-edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let transferred = false;
     view.pending = true;
     view.error = "";
-    if (!report || !unfolding) {
-      view.progress = {
-        title: "正在打开零件二维草图",
-        detail: !report
-          ? "正在从最终零件几何提取侧面区域、棱线和孔位"
-          : "正在从最终 BRep 生成管材侧面展开",
-        stage: !report ? "生成侧视底图" : "生成展开底图",
-        mode: "Sketch",
-      };
-    }
+    view.progress = { title: "正在打开二维绘制零件", detail: "正在恢复管坯展开和当前切割结果", stage: "恢复二维草图", mode: "Sketch" };
     ops.renderProject(context, view);
     try {
-      if (!report) {
-        await waitForPartsAreaPaint();
-        const response = await context.sceneProxy?.invoke("TubeDesigner.MeasurePartGeometry", {
-          partEntityId: partId,
-          resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
-        }, { timeoutMs: 120000 });
-        if (!response?.available) throw new Error(response?.message ?? "无法生成零件侧视底图。");
-        report = buildAutomaticDimensionReport({ geometryMeasurement: response });
-        view.tubeDesignerPartMeasurementCache ??= new Map();
-        view.tubeDesignerPartMeasurementCache.set(measurementKey, report);
-        view.tubeDesignerPartMeasurementState = { key: measurementKey, status: "ready", report };
+      await waitForPartsAreaPaint();
+      const sketch = part.properties["tubeDesigner.sideSketch"];
+      const response = await sceneProxy.invoke("TubeDesigner.PreviewNestingSideSketchPart", {
+        partEntityId: partId,
+        resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
+        previewResourceKey,
+        ...(sketch?.entities?.length ? { sketch } : {}),
+      }, { timeoutMs: 180000 });
+      if (context.sceneProxy !== sceneProxy || view.disposed || context.isCurrentProject?.() === false
+        || view.activeAreaId !== "nesting") return { handled: true };
+      if (!response?.available || !response.unfolding?.available || !response.preview?.baseGeometry?.url) {
+        throw new Error(response?.message ?? "无法恢复二维绘制零件。");
       }
-      if (!unfolding && typeof context.sceneProxy?.invoke === "function") {
-        await waitForPartsAreaPaint();
-        const unfoldingResponse = await context.sceneProxy.invoke("TubeDesigner.UnfoldPartBRep", {
-          partEntityId: partId,
-          resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
-        }, { timeoutMs: 120000 });
-        if (!unfoldingResponse?.available) {
-          throw new Error(unfoldingResponse?.diagnostic
-            ?? unfoldingResponse?.message
-            ?? "无法从最终 BRep 生成管材侧面展开。");
-        }
-        if (String(unfoldingResponse.resourceId ?? "")
-            !== String(part.manufacturingGeometryResourceId ?? "")
-          || Number(unfoldingResponse.resourceVersion ?? 0)
-            !== Number(part.manufacturingGeometryResourceVersion ?? 0)) {
-          throw new Error("展开结果与当前最终几何版本不一致，请重新打开零件。");
-        }
-        unfolding = unfoldingResponse;
-        view.tubeDesignerPartUnfoldingCache ??= new Map();
-        view.tubeDesignerPartUnfoldingCache.set(measurementKey, unfolding);
-      }
-      if (unfolding && report && report.unfolding !== unfolding) {
-        report = Object.freeze({ ...report, unfolding });
-        view.tubeDesignerPartMeasurementCache ??= new Map();
-        view.tubeDesignerPartMeasurementCache.set(measurementKey, report);
-        view.tubeDesignerPartMeasurementState = { key: measurementKey, status: "ready", report };
-      }
-      beginPartSideSketch(view, part, report);
+      beginPartSideSketch(view, part, { unfolding: response.unfolding, preview: response.preview, previewResourceKey });
       view.tubeDesignerSketchDialogOpen = true;
+      transferred = true;
     } catch (error) {
       view.error = error?.message ?? String(error);
       throw error;
     } finally {
+      if (!transferred) {
+        try { await sceneProxy.invoke("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey }); } catch {}
+      }
       view.pending = false;
       view.progress = null;
       ops.renderProject(context, view);
@@ -1596,6 +1558,7 @@ async function hydratePartsArea(context, view, token) {
               geometry: { url: resourceId, version: resourceVersion },
               geometryKind: 1,
               renderClass: 1,
+              meshEdges: true,
               visible: true,
               selectable: true,
             },
@@ -1967,6 +1930,7 @@ function partProcessLabel(part, { showUnmarkedEnds = true } = {}) {
   if (partSourcingLabel(part) === "外购") return "外购";
   if (!isTubeNestingPart(part)) return "另行处理";
   const properties = part?.properties ?? {};
+  if (canEditNestingSideSketch(part)) return "二维绘制";
   if (hasPartDrawing(part)) return "三维绘制";
   if (properties["manufacturing.punchPart"]) return "冲孔件";
   if (properties["tubeDesigner.cornerProcess"]) return "折弯 / 异形";

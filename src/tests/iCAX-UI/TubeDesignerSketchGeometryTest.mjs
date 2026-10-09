@@ -10,6 +10,61 @@ const circle={id:"circle",kind:"circle",cx:3.125678,cy:-4.987654,radius:17.98765
 const rect={id:"rect",kind:"rectangle",x:0,y:0,width:60,height:40,radius:8,closed:true};
 const ellipse={id:"ellipse",kind:"ellipse",cx:7,cy:-3,radiusX:28,radiusY:6,rotation:.713,closed:true};
 
+// Circular projection stays exact for directed, rotated and seam-crossing arcs.
+for(const [startAngle,sweep,rotation,t] of [
+  [5.7,1.4,.39,.37], [.4,-1.8,-.73,.61], [-7.2,4.9,1.17,.91],
+  [3.6,-TAU,.2,.83], [TAU*7+5.9,2.4,-.27,.14],
+]) {
+  const arc=Object.freeze({...circle,kind:"circleArc",startAngle,sweep,rotation});
+  const expected=curvePoint(arc,t);
+  for(const scale of [.2,1,3]) {
+    const p=Object.freeze([arc.cx+(expected[0]-arc.cx)*scale,arc.cy+(expected[1]-arc.cy)*scale]);
+    const hit=nearestSegment(arc,p);
+    near(hit.point,expected,1e-11);
+    assert.ok(Math.abs(hit.t-t)<1e-13,`circular projection parameter ${hit.t} != ${t}`);
+    assert.ok(Math.abs(hit.distance-Math.abs(scale-1)*arc.radius)<1e-11);
+  }
+}
+
+// The excluded angular interval can be nearer either endpoint, including
+// clockwise and major arcs. Wrapped parameter clamping alone is insufficient.
+for(const [startAngle,sweep,queryAngle,expectedT] of [
+  [0,Math.PI/2,-.2,0], [0,Math.PI/2,Math.PI/2+.2,1],
+  [.2,-1.4,.3,0], [.2,-1.4,-1.3,1],
+  [5.8,1,5.6,0], [5.8,1,7,1],
+  [.3,5.3,5.7,1], [.3,5.3,6.4,0],
+  [.3,-5.3,.4,0], [.3,-5.3,-5.1,1],
+]) {
+  const arc={...circle,kind:"circleArc",startAngle,sweep,rotation:.617};
+  const angle=queryAngle+arc.rotation;
+  const p=[arc.cx+2*arc.radius*Math.cos(angle),arc.cy+2*arc.radius*Math.sin(angle)];
+  const hit=nearestSegment(arc,p),expected=curvePoint(arc,expectedT);
+  assert.equal(hit.t,expectedT);
+  near(hit.point,expected,1e-12);
+  assert.ok(Math.abs(hit.distance-Math.hypot(p[0]-expected[0],p[1]-expected[1]))<1e-12);
+}
+{
+  const arc={...circle,kind:"circleArc",startAngle:5.9,sweep:-1.7,rotation:.713};
+  for(const t of [0,1]) {
+    const hit=nearestSegment(arc,curvePoint(arc,t));
+    assert.ok(hit.distance<1e-12);
+    assert.ok(Math.abs(hit.t-t)<1e-13);
+  }
+  for(const source of [circle,arc,{...arc,sweep:0},{...arc,radius:0}]) {
+    const hit=nearestSegment(source,[source.cx,source.cy]);
+    assert.equal(hit.t,0,"the circle center has a deterministic first closest point");
+    near(hit.point,curvePoint(source,0),1e-12);
+    assert.ok(Math.abs(hit.distance-source.radius)<1e-12);
+  }
+  const full=nearestSegment(circle,[circle.cx,circle.cy+circle.radius*3]);
+  near(full.point,[circle.cx,circle.cy+circle.radius],1e-12);
+  assert.ok(Math.abs(full.t-.25)<1e-14);
+  const multiple={...arc,startAngle:.4,sweep:-TAU*3};
+  const expected=curvePoint(multiple,.13),hit=nearestSegment(multiple,expected);
+  assert.ok(Math.abs(hit.t-.13)<1e-14,"multiple turns select the first equivalent parameter");
+  assert.ok(hit.distance<1e-12);
+}
+
 // Three-point arcs must pass through every input point, including clockwise and major arcs.
 for(const points of [
   [[10,0],[0,10],[-10,0]], [[10,0],[0,-10],[-10,0]],

@@ -64,7 +64,7 @@ export function reverseSegment(s) {
 const line = (a, b) => ({ kind: "line", x1: a[0], y1: a[1], x2: b[0], y2: b[1] });
 export function editableSegments(entity) {
   if (entity.kind === "path") return structuredClone(entity.segments);
-  if (entity.kind === "line" || isArc(entity)) return [structuredClone(entity)];
+  if (entity.kind === "line" || entity.kind === "bezier" || isArc(entity)) return [structuredClone(entity)];
   if (entity.kind === "circle" || entity.kind === "ellipse") {
     return [{ ...entity, kind: entity.kind === "circle" ? "circleArc" : "ellipseArc", startAngle: 0, sweep: TAU, closed: false }];
   }
@@ -115,6 +115,21 @@ export function nearestSegment(s,p) {
     const dx=s.x2-s.x1,dy=s.y2-s.y1;
     const t=Math.max(0,Math.min(1,((p[0]-s.x1)*dx+(p[1]-s.y1)*dy)/(dx*dx+dy*dy || 1)));
     const point=curvePoint(s,t); return {t,point,distance:distance(p,point)};
+  }
+  if (s.kind === "circle" || s.kind === "circleArc") {
+    const dx=p[0]-s.cx,dy=p[1]-s.cy;
+    const sweep=s.sweep??TAU,span=Math.abs(sweep);
+    const at=(t)=>{const point=curvePoint(s,t);return {t,point,distance:distance(p,point)};};
+    // Every point is equally near the center. Keep the first parameter stable
+    // rather than searching many numerically indistinguishable minima.
+    if ((dx===0&&dy===0)||span===0||s.radius===0) return at(0);
+    const angle=Math.atan2(dy,dx)-(s.rotation??0)-(s.startAngle??0);
+    const along=mod(Math.sign(sweep)*angle);
+    if (span>=TAU||along<=span) return at(along/span);
+    // In the excluded angular interval either endpoint can be closest; simply
+    // clamping the wrapped parameter would incorrectly always choose the end.
+    const start=at(0),end=at(1);
+    return start.distance<=end.distance?start:end;
   }
   const count=96;
   let best={t:0,point:curvePoint(s,0),distance:Infinity};

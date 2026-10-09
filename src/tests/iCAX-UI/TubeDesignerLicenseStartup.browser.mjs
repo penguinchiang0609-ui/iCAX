@@ -132,18 +132,73 @@ async function freshStartup(configuration) {
   assert.equal(await page.locator('[data-tube-designer-locked-area]').count(), 0);
   assert.equal(await page.locator('dialog:visible').count(), 0);
   assert.ok(await page.locator('.tube-designer-instance-list').count());
-  assert.deepEqual(await page.locator('[data-action="select-ribbon-tab"]').evaluateAll(nodes => nodes.map(node => node.dataset.tabId)), ['view', 'resources', 'about']);
+  assert.deepEqual(await page.locator('[data-action="select-ribbon-tab"]').evaluateAll(nodes => nodes.map(node => node.dataset.tabId)), ['view', 'nesting', 'resources', 'about']);
   for (const tab of await page.locator('[data-action="select-ribbon-tab"]').all()) {
     assert.equal(await tab.isDisabled(), false);
     assert.notEqual(await tab.getAttribute('aria-disabled'), 'true');
   }
   currentScenario.checks.push('A fresh startup enters the ordinary product workspace, with inspectable instance data, no locked-area replacement or modal; every exposed primary tab remains clickable');
+  await expectNestingWorkspace();
   await page.screenshot({ path: resolve(output, configuration.name + '-startup.png') });
 }
 
 const tab = id => page.locator(`[data-action="select-ribbon-tab"][data-tab-id="${id}"]`);
 const command = id => page.locator(`[data-action="ribbon-command"][data-command-id="${id}"]`);
 const code = () => page.locator('[data-tube-designer-parameter="productCode"]');
+async function expectNestingWorkspace() {
+  assert.equal((await tab('nesting').innerText()).trim(), '下料');
+  assert.equal(await tab('machining').count(), 0);
+  await tab('nesting').click();
+  await page.waitForFunction(() => {
+    const state = window.__icaxAppShell.getState();
+    return state.activeRibbonTabId === 'nesting' && !state.pendingCount
+      && window.fixture.getProjectView(state.activeProjectId).activeAreaId === 'nesting';
+  });
+  await page.locator('.tube-designer-cutting-parts').waitFor({ state: 'visible' });
+  await page.locator('.tube-designer-cutting-inspector').waitFor({ state: 'visible' });
+  assert.match(await page.locator('.tube-designer-cutting-parts').innerText(), /零件清单/);
+  assert.match(await page.locator('.tube-designer-cutting-inspector').innerText(), /当前选择/);
+  assert.match(await page.locator('.tube-designer-nesting-empty').innerText(), /下料三维场景/);
+  assert.equal(await page.locator('[data-tube-designer-locked-area]').count(), 0);
+  const capabilities = await page.evaluate(() => window.fixture.status().capabilities);
+  for (const [id, feature] of [
+    ['nesting.add-from-products', 'nesting.edit'], ['nesting.import-part', 'nesting.edit'],
+    ['nesting.add-standard-part', 'nesting.edit'], ['nesting.add-punch-part', 'nesting.edit'],
+    ['nesting.draw-part', 'nesting.edit'], ['nesting.draw-2d-part', 'nesting.edit'], ['nesting.stock-settings', 'nesting.edit'],
+    ['nesting.parameters', 'nesting.edit'], ['nesting.start', 'nesting.calculate'],
+    ['nesting.results', 'page.nesting'], ['nesting.export-parts', 'nesting.export'],
+    ['nesting.export-result', 'nesting.export'],
+  ]) {
+    assert.equal(await command(id).isVisible(), true, id + ' must be exposed by the nesting ribbon');
+    assert.equal(await command(id).isDisabled(), capabilities[feature] !== true, id + ' must retain its own authorization');
+  }
+  if (!capabilities['nesting.edit']) {
+    const before = await page.evaluate(() => window.fixture.requests.length);
+    await command('nesting.add-standard-part').click({ force: true });
+    await page.evaluate(() => window.__icaxAppShell.executeRibbonCommand('nesting.add-standard-part'));
+    assert.equal(await page.evaluate(() => window.fixture.requests.length), before);
+    assert.equal(await page.locator('[role="dialog"]:visible').count(), 0);
+    currentScenario.checks.push('The public nesting tab renders its actual parts and inspector panes without a nesting grant; forced clicks and direct edit commands issue no native request or editor dialog');
+  } else {
+    await command('nesting.stock-settings').click();
+    await page.locator('[data-tube-nesting-dialog="stock"]').waitFor({ state: 'visible' });
+    await page.locator('[data-tube-nesting-dialog="stock"] .tube-nesting-settings-close').click();
+    await page.locator('[data-tube-nesting-dialog="stock"]').waitFor({ state: 'detached' });
+    currentScenario.checks.push('The exposed nesting tab opens its actual stock settings when nesting.edit is granted, independently of product editing and nesting calculation/export grants');
+  }
+  if (!capabilities['nesting.calculate']) {
+    const before = await page.evaluate(() => window.fixture.requests.length);
+    await page.evaluate(() => window.__icaxAppShell.executeRibbonCommand('nesting.start'));
+    assert.equal(await page.evaluate(() => window.fixture.requests.length), before);
+    assert.equal(await page.locator('[role="dialog"]:visible').count(), 0);
+    currentScenario.checks.push('Opening nesting does not grant calculation: its disabled start command and direct command invocation never reach the native transport');
+  }
+  await page.screenshot({ path: resolve(output, currentScenario.name + '-nesting.png') });
+  await tab('view').click();
+  await code().waitFor({ state: 'visible' });
+  assert.equal((await page.evaluate(() => window.__icaxAppShell.getState())).activeRibbonTabId, 'view');
+  currentScenario.checks.push('The real top-level nesting button is visible between Product and Resources; navigation returns to Product while Machining stays hidden');
+}
 async function expectAboutContact() {
   await tab('about').click();
   await page.waitForFunction(() => window.__icaxAppShell.getState().activeRibbonTabId === 'about');
@@ -264,6 +319,12 @@ try {
   }
   assert.equal(await page.evaluate(() => window.fixture.requests.some(r => /(?:Generate|CheckPunchToolApplicability|ResolveAssembly)/.test(r.method))), false);
   currentScenario.checks.push('A product page grant permits resource type navigation while its missing edit grant keeps product editing and all passive resource generation/applicability/assembly resolution unavailable');
+  await expectAboutContact();
+  await finishScenario();
+
+  await freshStartup({ name: 'nesting-edit-only', grants: ['page.nesting', 'nesting.edit'] });
+  assert.equal(await code().isDisabled(), true);
+  assert.equal(await command('designer.add').isDisabled(), true);
   await expectAboutContact();
   await finishScenario();
 

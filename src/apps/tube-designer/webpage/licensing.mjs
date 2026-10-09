@@ -60,7 +60,7 @@ export async function ensureLicenseStatus(context, view, { refresh = false } = {
     if (sessions.get(context.productProxy) === session && session.request === request) {
       publishStatus(session, status);
       if (isLicenseWorkspaceReadOnly(context, view) && !session.unlicensedLogged) {
-        context.actions?.log?.("error", "软件未授权。可切换产品、资源库和关于页面；请在关于页申请授权或导入激活文件。");
+        context.actions?.log?.("error", "软件未授权。可切换产品、下料、资源库和关于页面；请在关于页申请授权或导入激活文件。");
         session.unlicensedLogged = true;
       }
     }

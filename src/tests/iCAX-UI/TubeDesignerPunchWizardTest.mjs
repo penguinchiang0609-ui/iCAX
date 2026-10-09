@@ -10,7 +10,7 @@ import {
 } from "../../apps/tube-designer/webpage/punchWizard.mjs";
 import {
   handlePartsAreaAction,
-  PART_2D_EDITING_ENABLED,
+  canEditNestingSideSketch,
   renderNestingRightPane,
   renderNestingViewportOverlay,
   renderPunchWizardDialog,
@@ -143,7 +143,7 @@ assert.equal(calls[0].request.features.length, 1);
 assert.equal(view.tubeDesignerPunchWizard, null);
 assert.equal(view.pending, false);
 
-assert.equal(PART_2D_EDITING_ENABLED, false);
+assert.equal(canEditNestingSideSketch(part), false);
 assert.doesNotMatch(renderNestingRightPane({}, view), /tube-designer-part-open-sketch/);
 assert.doesNotMatch(renderNestingViewportOverlay({}, view), /tube-designer-part-open-sketch/);
 const hiddenSketchResult = await handlePartsAreaAction({}, view, "tube-designer-part-open-sketch", {

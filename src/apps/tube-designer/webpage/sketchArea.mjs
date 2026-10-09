@@ -2,6 +2,14 @@ import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/ut
 import { sketchRibbonGroups } from "./ribbonDefinition.mjs";
 import { renderRibbonCommandIcon } from "../../../iCAX-UI/SDK/AppShell/app/ribbonIcons.mjs";
 import { arcThroughPoints, curvePoint, editableSegments, editPathAtPoint, isArc, isConic, movePathNode, moveSegmentEnd, nearestPath, nearestSegment, pathNodes, pathSamples, pathSvg, reverseSegment, translateSegment } from "./sketchGeometry.mjs";
+import { patchDomNode } from "./punchDomPatch.mjs";
+import { capturePaneInteraction } from "../../_shared/workbench/utils/paneInteractionState.mjs";
+import { attachSideSketchPreview, disposeSideSketchPreview, releaseSideSketchPreview } from "./sideSketchPreview.mjs";
+import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
+import { arrayTransformMatrix, buildArrayTransforms, transformArrayEntity, validateArraySpec } from "./sketchArray.mjs";
+import { CAD_TOOLS, CAD_TRANSFORMS, CAD_SHAPES, beginCadOperation, isCadOperation, cadOperationKind, cadPrompt, cadNumber, cadNumericSpec, cadTransformMatrix, updateCadPointer, renderCadOperationPanel, renderNumericPointPanel, numericPoint } from "./sketchCadCommands.mjs";
+import { boundsOfEntities, transformSketchEntities, trimSketchEntity, extendSketchEntity, offsetSketchEntity, filletSketchEntities, repairSketchEntities, diagnoseSketchEntities } from "./sketchCadGeometry.mjs";
+import { parseSketchDxf, buildSketchDxf, createRegularPolygon, createStar, createRacetrack } from "./sketchCadExchange.mjs";
 
 const SECTION_MODE = "section";
 const SIDE_MODE = "side";
@@ -9,6 +17,7 @@ const SKETCH_SCHEMA = "icax.tube-sketch";
 const CANVAS = Object.freeze({ width: 1000, height: 600, left: 70, right: 950, top: 90, bottom: 510 });
 const DRAW_TOOLS = new Set(["line", "polyline", "path", "rectangle", "circle", "ellipse", "circleArc", "ellipseArc", "arc", "spline", "freehand", "text"]);
 const EDIT_TOOLS = new Set(["break", "insert-point"]);
+const ARRAY_TOOLS = new Set(["array-rectangular", "array-polar"]);
 const SECTION_JOIN_TOLERANCE = 0.25;
 const MAX_SKETCH_ENTITIES = 5000;
 const MAX_ENTITY_POINTS = 10000;
@@ -19,6 +28,44 @@ const SECTION_MIN_ZOOM = 0.0001;
 const SECTION_MAX_ZOOM = 10000;
 const SECTION_HALF_WIDTH = 110;
 const FULL_ANGLE = Math.PI * 2;
+const ARC_LENGTH_AXIAL = "arc-length-axial";
+const renderedSketchDialogs = new WeakMap();
+const sideEntityValidationGeometry = new WeakMap();
+const attachedArrayFields = new WeakSet();
+const attachedCadFields = new WeakSet();
+let sideDraftSequence = 0;
+
+export function rememberSketchDialogDom(view, mount, sceneProxy) {
+  if (!mount?.querySelector) return;
+  const state = view.tubeDesignerSketch;
+  renderedSketchDialogs.set(mount, { view, sceneProxy, state,
+    draft: state && currentDraft(view, state), target: state?.targetPartId });
+}
+
+export function patchSketchDialogDom(context, view, mount, ops) {
+  const old = mount?.querySelector?.(".tube-section-sketch-dialog");
+  const previous = renderedSketchDialogs.get(mount);
+  const state = view.tubeDesignerSketch;
+  if (!old || !view.tubeDesignerSketchDialogOpen || previous?.view !== view
+    || previous.sceneProxy !== context.sceneProxy || previous.state !== state
+    || previous.draft !== currentDraft(view, state) || previous.target !== state.targetPartId) return false;
+  const template = mount.ownerDocument.createElement("template");
+  template.innerHTML = renderSectionSketchDialog(context, view);
+  const next = template.content.querySelector(".tube-section-sketch-dialog");
+  if (!next) return false;
+  // `open` belongs to the live modal lifecycle. Removing it would close and
+  // reopen the dialog and hand focus to its first control on every refresh.
+  if (old.open) next.setAttribute("open", "");
+  const restore = capturePaneInteraction(mount, [".cam-context-pane", ".cam-info-pane", ".tube-section-sketch-dialog"]);
+  const canvas = old.querySelector("[data-tube-sketch-canvas]");
+  const attached = canvas?.dataset.tubeSketchAttached;
+  patchDomNode(old, next);
+  if (attached && canvas?.isConnected) canvas.dataset.tubeSketchAttached = attached;
+  restore();
+  attachSketchAreaInteractions(context, view, mount, ops);
+  rememberSketchDialogDom(view, mount, context.sceneProxy);
+  return true;
+}
 
 export function createInitialSketchState() {
   return {
@@ -28,6 +75,7 @@ export function createInitialSketchState() {
     snapEnabled: true,
     orthoEnabled: false,
     sectionViewport: createSectionViewport(),
+    sideViewport: { offsetU: 0, zoom: 1 },
     saveChoiceDialogOpen: false,
     sectionName: "我的草图管型",
     sectionSession: createSectionSession(),
@@ -39,6 +87,9 @@ export function createInitialSketchState() {
     sideTargetSnapshot: null,
     sideReference: null,
     sideReturnAreaId: "view",
+    sideCreationPayload: null,
+    sidePreviewPayload: null,
+    sidePreview: null,
     targetMemberId: "",
     targetPartId: "",
     loadedProductId: "",
@@ -53,6 +104,7 @@ export function ensureSketchState(view) {
   state.snapEnabled = state.snapEnabled !== false;
   state.orthoEnabled = state.orthoEnabled === true;
   state.sectionViewport = normalizeSectionViewport(state.sectionViewport);
+  state.sideViewport = normalizeSideViewport(state.sideViewport);
   state.saveChoiceDialogOpen = state.saveChoiceDialogOpen === true;
   if (!state.section || !Array.isArray(state.section.entities)) state.section = createDraft();
   normalizeDraftSelection(state.section);
@@ -166,7 +218,40 @@ export function beginPartSideSketch(view, part, report) {
   state.sideReference = report && typeof report === "object"
     ? structuredCloneValue(report) : null;
   state.sideReturnAreaId = String(view.activeAreaId || "nesting");
+  state.sideCreationPayload = null;
+  state.sidePreviewPayload = part?.properties?.["tubeDesigner.sideSketchRecipe"]
+    ? { partEntityId: partId, resourceVersion } : null;
+  if (state.sidePreviewPayload) state.sideByPart[partId].coordinateSpace = ARC_LENGTH_AXIAL;
+  state.sideViewport = { offsetU: 0, zoom: 1 };
+  state.sidePreview = report?.preview ?? null;
+  state.sidePreviewPartCount = Number(report?.splitPartCount || 1);
+  state.sidePreviewResourceKey = report?.previewResourceKey || (state.sidePreviewPayload
+    ? `side-preview-${Date.now()}-${++sideDraftSequence}` : null);
+  state.sidePreviewSignature = report?.preview ? sideSketchSignature(state.sideByPart[partId]) : null;
+  state.sidePreviewPending = false;
+  state.sidePreviewError = "";
+  state.sideSavePending = false;
+  state.sideSaveError = "";
   view.error = "";
+  return state;
+}
+
+export function beginNewPartSideSketch(view, payload, preview) {
+  if (preview?.available !== true || preview?.unfolding?.available !== true
+    || !(Number(preview.length ?? payload?.length) > 0) || !sideUnfoldingPerimeter(preview)) {
+    throw new Error("当前管型没有有效的侧壁展开矩形。");
+  }
+  const partId = `side-sketch-draft-${Date.now()}-${++sideDraftSequence}`;
+  const part = { entityId: partId, name: "二维绘制零件", length: Number(preview.length ?? payload.length),
+    profile: structuredCloneValue(preview.profile), independentNesting: true };
+  const state = beginPartSideSketch(view, part, preview);
+  state.sideByPart[partId] = createDraft();
+  state.sideByPart[partId].coordinateSpace = ARC_LENGTH_AXIAL;
+  state.sideCreationPayload = structuredCloneValue(payload);
+  state.sidePreviewPayload = structuredCloneValue(payload);
+  state.sidePreviewResourceKey = payload.previewResourceKey || partId;
+  state.sidePreview = preview.preview ?? null;
+  state.sidePreviewSignature = sideSketchSignature(state.sideByPart[partId]);
   return state;
 }
 
@@ -190,14 +275,15 @@ export function renderSketchLeftPane(_context, view) {
       <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : (toolSketch ? "单件工艺截面预览" : "管型预览")) : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
       <span>${state.mode === SECTION_MODE
         ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : (toolSketch ? "截面闭合后保存为定式单件工艺，统一生成标准作用体" : "截面闭合后自动生成三维管型"))
-        : (member ? (partTarget ? "灰色底图来自最终零件，青色图形为当前草图" : "实时查看图形在管子侧面的效果") : "请先选择一根管件")}</span>
+        : (member ? (partTarget && state.sidePreviewPayload ? "按展开草图生成实际三维镂空与切缝" : partTarget ? "灰色底图来自最终零件，青色图形为当前草图" : "实时查看图形在管子侧面的效果") : "请先选择一根管件")}</span>
     </header>
-    <div class="tube-sketch-preview-stage">
+    <div class="tube-sketch-preview-stage"${state.mode === SIDE_MODE && state.sidePreviewPayload ? ' style="position:relative"' : ""}>
       ${state.mode === SECTION_MODE
         ? renderSectionPreview(sectionAnalysis)
-        : renderSidePreview(draft, member, state.sideReference)}
+        : state.sidePreviewPayload ? `<div data-side-sketch-viewport style="position:absolute;inset:0" aria-label="二维绘制零件三维预览"></div>` : renderSidePreview(draft, member, state.sideReference)}
     </div>
     <footer>
+      ${state.mode === SIDE_MODE && state.sidePreviewPayload ? `<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-sketch-preview-side" ${state.sidePreviewPending || view.pending ? "disabled" : ""}>${state.sidePreviewPending ? "正在预览…" : "预览三维"}</button><span data-side-sketch-preview-status role="${state.sidePreviewError ? "alert" : "status"}">${escapeText(state.sidePreviewError || (state.sidePreviewSignature === sideSketchSignature(draft) ? (state.sidePreviewPartCount > 1 ? `实际分为 ${state.sidePreviewPartCount} 个零件` : "") : "草图已修改，点击预览三维查看结果"))}</span>` : ""}
       ${state.mode === SIDE_MODE && !partTarget && members.length > 1 ? `<label>
         <span>当前管件</span>
         <select data-cam-change-action="tube-designer-sketch-target-member">
@@ -215,11 +301,19 @@ export function renderSectionSketchDialog(context, view) {
   const state = ensureSketchState(view);
   const sidePart = state.mode === SIDE_MODE && state.sideTargetKind === "part";
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
-  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "单件工艺截面草图" : "截面轮廓草图"));
+  const title = sidePart ? (state.sideCreationPayload ? "二维绘制零件" : "下料零件二维编辑") : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "单件工艺截面草图" : "截面轮廓草图"));
+  const error = (state.mode === SIDE_MODE && state.sideSaveError) || view.error || "";
+  const progress = view.pending ? view.progress : null;
   return `<dialog class="tube-section-sketch-dialog" aria-label="${title}" data-window-state-controls="${escapeAttr(sketchCreationMemoryControls(view,state))}">
     <header class="tube-section-sketch-title">${title}</header>
-    <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
-    ${view.error ? `<div role="alert" class="tube-section-sketch-error">${escapeText(view.error)}</div>` : ""}
+    <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.id === "sketch.commit" && state.sideSavePending ? "保存中…" : command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
+    <div class="tube-section-sketch-feedback">
+      <div role="alert" class="tube-section-sketch-error" data-sketch-save-error ${error ? "" : "hidden"}>${escapeText(error)}</div>
+      <div role="status" aria-live="polite" class="tube-section-sketch-progress" data-sketch-save-progress ${progress ? "" : "hidden"}>
+        <span class="tube-designer-export-spinner" aria-hidden="true"></span>
+        <div><strong>${escapeText(progress?.title || "正在保存草图")}</strong><span>${escapeText(progress?.detail || "")}</span><small>正在生成三维模型，完成后会自动退出绘图界面。</small></div>
+      </div>
+    </div>
     <div class="tube-section-sketch-body"><aside>${renderSketchLeftPane(context, view)}</aside><main>${renderSketchViewportOverlay(context, view)}</main><aside>${renderSketchRightPane(context, view)}</aside></div>
   </dialog>`;
 }
@@ -235,23 +329,23 @@ export function renderSketchViewportOverlay(_context, view) {
   const selectedPointKeys = new Set(selectedPoints.map(pointSelectionKey));
   const selectedId = String(selectedIds[0] ?? "");
   const modeTitle = state.mode === SECTION_MODE ? (view.tubeDesignerComponentCSGProfileReturn ? "拉伸截面图" : "管型截面图")
-    : (state.sideTargetKind === "part" ? "零件侧视草图" : "管型侧面切割图");
+    : (state.sideTargetKind === "part" ? "零件侧壁展开图" : "管型侧面切割图");
   const subtitle = state.command
     ? commandPrompt(state.command)
     : state.mode === SECTION_MODE
     ? "无限模型空间 · 中键拖动平移 · 滚轮缩放"
-    : (member ? `${member.name || "当前管件"} · ${formatNumber(member.length || metrics.xMax)} mm` : "需要先在产品页生成管件");
+    : (member ? `${member.name || "当前管件"} · ${formatNumber(sideUnfoldingLength(member,state.sideReference))} mm${isArcLengthAxial(state) ? " · 横向周向无限重复 · 中键平移 · 滚轮缩放" : ""}` : "需要先在产品页生成管件");
 
   return `<div class="tube-sketch-canvas-shell" data-tube-sketch-canvas-shell data-tube-sketch-mode="${state.mode}" data-tube-sketch-tool="${state.tool}">
     <header class="tube-sketch-canvas-header">
-      <div><strong>${modeTitle}</strong><span>${escapeText(subtitle)}</span></div>
+      <div><strong>${modeTitle}</strong><span data-tube-sketch-command-prompt>${escapeText(subtitle)}</span></div>
       ${view.tubeDesignerSketchDialogOpen ? "" : `<div class="tube-sketch-mode-switch" role="group" aria-label="草图类型">
         <button type="button" data-cam-action="tube-designer-sketch-switch-mode" data-tube-sketch-mode="section" aria-pressed="${state.mode === SECTION_MODE}">管型截面图</button>
         <button type="button" data-cam-action="tube-designer-sketch-switch-mode" data-tube-sketch-mode="side" aria-pressed="${state.mode === SIDE_MODE}">管型侧面切割图</button>
       </div>`}
     </header>
     <div class="tube-sketch-canvas-stage">
-      <svg class="tube-sketch-canvas" data-tube-sketch-canvas viewBox="0 0 ${CANVAS.width} ${state.mode===SECTION_MODE?(state.canvasHeight??CANVAS.height):CANVAS.height}" role="img" aria-label="${modeTitle}绘图区" tabindex="0">
+      <svg class="tube-sketch-canvas" data-tube-sketch-canvas ${sketchMetricAttributes(metrics)} viewBox="0 0 ${CANVAS.width} ${state.mode===SECTION_MODE?(state.canvasHeight??CANVAS.height):CANVAS.height}" role="img" aria-label="${modeTitle}绘图区" tabindex="0">
         <defs>
           <pattern id="tube-sketch-small-grid-${state.mode}" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" /></pattern>
           <pattern id="tube-sketch-grid-${state.mode}" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#tube-sketch-small-grid-${state.mode})"/><path d="M100 0H0V100" /></pattern>
@@ -259,11 +353,13 @@ export function renderSketchViewportOverlay(_context, view) {
         <rect class="tube-sketch-grid" width="100%" height="100%" ${state.mode === SIDE_MODE ? `fill="url(#tube-sketch-grid-${state.mode})"` : ""} />
         <g data-tube-sketch-guide>${state.mode === SECTION_MODE ? renderSectionCanvasGuide(metrics) : renderSideCanvasGuide(metrics, member, state.sideReference)}</g>
         <g class="tube-sketch-geometry">
-          ${draft.entities.map((entity) => renderSketchEntity(entity, state.mode, metrics, selectedIds.includes(entity.id), selectedPointKeys)).join("")}
+          ${renderDraftEntities(draft, state, metrics, selectedIds, selectedPointKeys)}
           ${renderUnselectedNodes(draft, state, metrics)}
         </g>
         <g class="tube-sketch-draft-preview" data-tube-sketch-draft-preview></g>
         <g class="tube-sketch-snap-preview" data-tube-sketch-snap-preview></g>
+        <g class="tube-sketch-array-preview" data-tube-sketch-array-preview pointer-events="none">${renderArrayPreview(state, draft, metrics)}</g>
+        <g class="tube-sketch-cad-preview" data-tube-sketch-cad-preview pointer-events="none">${renderCadOperationPreview(state, metrics)}</g>
         <g class="tube-sketch-cursor-preview" data-tube-sketch-cursor-preview></g>
       </svg>
       ${state.mode === SIDE_MODE && !member ? `<div class="tube-sketch-canvas-empty"><strong>还没有可以绘制的管件</strong><span>先到“产品”生成产品，随后即可在管件侧面绘制切割图。</span></div>` : ""}
@@ -274,9 +370,9 @@ export function renderSketchViewportOverlay(_context, view) {
       <div class="tube-sketch-status-toggles">
         <button type="button" data-cam-action="tube-designer-sketch-toggle-snap" aria-pressed="${state.snapEnabled}">F3 捕捉</button>
         <button type="button" data-cam-action="tube-designer-sketch-toggle-ortho" aria-pressed="${state.orthoEnabled}">F8 正交</button>
-        ${state.mode === SECTION_MODE ? `<button type="button" data-cam-action="tube-designer-sketch-fit-view">适合窗口</button>` : ""}
+        ${state.mode === SECTION_MODE || isArcLengthAxial(state) ? `<button type="button" data-cam-action="tube-designer-sketch-fit-view">${isArcLengthAxial(state) ? "适合管长" : "适合窗口"}</button>` : ""}
       </div>
-      <span data-tube-sketch-coordinate-status>X 0.000 · Y 0.000</span>
+      <span data-tube-sketch-coordinate-status>${isArcLengthAxial(state) ? "U 0.000 · S 0.000" : "X 0.000 · Y 0.000"}</span>
       <span>${state.mode === SECTION_MODE ? "无限画布 · " : ""}${draft.dirty ? "未保存" : (draft.entities.length ? "已保存" : "空草图")}</span>
     </footer>
     ${state.saveChoiceDialogOpen ? renderSectionSaveChoiceDialog(state) : ""}
@@ -311,10 +407,14 @@ export function renderSketchRightPane(_context, view) {
       <span>${selectedPoints.length ? "框选或按 Shift/Ctrl 多选节点；两个开放端点可合并" : selected ? "可拖动夹点；框选不同曲线的端点可合并" : selectedIds.length > 1 ? "端点相接的图形可从菜单执行合并" : "局部框选节点；框住完整图形选图形；Shift/Ctrl 多选"}</span>
     </header>
     <div class="tube-sketch-property-body">
+      ${isArrayCommand(state.command) ? renderArrayPanel(state.command, draft) : ""}
+      ${renderCadOperationPanel(state.command, isArcLengthAxial(state))}
+      ${renderNumericPointPanel(state, isArcLengthAxial(state))}
       ${state.mode === SECTION_MODE ? renderSectionSession(state, view?.pending, Boolean(view.tubeDesignerComponentCSGProfileReturn), Boolean(view.tubeDesignerToolSketchContext)) : ""}
-      ${state.mode === SIDE_MODE && state.sideTargetKind === "part" ? renderSideReferenceSummary(state.sideReference) : ""}
+      ${state.mode === SIDE_MODE && state.sideTargetKind === "part" ? renderSideReferenceSummary(state.sideReference,isArcLengthAxial(state)) : ""}
+      ${state.mode === SIDE_MODE ? `<section class="tube-sketch-side-cut-settings" data-tube-sketch-side-cut-settings><label class="tube-designer-field"><span>开放线条切缝宽度（mm）</span><input type="number" min="0.01" max="1000" step="any" aria-label="开放线条切缝宽度（mm）" value="${escapeAttr(draft.trajectoryWidth ?? 0.5)}" data-cam-change-action="tube-designer-sketch-trajectory-width" ${view.pending ? "disabled" : ""}/></label><small>闭合轮廓内部镂空；开放曲线按此宽度切除。${isArcLengthAxial(state) ? "横向按周长周期无限重复；竖向超出管长的部分自动截断，原草图保留。" : "周长方向可跨接缝绘制。"}</small></section>` : ""}
       ${renderSketchValidation(validation, state.mode, draft)}
-      ${selected ? renderEntityProperties(selected) : `<div class="tube-sketch-property-empty">
+      ${isArrayCommand(state.command) || isCadOperation(state.command) ? "" : selected ? renderEntityProperties(selected, isArcLengthAxial(state)) : `<div class="tube-sketch-property-empty">
         <span class="tube-sketch-property-empty-icon">⌁</span>
         <strong>${selectedIds.length > 1 ? `已选择 ${selectedIds.length} 个图形` : "尚未选择图形"}</strong>
         <span>${selectedIds.length > 1 ? "使用菜单中的合并或删除，也可按 Delete 键。" : "在绘图区单击图形，或拖出选择框。"}</span>
@@ -325,7 +425,37 @@ export function renderSketchRightPane(_context, view) {
 
 export async function handleSketchAreaAction(context, view, action, target, ops) {
   if (!String(action).startsWith("tube-designer-sketch-")) return { handled: false };
+  if (view.pending) return { handled: true };
   const state = ensureSketchState(view);
+  if (action.startsWith("tube-designer-sketch-cad-") || action.startsWith("tube-designer-sketch-numeric-")) {
+    await handleCadOperationAction(context, view, action, target, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-array-field") {
+    updateArrayField(state, target);
+    refreshArrayOperation(context, view);
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-array-mode") {
+    if (isArrayCommand(state.command)) {
+      state.command.arrayMode = ["mouse", "fill"].includes(target?.dataset?.tubeSketchArrayMode) ? target.dataset.tubeSketchArrayMode : "parameters";
+      state.command.points = [];
+      state.command.arrayPointer = null;
+      state.command.error = "";
+      refreshArrayOperation(context, view);
+    }
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-array-apply") {
+    applySketchArray(state, currentDraft(view, state));
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-array-cancel") {
+    cancelSketchArray(state);
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
   if (action === "tube-designer-sketch-dialog-command") {
     if (!view.pending) await handleSketchRibbonCommand(context, view, target?.dataset?.sketchCommand, ops);
     return { handled: true };
@@ -362,7 +492,8 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     return { handled: true };
   }
   if (action === "tube-designer-sketch-fit-view") {
-    fitSectionViewport(state, state.section.entities);
+    if (isArcLengthAxial(state)) state.sideViewport = { offsetU: 0, zoom: 1 };
+    else fitSectionViewport(state, state.section.entities);
     ops.renderProject(context, view);
     return { handled: true };
   }
@@ -371,6 +502,18 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     view.error = "";
     ops.renderProject(context, view);
     return { handled: true };
+  }
+  if (action === "tube-designer-sketch-trajectory-width") {
+    const draft = currentDraft(view, state);
+    pushHistory(draft);
+    draft.trajectoryWidth = String(target?.value ?? "");
+    draft.dirty = true;
+    view.error = "";
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-preview-side") {
+    return { handled: true, result: await previewSideSketch(context, view, ops) };
   }
   if (action === "tube-designer-sketch-cancel-section") {
     await cancelSketch(context, view, ops);
@@ -410,6 +553,7 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     return { handled: true };
   }
   if (action === "tube-designer-sketch-commit") {
+    if (!await finishSketchBeforeSave(context,view,ops)) return {handled:true};
     return { handled: true, result: state.mode === SECTION_MODE
       ? await saveSectionProfile(context, view, ops)
       : await saveSideSketch(context, view, ops) };
@@ -419,7 +563,34 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
 
 export async function handleSketchRibbonCommand(context, view, commandId, ops) {
   if (!String(commandId).startsWith("sketch.")) return false;
+  if (view.pending) return true;
   const state = ensureSketchState(view);
+  const cadKind = String(commandId).replace(/^sketch\./, "");
+  if (commandId === "sketch.export") { await exportSketchDxf(context, view, ops); return true; }
+  if (commandId === "sketch.array-edit") {
+    beginEditSketchArray(state, currentDraft(view, state), view);
+    ops.renderProject(context, view);
+    return true;
+  }
+  if (CAD_TOOLS.has(cadKind)) {
+    const draft = currentDraft(view, state), member = targetSideEntity(view.scene?.tubeDesigner ?? {}, state);
+    try {
+      const sources = draft.entities.filter(entity => draftSelectionIds(draft).includes(entity.id));
+      beginCadOperation(state, draft, cadKind, { bounds: sources.length ? boundsOfEntities(sources) : undefined,
+        perimeter: state.mode === SIDE_MODE ? sideUnfoldingPerimeter(state.sideReference) : 0,
+        length: member && sideUnfoldingLength(member, state.sideReference) });
+      state.command.previewId = `cad-${createEntityId()}`;
+      if (cadKind === "diagnose") state.command.issues = diagnoseSketchEntities(state.command.sources, { tolerance: 0.01 });
+      view.error = "";
+    } catch (error) { view.error = error.message; }
+    ops.renderProject(context, view);
+    return true;
+  }
+  if (ARRAY_TOOLS.has(String(commandId).replace(/^sketch\./, ""))) {
+    beginSketchArray(state, currentDraft(view, state), commandId.endsWith("polar") ? "polar" : "rectangular", view);
+    ops.renderProject(context, view);
+    return true;
+  }
   if (commandId === "sketch.mode-section" || commandId === "sketch.mode-side") {
     if (view.tubeDesignerSketchDialogOpen) return true;
     state.mode = commandId.endsWith("side") ? SIDE_MODE : SECTION_MODE;
@@ -429,28 +600,34 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
     return true;
   }
   if (commandId === "sketch.import") {
+    state.command = null;
+    state.tool = "select";
     await importSketchDxf(context, view, ops);
     return true;
   }
   if (commandId === "sketch.undo") {
+    cancelSketchArray(state);
     state.command = null;
     undoDraft(currentDraft(view, state));
     ops.renderProject(context, view);
     return true;
   }
   if (commandId === "sketch.redo") {
+    cancelSketchArray(state);
     state.command = null;
     redoDraft(currentDraft(view, state));
     ops.renderProject(context, view);
     return true;
   }
   if (commandId === "sketch.delete") {
+    cancelSketchArray(state);
     state.command = null;
     deleteSelected(currentDraft(view, state));
     ops.renderProject(context, view);
     return true;
   }
   if (commandId === "sketch.join") {
+    cancelSketchArray(state);
     state.command = null;
     const result = mergeSelectedEntities(currentDraft(view, state));
     view.error = result.changed ? "" : result.message;
@@ -459,6 +636,7 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
     return true;
   }
   if (commandId === "sketch.commit") {
+    if (!await finishSketchBeforeSave(context,view,ops)) return true;
     if (state.mode === SECTION_MODE) await saveSectionProfile(context, view, ops);
     else await saveSideSketch(context, view, ops);
     return true;
@@ -471,23 +649,582 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
   if (tool === "select" || EDIT_TOOLS.has(tool) || DRAW_TOOLS.has(tool)) {
     state.tool = tool;
     state.command = null;
+    state.cadInput = { mode: "absolute", x: "", y: "", length: "", angle: "0" };
+    state.cadInputError = "";
     ops.renderProject(context, view);
     return true;
   }
   return true;
 }
 
+async function finishSketchBeforeSave(context,view,ops) {
+  const state=ensureSketchState(view),draft=currentDraft(view,state),command=state.command;
+  if(!command)return true;
+  if(isCadOperation(command)) {
+    if(["measure","diagnose","trim","extend"].includes(cadOperationKind(command))){state.command=null;state.tool="select";return true;}
+    if(await applyCadOperationWithContext(context,view,ops))return true;
+  } else if(isArrayCommand(command)) {
+    if(applySketchArray(state,draft))return true;
+  } else if(["line","polyline","spline"].includes(command.tool)) {
+    if(command.tool!=="line"&&command.points.length<(command.tool==="spline"?3:2))command.error="请先指定足够的点，或按 Esc 取消当前绘制。";
+    else {finishCadCommand(state,draft,{});return true;}
+  } else command.error="当前图形尚未绘制完成，请先指定剩余的点，或按 Esc 取消当前绘制。";
+  ops.renderProject(context,view);return false;
+}
+
+async function handleCadOperationAction(context, view, action, target, ops) {
+  const state = ensureSketchState(view), draft = currentDraft(view, state), command = state.command;
+  if (action === "tube-designer-sketch-numeric-field") {
+    state.cadInput ??= { mode: "absolute", angle: "0" };
+    state.cadInput[target?.dataset?.tubeSketchNumericField] = String(target?.value ?? "");
+    state.cadInputError = "";
+    return;
+  }
+  if (action === "tube-designer-sketch-numeric-apply") {
+    try {
+      const member = targetSideEntity(view.scene?.tubeDesigner ?? {}, state);
+      handleCadPoint(state, draft, numericPoint(state), { ...canvasMetrics(state.mode, member, state), sampleStep: 1e-9 });
+      state.cadInputError = "";
+    } catch (error) { state.cadInputError = error.message; }
+    ops.renderProject(context, view);
+    return;
+  }
+  if (!isCadOperation(command)) return;
+  if (action === "tube-designer-sketch-cad-field") {
+    const key = target?.dataset?.tubeSketchCadField;
+    if (key && Object.hasOwn(command.spec, key)) command.spec[key] = target.type === "checkbox" ? target.checked : String(target.value ?? "");
+    command.error = "";
+    refreshCadOperation(context, view);
+    return;
+  }
+  if (action === "tube-designer-sketch-cad-mode") {
+    command.mode = target?.dataset?.cadMode === "mouse" ? "mouse" : "parameters";
+    command.points = [];
+    command.error = "";
+    ops.renderProject(context, view);
+    return;
+  }
+  if (action === "tube-designer-sketch-cad-cancel") { state.command = null; state.tool = "select"; ops.renderProject(context, view); return; }
+  if (action === "tube-designer-sketch-cad-locate") {
+    const issue = command.issues[Number(target?.dataset?.cadIssue)];
+    if (issue) {
+      setDraftSelection(draft, issue.entityIds ?? []);
+      const entities = draft.entities.filter(entity => draftSelectionIds(draft).includes(entity.id));
+      if (state.mode === SECTION_MODE && entities.length) fitSectionViewport(state, entities);
+      else if (isArcLengthAxial(state) && entities.length) {
+        const box = boundsOfEntities(entities), span = Math.max(10, box.maxX - box.minX) * 2;
+        const length=sideUnfoldingLength(targetSideEntity(view.scene?.tubeDesigner??{},state),state.sideReference);
+        const zoom=Math.min(length*(CANVAS.right-CANVAS.left)/(CANVAS.bottom-CANVAS.top)/span,length/Math.max(10,box.height*2));
+        state.sideViewport = { offsetU:box.centerX-length*(CANVAS.right-CANVAS.left)/(CANVAS.bottom-CANVAS.top)/zoom/2, offsetS:box.centerY-length/2,zoom };
+      }
+      ops.renderProject(context, view);
+    }
+    return;
+  }
+  if (action === "tube-designer-sketch-cad-apply") { await applyCadOperationWithContext(context, view, ops); ops.renderProject(context, view); }
+}
+
+function replaceCadEntities(draft, sourceIds, results, append = false) {
+  const ids = new Set(sourceIds), retained = append ? [...draft.entities] : draft.entities.filter(entity => !ids.has(entity.id));
+  const used = new Set(retained.map(entity => entity.id));
+  const fillPrefix = append ? createEntityId() : "";
+  const entities = results.map((entity, i) => {
+    let id = append ? createEntityId() : (entity.id && !used.has(entity.id) ? entity.id : sourceIds[i] && !used.has(sourceIds[i]) ? sourceIds[i] : createEntityId());
+    used.add(id);
+    return { ...entity, id, ...(fillPrefix && entity.fillGroup ? { fillGroup: `${fillPrefix}:${entity.fillGroup}` } : {}) };
+  });
+  if (retained.length + entities.length > MAX_SKETCH_ENTITIES) throw new Error(`图形总数不能超过 ${MAX_SKETCH_ENTITIES} 个`);
+  for (const entity of entities) { const issue = entityGeometryIssue(entity); if (issue) throw new Error(`生成图形${issue}`); }
+  pushHistory(draft);
+  draft.entities = [...retained, ...entities];
+  draft.arrays = (draft.arrays ?? []).filter(array => !array.memberIds.some(id => ids.has(id)));
+  setDraftSelection(draft, entities.map(entity => entity.id));
+  draft.future = [];
+  draft.dirty = true;
+  return entities;
+}
+
+export function applyCadGeometryOperation(state, draft) {
+  const command = state.command;
+  if (!isCadOperation(command)) return false;
+  const kind = cadOperationKind(command);
+  try {
+    const spec = cadNumericSpec(command);
+    const sources = command.sources;
+    if (command.sourceRefs.some(entity => draft.entities.find(value => value.id === entity.id) !== entity)
+      || command.sourceSignature !== JSON.stringify(command.sourceRefs)) throw new Error("原图形已变化，请重新选择后操作。");
+    if (kind === "diagnose") { command.issues = diagnoseSketchEntities(sources, spec); command.error = ""; return false; }
+    if (kind === "measure") { state.command = null; state.tool = "select"; return false; }
+    if (["trim", "extend"].includes(kind)) return false;
+    if (kind === "end-cuts") {
+      if (!(spec.start >= 0 && spec.end <= command.length && spec.end > spec.start)) throw new Error("端部位置须在原管长内，末端必须大于起端。");
+      if (Math.abs(spec.startAngle) >= 85 || Math.abs(spec.endAngle) >= 85) throw new Error("斜切角须在 -85° 与 85° 之间。");
+      pushHistory(draft);
+      draft.endCuts = { start: { position: spec.start, angleDegrees: spec.startAngle, rotationDegrees: spec.startRotation }, end: { position: spec.end, angleDegrees: spec.endAngle, rotationDegrees: spec.endRotation } };
+      draft.dirty = true; draft.future = [];
+    } else if (kind === "split-parts") {
+      pushHistory(draft); draft.splitParts = spec.splitParts === true; draft.dirty = true; draft.future = [];
+    } else if (kind === "array-circumferential") {
+      const arraySpec = { kind: "rectangular", columns: spec.count, rows: spec.rows, spacingX: command.perimeter / spec.count, spacingY: spec.spacingY };
+      const ready = validateArraySpec(arraySpec, sources.length, draft.entities.length);
+      if (!ready.ready) throw new Error(ready.message);
+      const copies = createSketchArrayCopies(sources, arraySpec);
+      if (copies.some(entity => entityGeometryIssue(entity))) throw new Error("阵列图形无效");
+      pushHistory(draft); draft.entities.push(...copies);
+      const memberIds = [...command.sourceIds, ...copies.map(entity => entity.id)];
+      draft.arrays ??= [];
+      draft.arrays.push({ id: createEntityId(), kind: "circumferential", spec: arraySpec, sourceIds: command.sourceIds, sourceEntities: structuredCloneValue(sources), memberIds, memberSignature: stableGeometrySignature(draft.entities.filter(entity => memberIds.includes(entity.id))), perimeter: command.perimeter });
+      setDraftSelection(draft, memberIds); draft.dirty = true; draft.future = [];
+    } else if (CAD_SHAPES.has(kind)) {
+      const entity = kind === "racetrack" ? createRacetrack(spec) : kind === "star" ? createStar({ ...spec, radius: spec.outerRadius, rotation: spec.rotation * Math.PI / 180 }) : createRegularPolygon({ ...spec, radius: spec.outerRadius, rotation: spec.rotation * Math.PI / 180 });
+      replaceCadEntities(draft, [], [entity], true);
+    } else if (kind === "repair") {
+      const ids = sources.map(entity => entity.id), result = repairSketchEntities(sources, spec);
+      if (JSON.stringify(result.entities) === JSON.stringify(sources)) { command.error = "未发现需要修复的图形。"; command.issues = result.issues ?? []; return false; }
+      replaceCadEntities(draft, ids, result.entities);
+    } else {
+      let parts;
+      if (CAD_TRANSFORMS.has(kind) || kind === "align") parts = transformSketchEntities(sources, spec);
+      else if (kind === "offset") parts = sources.flatMap(entity => offsetSketchEntity(entity, spec.distance).parts);
+      else if (kind === "fillet" || kind === "chamfer") parts = filletSketchEntities(sources, { ...spec, chamfer: kind === "chamfer" }).parts;
+      else return false;
+      replaceCadEntities(draft, command.sourceIds, parts, kind === "copy" || kind === "offset" || spec.copy === true);
+    }
+    state.command = null; state.tool = "select";
+    return true;
+  } catch (error) { command.error = error.message || String(error); return false; }
+}
+
+async function applyCadOperationWithContext(context, view, ops) {
+  const state = ensureSketchState(view), draft = currentDraft(view, state), command = state.command;
+  if (cadOperationKind(command) !== "text-outline") return applyCadGeometryOperation(state, draft);
+  try {
+    const spec = cadNumericSpec(command), sceneProxy = context.sceneProxy;
+    view.pending = true; ops.renderProject(context, view);
+    const response = await context.productProxy.invoke("TubeDesigner.GenerateSketchTextOutline", { text: spec.text, fontFamily: spec.font, height: spec.textHeight, x: spec.x, y: spec.y, rotation: spec.rotation * Math.PI / 180, letterSpacing: 0 });
+    if (view.tubeDesignerSketch !== state || context.sceneProxy !== sceneProxy) return false;
+    if (response?.bOK === false) throw new Error(response.message || "文字轮廓生成失败。");
+    if (!Array.isArray(response?.entities) || !response.entities.length) throw new Error("文字没有生成有效轮廓。");
+    replaceCadEntities(draft, [], response.entities, true);
+    state.command = null; state.tool = "select";
+    return true;
+  } catch (error) { command.error = error.message; return false; }
+  finally { view.pending = false; }
+}
+
+function renderCadOperationPreview(state, metrics) {
+  const command = state.command;
+  if (!isCadOperation(command)) return "";
+  const kind = cadOperationKind(command);
+  if (kind === "measure" && (command.measurePoints?.length || command.points.length)) {
+    const points = command.measurePoints ?? [command.points[0], command.cursor ?? command.points[0]];
+    if (points.length < 2) return "";
+    const a = modelToCanvas(points[0], metrics), b = modelToCanvas(points[1], metrics);
+    return `<path d="M ${a.join(" ")} L ${b.join(" ")}" fill="none" stroke="#f1cf6a" stroke-width="1.5" stroke-dasharray="5 4"/><circle cx="${a[0]}" cy="${a[1]}" r="3" fill="#f1cf6a"/><circle cx="${b[0]}" cy="${b[1]}" r="3" fill="#f1cf6a"/>`;
+  }
+  if (CAD_SHAPES.has(kind)) {
+    try {
+      const spec = cadNumericSpec(command);
+      const entity = kind === "racetrack" ? createRacetrack(spec) : kind === "star" ? createStar({ ...spec, radius:spec.outerRadius, rotation:spec.rotation*Math.PI/180 }) : createRegularPolygon({ ...spec, radius:spec.outerRadius, rotation:spec.rotation*Math.PI/180 });
+      return `<g class="tube-sketch-array-copies">${renderSketchEntity({ ...entity, id:"cad-preview" }, state.mode, metrics, false)}</g>`;
+    } catch { return ""; }
+  }
+  if (["offset","fillet","chamfer","align"].includes(kind)) {
+    try {
+      const specKey=JSON.stringify(command.spec),metricsKey=JSON.stringify([metrics.xMin,metrics.xMax,metrics.yMin,metrics.yMax,metrics.canvasLeft,metrics.canvasRight,metrics.canvasTop,metrics.canvasBottom]);
+      if(command.resultPreviewSpecKey!==specKey) {
+        const spec=cadNumericSpec(command);
+        command.resultPreviewEntities=kind==="offset"?command.sources.flatMap(entity=>offsetSketchEntity(entity,spec.distance).parts)
+          :kind==="align"?transformSketchEntities(command.sources,spec):filletSketchEntities(command.sources,{...spec,chamfer:kind==="chamfer"}).parts;
+        command.resultPreviewSpecKey=specKey;command.resultPreviewGeometryKey=null;
+      }
+      if(command.resultPreviewGeometryKey!==metricsKey){command.resultPreviewGeometry=command.resultPreviewEntities.map(entity=>renderSketchEntity(entity,state.mode,metrics,false)).join("");command.resultPreviewGeometryKey=metricsKey;}
+      return `<g class="tube-sketch-array-copies">${command.resultPreviewGeometry}</g>`;
+    }catch{return "";}
+  }
+  if (!CAD_TRANSFORMS.has(kind)) return "";
+  try {
+    const matrix = cadCanvasMatrix(command,metrics);
+    const key = JSON.stringify([metrics.xMin, metrics.xMax, metrics.yMin, metrics.yMax, metrics.canvasLeft, metrics.canvasRight, metrics.canvasTop, metrics.canvasBottom]);
+    if (command.previewGeometryKey !== key) { command.previewGeometryKey = key; command.previewGeometry = command.sources.map(entity => renderSketchEntity(entity, state.mode, metrics, false)).join(""); }
+    return `<defs><g id="${escapeAttr(command.previewId)}">${command.previewGeometry}</g></defs><g class="tube-sketch-array-copies"><use data-tube-sketch-cad-transform href="#${escapeAttr(command.previewId)}" transform="matrix(${matrix.join(" ")})"/></g>`;
+  } catch { return ""; }
+}
+
+function cadCanvasMatrix(command,metrics) {
+  const [a,b,c,d,e,f]=cadTransformMatrix(command),o=modelToCanvas([0,0],metrics);
+  const sx=modelToCanvas([1,0],metrics)[0]-o[0],sy=modelToCanvas([0,1],metrics)[1]-o[1],bc=sy*b/sx,cc=sx*c/sy;
+  return [a,bc,cc,d,o[0]+sx*e-a*o[0]-cc*o[1],o[1]+sy*f-bc*o[0]-d*o[1]];
+}
+
+function updateCadMeasurement(command, point) {
+  const points = command.points.length ? [command.points[0], point] : command.measurePoints;
+  if (!points || points.length < 2) return;
+  command.measurePoints = points;
+  const dx=points[1][0]-points[0][0],dy=points[1][1]-points[0][1];
+  command.measurement = `距离 ${formatNumber(Math.hypot(dx,dy))} mm · Δ水平 ${formatNumber(dx)} · Δ竖直 ${formatNumber(dy)} · 角度 ${formatNumber(Math.atan2(dy,dx)*180/Math.PI)}°`;
+}
+
+function refreshCadOperation(context, view) {
+  const state = ensureSketchState(view), command = state.command, mount = context.mount;
+  if (!isCadOperation(command)) return;
+  for (const field of mount?.querySelectorAll?.("[data-tube-sketch-cad-field]") ?? []) {
+    const value = command.spec[field.dataset.tubeSketchCadField];
+    if (field === field.ownerDocument.activeElement) continue;
+    if (field.type === "checkbox") field.checked = value === true;
+    else if (field.value !== String(value)) field.value = String(typeof value === "number" ? roundCoordinate(value) : value);
+  }
+  for (const host of mount?.querySelectorAll?.("[data-tube-sketch-cad-prompt],[data-tube-sketch-command-status],[data-tube-sketch-command-prompt]") ?? []) host.textContent = cadPrompt(command);
+  const error = mount?.querySelector?.("[data-tube-sketch-cad-error]");
+  if (error) { error.textContent = command.error; error.hidden = !command.error; }
+  const measurement = mount?.querySelector?.("[data-tube-sketch-measure-result]");
+  if (measurement) measurement.textContent = command.measurement || "指定两点，显示距离、分量和角度";
+  const metrics = canvasMetrics(state.mode, targetSideEntity(view.scene?.tubeDesigner ?? {}, state), state);
+  const host = mount?.querySelector?.("[data-tube-sketch-cad-preview]");
+  if (host) {
+    const key=JSON.stringify([command.previewId,metrics.xMin,metrics.xMax,metrics.yMin,metrics.yMax,metrics.canvasLeft,metrics.canvasRight,metrics.canvasTop,metrics.canvasBottom]);
+    const transform=host.querySelector("[data-tube-sketch-cad-transform]");
+    if(CAD_TRANSFORMS.has(cadOperationKind(command))&&transform&&host.dataset.cadGeometryKey===key) {
+      try {transform.setAttribute("transform",`matrix(${cadCanvasMatrix(command,metrics).join(" ")})`);}
+      catch {host.innerHTML="";delete host.dataset.cadGeometryKey;}
+    } else {host.innerHTML=renderCadOperationPreview(state,metrics);host.dataset.cadGeometryKey=key;}
+  }
+}
+
+async function exportSketchDxf(context, view, ops) {
+  const draft = currentDraft(view), bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge;
+  if (!draft.entities.length) throw new Error("请先绘制或导入需要导出的图形。");
+  const content = buildSketchDxf(draft.entities);
+  if (typeof bridge?.saveFileDialog !== "function") throw new Error("当前宿主没有提供保存文件能力。");
+  const targetPath = String(await bridge.saveFileDialog({ title: "导出二维草图 DXF", defaultPath: "展开草图.dxf", defaultExtension: "dxf", filters: [{ name: "DXF 二维图形", extensions: ["dxf"] }] }) ?? "").trim();
+  if (!targetPath) return;
+  view.pending = true; ops.renderProject(context, view);
+  try { await context.productProxy.invoke("TubeDesigner.ExportSketchDxf", { targetPath, content }); }
+  finally { view.pending = false; ops.renderProject(context, view); }
+}
+
+function isArrayCommand(command) {
+  return ARRAY_TOOLS.has(command?.tool);
+}
+
+function beginSketchArray(state, draft, kind, view) {
+  const selected = new Set(draftSelectionIds(draft));
+  const sources = draft.entities.filter(entity => selected.has(entity.id));
+  if (!sources.length) {
+    view.error = "请先选择需要阵列的图形，可按 Shift/Ctrl 多选或框选。";
+    return;
+  }
+  const bounds = sources.map(entityBounds).reduce((all, box) => ({
+    minX: Math.min(all.minX, box.minX), minY: Math.min(all.minY, box.minY),
+    maxX: Math.max(all.maxX, box.maxX), maxY: Math.max(all.maxY, box.maxY),
+  }));
+  const groupCenter = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
+  const spacingX = Math.max(10, (bounds.maxX - bounds.minX) * 1.5);
+  const spacingY = Math.max(10, (bounds.maxY - bounds.minY) * 1.5);
+  const tool = `array-${kind}`;
+  state.tool = tool;
+  state.command = { tool, points: [], arrayMode: "parameters", sourceIds: sources.map(entity => entity.id),
+    sourceRefs: sources, sourceSignature: JSON.stringify(sources), sources: sources.map(structuredCloneValue),
+    sourceBounds: bounds, previewId: `array-${createEntityId()}`, arrayPointer: null,
+    arraySpec: kind === "rectangular"
+      ? { kind, columns: 3, rows: 2, spacingX, spacingY, groupCenter }
+      : { kind, count: 6, angleStep: 60, centerX: groupCenter[0] - spacingX,
+        centerY: groupCenter[1], rotateItems: true, groupCenter } };
+  view.error = "";
+}
+
+function beginEditSketchArray(state, draft, view) {
+  const selected = new Set(draftSelectionIds(draft));
+  const array = (draft.arrays ?? []).find(value => value.memberIds.some(id => selected.has(id)));
+  if (!array) { view.error = "请先选择阵列中的一个图形。"; return; }
+  const members = draft.entities.filter(entity => array.memberIds.includes(entity.id));
+  if (members.length !== array.memberIds.length || stableGeometrySignature(members) !== array.memberSignature) { view.error = "阵列成员已单独修改，无法整体改参；可重新选择图形建立阵列。"; return; }
+  const sources = array.sourceEntities.map(structuredCloneValue);
+  const refs = array.sourceIds.map(id => draft.entities.find(entity => entity.id === id));
+  if (refs.some(value => !value)) { view.error = "阵列原图形已删除。"; return; }
+  const spec = structuredCloneValue(array.spec);
+  const bounds = boundsOfEntities(sources);
+  const tool = `array-${spec.kind}`;
+  state.tool = tool;
+  state.command = { tool, points: [], arrayMode: "parameters", sources, sourceIds: [...array.sourceIds], sourceRefs: refs,
+    sourceSignature: JSON.stringify(refs), sourceBounds: bounds, previewId: `array-${createEntityId()}`, arraySpec: spec,
+    editArrayId: array.id, editMemberIds: [...array.memberIds], perimeter: array.perimeter, circumferential: array.kind === "circumferential" };
+  view.error = "";
+}
+
+function arrayOperationValidation(command, draft) {
+  if (!isArrayCommand(command)) return { ready: false, message: "", copyCount: 0 };
+  const entities = new Map(draft.entities.map(entity => [entity.id, entity]));
+  if (command.sourceInvalid || !command.sourceRefs.every(entity => entities.get(entity.id) === entity)) {
+    return { ready: false, message: "原图形已发生变化，请取消阵列后重新选择。", copyCount: 0 };
+  }
+  const retainedCount = draft.entities.length - (command.editMemberIds?.length ?? command.sources.length) + command.sources.length;
+  const result = validateArraySpec(command.arraySpec, command.sources.length, retainedCount, MAX_SKETCH_ENTITIES);
+  if (["mouse", "fill"].includes(command.arrayMode) && !command.points.length) {
+    return { ...result, ready: false, message: "", waitingForPoint: true };
+  }
+  return result;
+}
+
+function arrayPrompt(command) {
+  const name = command.circumferential ? "管周均布" : command.arraySpec.kind === "polar" ? "圆周阵列" : "二维阵列";
+  if (command.arrayMode === "fill") return command.points.length ? "二维阵列：移动鼠标框出范围，自动确定行列数，单击应用" : "二维阵列：填写间距后点击范围起点";
+  if (command.arrayMode !== "mouse") return `${name}：填写参数后应用 · 数量包含原图形 · Esc 取消`;
+  if (!command.points.length) return `${name}：${command.arraySpec.kind === "polar" ? "点击指定圆心" : "点击指定基点"} · Esc/右键取消`;
+  return `${name}：移动鼠标确定${command.arraySpec.kind === "polar" ? "角间距" : "列、行间距"} · 单击/Enter 应用 · Esc/右键取消`;
+}
+
+function renderArrayPanel(command, draft) {
+  const spec = command.arraySpec;
+  const readiness = arrayOperationValidation(command, draft);
+  const field = (key, label, integer = false) => `<label><span>${label}</span><input type="text" inputmode="${integer ? "numeric" : "decimal"}" aria-label="${label}" value="${escapeAttr(spec[key])}" ${command.circumferential && key === "spacingX" ? "readonly" : ""} data-tube-sketch-array-field="${key}" data-cam-change-action="tube-designer-sketch-array-field" autocomplete="off"/></label>`;
+  return `<section class="tube-sketch-array-panel" aria-label="${spec.kind === "polar" ? "圆周阵列设置" : "二维阵列设置"}">
+    <header><strong>${spec.kind === "polar" ? "圆周阵列" : "二维阵列"}</strong><small>长度 mm · 角度 ° · 数量包含原件</small></header>
+    <div class="tube-sketch-array-modes" role="group" aria-label="阵列方式">${[["parameters", "填写参数"], ["mouse", "鼠标交互"], ...(spec.kind === "rectangular" ? [["fill", "拖出范围"]] : [])].map(([mode, label]) => `<button type="button" data-cam-action="tube-designer-sketch-array-mode" data-tube-sketch-array-mode="${mode}" aria-pressed="${command.arrayMode === mode}">${label}</button>`).join("")}</div>
+    <div class="tube-sketch-array-fields">${spec.kind === "rectangular"
+      ? field("columns", "列数", true) + field("rows", "行数", true) + field("spacingX", "列间距") + field("spacingY", "行间距")
+      : field("count", "数量", true) + field("angleStep", "角间距") + field("centerX", "圆心 X / U") + field("centerY", "圆心 Y / S")
+        + `<label class="tube-sketch-array-checkbox"><input type="checkbox" data-tube-sketch-array-field="rotateItems" data-cam-change-action="tube-designer-sketch-array-field" ${spec.rotateItems ? "checked" : ""}/><span>副本随角度旋转</span></label>`}</div>
+    <p class="tube-sketch-array-hint" data-tube-sketch-array-hint>${escapeText(arrayPrompt(command))}</p>
+    <small data-tube-sketch-array-count>已选 ${command.sources.length} 个图形${readiness.ready ? ` · 新增 ${readiness.copyCount} 个` : ""}</small>
+    <p class="tube-sketch-array-error" role="alert" data-tube-sketch-array-error ${!readiness.ready && readiness.message || command.error ? "" : "hidden"}>${escapeText(command.error || (!readiness.ready ? readiness.message : ""))}</p>
+    <footer><button type="button" class="tube-designer-primary" data-cam-action="tube-designer-sketch-array-apply" ${readiness.ready ? "" : "disabled"}>应用阵列</button><button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-sketch-array-cancel">取消阵列</button></footer>
+  </section>`;
+}
+
+function updateArrayField(state, target) {
+  const command = state.command;
+  const key = target?.dataset?.tubeSketchArrayField;
+  if (!isArrayCommand(command) || !Object.hasOwn(command.arraySpec, key) || ["kind", "groupCenter"].includes(key) || command.circumferential && key === "spacingX") return;
+  command.arraySpec[key] = key === "rotateItems" ? target.checked === true : String(target.value ?? "");
+  if (command.circumferential && key === "columns") command.arraySpec.spacingX = command.perimeter / Number(command.arraySpec.columns);
+  command.error = "";
+}
+
+function updateArrayPointer(command, point) {
+  if (!isArrayCommand(command) || !["mouse", "fill"].includes(command.arrayMode) || !command.points.length) return;
+  command.arrayPointer = point;
+  command.error = "";
+  if (command.arraySpec.kind === "rectangular") {
+    const dx = point[0] - command.points[0][0], dy = point[1] - command.points[0][1];
+    if (command.arrayMode === "fill") {
+      const sx = Math.abs(Number(command.arraySpec.spacingX)), sy = Math.abs(Number(command.arraySpec.spacingY));
+      if (sx > 1e-9 && sy > 1e-9) {
+        command.arraySpec.columns = Math.floor(Math.abs(dx) / sx) + 1;
+        command.arraySpec.rows = Math.floor(Math.abs(dy) / sy) + 1;
+        command.arraySpec.spacingX = Math.sign(dx || 1) * sx;
+        command.arraySpec.spacingY = Math.sign(dy || 1) * sy;
+      }
+    } else {
+      command.arraySpec.spacingX = dx;
+      command.arraySpec.spacingY = dy;
+    }
+  } else {
+    const center = command.points[0], group = command.arraySpec.groupCenter;
+    const start = Math.atan2(group[1] - center[1], group[0] - center[0]);
+    const end = Math.atan2(point[1] - center[1], point[0] - center[0]);
+    const angle = end - start;
+    command.arraySpec.angleStep = Math.atan2(Math.sin(angle), Math.cos(angle)) * 180 / Math.PI;
+  }
+}
+
+function applySketchArray(state, draft) {
+  const command = state.command;
+  if (!isArrayCommand(command)) return false;
+  const readiness = arrayOperationValidation(command, draft);
+  if (!readiness.ready) {
+    command.error = readiness.message || arrayPrompt(command);
+    return false;
+  }
+  if (JSON.stringify(command.sourceRefs) !== command.sourceSignature) {
+    command.sourceInvalid = true;
+    command.error = "原图形已发生变化，请重新选择后阵列。";
+    return false;
+  }
+  let copies;
+  try {
+    copies = createSketchArrayCopies(command.sources, command.arraySpec);
+    if (!copies.length || copies.some(entity => entityGeometryIssue(entity))) throw new Error("阵列范围或所选图形无效，请调整参数。");
+  } catch (error) {
+    command.error = error.message || "无法生成阵列，请调整参数。";
+    return false;
+  }
+  pushHistory(draft);
+  if (command.editMemberIds) {
+    const removed = new Set(command.editMemberIds.filter(id => !command.sourceIds.includes(id)));
+    draft.entities = draft.entities.filter(entity => !removed.has(entity.id));
+  }
+  draft.entities.push(...copies);
+  const memberIds = [...command.sourceIds, ...copies.map(entity => entity.id)];
+  draft.arrays = (draft.arrays ?? []).filter(array => array.id !== command.editArrayId && !array.memberIds.some(id => command.sourceIds.includes(id)));
+  draft.arrays.push({ id: command.editArrayId || createEntityId(), kind: command.circumferential ? "circumferential" : command.arraySpec.kind, ...(command.circumferential ? { perimeter:command.perimeter } : {}), spec: structuredCloneValue(command.arraySpec), sourceIds: [...command.sourceIds], sourceEntities: structuredCloneValue(command.sources), memberIds, memberSignature: stableGeometrySignature(draft.entities.filter(entity => memberIds.includes(entity.id))) });
+  setDraftSelection(draft, memberIds);
+  draft.future = [];
+  draft.dirty = true;
+  state.command = null;
+  state.tool = "select";
+  return true;
+}
+
+function stableGeometrySignature(value) {
+  const sorted = item => Array.isArray(item) ? item.map(sorted) : item && typeof item === "object"
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, sorted(item[key])])) : item;
+  return JSON.stringify(sorted(value));
+}
+
+function createSketchArrayCopies(sources, spec) {
+  return buildArrayTransforms(spec).flatMap(transform => {
+    const groupPrefix = createEntityId();
+    return sources.map(entity => ({ ...transformArrayEntity(entity, transform), id: createEntityId(),
+      ...(entity.fillGroup ? { fillGroup: `${groupPrefix}:${entity.fillGroup}` } : {}) }));
+  });
+}
+
+function cancelSketchArray(state) {
+  if (!isArrayCommand(state.command)) return;
+  state.command = null;
+  state.tool = "select";
+}
+
+function refreshArrayOperation(context, view) {
+  const state = view.tubeDesignerSketch;
+  if (!isArrayCommand(state?.command)) return;
+  const draft = currentDraft(view, state);
+  const command = state.command;
+  const readiness = arrayOperationValidation(command, draft);
+  const mount = context.mount;
+  for (const field of mount?.querySelectorAll?.("[data-tube-sketch-array-field]") ?? []) {
+    const key = field.dataset.tubeSketchArrayField;
+    if (key === "rotateItems") field.checked = command.arraySpec[key] === true;
+    else if (field !== field.ownerDocument.activeElement) {
+      const value = command.arraySpec[key];
+      field.value = String(typeof value === "number" ? roundCoordinate(value) : value);
+    }
+  }
+  for (const button of mount?.querySelectorAll?.("[data-tube-sketch-array-mode]") ?? []) {
+    button.setAttribute("aria-pressed", String(button.dataset.tubeSketchArrayMode === command.arrayMode));
+  }
+  for (const hint of mount?.querySelectorAll?.("[data-tube-sketch-array-hint],[data-tube-sketch-command-status],[data-tube-sketch-command-prompt]") ?? []) hint.textContent = arrayPrompt(command);
+  const error = mount?.querySelector?.("[data-tube-sketch-array-error]");
+  if (error) { error.textContent = command.error || (!readiness.ready ? readiness.message : "") || ""; error.hidden = !error.textContent; }
+  const count = mount?.querySelector?.("[data-tube-sketch-array-count]");
+  if (count) count.textContent = `已选 ${command.sources.length} 个图形${readiness.ready ? ` · 新增 ${readiness.copyCount} 个` : ""}`;
+  const apply = mount?.querySelector?.('[data-cam-action="tube-designer-sketch-array-apply"]');
+  if (apply) apply.disabled = !readiness.ready;
+  const svg = mount?.querySelector?.("[data-tube-sketch-canvas]");
+  const host = svg?.querySelector?.("[data-tube-sketch-array-preview]");
+  if (host) host.innerHTML = renderArrayPreview(state, draft, canvasMetrics(state.mode, targetSideEntity(view.scene?.tubeDesigner ?? {}, state), state), readiness);
+}
+
+function arrayCanvasMatrix(transform, metrics) {
+  const [a, b, c, d, e, f] = arrayTransformMatrix(transform);
+  const origin = modelToCanvas([0, 0], metrics);
+  const sx = modelToCanvas([1, 0], metrics)[0] - origin[0];
+  const sy = modelToCanvas([0, 1], metrics)[1] - origin[1];
+  const bc = sy * b / sx, cc = sx * c / sy;
+  return [a, bc, cc, d, origin[0] + sx * e - a * origin[0] - cc * origin[1],
+    origin[1] + sy * f - bc * origin[0] - d * origin[1]];
+}
+
+function renderArrayPreview(state, draft, metrics, readiness = null) {
+  const command = state.command;
+  if (!isArrayCommand(command) || !(readiness ?? arrayOperationValidation(command, draft)).ready) return "";
+  const key = [metrics.xMin, metrics.xMax, metrics.yMin, metrics.yMax, metrics.canvasLeft,
+    metrics.canvasRight, metrics.canvasTop, metrics.canvasBottom].join(";");
+  if (command.previewGeometryKey !== key) {
+    command.previewGeometryKey = key;
+    command.previewGeometry = command.sources.map(entity => renderSketchEntity(entity, state.mode, metrics, false)).join("");
+  }
+  const transforms = buildArrayTransforms(command.arraySpec);
+  const id = command.previewId;
+  const copies = [];
+  const periodicCopies = [];
+  const period = state.mode === SIDE_MODE && sideUnfoldingPerimeter(state.sideReference);
+  const horizontal = metrics.coordinateSpace === ARC_LENGTH_AXIAL;
+  const box = command.sourceBounds;
+  const corners = [[box.minX, box.minY], [box.minX, box.maxY], [box.maxX, box.minY], [box.maxX, box.maxY]];
+  const origin = modelToCanvas([0, 0], metrics);
+  const next = modelToCanvas(horizontal ? [period, 0] : [0, period], metrics);
+  transforms.forEach((transform, index) => {
+    const matrix = arrayCanvasMatrix(transform, metrics);
+    copies.push(`<use data-tube-sketch-array-copy="${index}" href="#${escapeAttr(id)}" transform="matrix(${matrix.join(" ")})"/>`);
+    if (period > 0) {
+      const [a, b, c, d, e, f] = arrayTransformMatrix(transform);
+      let min = Infinity, max = -Infinity;
+      for (const [x, y] of corners) {
+        const coordinate = horizontal ? a * x + c * y + e : b * x + d * y + f;
+        min = Math.min(min, coordinate); max = Math.max(max, coordinate);
+      }
+      const first = Math.ceil(((horizontal ? metrics.xMin : metrics.yMin) - max) / period);
+      const last = Math.floor(((horizontal ? metrics.xMax : metrics.yMax) - min) / period);
+      for (let turn = first, count = 0; turn <= last && count < 130; turn++, count++) {
+        if (!turn) continue;
+        const repeated = [...matrix];
+        repeated[4] += (next[0] - origin[0]) * turn;
+        repeated[5] += (next[1] - origin[1]) * turn;
+        periodicCopies.push(`<use data-tube-sketch-array-periodic-copy="${turn}" data-tube-sketch-array-instance="${index}" href="#${escapeAttr(id)}" transform="matrix(${repeated.join(" ")})" opacity="0.45"/>`);
+      }
+    }
+  });
+  let guides = "";
+  if (["mouse", "fill"].includes(command.arrayMode) && command.points.length) {
+    const base = modelToCanvas(command.points[0], metrics);
+    const pointer = command.arrayPointer && modelToCanvas(command.arrayPointer, metrics);
+    guides = `<g class="tube-sketch-array-guides"><path d="M ${base[0] - 7} ${base[1]} H ${base[0] + 7} M ${base[0]} ${base[1] - 7} V ${base[1] + 7}"/>${pointer ? `<path d="M ${base.join(" ")} L ${pointer.join(" ")}"/>` : ""}</g>`;
+  }
+  return `<defs><g id="${escapeAttr(id)}">${command.previewGeometry}</g></defs><g class="tube-sketch-array-copies">${copies.join("")}${periodicCopies.join("")}</g>${guides}`;
+}
+
 export function attachSketchAreaInteractions(context, view, mount, ops) {
   const state = ensureSketchState(view);
+  void attachSideSketchPreview(context, view, mount, ops);
   const dialog = mount?.querySelector?.(".tube-section-sketch-dialog");
   if (dialog && !dialog.open) {
     dialog.showModal?.();
     dialog.addEventListener("cancel", event => {
       event.preventDefault();
-      if (!view.pending) void cancelSketch(context, view, ops);
+      if (view.pending) return;
+      if (isArrayCommand(state.command) || isCadOperation(state.command)) {
+        state.command = null; state.tool = "select";
+        ops.renderProject(context, view);
+      } else void cancelSketch(context, view, ops);
     });
   }
   if ((!view.tubeDesignerSketchDialogOpen && view.activeAreaId !== "sketch") || view.pending) return;
+  for (const field of mount.querySelectorAll("[data-tube-sketch-cad-field],[data-tube-sketch-numeric-field]")) {
+    if (attachedCadFields.has(field)) continue;
+    attachedCadFields.add(field);
+    const numeric = field.hasAttribute("data-tube-sketch-numeric-field");
+    const update = () => {
+      if (view.pending || view.tubeDesignerSketch !== state || !field.isConnected) return;
+      void handleCadOperationAction(context, view, numeric ? "tube-designer-sketch-numeric-field" : "tube-designer-sketch-cad-field", field, ops);
+    };
+    field.addEventListener("input", update);
+    field.addEventListener("keydown", event => {
+      if (view.pending || view.tubeDesignerSketch !== state || !["Enter", "Escape"].includes(event.key)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (event.key === "Escape") { state.command = null; state.tool = "select"; ops.renderProject(context, view); }
+      else { update(); void handleCadOperationAction(context, view, numeric ? "tube-designer-sketch-numeric-apply" : "tube-designer-sketch-cad-apply", field, ops); }
+    });
+  }
+  for (const field of mount.querySelectorAll("[data-tube-sketch-array-field]")) {
+    if (attachedArrayFields.has(field)) continue;
+    attachedArrayFields.add(field);
+    field.addEventListener("input", () => {
+      if (view.pending || view.tubeDesignerSketch !== state || !field.isConnected) return;
+      updateArrayField(state, field);
+      refreshArrayOperation(context, view);
+    });
+    field.addEventListener("keydown", event => {
+      if (view.pending || view.tubeDesignerSketch !== state || !isArrayCommand(state.command)) return;
+      if (!["Enter", "Escape"].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") cancelSketchArray(state);
+      else { updateArrayField(state, field); applySketchArray(state, currentDraft(view, state)); }
+      ops.renderProject(context, view);
+    });
+  }
   const saveChoice = mount?.querySelector?.(".tube-sketch-save-choice");
   if (saveChoice) {
     saveChoice.querySelector("[data-cam-action='tube-designer-sketch-save-overwrite']")?.focus?.();
@@ -502,18 +1239,76 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
   let metrics = canvasMetrics(state.mode, member, state);
   const draft = currentDraft(view, state);
   let gesture = null;
+  let interactionFrame = 0;
+  let pendingPointerEvent = null;
+  let pendingViewportEvent = null;
+  let needsGeometryRepaint = false;
 
   const repaintGeometry = () => {
+    syncSketchMetricAttributes(svg,metrics);
     const host = svg.querySelector(".tube-sketch-geometry");
     const selected = draftSelectionIds(draft);
     const selectedPointKeys = new Set(draftSelectedPoints(draft).map(pointSelectionKey));
-    if (host) host.innerHTML = draft.entities
-      .map((entity) => renderSketchEntity(entity, state.mode, metrics, selected.includes(entity.id), selectedPointKeys))
-      .join("") + renderUnselectedNodes(draft, state, metrics);
+    if (host) host.innerHTML = renderDraftEntities(draft, state, metrics, selected, selectedPointKeys)
+      + renderUnselectedNodes(draft, state, metrics);
     if(state.mode===SECTION_MODE) {
       const guide=svg.querySelector("[data-tube-sketch-guide]");
       if(guide)guide.innerHTML=renderSectionCanvasGuide(metrics);
+    } else if (isArcLengthAxial(state)) {
+      const guide = svg.querySelector("[data-tube-sketch-guide]");
+      if (guide) guide.innerHTML = renderSideCanvasGuide(metrics, member, state.sideReference);
     }
+    const arrayHost = svg.querySelector("[data-tube-sketch-array-preview]");
+    if (arrayHost) arrayHost.innerHTML = renderArrayPreview(state, draft, metrics);
+    const cadHost = svg.querySelector("[data-tube-sketch-cad-preview]");
+    if (cadHost) cadHost.innerHTML = renderCadOperationPreview(state, metrics);
+  };
+
+  // Input can arrive faster than the display refresh. Consume the latest
+  // pointer position once per frame, and keep wheel updates inside the canvas.
+  const paintInteraction = () => {
+    interactionFrame = 0;
+    if (!svg.isConnected || view.tubeDesignerSketch !== state || view.pending
+        || !view.tubeDesignerSketchDialogOpen && view.activeAreaId !== "sketch") {
+      pendingPointerEvent = null;
+      pendingViewportEvent = null;
+      needsGeometryRepaint = false;
+      return;
+    }
+    const event = pendingPointerEvent;
+    pendingPointerEvent = null;
+    if (event) processPointerMove(event);
+    if (needsGeometryRepaint) {
+      needsGeometryRepaint = false;
+      repaintGeometry();
+    }
+    if (pendingViewportEvent) {
+      const viewportEvent = pendingViewportEvent;
+      pendingViewportEvent = null;
+      const resolved = pointerPoint(viewportEvent, gesture?.type === "grip" ? gesture.start : commandBasePoint(state.command),
+        gesture?.type === "grip" ? gesture.entityId : "");
+      renderCadCursor(svg, resolved, metrics, state.command);
+      updateCoordinateStatus(mount, resolved.point, isArcLengthAxial(state));
+      if (gesture?.type === "selection") renderSelectionWindow(svg, gesture, metrics);
+      else if (gesture?.type === "freehand") renderGesturePreview(svg, "freehand", gesture, state.mode, metrics);
+      else if (isCadOperation(state.command)) refreshCadOperation(context, view);
+      else if (state.command && !isArrayCommand(state.command)) renderCommandPreview(svg, state.command, resolved.point, state.mode, metrics);
+    }
+  };
+  const scheduleInteraction = () => {
+    if (!interactionFrame) interactionFrame = requestAnimationFrame(paintInteraction);
+  };
+  const clearInteraction = () => {
+    if (interactionFrame) cancelAnimationFrame(interactionFrame);
+    interactionFrame = 0;
+    pendingPointerEvent = null;
+    pendingViewportEvent = null;
+    needsGeometryRepaint = false;
+  };
+  const flushInteraction = () => {
+    if (interactionFrame) cancelAnimationFrame(interactionFrame);
+    if (pendingPointerEvent || pendingViewportEvent || needsGeometryRepaint) paintInteraction();
+    interactionFrame = 0;
   };
 
   if(state.mode===SECTION_MODE) {
@@ -543,18 +1338,68 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
   };
 
   svg.addEventListener("pointerdown", (event) => {
+    if (view.pending) return;
+    flushInteraction();
+    metrics = canvasMetrics(state.mode, member, state);
     svg.focus?.({ preventScroll: true });
-    if (event.button === 1 && state.mode === SECTION_MODE) {
+    if (event.button === 1 && (state.mode === SECTION_MODE || isArcLengthAxial(state))) {
       gesture = {
         type: "pan",
+        side: isArcLengthAxial(state),
         startClient: [event.clientX, event.clientY],
-        originalViewport: { ...state.sectionViewport },
+        originalViewport: { ...(isArcLengthAxial(state) ? state.sideViewport : state.sectionViewport) },
       };
       svg.setPointerCapture?.(event.pointerId);
       event.preventDefault();
       return;
     }
     if (event.button !== 0) return;
+    if (isCadOperation(state.command)) {
+      const command = state.command, kind = cadOperationKind(command);
+      const raw = eventToModelPoint(svg, event, state.mode, metrics), point = pointerPoint(event, commandBasePoint(command)).point;
+      if (kind === "fillet" || kind === "chamfer") {
+        command.spec.point=point; command.error=""; refreshCadOperation(context,view);
+      } else if (kind === "trim" || kind === "extend") {
+        const nearest = draft.entities.map(entity => ({ entity, hit: nearestPath(entity, raw) }))
+          .filter(value => value.hit && value.hit.distance <= metrics.snapTolerance).sort((a,b) => a.hit.distance-b.hit.distance)[0];
+        if (!nearest) return;
+        const cutters = draft.entities.filter(entity => entity.id !== nearest.entity.id && (!command.sourceIds.length || command.sourceIds.includes(entity.id)));
+        try {
+          const result = (kind === "trim" ? trimSketchEntity : extendSketchEntity)(nearest.entity, cutters, nearest.hit.point);
+          replaceCadEntities(draft, [nearest.entity.id], result.parts);
+          command.error = "";
+        } catch (error) { command.error = error.message; }
+        ops.renderProject(context, view);
+      } else if (kind === "measure") {
+        if (!command.points.length) { command.points = [point]; command.measurePoints = [point,point]; }
+        else { command.measurePoints = [command.points[0],point]; command.points = []; }
+        updateCadMeasurement(command, point); refreshCadOperation(context, view);
+      } else if (command.mode === "mouse") {
+        const done = updateCadPointer(command, point, true);
+        if (done) { applyCadGeometryOperation(state, draft); ops.renderProject(context, view); }
+        else refreshCadOperation(context, view);
+      }
+      return;
+    }
+    if (isArrayCommand(state.command)) {
+      const command = state.command;
+      if (!["mouse", "fill"].includes(command.arrayMode)) return;
+      const point = pointerPoint(event).point;
+      if (!command.points.length) {
+        command.points = [point];
+        if (command.arraySpec.kind === "polar") {
+          command.arraySpec.centerX = point[0];
+          command.arraySpec.centerY = point[1];
+        }
+        command.error = "";
+        refreshArrayOperation(context, view);
+      } else {
+        updateArrayPointer(command, point);
+        applySketchArray(state, draft);
+        ops.renderProject(context, view);
+      }
+      return;
+    }
     const entityTarget = event.target instanceof Element ? event.target.closest("[data-tube-sketch-entity-id]") : null;
     let gripTarget = event.target instanceof Element ? event.target.closest("[data-tube-sketch-grip-role]") : null;
     // Coincident endpoints share one location but must remain individually reachable.
@@ -678,24 +1523,52 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
     ops.renderProject(context, view);
   });
 
-  svg.addEventListener("pointermove", (event) => {
+  const processPointerMove = (event) => {
+    metrics = canvasMetrics(state.mode, member, state);
     if (gesture?.type === "pan") {
       const spanX = metrics.xMax - metrics.xMin;
       const spanY = metrics.yMax - metrics.yMin;
-      state.sectionViewport = {
+      if (gesture.side) state.sideViewport = {
+        ...gesture.originalViewport,
+        offsetU: gesture.originalViewport.offsetU - (event.clientX - gesture.startClient[0])
+          / Math.max(1e-9, Math.abs(svg.getScreenCTM()?.a || svg.clientWidth / CANVAS.width))
+          / (CANVAS.right - CANVAS.left) * spanX,
+        offsetS: (gesture.originalViewport.offsetS||0) + (event.clientY-gesture.startClient[1])
+          / Math.max(1e-9,Math.abs(svg.getScreenCTM()?.d||svg.clientHeight/CANVAS.height)) / (CANVAS.bottom-CANVAS.top) * spanY,
+      };
+      else state.sectionViewport = {
         ...gesture.originalViewport,
         centerX: gesture.originalViewport.centerX - (event.clientX - gesture.startClient[0]) / Math.max(1, svg.clientWidth) * spanX,
         centerY: gesture.originalViewport.centerY + (event.clientY - gesture.startClient[1]) / Math.max(1, svg.clientHeight) * spanY,
       };
       metrics = canvasMetrics(state.mode, member, state);
-      repaintGeometry();
+      pendingViewportEvent = event;
+      needsGeometryRepaint = true;
+      return;
+    }
+    if (isCadOperation(state.command)) {
+      const command = state.command, resolved = pointerPoint(event, commandBasePoint(command));
+      renderCadCursor(svg, resolved, metrics, command);
+      updateCoordinateStatus(mount, resolved.point, isArcLengthAxial(state));
+      command.cursor = resolved.point;
+      if (cadOperationKind(command) === "measure" && command.points.length) updateCadMeasurement(command, resolved.point);
+      else if (command.mode === "mouse") updateCadPointer(command, resolved.point);
+      refreshCadOperation(context, view);
+      return;
+    }
+    if (isArrayCommand(state.command)) {
+      const resolved = pointerPoint(event);
+      renderCadCursor(svg, resolved, metrics, state.command);
+      updateCoordinateStatus(mount, resolved.point, isArcLengthAxial(state));
+      updateArrayPointer(state.command, resolved.point);
+      refreshArrayOperation(context, view);
       return;
     }
     const base = gesture?.type === "grip" ? gesture.start : commandBasePoint(state.command);
     const excluded = gesture?.type === "grip" ? gesture.entityId : "";
     const resolved = pointerPoint(event, base, excluded);
     renderCadCursor(svg, resolved, metrics, state.command);
-    updateCoordinateStatus(mount, resolved.point);
+    updateCoordinateStatus(mount, resolved.point, isArcLengthAxial(state));
     if (gesture?.type === "grip") {
       const entity = draft.entities.find((item) => item.id === gesture.entityId);
       if (entity) {
@@ -705,7 +1578,7 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
         gesture.moved = true;
         draft.future=[];
         draft.dirty = true;
-        repaintGeometry();
+        needsGeometryRepaint = true;
       }
       return;
     }
@@ -715,27 +1588,42 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
       return;
     }
     if (gesture?.type === "freehand") {
-      const point = eventToModelPoint(svg, event, state.mode, metrics);
-      const previous = gesture.points.at(-1);
-      if (!previous || Math.hypot(point[0] - previous[0], point[1] - previous[1]) > metrics.sampleStep) gesture.points.push(point);
       renderGesturePreview(svg, "freehand", gesture, state.mode, metrics);
       return;
     }
     if (state.command) renderCommandPreview(svg, state.command, resolved.point, state.mode, metrics);
+  };
+  svg.addEventListener("pointermove", (event) => {
+    if (view.pending) return;
+    // Preserve all freehand samples even when their visual update is batched.
+    if (gesture?.type === "freehand") {
+      const samples = event.getCoalescedEvents?.();
+      for (const sample of samples?.length ? samples : [event]) {
+        const point = eventToModelPoint(svg, sample, state.mode, metrics);
+        const previous = gesture.points.at(-1);
+        if (!previous || pointDistance2d(point, previous) > metrics.sampleStep) gesture.points.push(point);
+      }
+    }
+    pendingPointerEvent = event;
+    if (pendingViewportEvent) pendingViewportEvent = event;
+    scheduleInteraction();
   });
 
   const finishGesture = (event) => {
+    flushInteraction();
     if (!gesture) return;
     const completed = gesture;
     gesture = null;
+    if (completed.type === "pan") {
+      // View state and the active drawing preview were updated in the frame.
+      return;
+    }
     clearGesturePreview(svg);
     if (completed.type === "grip") {
       if (!completed.moved) {
         draft.history?.pop();
         draft.dirty = completed.originalDirty;
       }
-    } else if (completed.type === "pan") {
-      // View state has already been updated during pointer movement.
     } else if (completed.type === "selection") {
       // A box around whole unselected objects still selects objects. A local
       // box around their nodes can select points across any number of curves.
@@ -771,22 +1659,32 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
   };
   svg.addEventListener("pointerup", finishGesture);
   svg.addEventListener("pointercancel", () => {
+    clearInteraction();
     if (gesture?.type === "grip") restoreGripGesture(draft, gesture);
-    if (gesture?.type === "pan") state.sectionViewport = gesture.originalViewport;
+    if (gesture?.type === "pan") {
+      if (gesture.side) state.sideViewport = gesture.originalViewport;
+      else state.sectionViewport = gesture.originalViewport;
+    }
     gesture = null;
     clearGesturePreview(svg);
     ops.renderProject(context, view);
   });
   svg.addEventListener("contextmenu", (event) => {
+    if (view.pending) return;
+    flushInteraction();
     if (!state.command) return;
     event.preventDefault();
-    finishCadCommand(state, draft, metrics);
+    if (isArrayCommand(state.command) || isCadOperation(state.command)) { state.command = null; state.tool = "select"; }
+    else finishCadCommand(state, draft, metrics);
     ops.renderProject(context, view);
   });
   svg.addEventListener("keydown", (event) => {
+    if (view.pending) return;
+    flushInteraction();
     const key = String(event.key ?? "");
     if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === "z") {
       event.preventDefault();
+      cancelSketchArray(state);
       state.command = null;
       undoDraft(draft);
       ops.renderProject(context, view);
@@ -794,6 +1692,7 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
     }
     if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === "y") {
       event.preventDefault();
+      cancelSketchArray(state);
       state.command = null;
       redoDraft(draft);
       ops.renderProject(context, view);
@@ -801,6 +1700,7 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
     }
     if (key === "Delete") {
       event.preventDefault();
+      if (isArrayCommand(state.command) || isCadOperation(state.command)) { state.command = null; state.tool = "select"; }
       deleteSelected(draft);
       ops.renderProject(context, view);
       return;
@@ -808,7 +1708,10 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
     if (key === "Escape") {
       event.preventDefault();
       if (gesture?.type === "grip") restoreGripGesture(draft, gesture);
-      if (gesture?.type === "pan") state.sectionViewport = gesture.originalViewport;
+      if (gesture?.type === "pan") {
+        if (gesture.side) state.sideViewport = gesture.originalViewport;
+        else state.sectionViewport = gesture.originalViewport;
+      }
       gesture = null;
       state.command = null;
       state.tool = "select";
@@ -817,9 +1720,19 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
     }
     if ((key === "Enter" || key === " ") && state.command) {
       event.preventDefault();
+      if (isCadOperation(state.command)) { void applyCadOperationWithContext(context, view, ops).then(() => ops.renderProject(context,view)); return; }
       finishCadCommand(state, draft, metrics);
       ops.renderProject(context, view);
       return;
+    }
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key) && state.tool === "select" && draftSelectionIds(draft).length) {
+      event.preventDefault();
+      const step = (state.nudgeStep || 1) * (event.shiftKey ? 10 : event.altKey ? 0.1 : 1);
+      const dx = key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
+      const dy = key === "ArrowDown" ? -step : key === "ArrowUp" ? step : 0;
+      const sources = draft.entities.filter(entity => draft.selectedIds.includes(entity.id));
+      replaceCadEntities(draft, sources.map(entity => entity.id), transformSketchEntities(sources, { kind:"move", dx, dy }));
+      ops.renderProject(context, view); return;
     }
     if (key === "F3") {
       event.preventDefault();
@@ -833,18 +1746,37 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
       ops.renderProject(context, view);
       return;
     }
-    if (key === "Home" && state.mode === SECTION_MODE) {
+    if (key === "Home" && (state.mode === SECTION_MODE || isArcLengthAxial(state))) {
       event.preventDefault();
-      fitSectionViewport(state, draft.entities);
+      if (isArcLengthAxial(state)) state.sideViewport = { offsetU: 0, zoom: 1 };
+      else fitSectionViewport(state, draft.entities);
       ops.renderProject(context, view);
     }
   });
   svg.addEventListener("wheel", (event) => {
-    if (state.mode !== SECTION_MODE) return;
+    if (state.mode !== SECTION_MODE && !isArcLengthAxial(state)) return;
+    if (view.pending) return;
     event.preventDefault();
-    zoomSectionViewportAtPointer(state, svg, event, metrics);
+    if (gesture?.type === "pan") flushInteraction();
     metrics = canvasMetrics(state.mode, member, state);
-    ops.renderProject(context, view);
+    if (isArcLengthAxial(state)) {
+      const anchor = eventToModelPoint(svg,event,state.mode,metrics);
+      const ratioX=(anchor[0]-metrics.xMin)/(metrics.xMax-metrics.xMin),ratioY=(anchor[1]-metrics.yMin)/(metrics.yMax-metrics.yMin);
+      const viewport = normalizeSideViewport({ ...state.sideViewport,
+        zoom: state.sideViewport.zoom * Math.exp(-event.deltaY * 0.0015) });
+      const spanY=metrics.length/viewport.zoom,spanX=spanY*(CANVAS.right-CANVAS.left)/(CANVAS.bottom-CANVAS.top);
+      viewport.offsetU=anchor[0]-ratioX*spanX;
+      viewport.offsetS=anchor[1]+(0.5-ratioY)*spanY-metrics.length/2;
+      state.sideViewport = viewport;
+    } else zoomSectionViewportAtPointer(state, svg, event, metrics);
+    if (gesture?.type === "pan") {
+      gesture.originalViewport = { ...(gesture.side ? state.sideViewport : state.sectionViewport) };
+      gesture.startClient = [event.clientX, event.clientY];
+    }
+    metrics = canvasMetrics(state.mode, member, state);
+    pendingViewportEvent = event;
+    needsGeometryRepaint = true;
+    scheduleInteraction();
   }, { passive: false });
 }
 
@@ -881,6 +1813,9 @@ export function handleCadPoint(state, draft, point, metrics) {
   }
   if (tool === "rectangle") {
     const start = command.points[0];
+    if (Math.abs(point[0]-start[0]) <= metrics.sampleStep || Math.abs(point[1]-start[1]) <= metrics.sampleStep) {
+      command.error="矩形的宽度和高度须大于零"; return;
+    }
     if (pointDistance2d(start, point) > metrics.sampleStep) {
       addEntity(draft, {
         id: createEntityId(), kind: "rectangle",
@@ -892,6 +1827,12 @@ export function handleCadPoint(state, draft, point, metrics) {
     state.command = null;
     state.tool = "select";
     return;
+  }
+  if (tool === "ellipse") {
+    const center = command.points[0], rx = Math.abs(point[0]-center[0]), ry = Math.abs(point[1]-center[1]);
+    if (rx > metrics.sampleStep && ry > metrics.sampleStep) addEntity(draft, { id:createEntityId(), kind:"ellipse", cx:center[0], cy:center[1], radiusX:rx, radiusY:ry, rotation:0, closed:true });
+    else { command.error="椭圆的两个半轴须大于零"; return; }
+    state.command=null; state.tool="select"; return;
   }
   if (tool === "circle") {
     const center = command.points[0];
@@ -928,6 +1869,8 @@ export function handleCadPoint(state, draft, point, metrics) {
 export function finishCadCommand(state, draft, metrics) {
   const command = state.command;
   if (!command) return;
+  if (isCadOperation(command)) { applyCadGeometryOperation(state, draft); return; }
+  if (isArrayCommand(command)) { applySketchArray(state, draft); return; }
   if (command.tool === "polyline" && command.points.length >= 2) {
     addEntity(draft, { id: createEntityId(), kind: "polyline", points: deduplicatePoints(command.points), closed: false }, state.snapEnabled && state.mode === SECTION_MODE);
   } else if (command.tool === "spline" && command.points.length >= 3) {
@@ -944,13 +1887,16 @@ function commandBasePoint(command) {
 }
 
 function commandPrompt(command) {
+  if (isCadOperation(command)) return cadPrompt(command);
   if (command?.error) return command.error;
+  if (isArrayCommand(command)) return arrayPrompt(command);
   const count = command?.points?.length ?? 0;
   if (command?.tool === "line") return count ? "直线：指定下一点 · Enter/右键完成 · Esc 取消" : "直线：指定第一点";
   if (command?.tool === "polyline") return count ? "多段线：指定下一点 · 点击起点闭合 · Enter 完成" : "多段线：指定第一点";
   if (command?.tool === "spline") return count ? `样条：已指定 ${count} 点 · Enter 完成` : "样条：指定第一点";
   if (command?.tool === "rectangle") return "矩形：指定另一个角点";
   if (command?.tool === "circle") return "圆：指定半径点";
+  if (command?.tool === "ellipse") return "椭圆：指定包围框角点确定两个半轴";
   if (command?.tool === "arc") return count === 1 ? "三点圆弧：指定圆弧上的第二点" : "三点圆弧：指定终点";
   return `${toolLabel(command?.tool)}：指定点`;
 }
@@ -966,6 +1912,9 @@ function renderCommandPreview(svg, command, cursor, mode, metrics) {
   } else if (command.tool === "rectangle" && points.length >= 2) {
     const start = command.points[0];
     entity = { id: "command-preview", kind: "rectangle", x: Math.min(start[0], cursor[0]), y: Math.min(start[1], cursor[1]), width: Math.abs(cursor[0] - start[0]), height: Math.abs(cursor[1] - start[1]), radius: 0, closed: true };
+  } else if (command.tool === "ellipse" && points.length >= 2) {
+    const center = command.points[0];
+    entity = { id:"command-preview",kind:"ellipse",cx:center[0],cy:center[1],radiusX:Math.abs(cursor[0]-center[0]),radiusY:Math.abs(cursor[1]-center[1]),rotation:0,closed:true };
   } else if (command.tool === "circle" && points.length >= 2) {
     const center = command.points[0];
     entity = { id: "command-preview", kind: "circle", cx: center[0], cy: center[1], radius: pointDistance2d(center, cursor), closed: true };
@@ -1000,8 +1949,15 @@ export function findSnapCandidate(draft, point, tolerance, excludeEntityId = "",
   const segments = [];
   for (const entity of draft?.entities ?? []) {
     if (entity.id === excludeEntityId || entity.kind === "text") continue;
+    // Use a conservative control hull before evaluating the actual curve.
+    // Distant geometry cannot provide a snap inside the screen-sized radius.
+    if (!snapBoundsNearPoint(entitySnapBounds(entity), point, tolerance)) continue;
     candidates.push(...entitySnapCandidates(entity, point));
-    segments.push(...entityLineSegments(entity));
+    segments.push(...entityLineSegments(entity).filter(segment =>
+      snapBoundsNearPoint({ minX: Math.min(segment.start[0], segment.end[0]),
+        maxX: Math.max(segment.start[0], segment.end[0]),
+        minY: Math.min(segment.start[1], segment.end[1]),
+        maxY: Math.max(segment.start[1], segment.end[1]) }, point, tolerance)));
   }
   if (segments.length <= 240) {
     for (let left = 0; left < segments.length; left += 1) {
@@ -1013,10 +1969,46 @@ export function findSnapCandidate(draft, point, tolerance, excludeEntityId = "",
     }
   }
   const priorities = { endpoint: 0, intersection: 1, center: 2, midpoint: 3, quadrant: 4, nearest: 5 };
-  return candidates
-    .map((candidate) => ({ ...candidate, distance: pointDistance2d(point, candidate.point) }))
-    .filter((candidate) => candidate.distance <= tolerance)
-    .sort((left, right) => (priorities[left.type] ?? 9) - (priorities[right.type] ?? 9) || left.distance - right.distance)[0] ?? null;
+  let best = null;
+  for (const candidate of candidates) {
+    const distance = pointDistance2d(point, candidate.point);
+    if (!(distance <= tolerance)) continue;
+    const priority = priorities[candidate.type] ?? 9;
+    if (!best || priority < (priorities[best.type] ?? 9)
+        || priority === (priorities[best.type] ?? 9) && distance < best.distance)
+      best = { ...candidate, distance };
+  }
+  return best;
+}
+
+function snapBoundsNearPoint(bounds, point, tolerance) {
+  if (![bounds.minX, bounds.maxX, bounds.minY, bounds.maxY].every(Number.isFinite)) return true;
+  return point[0] >= bounds.minX - tolerance && point[0] <= bounds.maxX + tolerance
+    && point[1] >= bounds.minY - tolerance && point[1] <= bounds.maxY + tolerance;
+}
+
+function entitySnapBounds(entity) {
+  if (entity.kind === "path") {
+    return (entity.segments ?? []).reduce((bounds, segment) => {
+      const next = entitySnapBounds(segment);
+      return { minX: Math.min(bounds.minX, next.minX), maxX: Math.max(bounds.maxX, next.maxX),
+        minY: Math.min(bounds.minY, next.minY), maxY: Math.max(bounds.maxY, next.maxY) };
+    }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  }
+  if (isConic(entity)) {
+    const radius = Math.max(Math.abs(entity.radius ?? entity.radiusX), Math.abs(entity.radius ?? entity.radiusY));
+    return { minX: entity.cx - radius, maxX: Number(entity.cx) + radius,
+      minY: entity.cy - radius, maxY: Number(entity.cy) + radius };
+  }
+  if (entity.kind === "line" || entity.kind === "rectangle") return entityBounds(entity);
+  const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+  for (const point of entity.points ?? []) {
+    bounds.minX = Math.min(bounds.minX, Number(point[0]));
+    bounds.maxX = Math.max(bounds.maxX, Number(point[0]));
+    bounds.minY = Math.min(bounds.minY, Number(point[1]));
+    bounds.maxY = Math.max(bounds.maxY, Number(point[1]));
+  }
+  return bounds;
 }
 
 function entitySnapCandidates(entity, cursor) {
@@ -1128,7 +2120,8 @@ function renderCadCursor(svg, resolved, metrics, command) {
     ? `<path d="M${point[0] - 6} ${point[1]}L${point[0]} ${point[1] - 6}L${point[0] + 6} ${point[1]}L${point[0]} ${point[1] + 6}Z"/><text x="${point[0] + 10}" y="${point[1] - 9}">${escapeText(resolved.snap.label)}</text>`
     : "";
   if (cursorHost) {
-    const label = command ? commandPrompt(command) : `X ${formatNumber(resolved.point[0])}  Y ${formatNumber(resolved.point[1])}`;
+    const horizontal = metrics.coordinateSpace === ARC_LENGTH_AXIAL;
+    const label = command ? commandPrompt(command) : `${horizontal ? "U" : "X"} ${formatNumber(resolved.point[0])}  ${horizontal ? "S" : "Y"} ${formatNumber(resolved.point[1])}`;
     const width = Math.min(300, Math.max(92, label.length * 6.4));
     const bounds = canvasDrawingBounds(metrics);
     const x = Math.min(bounds.right - width, point[0] + 14);
@@ -1137,9 +2130,9 @@ function renderCadCursor(svg, resolved, metrics, command) {
   }
 }
 
-function updateCoordinateStatus(mount, point) {
+function updateCoordinateStatus(mount, point, arcLengthAxial = false) {
   const status = mount?.querySelector?.("[data-tube-sketch-coordinate-status]");
-  if (status) status.textContent = `X ${roundCoordinate(point[0]).toFixed(3)} · Y ${roundCoordinate(point[1]).toFixed(3)}`;
+  if (status) status.textContent = `${arcLengthAxial ? "U" : "X"} ${roundCoordinate(point[0]).toFixed(3)} · ${arcLengthAxial ? "S" : "Y"} ${roundCoordinate(point[1]).toFixed(3)}`;
 }
 
 function renderSelectionWindow(svg, gesture, metrics) {
@@ -1560,7 +2553,7 @@ export function analyzeSectionDraft(draft) {
 export function validateSideSketchDraft(draft, member, reference = null) {
   if (!member) return { ready: false, kind: "empty", message: "请先在产品页生成并选择一根管件" };
   const entities = Array.isArray(draft?.entities) ? draft.entities : [];
-  if (!entities.length) {
+  if (!entities.length && !draft.endCuts) {
     return {
       ready: false,
       kind: draft?.persisted && draft?.dirty ? "remove" : "empty",
@@ -1570,7 +2563,19 @@ export function validateSideSketchDraft(draft, member, reference = null) {
   if (entities.length > MAX_SKETCH_ENTITIES) {
     return { ready: false, kind: "invalid", message: `侧面草图不能超过 ${MAX_SKETCH_ENTITIES} 个图形` };
   }
+  const width = Number(draft?.trajectoryWidth ?? 0.5);
+  if (!(Number.isFinite(width) && width >= 0.01 && width <= 1000)) {
+    return { ready: false, kind: "invalid", message: "开放线条切缝宽度须为 0.01 至 1000 mm" };
+  }
+  const periodic = sideUnfoldingPerimeter(reference) > 0;
+  const arcLengthAxial = draft?.coordinateSpace === ARC_LENGTH_AXIAL;
   const length = sideUnfoldingLength(member, reference);
+  if (draft.endCuts) {
+    const {start,end} = draft.endCuts;
+    if (!start || !end || ![start.position,end.position,start.angleDegrees??0,end.angleDegrees??0,start.rotationDegrees??0,end.rotationDegrees??0].every(Number.isFinite)
+      || start.position < 0 || end.position > length || end.position <= start.position || Math.abs(start.angleDegrees??0) >= 85 || Math.abs(end.angleDegrees??0) >= 85)
+      return {ready:false,kind:"invalid",message:"端部裁切位置或斜切角无效，请重新设置。"};
+  }
   const height = Math.max(
     1,
     sideUnfoldingPerimeter(reference)
@@ -1578,6 +2583,7 @@ export function validateSideSketchDraft(draft, member, reference = null) {
       || memberFaceHeight(member),
   );
   const ids = new Set();
+  let axialClipping = false;
   for (let index = 0; index < entities.length; index += 1) {
     const entity = entities[index];
     const id = String(entity?.id ?? "");
@@ -1585,17 +2591,59 @@ export function validateSideSketchDraft(draft, member, reference = null) {
     ids.add(id);
     const issue = entityGeometryIssue(entity);
     if (issue) return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形${issue}` };
-    const bounds = entityBounds(entity);
+    const geometry = checkedSideEntityGeometry(entity);
+    const bounds = geometry.bounds;
     if (![bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite)) {
       return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形包含无效坐标` };
     }
     const tolerance = Math.max(1e-6, length * 1e-9);
-    if (bounds.minX < -tolerance || bounds.minY < -tolerance
-      || bounds.maxX > length + tolerance || bounds.maxY > height + tolerance) {
+    if (entity.kind === "text") return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形是文字，请转换为闭合轮廓或开放曲线后切割` };
+    if (geometry.selfIntersects) {
+      return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形存在自相交，请修正后生成` };
+    }
+    if (arcLengthAxial) {
+      axialClipping ||= bounds.minY < -tolerance || bounds.maxY > length + tolerance;
+      continue;
+    }
+    if (periodic && bounds.maxY - bounds.minY > height + tolerance) {
+      return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形在周长方向不能超过一整圈，避免跨缝后重叠` };
+    }
+    if (periodic && (bounds.minY < -height - tolerance || bounds.maxY > height * 2 + tolerance)) {
+      return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形在周长方向超出可跨缝绘制范围（-周长至 2 × 周长）` };
+    }
+    if (bounds.minX < -tolerance || bounds.maxX > length + tolerance
+      || !periodic && (bounds.minY < -tolerance || bounds.maxY > height + tolerance)) {
       return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形超出当前管件的可绘制区域` };
     }
   }
-  return { ready: true, kind: "valid", message: `图形有效，可应用到当前管件（${formatNumber(length)} × ${formatNumber(height)} mm）` };
+  return { ready: true, kind: "valid", message: arcLengthAxial
+    ? `图形有效；横向每 ${formatNumber(height)} mm 重复${axialClipping ? "，竖向超出管长的部分将自动截断，原草图保留" : `，竖向管长 ${formatNumber(length)} mm`}`
+    : `图形有效，可应用到当前管件（${formatNumber(length)} × ${formatNumber(height)} mm）` };
+}
+
+function checkedSideEntityGeometry(entity) {
+  // Geometry is mutable while grips are dragged. A value signature makes the
+  // cache safe for in-place edits, undo/redo and externally restored drafts.
+  const signature = JSON.stringify(entity);
+  const previous = sideEntityValidationGeometry.get(entity);
+  if (previous?.signature === signature) return previous;
+  const points = deduplicatePoints(entityBoundaryPoints(entity));
+  const result = { signature, bounds: entityBounds(entity), selfIntersects: sidePathSelfIntersects(points,
+    ["rectangle", "circle", "ellipse"].includes(entity.kind) || entity.closed === true) };
+  sideEntityValidationGeometry.set(entity, result);
+  return result;
+}
+
+function sidePathSelfIntersects(points, closed) {
+  const count = closed ? points.length : points.length - 1;
+  for (let left = 0; left < count; left += 1) {
+    for (let right = left + 2; right < count; right += 1) {
+      if (closed && left === 0 && right === count - 1) continue;
+      if (segmentsIntersect(points[left], points[(left + 1) % points.length],
+        points[right], points[(right + 1) % points.length])) return true;
+    }
+  }
+  return false;
 }
 
 function renderSketchValidation(validation, mode, draft) {
@@ -1640,19 +2688,22 @@ function renderSectionSession(state, pending, componentProfile = false, toolSket
   </section>`;
 }
 
-function renderSideReferenceSummary(reference) {
+function renderSideReferenceSummary(reference, arcLengthAxial = false) {
   const projection = reference?.sideProjection ?? {};
   const unfolding = sideUnfoldingSurface(reference);
   const edgeCount = Array.isArray(projection.segments) ? projection.segments.length : 0;
   const holeCount = Array.isArray(reference?.holes) ? reference.holes.length : 0;
   const rectangle = sideUnfoldingRectangle(reference);
   if (reference?.unfolding?.available === true && rectangle) {
-    const wireCount = Array.isArray(unfolding?.wires) ? unfolding.wires.length : 0;
+    const wires = Array.isArray(unfolding?.wires) ? unfolding.wires : [];
+    const junctionCount = wires.filter(wire => wire.role === "profile-junction").length;
+    const wireCount = wires.length - junctionCount;
     return `<section class="tube-sketch-side-reference-summary">
-      <div><strong>整圈侧壁矩形展开</strong><small>不是单个面：横向 S 是管材轴向长度，纵向 U 是整圈截面弧长；U=0 与 U=周长是同一条接缝。底图只用于定位，不会作为新草图图形保存</small></div>
+      <div><strong>整圈侧壁矩形展开</strong><small>${arcLengthAxial ? "横向 U 是截面周向，按周长周期无限重复；竖向 S 是管材轴向长度，超出两端的图形生成时自动截断。" : "不是单个面：横向 S 是管材轴向长度，纵向 U 是整圈截面弧长；U=0 与 U=周长是同一条接缝。"}底图只用于定位，不会作为新草图图形保存</small></div>
       <dl>
-        <div><dt>展开矩形</dt><dd>${formatNumber(rectangle.width)} × ${formatNumber(rectangle.height)} mm</dd></div>
+        <div><dt>${arcLengthAxial ? "一圈基准矩形（U × S）" : "展开矩形"}</dt><dd>${formatNumber(arcLengthAxial ? rectangle.height : rectangle.width)} × ${formatNumber(arcLengthAxial ? rectangle.width : rectangle.height)} mm</dd></div>
         <div><dt>端部/特征边界</dt><dd>${wireCount} 条</dd></div>
+        ${junctionCount ? `<div><dt>截面交接线</dt><dd>${junctionCount} 条</dd></div>` : ""}
       </dl>
     </section>`;
   }
@@ -1889,7 +2940,7 @@ function pointSegmentDistance(point, start, end) {
 }
 
 function createDraft() {
-  return { entities: [], selectedIds: [], selectedPoints: [], history: [], future: [], dirty: false, persisted: false };
+  return { entities: [], arrays: [], endCuts: null, splitParts: false, trajectoryWidth: 0.5, selectedIds: [], selectedPoints: [], history: [], future: [], dirty: false, persisted: false };
 }
 
 function normalizeDraftSelection(draft) {
@@ -2023,6 +3074,11 @@ function currentDraft(view, state = ensureSketchState(view)) {
 function draftFromStoredSketch(sketch) {
   return {
     entities: Array.isArray(sketch?.entities) ? sketch.entities.map(normalizeEntity).filter(Boolean) : [],
+    arrays: structuredCloneValue(sketch?.arrays ?? []),
+    endCuts: structuredCloneValue(sketch?.endCuts ?? null),
+    splitParts: sketch?.splitParts === true,
+    trajectoryWidth: sketch?.trajectoryWidth ?? 0.5,
+    coordinateSpace: sketch?.coordinateSpace,
     selectedIds: [],
     selectedPoints: [],
     history: [],
@@ -2166,6 +3222,16 @@ function canvasMetrics(mode, member, state = null) {
       || Number(state?.sideReference?.sideProjection?.height)
       || memberFaceHeight(member),
   );
+  if (isArcLengthAxial(state)) {
+    const viewport = normalizeSideViewport(state.sideViewport);
+    const spanY=length/viewport.zoom,span=spanY*(CANVAS.right-CANVAS.left)/(CANVAS.bottom-CANVAS.top);
+    const centerS=length/2+viewport.offsetS;
+    return { coordinateSpace: ARC_LENGTH_AXIAL, period: height, length,
+      xMin: viewport.offsetU, xMax: viewport.offsetU + span, yMin:centerS-spanY/2,yMax:centerS+spanY/2,
+      canvasLeft: CANVAS.left, canvasRight: CANVAS.right, canvasTop: CANVAS.top, canvasBottom: CANVAS.bottom,
+      sampleStep: Math.max(0.001,spanY/1000),
+      snapTolerance:spanY/(CANVAS.bottom-CANVAS.top)*10 };
+  }
   const xPerPixel = length / (CANVAS.right - CANVAS.left);
   const yPerPixel = height / (CANVAS.bottom - CANVAS.top);
   return {
@@ -2180,6 +3246,26 @@ function canvasMetrics(mode, member, state = null) {
     sampleStep: Math.max(0.5, length / 1000),
     snapTolerance: Math.max(xPerPixel, yPerPixel) * 10,
   };
+}
+
+function isArcLengthAxial(state) {
+  return state?.mode === SIDE_MODE && state?.sideTargetKind === "part"
+    && !!(state.sideCreationPayload || state.sidePreviewPayload);
+}
+
+function normalizeSideViewport(viewport) {
+  return { offsetU: Number.isFinite(Number(viewport?.offsetU)) ? Number(viewport.offsetU) : 0,
+    offsetS:Number.isFinite(Number(viewport?.offsetS))?Number(viewport.offsetS):0,
+    zoom: Math.max(1 / 64, Math.min(1000, Number(viewport?.zoom) || 1)) };
+}
+
+function sketchMetricAttributes(metrics) {
+  const b=canvasDrawingBounds(metrics);
+  return `data-sketch-x-min="${metrics.xMin}" data-sketch-x-max="${metrics.xMax}" data-sketch-y-min="${metrics.yMin}" data-sketch-y-max="${metrics.yMax}" data-sketch-canvas-left="${b.left}" data-sketch-canvas-right="${b.right}" data-sketch-canvas-top="${b.top}" data-sketch-canvas-bottom="${b.bottom}"`;
+}
+function syncSketchMetricAttributes(svg,metrics) {
+  const b=canvasDrawingBounds(metrics),values={"x-min":metrics.xMin,"x-max":metrics.xMax,"y-min":metrics.yMin,"y-max":metrics.yMax,"canvas-left":b.left,"canvas-right":b.right,"canvas-top":b.top,"canvas-bottom":b.bottom};
+  for(const [key,value]of Object.entries(values))svg.setAttribute(`data-sketch-${key}`,String(value));
 }
 
 function modelToCanvas(point, metrics) {
@@ -2210,12 +3296,76 @@ function eventToModelPoint(svg, event, _mode, metrics) {
   point.x = event.clientX;
   point.y = event.clientY;
   const local = point.matrixTransform(svg.getScreenCTM().inverse());
-  if(_mode===SECTION_MODE)return canvasToModel([local.x,local.y],metrics);
+  if(_mode===SECTION_MODE || metrics.coordinateSpace === ARC_LENGTH_AXIAL)return canvasToModel([local.x,local.y],metrics);
   const bounds = canvasDrawingBounds(metrics);
   return canvasToModel([
     Math.min(bounds.right, Math.max(bounds.left, local.x)),
-    Math.min(bounds.bottom, Math.max(bounds.top, local.y)),
+    local.y,
   ], metrics);
+}
+
+function renderDraftEntities(draft, state, metrics, selectedIds, selectedPointKeys) {
+  const periodic = state.mode === SIDE_MODE && sideUnfoldingPerimeter(state.sideReference) > 0;
+  const horizontal = metrics.coordinateSpace === ARC_LENGTH_AXIAL;
+  if(periodic&&horizontal)return renderGroupedPeriodicDraft(draft,state,metrics,selectedIds,selectedPointKeys);
+  const period = horizontal ? metrics.period : metrics.yMax;
+  const origin = modelToCanvas([0, 0], metrics);
+  const periodPoint = modelToCanvas(horizontal ? [period, 0] : [0, period], metrics);
+  return draft.entities.map((entity, entityIndex) => {
+    if (state.command?.editMemberIds?.includes(entity.id) && !state.command.sourceIds.includes(entity.id)) return "";
+    const original = renderSketchEntity(entity, state.mode, metrics, selectedIds.includes(entity.id), selectedPointKeys);
+    if (!periodic) return original;
+    const bounds = entityBounds(entity);
+    const copies = [];
+    const repeatId = `tube-sketch-repeat-${state.mode}-${entityIndex}`;
+    const addCopy = (turns, opacity) => copies.push(
+      `<use data-tube-sketch-periodic-copy="${escapeAttr(entity.id)}" href="#${escapeAttr(repeatId)}" transform="translate(${(periodPoint[0] - origin[0]) * turns} ${(periodPoint[1] - origin[1]) * turns})" pointer-events="none" opacity="${opacity}"/>`);
+    const withCopies = () => original + (copies.length
+      ? `<defs><g id="${escapeAttr(repeatId)}">${renderSketchEntity(entity, state.mode, metrics, false)}</g></defs>${copies.join("")}` : "");
+    if (horizontal) {
+      const first = Math.ceil((metrics.xMin - bounds.maxX) / period);
+      const last = Math.floor((metrics.xMax - bounds.minX) / period);
+      for (let turns = first, count = 0; turns <= last && count < 130; turns++, count++) {
+        if (!turns) continue;
+        addCopy(turns, 0.45);
+      }
+      return withCopies();
+    }
+    // Draw the same cut at the opposite side of the periodic seam. The source
+    // and its grips remain editable outside the rectangle; copies are guides.
+    const base = Math.floor(bounds.minY / period);
+    for (const turns of new Set([-base, -base - 1])) {
+      if (!turns || bounds.maxY + turns * period < 0 || bounds.minY + turns * period > period) continue;
+      addCopy(turns, 0.65);
+    }
+    return withCopies();
+  }).join("");
+}
+
+function renderGroupedPeriodicDraft(draft,state,metrics,selectedIds,selectedPointKeys) {
+  const period=metrics.period,pixelsPerPeriod=modelToCanvas([period,0],metrics)[0]-modelToCanvas([0,0],metrics)[0];
+  const groups=new Map(),originals=[];
+  for(const entity of draft.entities) {
+    if(state.command?.editMemberIds?.includes(entity.id)&&!state.command.sourceIds.includes(entity.id))continue;
+    originals.push(renderSketchEntity(entity,state.mode,metrics,selectedIds.includes(entity.id),selectedPointKeys));
+    const box=entityBounds(entity),turn=Math.floor(box.minX/period);
+    let group=groups.get(turn);
+    if(!group){group={turn,min:Infinity,max:-Infinity,entities:[],geometry:[]};groups.set(turn,group);}
+    group.min=Math.min(group.min,box.minX-turn*period);group.max=Math.max(group.max,box.maxX-turn*period);
+    group.entities.push(entity);
+    group.geometry.push(renderSketchEntity(entity,state.mode,metrics,false));
+  }
+  const repeated=[];let index=0;
+  for(const group of groups.values()) {
+    const first=Math.ceil((metrics.xMin-group.max)/period),last=Math.floor((metrics.xMax-group.min)/period),copies=[];
+    const id=`tube-sketch-periodic-group-${index++}`;
+    for(let turn=first,count=0;turn<=last&&count<130;turn++,count++) {
+      if(turn===group.turn)continue;
+      copies.push(`<use data-tube-sketch-periodic-copy="${escapeAttr(group.entities.length===1?group.entities[0].id:`group-${group.turn}`)}" data-tube-sketch-periodic-turn="${turn}" href="#${id}" transform="translate(${turn*pixelsPerPeriod} 0)" pointer-events="none" opacity="0.45"/>`);
+    }
+    if(copies.length)repeated.push(`<defs><g id="${id}" transform="translate(${-group.turn*pixelsPerPeriod} 0)">${group.geometry.join("")}</g></defs>${copies.join("")}`);
+  }
+  return originals.join("")+repeated.join("");
 }
 
 function renderSectionCanvasGuide(metrics) {
@@ -2299,13 +3449,26 @@ function unfoldingWirePaths(wire, metrics, period) {
     `M${points.map((point) => `${point[0]} ${point[1]}`).join(" L")}${wire?.closed && usable.length === 1 ? " Z" : ""}`);
 }
 
+function unfoldingWireClass(wire) {
+  if (wire?.role === "profile-junction") return "tube-sketch-side-profile-junction";
+  return wire?.role === "end-boundary"
+    ? "tube-sketch-side-unfolding-end" : "tube-sketch-side-unfolding-feature";
+}
+
+function profileJunctionAttributes(wire, offsetU = 0) {
+  if (wire?.role !== "profile-junction") return "";
+  const point = unfoldingPoint(wire.points?.[0]);
+  return `data-tube-sketch-profile-junction data-tube-sketch-profile-u="${point ? point[1] + offsetU : ""}"`;
+}
+
 function renderUnfoldingWire(wire, metrics, period, className, attribute = "") {
   return unfoldingWirePaths(wire, metrics, period).map((path) =>
-    `<path class="${className}" ${attribute} data-tube-sketch-reference-unfolded-wire data-tube-sketch-wire-role="${escapeAttr(wire?.role ?? "")}" d="${path}"/>`,
+    `<path class="${className}" ${attribute} ${profileJunctionAttributes(wire)} data-tube-sketch-reference-unfolded-wire data-tube-sketch-wire-role="${escapeAttr(wire?.role ?? "")}" d="${path}"/>`,
   ).join("");
 }
 
 function renderSideCanvasGuide(metrics, member, reference = null) {
+  if (metrics.coordinateSpace === ARC_LENGTH_AXIAL) return renderArcLengthAxialGuide(metrics, member, reference);
   const length = formatNumber(metrics.xMax);
   const height = formatNumber(metrics.yMax);
   const unfolding = sideUnfoldingSurface(reference);
@@ -2314,19 +3477,19 @@ function renderSideCanvasGuide(metrics, member, reference = null) {
     const wires = (Array.isArray(unfolding?.wires) ? unfolding.wires : [])
       .map((wire) => renderUnfoldingWire(
         wire, metrics, period,
-        wire?.role === "end-boundary"
-          ? "tube-sketch-side-unfolding-end"
-          : "tube-sketch-side-unfolding-feature",
+        unfoldingWireClass(wire),
         "data-tube-sketch-reference-wire"))
       .join("");
-    const featureCount = Array.isArray(unfolding?.wires) ? unfolding.wires.length : 0;
+    const featureCount = (unfolding?.wires ?? [])
+      .filter(wire => wire.role !== "profile-junction").length;
     return `<g class="tube-sketch-side-guide tube-sketch-side-unfolding" data-tube-sketch-coordinate-space="axial-arc-length">
       <rect class="tube-sketch-side-region" data-tube-sketch-reference-region data-tube-sketch-unfolding-rectangle x="${metrics.canvasLeft}" y="${metrics.canvasTop}" width="${metrics.canvasRight - metrics.canvasLeft}" height="${metrics.canvasBottom - metrics.canvasTop}" rx="2"/>
       <g class="tube-sketch-side-unfolding-wires">${wires}</g>
-      <line class="tube-sketch-side-unfolding-seam" x1="${metrics.canvasLeft}" y1="${metrics.canvasTop}" x2="${metrics.canvasLeft}" y2="${metrics.canvasBottom}"/>
+      <line class="tube-sketch-side-unfolding-seam" data-tube-sketch-seam="u-period" x1="${metrics.canvasLeft}" y1="${metrics.canvasTop}" x2="${metrics.canvasRight}" y2="${metrics.canvasTop}"/>
+      <line class="tube-sketch-side-unfolding-seam" data-tube-sketch-seam="u-zero" x1="${metrics.canvasLeft}" y1="${metrics.canvasBottom}" x2="${metrics.canvasRight}" y2="${metrics.canvasBottom}"/>
       <text x="88" y="116">${escapeText(member?.name ?? "管件")} · 整圈侧壁矩形展开（S / U）</text>
-      <text x="70" y="535">S 0</text><text x="902" y="535">S ${length} mm</text><text x="905" y="82">U ${height} mm</text>
-      <text x="88" y="132">${featureCount ? `已识别 ${featureCount} 条端部/特征边界` : "已生成整圈侧壁矩形编辑域"} · ${escapeText(reference?.unfolding?.method ?? "截面弧长")}</text>
+      <text x="70" y="535">S 0</text><text x="902" y="535">S ${length} mm</text><text x="905" y="82">U ${height} mm</text><text x="10" y="510">U 0</text>
+      <text x="88" y="132">${featureCount ? `已识别 ${featureCount} 条端部/特征边界` : "已生成整圈侧壁矩形编辑域"} · 按截面真实周长展开</text>
     </g>`;
   }
   const projection = reference?.sideProjection ?? {};
@@ -2346,6 +3509,44 @@ function renderSideCanvasGuide(metrics, member, reference = null) {
     <g class="tube-sketch-side-reference-holes">${holes}</g>
     <text x="88" y="116">${escapeText(member?.name ?? "管件侧面")} · 整圈侧壁矩形编辑域</text>
     <text x="70" y="535">0</text><text x="902" y="535">${length} mm</text><text x="905" y="82">${height} mm</text>
+  </g>`;
+}
+
+function renderArcLengthAxialGuide(metrics, member, reference) {
+  const period = metrics.period, length = metrics.length;
+  const topS=Math.min(length,metrics.yMax),bottomS=Math.max(0,metrics.yMin);
+  const regionTop=modelToCanvas([0,topS],metrics)[1],regionBottom=modelToCanvas([0,bottomS],metrics)[1];
+  const endY=modelToCanvas([0,length],metrics)[1],zeroY=modelToCanvas([0,0],metrics)[1];
+  const first = Math.floor(metrics.xMin / period), last = Math.ceil(metrics.xMax / period);
+  const seams = [], regions = [], wires = [];
+  const sourceWires = sideUnfoldingSurface(reference)?.wires ?? [];
+  for (let lap = first, count = 0; lap <= last && count < 70; lap++, count++) {
+    const u = lap * period, x = modelToCanvas([u,0],metrics)[0];
+    if(x>=metrics.canvasLeft-1e-6&&x<=metrics.canvasRight+1e-6)seams.push(`<line class="tube-sketch-side-unfolding-seam" data-tube-sketch-seam="${lap}" x1="${x}" y1="${metrics.canvasTop}" x2="${x}" y2="${metrics.canvasBottom}"/><text x="${Math.min(metrics.canvasRight - 60,Math.max(metrics.canvasLeft,x + 3))}" y="535">U ${formatNumber(u)}</text>`);
+    const min = Math.max(u,metrics.xMin), max = Math.min(u + period,metrics.xMax);
+    if (max > min && topS > bottomS) {
+      const left = modelToCanvas([min,0],metrics)[0], right = modelToCanvas([max,0],metrics)[0];
+      regions.push(`<rect class="tube-sketch-side-region" data-tube-sketch-reference-region data-tube-sketch-unfolding-rectangle data-tube-sketch-period="${lap}" x="${left}" y="${regionTop}" width="${right-left}" height="${regionBottom-regionTop}"/>`);
+    }
+    for (const wire of sourceWires) {
+      const source = (wire.points ?? []).map(unfoldingPoint).filter(Boolean);
+      // Periodic guides stay inside the visible editing interval. Their source
+      // U is the native section arc length, independent of the sketch entities.
+      if (wire.role === "profile-junction"
+          && (!source.length || source[0][1] + u < metrics.xMin || source[0][1] + u > metrics.xMax)) continue;
+      const points = source
+        .map(point=>modelToCanvas([point[1] + u,point[0]],metrics));
+      if (points.length >= 2) wires.push(`<path class="${unfoldingWireClass(wire)}" ${profileJunctionAttributes(wire,u)} data-tube-sketch-reference-unfolded-wire data-tube-sketch-wire-role="${escapeAttr(wire.role ?? "")}" d="M${points.map(p=>`${p[0]} ${p[1]}`).join(" L")}"/>`);
+    }
+  }
+  return `<g class="tube-sketch-side-guide tube-sketch-side-unfolding" data-tube-sketch-coordinate-space="${ARC_LENGTH_AXIAL}">
+    <defs><clipPath id="sketch-side-guide-bounds"><rect x="${metrics.canvasLeft}" y="${metrics.canvasTop}" width="${metrics.canvasRight-metrics.canvasLeft}" height="${metrics.canvasBottom-metrics.canvasTop}"/></clipPath></defs>
+    <g clip-path="url(#sketch-side-guide-bounds)">${regions.join("")}${wires.join("")}</g>${seams.join("")}
+    ${endY>=metrics.canvasTop-1e-6&&endY<=metrics.canvasBottom+1e-6?`<line class="tube-sketch-side-unfolding-end" data-tube-sketch-axial-limit="length" x1="${metrics.canvasLeft}" y1="${endY}" x2="${metrics.canvasRight}" y2="${endY}"/><text x="10" y="${endY-8}">S ${formatNumber(length)}</text>`:""}
+    ${zeroY>=metrics.canvasTop-1e-6&&zeroY<=metrics.canvasBottom+1e-6?`<line class="tube-sketch-side-unfolding-end" data-tube-sketch-axial-limit="zero" x1="${metrics.canvasLeft}" y1="${zeroY}" x2="${metrics.canvasRight}" y2="${zeroY}"/><text x="10" y="${zeroY}">S 0</text>`:""}
+    <text x="88" y="62">${escapeText(member?.name ?? "管件")} · 横向 U 每 ${formatNumber(period)} mm 重复 · 竖向 S 管长 ${formatNumber(length)} mm</text>
+    ${sourceWires.some(wire => wire.role === "profile-junction") ? `<text x="88" y="78">蓝色虚线：截面曲线段交接</text>` : ""}
+    <text x="88" y="578">毫米等比显示 · 中键平移 · 滚轮缩放 · 超出管长的图形生成时自动截断，原图保留</text>
   </g>`;
 }
 
@@ -2395,12 +3596,21 @@ function renderUnselectedNodes(draft, state, metrics) {
     })), entity.sampled ? 12 : 160)).join("")}</g>`;
 }
 
+function mappedPathAttributes(entity, metrics) {
+  // Apply the full model-to-canvas mapping to the exact path. In the unfolded
+  // view the horizontal and axial scales differ, including on conic curves.
+  const origin = modelToCanvas([0, 0], metrics);
+  const sx = modelToCanvas([1, 0], metrics)[0] - origin[0];
+  const sy = modelToCanvas([0, 1], metrics)[1] - origin[1];
+  return `d="${pathSvg(entity, point => point)}" transform="matrix(${sx} 0 0 ${sy} ${origin[0]} ${origin[1]})"`;
+}
+
 function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys = new Set()) {
   const className = `tube-sketch-entity ${isClosedBoundaryEntity(entity) ? "closed" : "open"} ${selected ? "selected" : ""}`;
   const attributes = `class="${className}" data-tube-sketch-entity-id="${escapeAttr(entity.id)}"`;
   if (entity.kind === "path") {
     const grips=pathNodes(entity).map((p,index)=>({point:modelToCanvas(p,metrics),role:"vertex",index}));
-    return `<g><path ${attributes} d="${pathSvg(entity,p=>modelToCanvas(p,metrics))}"/>${selected?renderHandles(entity.id,grips,160,selectedPointKeys):""}</g>`;
+    return `<g><path ${attributes} ${mappedPathAttributes(entity, metrics)}/>${selected?renderHandles(entity.id,grips,160,selectedPointKeys):""}</g>`;
   }
   if (entity.kind === "line") {
     const start = modelToCanvas([entity.x1, entity.y1], metrics);
@@ -2417,7 +3627,7 @@ function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys =
     const center = modelToCanvas([entity.cx, entity.cy], metrics);
     const radiusX = modelToCanvas(analyticCurvePoint(entity, 0), metrics);
     const radiusY = modelToCanvas(analyticCurvePoint(entity, Math.PI / 2), metrics);
-    return `<g>${selectionHalo(`<path ${attributes} d="${pathSvg(entity,p=>modelToCanvas(p,metrics))}"/>`, selected)}${selected ? renderHandles(entity.id, [
+    return `<g>${selectionHalo(`<path ${attributes} ${mappedPathAttributes(entity, metrics)}/>`, selected)}${selected ? renderHandles(entity.id, [
       { point: center, role: "move", index: -1, secondary: true },
       { point: radiusX, role: "ellipse-radius-x", index: 0 },
       { point: radiusY, role: "ellipse-radius-y", index: 1 },
@@ -2426,7 +3636,7 @@ function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys =
   if (entity.kind === "circleArc" || entity.kind === "ellipseArc") {
     const points = entityBoundaryPoints(entity).map((point) => modelToCanvas(point, metrics));
     const center = modelToCanvas([entity.cx, entity.cy], metrics);
-    return `<g>${selectionHalo(`<path ${attributes} d="${pathSvg(entity,p=>modelToCanvas(p,metrics))}"/>`, selected)}${selected ? renderHandles(entity.id, [
+    return `<g>${selectionHalo(`<path ${attributes} ${mappedPathAttributes(entity, metrics)}/>`, selected)}${selected ? renderHandles(entity.id, [
       { point: points[0], role: "vertex", index: 0 },
       { point: center, role: "move", index: -1, secondary: true },
       ...(entity.kind==="circleArc"&&Math.abs(entity.sweep)<FULL_ANGLE-1e-8 ? [{point:modelToCanvas(curvePoint(entity,.5),metrics),role:"arc-middle",index:-2,secondary:true}] : []),
@@ -2442,8 +3652,8 @@ function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys =
     const height = Math.abs(b[1] - a[1]);
     const radiusModel = Math.max(0, Math.min(Number(entity.radius ?? 0), Number(entity.width) / 2, Number(entity.height) / 2));
     const radiusPoint = modelToCanvas([Number(entity.x) + radiusModel, Number(entity.y)], metrics);
-    const radius = Math.min(width / 2, height / 2, Math.abs(radiusPoint[0] - a[0]));
-    return `<g>${selectionHalo(`<rect ${attributes} x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}"/>`, selected)}${selected ? renderHandles(entity.id, [
+    const radiusY = Math.abs(modelToCanvas([Number(entity.x), Number(entity.y) + radiusModel], metrics)[1] - a[1]);
+    return `<g>${selectionHalo(`<rect ${attributes} x="${x}" y="${y}" width="${width}" height="${height}" rx="${Math.abs(radiusPoint[0] - a[0])}" ry="${radiusY}"/>`, selected)}${selected ? renderHandles(entity.id, [
       { point: [x, y + height], role: "corner", index: 0 },
       { point: [x + width, y + height], role: "corner", index: 1 },
       { point: [x + width, y], role: "corner", index: 2 },
@@ -2455,14 +3665,17 @@ function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys =
     const center = modelToCanvas([entity.cx, entity.cy], metrics);
     const edge = modelToCanvas([entity.cx + entity.radius, entity.cy], metrics);
     const radius = Math.abs(edge[0] - center[0]);
-    return `<g>${selectionHalo(`<circle ${attributes} cx="${center[0]}" cy="${center[1]}" r="${radius}"/>`, selected)}${selected ? renderHandles(entity.id, [
+    const radiusY = Math.abs(modelToCanvas([entity.cx, entity.cy + entity.radius], metrics)[1] - center[1]);
+    const yScale = radius > 0 ? radiusY / radius : 1;
+    return `<g>${selectionHalo(`<circle ${attributes} cx="${center[0]}" cy="${center[1]}" r="${radius}" transform="matrix(1 0 0 ${yScale} 0 ${center[1] * (1 - yScale)})"/>`, selected)}${selected ? renderHandles(entity.id, [
       { point: center, role: "move", index: -1, secondary: true },
       { point: [center[0] + radius, center[1]], role: "radius", index: 0 },
     ], 160, selectedPointKeys) : ""}</g>`;
   }
   if (entity.kind === "text") {
     const point = modelToCanvas([entity.x, entity.y], metrics);
-    return `<text ${attributes} x="${point[0]}" y="${point[1]}">${escapeText(entity.value)}</text>`;
+    const rotation = Number(entity.rotation ?? 0);
+    return `<text ${attributes} x="${point[0]}" y="${point[1]}"${rotation ? ` transform="matrix(${arrayCanvasMatrix({ angle: rotation, center: [entity.x, entity.y] }, metrics).join(" ")})"` : ""}>${escapeText(entity.value)}</text>`;
   }
   const points = (entity.points ?? []).map((point) => modelToCanvas(point, metrics));
   if (!points.length) return "";
@@ -2504,49 +3717,50 @@ function curvePath(points, kind, closed) {
   return `M${points.map((point) => `${point[0]} ${point[1]}`).join(" L")}${closed ? " Z" : ""}`;
 }
 
-function renderEntityProperties(entity) {
+function renderEntityProperties(entity, arcLengthAxial = false) {
   const controls = [];
+  const xLabel = arcLengthAxial ? "U" : "X", yLabel = arcLengthAxial ? "S" : "Y";
   if (entity.kind === "rectangle") {
-    controls.push(field("中心 X", "centerX", entity.x + entity.width / 2));
-    controls.push(field("中心 Y", "centerY", entity.y + entity.height / 2));
+    controls.push(field(`中心 ${xLabel}`, "centerX", entity.x + entity.width / 2));
+    controls.push(field(`中心 ${yLabel}`, "centerY", entity.y + entity.height / 2));
     controls.push(field("宽度", "width", entity.width, "mm", 0.1));
     controls.push(field("高度", "height", entity.height, "mm", 0.1));
     controls.push(field("圆角半径", "radius", entity.radius ?? 0, "mm", 0.1));
   } else if (entity.kind === "circle") {
-    controls.push(field("圆心 X", "centerX", entity.cx));
-    controls.push(field("圆心 Y", "centerY", entity.cy));
+    controls.push(field(`圆心 ${xLabel}`, "centerX", entity.cx));
+    controls.push(field(`圆心 ${yLabel}`, "centerY", entity.cy));
     controls.push(field("直径", "diameter", entity.radius * 2, "mm", 0.1));
   } else if (entity.kind === "ellipse") {
-    controls.push(field("中心 X", "centerX", entity.cx));
-    controls.push(field("中心 Y", "centerY", entity.cy));
+    controls.push(field(`中心 ${xLabel}`, "centerX", entity.cx));
+    controls.push(field(`中心 ${yLabel}`, "centerY", entity.cy));
     controls.push(field("长轴半径", "radiusX", entity.radiusX, "mm", 0.1));
     controls.push(field("短轴半径", "radiusY", entity.radiusY, "mm", 0.1));
   } else if (entity.kind === "circleArc") {
-    controls.push(field("圆心 X", "centerX", entity.cx));
-    controls.push(field("圆心 Y", "centerY", entity.cy));
+    controls.push(field(`圆心 ${xLabel}`, "centerX", entity.cx));
+    controls.push(field(`圆心 ${yLabel}`, "centerY", entity.cy));
     controls.push(field("半径", "radius", entity.radius, "mm", 0.1));
   } else if (entity.kind === "ellipseArc") {
-    controls.push(field("中心 X", "centerX", entity.cx));
-    controls.push(field("中心 Y", "centerY", entity.cy));
+    controls.push(field(`中心 ${xLabel}`, "centerX", entity.cx));
+    controls.push(field(`中心 ${yLabel}`, "centerY", entity.cy));
     controls.push(field("长轴半径", "radiusX", entity.radiusX, "mm", 0.1));
     controls.push(field("短轴半径", "radiusY", entity.radiusY, "mm", 0.1));
   } else if (entity.kind === "line") {
-    controls.push(field("起点 X", "x1", entity.x1));
-    controls.push(field("起点 Y", "y1", entity.y1));
-    controls.push(field("终点 X", "x2", entity.x2));
-    controls.push(field("终点 Y", "y2", entity.y2));
+    controls.push(field(`起点 ${xLabel}`, "x1", entity.x1));
+    controls.push(field(`起点 ${yLabel}`, "y1", entity.y1));
+    controls.push(field(`终点 ${xLabel}`, "x2", entity.x2));
+    controls.push(field(`终点 ${yLabel}`, "y2", entity.y2));
   } else if (entity.kind === "text") {
     controls.push(`<label class="wide"><span>文字</span><input type="text" value="${escapeAttr(entity.value)}" data-sketch-field="value" data-sketch-entity-id="${escapeAttr(entity.id)}" data-cam-change-action="tube-designer-sketch-property"/></label>`);
-    controls.push(field("位置 X", "x", entity.x));
-    controls.push(field("位置 Y", "y", entity.y));
+    controls.push(field(`位置 ${xLabel}`, "x", entity.x));
+    controls.push(field(`位置 ${yLabel}`, "y", entity.y));
   } else if(entity.kind==="path") {
     const bounds=entityBounds(entity);
-    controls.push(field("中心 X","centerX",(bounds.minX+bounds.maxX)/2));
-    controls.push(field("中心 Y","centerY",(bounds.minY+bounds.maxY)/2));
+    controls.push(field(`中心 ${xLabel}`,"centerX",(bounds.minX+bounds.maxX)/2));
+    controls.push(field(`中心 ${yLabel}`,"centerY",(bounds.minY+bounds.maxY)/2));
   } else {
     const bounds = entityBounds(entity);
-    controls.push(field("中心 X", "centerX", (bounds.minX + bounds.maxX) / 2));
-    controls.push(field("中心 Y", "centerY", (bounds.minY + bounds.maxY) / 2));
+    controls.push(field(`中心 ${xLabel}`, "centerX", (bounds.minX + bounds.maxX) / 2));
+    controls.push(field(`中心 ${yLabel}`, "centerY", (bounds.minY + bounds.maxY) / 2));
     controls.push(field("宽度", "width", bounds.maxX - bounds.minX, "mm", 0.1));
     controls.push(field("高度", "height", bounds.maxY - bounds.minY, "mm", 0.1));
   }
@@ -2687,7 +3901,7 @@ function previewProfileGeometry(polygons) {
 }
 
 function toolLabel(tool) {
-  const labels = { select: "选择工具", break: "打断：在曲线上指定开口点", "insert-point": "插入点：在曲线上指定新控制点", line: "直线", polyline: "折线", rectangle: "矩形", circle: "圆", arc: "圆弧", spline: "样条", freehand: "自由曲线", text: "文字" };
+  const labels = { select: "选择工具", break: "打断：在曲线上指定开口点", "insert-point": "插入点：在曲线上指定新控制点", line: "直线", polyline: "折线", rectangle: "矩形", circle: "圆", ellipse:"椭圆", arc: "圆弧", spline: "样条", freehand: "自由曲线", text: "文字" };
   return labels[tool] ?? "选择工具";
 }
 
@@ -3136,7 +4350,7 @@ function updateEntityNumber(entity, key, value) {
 
 function pushHistory(draft) {
   draft.history ??= [];
-  draft.history.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.history.push(draftSnapshot(draft));
   if (draft.history.length > 50) draft.history.shift();
 }
 
@@ -3144,7 +4358,7 @@ function undoDraft(draft) {
   const snapshot = draft.history?.pop();
   if (!snapshot) return;
   draft.future ??= [];
-  draft.future.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.future.push(draftSnapshot(draft));
   Object.assign(draft, JSON.parse(snapshot), { dirty: true });
   normalizeDraftSelection(draft);
 }
@@ -3153,13 +4367,18 @@ function redoDraft(draft) {
   const snapshot = draft.future?.pop();
   if (!snapshot) return;
   draft.history ??= [];
-  draft.history.push(JSON.stringify({ entities: draft.entities, selectedIds: draftSelectionIds(draft), selectedPoints: draftSelectedPoints(draft) }));
+  draft.history.push(draftSnapshot(draft));
   Object.assign(draft, JSON.parse(snapshot), { dirty: true });
   normalizeDraftSelection(draft);
 }
 
+function draftSnapshot(draft) {
+  return JSON.stringify({ entities:draft.entities, arrays:draft.arrays??[],endCuts:draft.endCuts??null,splitParts:draft.splitParts===true,trajectoryWidth:draft.trajectoryWidth,selectedIds:draftSelectionIds(draft),selectedPoints:draftSelectedPoints(draft) });
+}
+
 async function importSketchDxf(context, view, ops) {
   const state = ensureSketchState(view);
+  const draft = currentDraft(view, state), sceneProxy = context.sceneProxy;
   const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge;
   if (typeof bridge?.openFileDialog !== "function") throw new Error("当前宿主没有提供文件选择能力。");
   const sourcePath = String(await bridge.openFileDialog({ title: "选择草图 DXF", filters: [{ name: "DXF 二维图形", extensions: ["dxf"] }] }) ?? "").trim();
@@ -3168,16 +4387,14 @@ async function importSketchDxf(context, view, ops) {
   view.progress = { title: "正在导入草图", detail: "正在识别二维曲线", stage: "DXF 解析", mode: "Sketch" };
   ops.renderProject(context, view);
   try {
-    const response = await context.productProxy.invoke("TubeDesigner.ImportProfileDxf", { sourcePath }, { timeoutMs: 120000 });
-    const entities = entitiesFromProfile(response?.profile);
-    const draft = currentDraft(view, state);
-    pushHistory(draft);
-    draft.entities = entities;
-    draft.selectedIds = entities[0]?.id ? [entities[0].id] : [];
-    draft.future = [];
-    draft.dirty = true;
+    const response = await context.productProxy.invoke("TubeDesigner.ReadSketchDxf", { sourcePath }, { timeoutMs: 120000 });
+    if (view.tubeDesignerSketch !== state || context.sceneProxy !== sceneProxy || currentDraft(view,state) !== draft) return null;
+    const parsed = parseSketchDxf(response?.content ?? "");
+    const entities = Array.isArray(parsed) ? parsed : parsed.entities;
+    if (!entities?.length) throw new Error("DXF 中没有可编辑的二维图形。");
+    replaceCadEntities(draft, [], entities, true);
     view.error = "";
-    return response?.profile ?? null;
+    return parsed;
   } finally {
     view.pending = false;
     view.progress = null;
@@ -3335,6 +4552,17 @@ async function cancelSketch(context, view, ops) {
   state.command = null;
   state.saveChoiceDialogOpen = false;
   view.tubeDesignerSketchDialogOpen = false;
+  state.sidePreviewRequest = null;
+  state.sidePreviewPending = false;
+  disposeSideSketchPreview(context.mount);
+  releaseSideSketchPreview(context, state);
+  if (state.mode === SIDE_MODE && state.sideTargetKind === "part" && state.sidePreviewPayload) {
+    delete state.sideByPart[state.targetPartId];
+    delete state.sidePartVersions[state.targetPartId];
+    state.sideCreationPayload = null;
+    state.sidePreviewPayload = null;
+    state.sidePreview = null;
+  }
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
   view.tubeDesignerComponentCSGProfileReturn = null;
   const toolSketch = Boolean(view.tubeDesignerToolSketchContext);
@@ -3368,6 +4596,24 @@ function selectSavedProfileInLibrary(view, profileId) {
 
 async function saveSideSketch(context, view, ops) {
   const state = ensureSketchState(view);
+  if (view.pending || state.sideSavePending) return null;
+  const sceneProxy = context.sceneProxy;
+  state.sideSaveError = "";
+  try {
+    return await applySideSketch(context, view, ops);
+  } catch (error) {
+    // The workbench logs and clears view.error. Keep a failed modal save
+    // visible here so the user can correct the drawing, retry or cancel.
+    if (!view.disposed && context.sceneProxy === sceneProxy && view.tubeDesignerSketch === state) {
+      state.sideSaveError = error?.message ?? String(error);
+      ops.renderProject(context, view);
+    }
+    throw error;
+  }
+}
+
+async function applySideSketch(context, view, ops) {
+  const state = ensureSketchState(view);
   const designer = view.scene?.tubeDesigner ?? {};
   const partTarget = state.sideTargetKind === "part";
   const member = targetSideEntity(designer, state);
@@ -3377,40 +4623,17 @@ async function saveSideSketch(context, view, ops) {
   const draft = currentDraft(view, state);
   if (!member) throw new Error(partTarget ? "当前下料零件已不存在，请重新选择。" : "请先在产品页生成产品并选择管件。");
   if (!partTarget && !productId) throw new Error("请先在产品页生成产品并选择管件。");
-  const removing = !draft.entities.length;
+  const removing = !draft.entities.length && !draft.endCuts;
   if (removing && !(draft.persisted && draft.dirty)) throw new Error("请先绘制侧面切割图。");
   const validation = validateSideSketchDraft(draft, member, state.sideReference);
   if (!removing && !validation.ready) throw new Error(validation.message);
-  const unfoldingPerimeter = sideUnfoldingPerimeter(state.sideReference);
-  const sketch = {
-    schema: SKETCH_SCHEMA,
-    schemaVersion: 1,
-    kind: SIDE_MODE,
-    ...(partTarget ? {
-      targetPartId: member.entityId,
-    } : {
-      targetMemberId: member.entityId,
-      targetMemberKey: String(member.stableKey ?? ""),
-    }),
-    unit: "mm",
-    faceHeight: Math.max(
-      1,
-      unfoldingPerimeter
-        || Number(state.sideReference?.sideProjection?.height)
-        || memberFaceHeight(member),
-    ),
-    length: sideUnfoldingLength(member, state.sideReference),
-    ...(unfoldingPerimeter ? {
-      coordinateSpace: "axial-arc-length",
-      perimeter: unfoldingPerimeter,
-      unfoldingMethod: String(state.sideReference?.unfolding?.method ?? "section-arc-length"),
-    } : {}),
-    entities: draft.entities.map((entity) => ({ ...entity })),
-    updatedAt: new Date().toISOString(),
-  };
+  const sketch = buildSideSketchRecord(state, member, draft);
   const wasDialogOpen = Boolean(view.tubeDesignerSketchDialogOpen);
+  const creationPayload = state.sideCreationPayload;
+  const sceneProxy = context.sceneProxy;
   view.pending = true;
-  view.progress = { title: "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "保存二维图形", mode: "Sketch" };
+  state.sideSavePending = true;
+  view.progress = { title: creationPayload ? "正在创建二维绘制零件" : "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "生成三维切割", mode: "Sketch" };
   ops.renderProject(context, view);
   let saved = false;
   try {
@@ -3419,7 +4642,11 @@ async function saveSideSketch(context, view, ops) {
     const independentPart = partTarget
       && (member.independentNesting === true
         || state.sideTargetSnapshot?.independentNesting === true);
-    if (independentPart) {
+    if (creationPayload) {
+      method = "TubeDesigner.AddNestingSideSketchPart";
+      payload = { ...structuredCloneValue(creationPayload), sketch };
+      delete payload.previewResourceKey;
+    } else if (independentPart) {
       method = "TubeDesigner.SavePartSketch";
       payload = {
         partEntityId: member.entityId,
@@ -3436,12 +4663,28 @@ async function saveSideSketch(context, view, ops) {
         targetMemberKey: String(member.stableKey ?? ""),
       } };
     }
-    const response = await context.sceneProxy.invoke(method, payload, { timeoutMs: 30000 });
+    const response = await sceneProxy.invoke(method, payload, { timeoutMs: 180000 });
+    if (creationPayload && (!response?.tubeDesigner || !response?.partEntityId)) throw new Error("二维绘制未返回有效的下料零件。");
+    if (context.sceneProxy !== sceneProxy || view.tubeDesignerSketch !== state) return null;
     if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
+    if (partTarget && response?.partEntityIds?.length) view.tubeDesignerNestingSelectedPartIds = response.partEntityIds.map(String);
+    if (creationPayload) {
+      const partId = String(response.partEntityId);
+      view.tubeDesignerNestingSelectedPartIds = response.partEntityIds?.length ? response.partEntityIds.map(String) : [partId];
+      view.tubeDesignerActivePartId = partId;
+      view.tubeDesignerActiveNestingPartId = partId;
+      view.tubeDesignerNestingSelectionKind = "part";
+      view.tubeDesignerActiveNestingPlacementId = "";
+      view.tubeDesignerPartSearchText = "";
+      view.tubeDesignerPartFilter = "all";
+      state.sideCreationPayload = null;
+      state.sideByPart[partId] = draft;
+      delete state.sideByPart[state.targetPartId];
+      state.targetPartId = partId;
+    }
     if (partTarget) {
-      // The saved snapshot carries a new BRep/mesh version.  Drop the old
-      // viewport ownership and measurement state so the parts area hydrates
-      // the just-applied geometry instead of keeping the previous mesh alive.
+      // The saved snapshot carries a new BRep/mesh version. Drop previous
+      // viewport ownership so the just-applied geometry is hydrated.
       view.tubeDesignerPartViewportKey = "";
       view.tubeDesignerPartMeasurementState = null;
       view.tubeDesignerPartProgress = null;
@@ -3453,18 +4696,113 @@ async function saveSideSketch(context, view, ops) {
     return sketch;
   } finally {
     view.pending = false;
+    state.sideSavePending = false;
     view.progress = null;
     if (saved) {
+      state.sidePreviewRequest = null;
+      disposeSideSketchPreview(context.mount);
+      releaseSideSketchPreview(context, state);
       if (wasDialogOpen) {
         view.tubeDesignerSketchDialogOpen = false;
         await selectSketchArea(context, view, state.sideReturnAreaId || "nesting");
       }
       ops.renderProject(context, view);
-      ops.showNotice(context, view, removing
+      ops.showNotice(context, view, creationPayload ? "已创建二维绘制零件，可在下料列表调整数量或继续二维编辑。" : removing
         ? `已从“${member.name || "当前管件"}”移除侧面草图。`
         : `侧面草图已应用到“${member.name || "当前管件"}”。`);
+      if (creationPayload) {
+        // Persistence has already succeeded. Restoring a previous nesting
+        // result must not keep the sketch modal open as if it were unsaved.
+        await restoreSavedNestingTask(view, context);
+        await context.actions?.refreshActiveSceneState?.();
+      }
     }
     else ops.renderProject(context, view);
+  }
+}
+
+function buildSideSketchRecord(state, member, draft) {
+  const unfoldingPerimeter = sideUnfoldingPerimeter(state.sideReference);
+  const partTarget = state.sideTargetKind === "part";
+  return {
+    schema: SKETCH_SCHEMA,
+    schemaVersion: 1,
+    kind: SIDE_MODE,
+    ...(partTarget ? {
+      targetPartId: member.entityId,
+    } : {
+      targetMemberId: member.entityId,
+      targetMemberKey: String(member.stableKey ?? ""),
+    }),
+    unit: "mm",
+    trajectoryWidth: Number(draft.trajectoryWidth ?? 0.5),
+    faceHeight: Math.max(
+      1,
+      unfoldingPerimeter
+        || Number(state.sideReference?.sideProjection?.height)
+        || memberFaceHeight(member),
+    ),
+    length: sideUnfoldingLength(member, state.sideReference),
+    ...(unfoldingPerimeter ? {
+      coordinateSpace: draft.coordinateSpace === ARC_LENGTH_AXIAL ? ARC_LENGTH_AXIAL : "axial-arc-length",
+      perimeter: unfoldingPerimeter,
+      unfoldingMethod: String(state.sideReference?.unfolding?.method ?? "section-arc-length"),
+    } : {}),
+    entities: draft.entities.map((entity) => ({ ...entity })),
+    arrays: structuredCloneValue(draft.arrays ?? []),
+    ...(draft.endCuts ? {endCuts:structuredCloneValue(draft.endCuts)} : {}),
+    splitParts: draft.splitParts === true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function sideSketchSignature(draft) {
+  return JSON.stringify([draft?.entities ?? [], draft?.trajectoryWidth ?? 0.5, draft?.coordinateSpace, draft?.endCuts, draft?.splitParts]);
+}
+
+async function previewSideSketch(context, view, ops) {
+  const state = ensureSketchState(view), draft = currentDraft(view, state);
+  if (!state.sidePreviewPayload || state.sidePreviewPending) return null;
+  const member = targetSideEntity(view.scene?.tubeDesigner ?? {}, state);
+  const validation = validateSideSketchDraft(draft, member, state.sideReference);
+  if (!validation.ready) throw new Error(validation.message);
+  const sceneProxy = context.sceneProxy, mount = context.mount;
+  const request = {}, signature = sideSketchSignature(draft);
+  state.sidePreviewRequest = request;
+  state.sidePreviewPending = true;
+  state.sidePreviewError = "";
+  const previewResourceKey = state.sidePreviewResourceKey ??= `side-preview-${Date.now()}-${++sideDraftSequence}`;
+  const releaseLate = () => {
+    try {
+      Promise.resolve(sceneProxy.invoke("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey })).catch(() => {});
+    } catch {}
+  };
+  const current = () => !view.disposed && context.isCurrentProject?.() !== false
+    && state.sidePreviewRequest === request && view.tubeDesignerSketch === state
+    && view.tubeDesignerSketchDialogOpen && context.sceneProxy === sceneProxy && context.mount === mount;
+  ops.renderProject(context, view);
+  try {
+    const response = await sceneProxy.invoke("TubeDesigner.PreviewNestingSideSketchPart", {
+      ...structuredCloneValue(state.sidePreviewPayload), sketch: buildSideSketchRecord(state, member, draft),
+      previewResourceKey,
+    }, { timeoutMs: 180000 });
+    if (!current()) { releaseLate(); return null; }
+    if (sideSketchSignature(draft) !== signature) return null;
+    if (response?.available !== true || !response.preview?.baseGeometry?.url) throw new Error(response?.message || "未能生成三维切割预览。");
+    state.sidePreview = response.preview;
+    state.sidePreviewPartCount = Number(response.splitPartCount || 1);
+    state.sidePreviewSignature = signature;
+    return response;
+  } catch (error) {
+    if (current()) state.sidePreviewError = error?.message ?? String(error);
+    else releaseLate();
+    return null;
+  } finally {
+    if (current()) {
+      state.sidePreviewPending = false;
+      state.sidePreviewRequest = null;
+      ops.renderProject(context, view);
+    }
   }
 }
 

@@ -1,0 +1,11 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ICAXInspectionBridgeSource>$(MSBuildProjectDirectory)\SideSketchAcceptanceBridge.cpp</ICAXInspectionBridgeSource>
+    <ICAXInspectionBridgeOutputRoot>$(SolutionDir)..\output\tests\side-sketch-native-browser\native</ICAXInspectionBridgeOutputRoot>
+  </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)SecurityWindowFramesBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>SideSketchAcceptanceBridge</TargetName>
+    <TargetPath>$(OutDir)$(TargetName)$(TargetExt)</TargetPath>
+  </PropertyGroup>
+</Project>

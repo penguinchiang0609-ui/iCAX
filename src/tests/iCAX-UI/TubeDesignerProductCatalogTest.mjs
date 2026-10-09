@@ -44,9 +44,9 @@ const windowTemplate = { id: "window", name: "防盗窗/平面防盗窗", availa
 const stair = { id: "stair", name: "楼梯/钢楼梯/直跑钢楼梯", available: true, extensions: { catalog: { groupOrder: 30 } }, parameters: [] };
 const templates = [stair, guardrail, windowTemplate];
 
-await test("public ribbon exposes product, nesting, machining, resource and about pages", () => {
+await test("public ribbon exposes product, nesting, resource and about pages", () => {
   const ribbon = getRibbonDefinition();
-  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "nesting", "machining", "resources", "about"]);
+  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "nesting", "resources", "about"]);
   assert.ok(ribbon.tabs.find((tab) => tab.id === "nesting").groups
     .flatMap((group) => group.commands)
     .some((command) => command.id === "nesting.start"));

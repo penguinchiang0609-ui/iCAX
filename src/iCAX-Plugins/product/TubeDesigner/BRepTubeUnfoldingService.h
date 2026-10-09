@@ -119,17 +119,14 @@ namespace iCAX::TubeDesigner
 
     /*
     * A side sketch is not a planar solid.  Its x/y coordinates describe a
-    * trajectory on the lateral rectangle: x is axial distance and y is
-    * section arc length.  The implementation maps every sampled trajectory
-    * point back to the BRep and uses that point's local outward normal to
-    * construct a material-removal volume.
+    * trajectory on the lateral rectangle. coordinateSpace specifies whether
+    * x/y means S/U or U/S. Complete curved regions are mapped onto the native
+    * extrusion surfaces and removed together in one Boolean operation.
     */
     struct STubeSideSketchOptions final
     {
-        double DistanceTolerance = 0.05;
+        double DistanceTolerance = 1.0e-4;
         double AngularToleranceRadians = 1.0e-3;
-        std::size_t StationCount = 33;
-        std::size_t SamplesPerCurve = 65;
         std::size_t MaximumToolPatches = 20000;
         // Open trajectories need a finite manufacturing kerf. Closed
         // trajectories are filled and do not use this value.
@@ -149,6 +146,7 @@ namespace iCAX::TubeDesigner
         std::size_t OpenTrajectoryCount = 0;
         std::size_t TrajectoryPointCount = 0;
         std::size_t ToolPatchCount = 0;
+        std::size_t BooleanCutCount = 0;
         TopoDS_Shape Shape;
     };
 

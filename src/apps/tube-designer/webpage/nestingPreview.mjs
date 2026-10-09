@@ -184,7 +184,7 @@ async function preparePlan(context, view, controller, plan, partMap) {
     const entityId = `nesting:${plan.id}:${placementId}`;
     placementMeta.set(entityId, { index, partId, placementId });
     rows.push({ entityId, data: { geometry, localToWorldMatrix: matrix,
-      geometryKind: 1, renderClass: 1, visible: true, selectable: false } });
+      geometryKind: 1, renderClass: 1, meshEdges: Boolean(source), visible: true, selectable: false } });
   }
   const contour = convexHull(hullPoints);
   if (contour.length < 3) throw new Error("不能确定母材截面包络。");

@@ -43,6 +43,7 @@ const allRibbonDefinition = {
             command("nesting.add-standard-part", "添加标准零件", "base", { size: "large", iconTone: "green" }),
             command("nesting.add-punch-part", "添加冲孔件", "hole", { size: "large", iconTone: "orange" }),
             command("nesting.draw-part", "三维绘制零件", "edit3d", { size: "large", iconTone: "green" }),
+            command("nesting.draw-2d-part", "二维绘制零件", "edit2d", { size: "large", iconTone: "green" }),
             command("nesting.export-parts", "零件清单", "report", { size: "large", iconTone: "green" }),
           ],
         },
@@ -139,8 +140,11 @@ const allRibbonDefinition = {
       title: "草图",
       groups: [
         {
-          title: "导入",
-          commands: [command("sketch.import", "导入 DXF", "new", { size: "large", iconTone: "green" })],
+          title: "文件",
+          commands: [
+            command("sketch.import", "导入 DXF", "new", { iconTone: "green" }),
+            command("sketch.export", "导出 DXF", "save", { iconTone: "green" }),
+          ],
         },
         {
           title: "绘制",
@@ -150,9 +154,38 @@ const allRibbonDefinition = {
             command("sketch.polyline", "折线", "sketch-polyline"),
             command("sketch.rectangle", "矩形", "sketch-rectangle"),
             command("sketch.circle", "圆", "sketch-circle"),
+            command("sketch.ellipse", "椭圆", "sketch-circle"),
             command("sketch.arc", "圆弧", "sketch-arc"),
             command("sketch.spline", "样条", "sketch-spline"),
             command("sketch.freehand", "自由曲线", "edit2d"),
+            command("sketch.racetrack", "长圆孔", "sketch-rectangle"),
+            command("sketch.polygon", "多边形", "sketch-polyline"),
+            command("sketch.star", "星形", "sketch-polyline"),
+            command("sketch.text-outline", "文字轮廓", "edit2d"),
+          ],
+        },
+        {
+          title: "变换",
+          commands: [
+            command("sketch.move", "移动", "select"),
+            command("sketch.copy", "复制", "add-instance"),
+            command("sketch.rotate", "旋转", "repair"),
+            command("sketch.mirror", "镜像", "merge"),
+            command("sketch.scale", "缩放", "view-fit"),
+            command("sketch.align", "对齐", "measure"),
+          ],
+        },
+        {
+          title: "修图",
+          commands: [
+            command("sketch.trim", "修剪", "cut"),
+            command("sketch.extend", "延伸", "sketch-line"),
+            command("sketch.offset", "偏移", "sketch-polyline"),
+            command("sketch.fillet", "圆角", "sketch-arc"),
+            command("sketch.chamfer", "倒角", "cut"),
+            command("sketch.measure", "测量", "measure"),
+            command("sketch.diagnose", "检查", "report"),
+            command("sketch.repair", "修复", "repair"),
           ],
         },
         {
@@ -164,6 +197,22 @@ const allRibbonDefinition = {
             command("sketch.insert-point", "插入点", "add-instance"),
             command("sketch.join", "合并", "merge", { iconTone: "green" }),
             command("sketch.delete", "删除", "delete"),
+          ],
+        },
+        {
+          title: "阵列",
+          commands: [
+            command("sketch.array-rectangular", "二维阵列", "array", { iconTone: "green" }),
+            command("sketch.array-polar", "圆周阵列", "repair", { iconTone: "green" }),
+            command("sketch.array-circumferential", "沿管周阵列", "array", { iconTone: "green" }),
+            command("sketch.array-edit", "编辑阵列", "array"),
+          ],
+        },
+        {
+          title: "零件",
+          commands: [
+            command("sketch.end-cuts", "编辑端部", "cut"),
+            command("sketch.split-parts", "实体分件", "merge"),
           ],
         },
         {
@@ -189,10 +238,10 @@ const allRibbonDefinition = {
 };
 
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
-// 下料、加工工作区暂不公开；草图沿用资源编辑时的上下文入口。
+// 下料工作区公开；加工仍暂不公开，草图沿用资源编辑时的上下文入口。
 export const ribbonDefinition = {
   ...allRibbonDefinition,
-  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "resources", "about"].includes(tab.id)),
+  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "nesting", "resources", "about"].includes(tab.id)),
 };
 
 export function getRibbonDefinition(options = {}) {

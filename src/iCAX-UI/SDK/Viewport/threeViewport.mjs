@@ -1,5 +1,6 @@
 import * as THREE from "../ThirdParty/three/three.module.js";
 import { placeSpecificationCallout } from "./specificationCalloutLayout.mjs";
+import { createMeshFeatureEdgesGeometry } from "./meshFeatureEdges.mjs";
 import {
   ColliderFlags,
   ColliderPDOEvents,
@@ -171,6 +172,7 @@ export class ThreeRenderViewport {
     this.colliderSlotDescriptors = new Map();
     this.geometryPayloads = new Map();
     this.geometryObjects = new Map();
+    this.meshEdgeGeometries = new WeakMap();
     this.materialPayloads = new Map();
     this.resourcePromises = new Map();
     this.viewApplyGeneration = 0;
@@ -609,6 +611,7 @@ export class ThreeRenderViewport {
         materialId: String(data.material?.url ?? "").trim(),
         geometryKind: Number(data.geometryKind ?? 1),
         renderClass: Number(data.renderClass ?? 1),
+        meshEdges: data.meshEdges === true,
         renderOrder: Number.isFinite(Number(data.renderOrder)) ? Number(data.renderOrder) : 0,
         flags,
         layerMask: Number(data.layerMask ?? RenderLayers.default) >>> 0,
@@ -1967,6 +1970,7 @@ export class ThreeRenderViewport {
     object.renderOrder = Number.isFinite(instance.renderOrder) ? instance.renderOrder : 0;
     object.matrixAutoUpdate = false;
     this.#refreshObjectMaterial(object, instance);
+    this.#refreshMeshEdges(object, instance);
     const transform = this.transformPayloads.get(instance.transformId);
     object.matrix.fromArray(transform?.localToWorld ?? identityMatrixArray());
     object.matrixWorldNeedsUpdate = true;
@@ -2006,6 +2010,51 @@ export class ThreeRenderViewport {
     return object;
   }
 
+  #removeMeshEdges(object) {
+    const edges = object?.userData?.meshEdges;
+    if (!edges) return;
+    edges.parent?.remove(edges);
+    edges.material.dispose();
+    delete object.userData.meshEdges;
+    // Geometry is shared by instances and released with its source geometry.
+  }
+
+  #refreshMeshEdges(object, instance) {
+    const enabled = object?.isMesh && instance?.meshEdges === true
+      && !object.material?.transparent;
+    const previous = object?.userData?.meshEdges;
+    if (!enabled) {
+      this.#removeMeshEdges(object);
+      return;
+    }
+    if (previous?.userData.sourceGeometry === object.geometry) {
+      previous.renderOrder = object.renderOrder + 1;
+      return;
+    }
+    this.#removeMeshEdges(object);
+    let geometry = this.meshEdgeGeometries.get(object.geometry);
+    if (!geometry) {
+      // Suppress coplanar triangulation and smooth surface facets. Hole rims,
+      // open boundaries and sharp changes in the actual mesh remain visible.
+      geometry = createMeshFeatureEdgesGeometry(object.geometry, 22);
+      this.meshEdgeGeometries.set(object.geometry, geometry);
+      object.geometry.addEventListener("dispose", () => geometry.dispose());
+    }
+    const edges = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+      color: 0x122029,
+      depthTest: true,
+      depthWrite: false,
+      toneMapped: false,
+    }));
+    edges.name = "Visible mesh feature edges";
+    edges.userData.meshFeatureEdges = true;
+    edges.userData.sourceGeometry = object.geometry;
+    edges.renderOrder = object.renderOrder + 1;
+    edges.raycast = () => {};
+    object.add(edges);
+    object.userData.meshEdges = edges;
+  }
+
   #applyObjectVisibility(object, instance = object?.userData?.instance) {
     if (!object || !instance) {
       return;
@@ -2039,6 +2088,7 @@ export class ThreeRenderViewport {
       geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(payload.positions), 3));
       if (payload.normals?.length) {
         geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(payload.normals), 3));
+        geometry.userData.surfaceNormals = true;
       }
       if (payload.textureCoordinates?.length) {
         geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(payload.textureCoordinates), 2));
@@ -2110,6 +2160,9 @@ export class ThreeRenderViewport {
         depthWrite: color.a >= 1,
         side: THREE.DoubleSide,
         vertexColors: Boolean(hasVertexColors),
+        polygonOffset: instance.meshEdges === true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
       };
       return new THREE.MeshPhongMaterial(materialOptions);
     }
@@ -2127,6 +2180,7 @@ export class ThreeRenderViewport {
       instance.renderClass ?? "",
       instance.geometryKind ?? "",
       instance.flags ?? "",
+      instance.meshEdges === true,
       this.materialPayloads.get(instance.materialId)?.dataVersion ?? "",
     ].join("|");
   }
@@ -2189,6 +2243,7 @@ export class ThreeRenderViewport {
         }
         if (object.userData.instance) {
           this.#refreshObjectMaterial(object, object.userData.instance);
+          this.#refreshMeshEdges(object, object.userData.instance);
         }
       }
     }
@@ -2268,6 +2323,7 @@ export class ThreeRenderViewport {
       return;
     }
     this.#setObjectInteractionVisual(object, false, false);
+    this.#removeMeshEdges(object);
     object.parent?.remove(object);
     object.material?.dispose?.();
     this.sceneObjects.delete(normalizedId);
@@ -2283,6 +2339,7 @@ export class ThreeRenderViewport {
   #clearViewContent() {
     for (const object of this.sceneObjects.values()) {
       this.#setObjectInteractionVisual(object, false, false);
+      this.#removeMeshEdges(object);
       object.parent?.remove(object);
       object.material?.dispose?.();
     }
@@ -2377,6 +2434,8 @@ export class ThreeRenderViewport {
   #setObjectInteractionVisual(object, isSelected, isEmphasized) {
     if (!object) return;
     const apply = (node) => {
+      // Keep a contrasting rim when the surface is selected or emphasized.
+      if (node?.userData?.meshFeatureEdges) return;
       const materials = Array.isArray(node?.material)
         ? node.material.filter(Boolean)
         : (node?.material ? [node.material] : []);

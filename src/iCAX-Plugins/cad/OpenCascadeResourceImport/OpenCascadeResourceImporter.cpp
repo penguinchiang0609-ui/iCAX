@@ -6,6 +6,7 @@
 #include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
+#include <BRepLib_ToolTriangulatedShape.hxx>
 #include <GeomAdaptor_Curve.hxx>
 #include <TopoDS_Compound.hxx>
 #include <chrono>
@@ -817,9 +818,22 @@ namespace
         }
 
         const auto _Transform = _Location.Transformation();
+        // Surface normals come from the face UV coordinates, rather than the
+        // planes of its display triangles. Long, narrow triangles on a curved
+        // face must not create false creases in shading or feature-edge display.
+        // Keep the shared shape triangulation immutable while collecting it.
+        const auto _NormalTriangulation = _Triangulation->Copy();
+        _NormalTriangulation->RemoveNormals();
+        BRepLib_ToolTriangulatedShape::ComputeNormals(Face_, _NormalTriangulation);
+        const auto _Reversed = Face_.Orientation() == TopAbs_REVERSED;
+        _Result.Vertices.reserve(_Triangulation->NbNodes());
+        _Result.Normals.reserve(_Triangulation->NbNodes());
         for (int _Index = 1; _Index <= _Triangulation->NbNodes(); ++_Index)
         {
             _Result.Vertices.push_back(ToPoint3(_Triangulation->Node(_Index).Transformed(_Transform)));
+            auto _Normal = _NormalTriangulation->Normal(_Index).Transformed(_Transform);
+            if (_Reversed) _Normal.Reverse();
+            _Result.Normals.push_back({ _Normal.X(), _Normal.Y(), _Normal.Z() });
         }
 
         for (int _Index = 1; _Index <= _Triangulation->NbTriangles(); ++_Index)
@@ -828,6 +842,7 @@ namespace
             int _B = 0;
             int _C = 0;
             _Triangulation->Triangle(_Index).Get(_A, _B, _C);
+            if (_Reversed != _Transform.IsNegative()) std::swap(_B, _C);
             _Result.Triangles.push_back({
                 static_cast<std::uint32_t>(_A - 1),
                 static_cast<std::uint32_t>(_B - 1),
@@ -868,6 +883,10 @@ namespace
                 _Resource.Mesh.Vertices.end(),
                 std::make_move_iterator(_FaceMesh.Vertices.begin()),
                 std::make_move_iterator(_FaceMesh.Vertices.end()));
+            _Resource.Mesh.Normals.insert(
+                _Resource.Mesh.Normals.end(),
+                std::make_move_iterator(_FaceMesh.Normals.begin()),
+                std::make_move_iterator(_FaceMesh.Normals.end()));
             for (auto& _Triangle : _FaceMesh.Triangles)
             {
                 for (auto& _Index : _Triangle) _Index += _Base;
@@ -1098,7 +1117,9 @@ namespace
 
             Triangulation3Record _TriangulationRecord;
             _TriangulationRecord.Id = static_cast<std::uint64_t>(_Index);
-            _TriangulationRecord.Geometry = MakeTriangulation(_Face, static_cast<std::uint64_t>(_Index));
+            // Display data follows the actual face occurrence; canonical
+            // orientation remains reserved for the persisted BRep topology.
+            _TriangulationRecord.Geometry = MakeTriangulation(_FaceOccurrence, static_cast<std::uint64_t>(_Index));
             _TriangulationRecord.Metadata = { "face triangulation " + std::to_string(_Index), strSourceID_, {} };
             _Model.Triangulations3.push_back(std::move(_TriangulationRecord));
 
@@ -1961,6 +1982,15 @@ iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
                 _Point.Transform(_Transform);
                 _Vertex = ToPoint3(_Point);
             }
+            for (auto& _Normal : _Result.Mesh.Normals)
+            {
+                gp_Dir _Direction(_Normal.X, _Normal.Y, _Normal.Z);
+                _Direction.Transform(_Transform);
+                _Normal = { _Direction.X(), _Direction.Y(), _Direction.Z() };
+            }
+            if (_Transform.IsNegative())
+                for (auto& _Triangle : _Result.Mesh.Triangles)
+                    std::swap(_Triangle[1], _Triangle[2]);
         }
     }
     return _Results;

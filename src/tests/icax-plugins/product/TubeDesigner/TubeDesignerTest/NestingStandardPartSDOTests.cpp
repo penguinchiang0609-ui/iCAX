@@ -81,11 +81,17 @@ namespace
     {
         return {
             { "schema", std::string("icax.imported-tube-profile") }, { "schemaVersion", 1ull },
-            { "kind", std::string("imported-dxf") }, { "name", std::string("DXF rectangle") },
+            { "kind", std::string("fixed-section") }, { "profileForm", std::string("fixed") },
+            { "name", std::string("DXF rectangle") },
             { "width", 40.0 }, { "depth", 20.0 },
             { "contours", VariantArray{ObjectMap{
-                { "kind", std::string("roundedRectangle") },
-                { "width", 40.0 }, { "height", 20.0 }, { "radius", 0.0 } }} }
+                { "kind", std::string("path") }, { "closed", true },
+                { "segments", VariantArray{
+                    ObjectMap{{ "kind", std::string("line") }, { "start", VariantArray{-20.0, -10.0} }, { "end", VariantArray{20.0, -10.0} }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", VariantArray{20.0, -10.0} }, { "end", VariantArray{20.0, 10.0} }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", VariantArray{20.0, 10.0} }, { "end", VariantArray{-20.0, 10.0} }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", VariantArray{-20.0, 10.0} }, { "end", VariantArray{-20.0, -10.0} }}
+                }} }} }
         };
     }
 }
