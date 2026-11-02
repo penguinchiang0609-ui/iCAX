@@ -469,10 +469,35 @@ def _compile_route(parameters, design):
                  'wallThickness': profiles[post]['wallThickness'], 'section': real_section(post)},
                 branches, float(parameters.get('horizontalBranchReserve',0.)),
                 float(parameters.get('assemblyClearance',0.))))
+    receiver_limits={}
+    def observed_section(key):
+        frame=members[key]['sectionFrame']
+        return {'placement':{'origin':deepcopy(frame['originAtStart']),
+            'xAxis':deepcopy(frame['xAxis']),'yAxis':deepcopy(frame['yAxis'])},
+            'contours':deepcopy(profiles[key]['contours'])}
+    inserted=[]
+    for key,m in members.items():
+        if not key.startswith(('main_grid.','side_grid.','cap_grid.')):continue
+        category=source[key]['properties'].get('manufacturing.categoryKey','')
+        prefix='horizontal' if category.endswith('horizontal') else 'vertical'
+        if parameters.get(prefix+'EndConnection')=='insert':
+            inserted.append({'key':key,'start':m['start'],'end':m['end'],'section':observed_section(key)})
+    for key,m in members.items():
+        if not key.startswith('outer_frame.'):continue
+        receiver={'start':m['start'],'end':m['end'],'wallThickness':profiles[key]['wallThickness'],'section':observed_section(key)}
+        for prefix in ('horizontal','vertical'):
+            limits=post_runtime.shared_receiver_insertion_limits(receiver,inserted,
+                float(parameters.get(prefix+'BranchReserve',0.)),float(parameters.get('assemblyClearance',0.)))
+            for (branch,end),limit in limits.items():
+                category=source[branch]['properties'].get('manufacturing.categoryKey','')
+                if category.endswith('horizontal')==(prefix=='horizontal'):
+                    receiver_limits[(branch,end,key)]=limit['depth']
     def end_call(key, end, mate, mode, depth=0.):
         if owners[key] != key: return
         if mode=='insert' and (key,end) in horizontal_limits:
             depth=min(depth,horizontal_limits[(key,end)]['depth'])
+        if mode=='insert' and (key,end,mate) in receiver_limits:
+            depth=min(depth,receiver_limits[(key,end,mate)])
         point = members[key][end]
         processes.append(_call(key+'.end.'+end, 'tube-end-joint',
             {'stock': {'scope': 'manufacturing', 'itemKey': key, 'state': 'initial'},
@@ -577,6 +602,7 @@ def _compile_route(parameters, design):
                     mate=min(posts,key=lambda post: min(math.dist(point,members[post][e]) for e in ('start','end')))
                     material_boundary(key,original,end,mate,'butt')
     frame_keys = [key for key in members if key.startswith(('outer_frame.', 'access_door.fixed_frame.', 'access_door.leaf.frame.'))]
+    fixed_frame_terminal_pairs=set()
     for key in frame_keys:
         if owners[key] != key: continue
         join = parameters.get('frameJoinType', 'miter_45') if face=='single' else (
@@ -592,12 +618,33 @@ def _compile_route(parameters, design):
             if (key, end) in post_ends or (key, end) in terminal_receivers:
                 continue
             point = members[key][end]; axis = unit(sub(members[key]['end'], members[key]['start']))
+            if key.startswith('access_door.fixed_frame.'):
+                targets = []
+                for other in frame_keys:
+                    if other == key or not other.startswith(('outer_frame.', 'access_door.fixed_frame.')):
+                        continue
+                    mate_member = members[other]
+                    direction = unit(sub(mate_member['end'], mate_member['start']))
+                    if abs(dot(axis, direction)) > 1.e-7:
+                        continue
+                    station = dot(sub(point, mate_member['start']), direction)
+                    closest = [a+station*b for a, b in zip(mate_member['start'], direction)]
+                    if -1.e-6 <= station <= math.dist(mate_member['start'], mate_member['end'])+1.e-6 and math.dist(point, closest) < 1.e-6:
+                        targets.append(other)
+                if targets:
+                    mate = min(targets)
+                    if key.startswith(('access_door.fixed_frame.bottom.', 'access_door.fixed_frame.top.')) and mate.startswith('access_door.fixed_frame.'):
+                        material_boundary(key, key, end, mate, 'wrap')
+                    else:
+                        end_call(key, end, mate, 'butt')
+                    fixed_frame_terminal_pairs.add(frozenset((key, mate)))
+                continue
             candidates = [(min(math.dist(point,members[other][e]) for e in ('start','end')), other)
                 for other in frame_keys if other!=key and source[other]['properties'].get('group')==source[key]['properties'].get('group')
                 and abs(dot(axis, unit(sub(members[other]['end'],members[other]['start'])))) < 1.e-7]
-            if not candidates: continue
+            if not candidates or min(candidates)[0] > 1.e-5:
+                continue
             distance, mate = min(candidates)
-            if distance > 1.e-5: continue
             horizontal = ('.bottom.' in key or '.top.' in key) if key.startswith('access_door.') else abs(axis[2]) < .5
             if face!='single' and key.startswith('outer_frame.'):
                 if key.startswith('outer_frame.vertical.'):
@@ -612,7 +659,8 @@ def _compile_route(parameters, design):
             elif join=='miter_45': end_call(key,end,mate,'miter')
             elif horizontal == (wrap=='side_wraps_horizontal'): end_call(key,end,mate,'butt')
             else: material_boundary(key,key,end,mate,'wrap')
-    closed_endpoint_pairs = set()
+    closed_endpoint_pairs = set(fixed_frame_terminal_pairs)
+    welded_end_hosts = {}
     for key in members:
         if key in frame_keys: continue
         axis = unit(sub(members[key]['end'],members[key]['start']))
@@ -627,12 +675,30 @@ def _compile_route(parameters, design):
                 closest=[m['start'][i]+station*direction[i] for i in range(3)]
                 distance=math.dist(point,closest)
                 if distance<=max(profiles[other]['width'],profiles[other]['depth'])/2+1.e-6: candidates.append((distance,other))
+            if not candidates:
+                # An internal T end may terminate on another grid member.
+                # Perimeter receivers keep priority at shared frame corners.
+                for other,m in members.items():
+                    if other==key or other in frame_keys: continue
+                    direction=unit(sub(m['end'],m['start']))
+                    if abs(dot(axis,direction))>1.e-7: continue
+                    station=dot(sub(point,m['start']),direction)
+                    if not -1.e-6<=station<=math.dist(m['start'],m['end'])+1.e-6: continue
+                    closest=[m['start'][i]+station*direction[i] for i in range(3)]
+                    distance=math.dist(point,closest)
+                    if distance<1.e-6:candidates.append((distance,other))
             if candidates:
                 _, mate=min(candidates)
                 is_grid = key.startswith(('main_grid.', 'side_grid.', 'cap_grid.'))
                 category = source[key]['properties'].get('manufacturing.categoryKey', '')
                 horizontal = category.endswith('horizontal')
-                if is_grid:
+                if mate.startswith('access_door.fixed_frame.'):
+                    # An opening frame terminates the grid. Perimeter insertion
+                    # settings must not push a cut grid end into its material.
+                    mode_,depth='butt',0.
+                    closed_endpoint_pairs.add(frozenset((key,mate)))
+                    welded_end_hosts.setdefault(key,set()).add(mate)
+                elif is_grid:
                     selected = parameters['horizontalEndConnection' if horizontal else 'verticalEndConnection']
                     if selected == 'tabs':
                         values = {'joint':'tabs', 'insertionDepth':12. if horizontal else 8.,
@@ -656,7 +722,9 @@ def _compile_route(parameters, design):
                         continue
                     mode_,depth=('butt',0.) if selected=='weld' else (
                         'insert',parameters.get('horizontalBranchReserve' if horizontal else 'verticalBranchReserve',0.))
-                    if selected=='weld': closed_endpoint_pairs.add(frozenset((key,mate)))
+                    if selected=='weld':
+                        closed_endpoint_pairs.add(frozenset((key,mate)))
+                        welded_end_hosts.setdefault(key, set()).add(mate)
                 elif key.startswith('access_door.leaf.horizontal.') or mate.startswith('access_door.fixed_frame.'):
                     mode_,depth='butt',0.
                     closed_endpoint_pairs.add(frozenset((key,mate)))
@@ -675,6 +743,10 @@ def _compile_route(parameters, design):
     for index,a in enumerate(keys):
         for b in keys[index+1:]:
             if frozenset((a,b)) in closed_endpoint_pairs: continue
+            # Two branches terminating on different faces of one post are
+            # trimmed to that post by their end operations. Their untrimmed
+            # design axes do not declare a through-hole in either branch.
+            if welded_end_hosts.get(a, set()) & welded_end_hosts.get(b, set()): continue
             if a in frame_keys and b in frame_keys: continue
             if a.startswith('access_door.leaf.') != b.startswith('access_door.leaf.'): continue
             ma,mb=members[a],members[b]; u,v=unit(sub(ma['end'],ma['start'])),unit(sub(mb['end'],mb['start']))
@@ -682,6 +754,13 @@ def _compile_route(parameters, design):
             delta=sub(mb['start'],ma['start']); sa=dot(delta,u); sb=-dot(delta,v)
             pa=[ma['start'][i]+sa*u[i] for i in range(3)]; pb=[mb['start'][i]+sb*v[i] for i in range(3)]
             if math.dist(pa,pb)>1.e-6: continue
+            if (welded_end_hosts.get(a) and welded_end_hosts.get(b)
+                    and min(math.dist(pa,ma[end]) for end in ('start','end'))<1.e-6
+                    and min(math.dist(pb,mb[end]) for end in ('start','end'))<1.e-6):
+                # At an opening corner both outside grid stubs terminate on
+                # the fixed frame's outer faces. Their raw design axes meet,
+                # but neither finished stub passes through the other.
+                continue
             margins=[max(profiles[key]['width'],profiles[key]['depth'])/2 for key in (a,b)]
             # The other member's section can reach this member's finite end.
             # A branch ending inside a receiver's wall need not reach its axis.

@@ -34,7 +34,6 @@ import { resolveStandardViewDirection } from "../../iCAX-UI/SDK/Viewport/threeVi
 import { loadRenderResources } from "../../iCAX-UI/SDK/Viewport/renderResource.mjs";
 import { renderMachineRightPane } from "../../apps/_shared/workbench/machine/machineArea.mjs";
 import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/_shared/workbench/state/projectViewStore.mjs";
-import { loadPreviewMeshResource } from "../../apps/tube-one/webpage/previewMeshResource.mjs";
 import { projectThumbnailVertices } from "../../apps/tube-designer/webpage/partThumbnail.mjs";
 import {
   buildAutomaticDimensionReport,
@@ -290,7 +289,7 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
 function testTubeDesignerPublicWorkflow() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["resources", "资源库"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["resources", "资源库"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
   const productRibbonGroups = tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view").groups;
@@ -700,7 +699,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.ok(!tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "resources", "about"],
+    ["view", "nesting", "machining", "resources", "about"],
   );
   const commands = sketchRibbonGroups.flatMap((group) => group.commands)
     .map((command) => command.id);
@@ -821,7 +820,7 @@ function testTubeDesignerProfilePreviewProgressCoversTheWholeWindow() {
 
 function testGenericProgressOverlayCoversTheWholeProductPage() {
   const css = readFileSync(
-    new URL("../../apps/_shared/workbench/styles/laser3dcam.css", import.meta.url),
+    new URL("../../apps/_shared/workbench/styles/workbench.css", import.meta.url),
     "utf8",
   );
   const rule = css.match(/\.cam-progress-backdrop\s*\{([^}]*)\}/)?.[1] ?? "";
@@ -1153,6 +1152,10 @@ function testTubeDesignerRendersFrozenDxfProfilesWithoutEditableDimensions() {
   };
   const template = {
     id: "profile-test", version: "1.0.0", name: "测试产品", available: true,
+    extensions: { resourceRoles: { profiles: { frame: {
+      managedParameters: ["frameWidth", "frameDepth", "frameWallThickness", "frameCornerRadius"],
+      parameterBindingsBySectionKind: { rect: { width: "frameWidth", depth: "frameDepth", wallThickness: "frameWallThickness", cornerRadius: "frameCornerRadius" } },
+    } } } },
     groups: [{ key: "profile", displayName: "管型", order: 1 }],
     parameters: [
       { key: "frameProfileType", type: "select", displayName: "截面类型", defaultValue: "rect", options: [{ value: "rect", label: "矩形管" }],
@@ -1176,13 +1179,11 @@ function testTubeDesignerRendersFrozenDxfProfilesWithoutEditableDimensions() {
     } },
     tubeDesignerUserData: { customers: [], parameterPresets: [], profiles: [{ ...imported, id: "profile-1" }] },
   });
-  assert.match(html, /我的管型/);
+  assert.match(html, /<optgroup label="我的">/);
   assert.match(html, /供应商梅花管/);
-  assert.match(html, /冻结截面，不支持尺寸参数修改/);
-  assert.match(html, /<option value="external-dxf">外部 DXF…<\/option>/);
+  assert.doesNotMatch(html, /value="external-dxf"/);
   assert.doesNotMatch(html, /data-cam-action="tube-designer-import-profile-dxf"/);
   assert.doesNotMatch(html, /data-cam-action="tube-designer-open-profile-library"/);
-  assert.match(html, /<optgroup label="我的管型">/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameWidth"/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameDepth"/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameWallThickness"/);
@@ -1492,6 +1493,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
   const view = {
     activeAreaId: "profiles",
     tubeDesignerSelectedProfileId: "user:" + profile.id,
+    tubeDesignerLicense: { capabilities: { "product.design": true } },
     tubeDesignerUserData: { profiles: [profile] },
     viewport: {
       getAppliedViewState: () => ({ revision: "0", entityIds: [] }),
@@ -1561,6 +1563,7 @@ async function testTubeDesignerSystemProfilePreviewUsesScopedReference() {
   const view = {
     activeAreaId: "profiles",
     tubeDesignerSelectedProfileId: "system:round",
+    tubeDesignerLicense: { capabilities: { "product.design": true } },
     tubeDesignerSystemProfiles: [profile],
     tubeDesignerUserData: { profiles: [] },
   };
@@ -1790,30 +1793,6 @@ async function testRenderResourceBatchUsesOneBridgeRequest() {
   assert.ok(loaded.every((resource) => resource.type === "geometry" && resource.data.positions.length === 9));
 }
 
-async function testTubePreviewLoadsStandardRenderGeometry() {
-  let requestedVersion = "";
-  const preview = await loadPreviewMeshResource({
-    get: async (_url, { headers }) => {
-      requestedVersion = headers.get("ICAX-Resource-Version");
-      return new Response(makeRenderGeometryResourceFixture().slice(0), {
-        status: 200,
-        headers: {
-          "ICAX-FlatBuffer-Identifier": "ICRG",
-          "ICAX-Resource-Version": "7",
-        },
-      });
-    },
-  }, {
-    url: "icax-resource://app/product/project/scene/tube-preview",
-    version: 7,
-  });
-  assert.equal(requestedVersion, "7");
-  assert.equal(preview.format, "render-geometry");
-  assert.equal(preview.resourceVersion, 7);
-  assert.equal(preview.vertexCount, 3);
-  assert.equal(preview.triangleCount, 1);
-  assert.deepEqual([...preview.indices], [0, 1, 2]);
-}
 
 function testProjectAreaMembershipIsolation() {
   const projectView = {
@@ -2299,9 +2278,9 @@ async function testPDOBridgeInjection() {
 
 async function testProductModuleLoader() {
   const shellBaseUrl = new URL("../../iCAX-UI/SDK/AppShell/app/bootstrap.mjs", import.meta.url).href;
-  const entry = "apps/laser-3d-cam/webpage/entry.mjs";
+  const entry = "apps/tube-designer/webpage/entry.mjs";
   const moduleUrl = resolveFrontendEntry(entry, shellBaseUrl);
-  assert.ok(moduleUrl.endsWith("/src/apps/laser-3d-cam/webpage/entry.mjs"));
+  assert.ok(moduleUrl.endsWith("/src/apps/tube-designer/webpage/entry.mjs"));
   assert.throws(() => resolveFrontendEntry("https://example.com/product.mjs", shellBaseUrl), /External product frontend entries/);
   assert.equal(
     resolveFrontendEntry("https://example.com/product.mjs", shellBaseUrl, { allowExternalEntries: true }),
@@ -2451,7 +2430,6 @@ testProjectAreaMembershipIsolation();
 await testViewReadersUseSceneChannelAndResourceSnapshots();
 await testRenderResourceLoaderUsesViewReferenceVersion();
 await testRenderResourceBatchUsesOneBridgeRequest();
-await testTubePreviewLoadsStandardRenderGeometry();
 await testBridgeValidation();
 testChannelIdValidation();
 await testSDOPromiseFlow();

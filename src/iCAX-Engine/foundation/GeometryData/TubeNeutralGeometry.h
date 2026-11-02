@@ -194,6 +194,9 @@ namespace iCAX::GeometryData::Tube
         std::string HostNodeID;
         SScalarParameter PrimitiveFirst;
         SScalarParameter PrimitiveLast;
+        // Blind depth is measured from the selected material entry boundary.
+        // It remains authoritative when the host's position or section changes.
+        std::optional<SScalarParameter> Depth;
         std::vector<SMaterialBoundaryReference> Boundaries;
         bool RecomputeAgainstHost = false;
         double Confidence = 0.0;
@@ -363,6 +366,15 @@ namespace iCAX::GeometryData::Tube
         iCAX::GeometryData::Transform3 Transform;
     };
 
+    // Select exactly one material solid from a reevaluated construction graph.
+    // The anchor is a strict interior point in the graph's coordinate system;
+    // touching, missing and ambiguous anchors are errors, never best matches.
+    struct SConnectedComponentNode final
+    {
+        std::string Child;
+        Point3 Anchor;
+    };
+
     /*
     * @brief 定义在稳定 Side Atlas 矩形域上的均匀标量网格。
     * @details Values 按 v-major、u-minor 顺序保存，格点包含四条边界，格间使用双线性插值。
@@ -401,7 +413,8 @@ namespace iCAX::GeometryData::Tube
     * @details Profile 位于该开口的局部法截面。直线只是普通坡口的特例；折线、圆弧
     *          和 NURBS 可以表达 X/K/J/U 形及任意变坡。ContourParameter 使用开口
     *          轮廓的物理弧长，不保存易变的 BRep Edge 参数。Profile 二维坐标约定为：
-    *          X 沿源切割体的构造方向，Y 为相对源切割边界向减材侧的有符号偏移。
+    *          X 是源切割体 Frame 中沿构造方向的绝对轴向坐标，原点不随贯穿范围的
+    *          First/Last 改变；Y 为相对源切割边界向减材侧的有符号偏移。
     */
     struct SOpeningProfileKey final
     {
@@ -432,19 +445,46 @@ namespace iCAX::GeometryData::Tube
     *          当本节点承担端部截断时，Relations.MaterialEffect.Role 为 Truncation；UVRegion
     *          描述被移除的一侧而不只是最终边界线，因而可以与盲孔、贯穿体继续做普通 CSG。
     */
+    enum class EWrappedDepthRule : std::uint8_t { ExplicitNormalOffsets = 0, FirstHostWall = 1 };
     struct SWrappedVolumeNode final
     {
         SBoundarySurfaceRef Support;
         CPlanarRegion2 UVRegion;
         ScalarField2 LowerNormalOffset = 0.0;
         ScalarField2 UpperNormalOffset = 0.0;
+        EWrappedDepthRule DepthRule = EWrappedDepthRule::ExplicitNormalOffsets;
+    };
+
+    // A geometric edge modifier on an exact predecessor. The topology
+    // signature prevents a selection index silently binding to a different
+    // edge after an upstream edit. No manufacturing or workspace recipe.
+    struct STopologyBevelSelection final
+    {
+        std::uint64_t EdgeID = 0;
+        std::uint64_t ReferenceFaceID = 0;
+        std::string EdgeName;
+        std::string FaceName;
+        std::string Side = "outer";
+        double AngleDegrees = 45.0;
+        double RootFace = 0.0;
+        std::string GroupID;
+        // A wrapped opening is rebound from its exact geometric boundary
+        // after a source edit. Static topology selections leave this empty.
+        std::string WrappedSourceNodeID;
+        std::vector<iCAX::GeometryData::CurveSegment2> UVBoundary;
+    };
+    struct STopologyBevelNode final
+    {
+        std::string Child;
+        std::string SelectionShapeSignature;
+        std::vector<STopologyBevelSelection> Selections;
     };
 
     /*
     * @brief 依附于已识别开口、沿轮廓变化的壁厚剖面扫掠修改体。
     * @details ProfileField 是权威几何表达。坡口角、钝边和深度都是剖面曲线相对
     *          名义切割面的派生量，不能作为中性几何的权威参数。EvaluatedVolumeNodeID
-    *          指向与该剖面场严格等价的封闭减材体，供 CSG 求值和导入校验使用。
+    *          记录导入时对应的封闭减材体证据；编辑求值直接使用 ProfileField，不以此缓存代替剖面。
     */
     struct SOpeningProfileSweepNode final
     {
@@ -619,7 +659,9 @@ namespace iCAX::GeometryData::Tube
         SOpeningProfileSweepNode,
         SCompositeVolumeNode,
         SResidualBRepNode,
-        SAlternativeNode>;
+        SAlternativeNode,
+        STopologyBevelNode,
+        SConnectedComponentNode>;
 
     struct SSolidNode final
     {
@@ -703,4 +745,31 @@ namespace iCAX::GeometryData::Tube
         std::vector<SRecognitionDiagnostic> Diagnostics;
         std::map<std::string, std::string> Metadata;
     };
+    // Authoritative shape of a constant-section straight member. Coordinates
+    // are local: extrusion is +X and Section coordinates are (Y,Z). Machining
+    // means every real boundary not recoverable from the extruded skin,
+    // including blind-pocket floors, independently of any cutting process.
+    // Full solids, retained skin trims and display meshes are derived data.
+    struct CTubeBoundaryGeometry final
+    {
+        inline static constexpr const char* kResourceTypeName = "tube.boundary_geometry";
+        CPlanarRegion2 Section;
+        iCAX::GeometryData::BRepModel MachiningFaces;
+    };
+
+    // Geometry alone owns the current shape. Construction and Bodies are
+    // optional editing definitions; restoring a document never requires them.
+    // Placement maps the normalized local geometry into document coordinates.
+    struct CTubeCadDocument final
+    {
+        inline static constexpr const char* kResourceTypeName = "tube.cad_document";
+        std::uint64_t Revision = 0;
+        std::string Unit = "mm";
+        CTubeBoundaryGeometry Geometry;
+        iCAX::GeometryData::Placement3 Placement;
+        CTubeNeutralGeometry Construction;
+        std::map<std::string, iCAX::GeometryData::BRepModel> Bodies;
+        std::map<std::string, std::string> Metadata;
+    };
+
 }

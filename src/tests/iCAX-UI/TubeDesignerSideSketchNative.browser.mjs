@@ -72,21 +72,20 @@ try {
     return route.fulfill({ contentType: "text/javascript", body: readFileSync(file, "utf8") });
   });
   await page.goto("http://side-sketch-native.test");
-  await page.addStyleTag({ content: "*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}" + readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/laser3dcam.css"), "utf8") + tubeDesignerCss });
+  await page.addStyleTag({ content: "*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}" + readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/workbench.css"), "utf8") + tubeDesignerCss });
   await page.evaluate(async ({ profile, scene }) => {
     const sketch = await import("/src/apps/tube-designer/webpage/sketchArea.mjs");
     const standard = await import("/src/apps/tube-designer/webpage/nestingStandardPart.mjs");
-    const parts = await import("/src/apps/tube-designer/webpage/partsArea.mjs");
     const preview = await import("/src/apps/tube-designer/webpage/sideSketchPreview.mjs");
     const { createThreeViewport } = await import("/src/iCAX-UI/SDK/Viewport/threeViewport.mjs");
     const { renderDesignerOperationOverlay } = await import("/src/apps/tube-designer/webpage/designerViews.mjs");
     const mount = document.querySelector("#app");
     const view = { activeAreaId: "nesting", pending: false, scene, tubeDesignerSystemProfiles: [profile],
       tubeDesignerSelectedProfileId: "system:round", tubeDesignerTemplateProfiles: [], tubeDesignerUserData: { profiles: [] } };
-    const f = window.fixture = { view, sketch, standard, parts, preview, pending: 0, calls: [], resources: [], failures: [], patches: 0, fullRenders: 0 };
+    const f = window.fixture = { view, sketch, standard, preview, pending: 0, calls: [], resources: [], failures: [], patches: 0, fullRenders: 0 };
     Object.defineProperty(f, "state", { get() { return view.tubeDesignerSketch; } });
     Object.defineProperty(f, "draft", { get() { return f.state?.sideByPart?.[f.state.targetPartId]; } });
-    f.partList = () => parts.listNestingParts(view.scene.tubeDesigner ?? {});
+    f.partList = () => view.scene.tubeDesigner?.nestingGroups?.flatMap(group => group.parts ?? []) ?? [];
     const invoke = async (method, payload, options, scope = "scene") => {
       const record = { method, payload: structuredClone(payload), scope }; f.calls.push(record);
       options?.onReport?.({ message: "正在运行真实二维建模", completed: 0, total: 1 });
@@ -106,8 +105,7 @@ try {
       else if (standard.patchNestingStandardPartDom(view, mount, html, context.sceneProxy)) f.patches++;
       else {
         f.fullRenders++;
-        mount.innerHTML = '<main id="main-workbench"><button data-test-new-side-part>二维绘制零件</button>'
-          + f.partList().map(part => `<button data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${part.entityId}">二维编辑 ${part.entityId}</button>`).join("") + "</main>" + html;
+        mount.innerHTML = '<main id="main-workbench"><button data-test-new-side-part>二维绘制零件</button></main>' + html;
         standard.rememberNestingStandardPartDom(view, mount, context.sceneProxy);
         sketch.rememberSketchDialogDom(view, mount, context.sceneProxy);
       }
@@ -119,7 +117,6 @@ try {
         if (action === "new") return await standard.handleNestingStandardPartRibbonCommand(context, view, "nesting.draw-2d-part", ops);
         if (action?.startsWith("tube-designer-nesting-standard-")) return await standard.handleNestingStandardPartAction(context, view, action, target, ops);
         if (action?.startsWith("tube-designer-sketch-")) return await sketch.handleSketchAreaAction(context, view, action, target, ops);
-        if (action === "tube-designer-part-open-sketch") return await parts.handlePartsAreaAction(context, view, action, target, ops);
       } catch (error) { f.failures.push({ action, error: error.message }); }
       finally { f.pending--; }
     };
@@ -196,12 +193,17 @@ try {
   const id = created.result.partEntityId;
   const firstPart = partsIn(await invoke("List")).find(part => part.entityId === id);
   assert.equal(partsIn(await invoke("List")).length, 1);
-  assert.equal(firstPart.properties["tubeDesigner.sideSketch"].trajectoryWidth, 2);
-  assert.equal(firstPart.properties["tubeDesigner.sideSketch"].coordinateSpace, "arc-length-axial");
-  assert.ok(firstPart.properties["tubeDesigner.sideSketch"].entities[0].x > drawingPerimeter * 4, "Unbounded circumferential coordinates are preserved in the saved sketch");
-  assert.equal(firstPart.properties["tubeDesigner.sideSketch"].entities.length, 2);
-  assert.ok(firstPart.properties["tubeDesigner.sideSketchRecipe"]);
-  assert.ok(firstPart.properties["tubeDesigner.sideSketchBaseResourceId"]);
+  const authoredSketch = created.payload.sketch;
+  assert.equal(authoredSketch.trajectoryWidth, 2);
+  assert.equal(authoredSketch.coordinateSpace, "arc-length-axial");
+  assert.ok(authoredSketch.entities[0].x > drawingPerimeter * 4);
+  assert.equal(authoredSketch.entities.length, 2);
+  const firstDocument = await invoke("GetTubeCadDocument", { partEntityId: id });
+  assert.ok(firstDocument.documentResourceId);
+  assert.ok(firstDocument.geometry.SolidNodes.length > 1);
+  const firstEvaluated = await rpc({ action: "cad-document-geometry", payload: { partEntityId: id } });
+  assert.equal(firstEvaluated.valid, true);
+  assert.ok(firstEvaluated.directedDifferenceVolume < 1e-3);
   const firstGeometry = await rpc({ action: "geometry", payload: { partEntityId: id } }); assert.equal(firstGeometry.valid, true);
   const baseVolume = Math.PI * (20 ** 2 - 18 ** 2) * 400;
   assert.ok(firstGeometry.volume > 0 && firstGeometry.volume < baseVolume - 100);
@@ -210,79 +212,29 @@ try {
   const reopened = await rpc({ action: "open", payload: { file: "side-sketch-native.ictd" } }); assert.equal(reopened.opened, true);
   const reopenedGeometry = await rpc({ action: "geometry", payload: { partEntityId: id } });
   assert.equal(reopenedGeometry.valid, true); assert.ok(Math.abs(reopenedGeometry.volume - firstGeometry.volume) < 1e-5);
-  await page.evaluate(scene => { const f = window.fixture; f.view.scene = scene; f.render(); }, reopened.snapshot);
-  await page.locator(`[data-cam-action="tube-designer-part-open-sketch"][data-tube-designer-part-id="${id}"]`).click(); await ready();
-  assert.equal(await page.evaluate(() => window.fixture.draft.entities.length), 2);
-  assert.ok(await page.evaluate(() => window.fixture.draft.entities[0].x) > drawingPerimeter * 4);
-  assert.equal(await page.getByRole("spinbutton", { name: "开放线条切缝宽度（mm）" }).inputValue(), "2");
-  const existingPreview = await page.evaluate(() => window.fixture.calls.findLast(call => call.method === "TubeDesigner.PreviewNestingSideSketchPart"));
-  assert.equal(existingPreview.payload.partEntityId, id); assert.equal(existingPreview.payload.profileRef, undefined);
-  await page.evaluate(() => {
-    const f = window.fixture; f.draft.selectedIds = [f.draft.entities.find(entity => entity.kind === "rectangle").id]; f.render();
-  });
-  await input(field("centerY"), 220);
-  await input(page.getByRole("spinbutton", { name: "开放线条切缝宽度（mm）" }), 4);
-  await action("preview-side").click(); await ready(); await screenshot("02-reopened-edit-replaces-cuts-from-frozen-blank");
-  await command("commit").click(); await idle();
-  const updated = await page.evaluate(() => window.fixture.calls.findLast(call => call.method === "TubeDesigner.SavePartSketch"));
-  assert.equal(updated.payload.partEntityId, id); assert.equal(updated.error, undefined);
-  const updatedGeometry = await rpc({ action: "geometry", payload: { partEntityId: id } }); assert.equal(updatedGeometry.valid, true);
-  assert.equal(updatedGeometry.resourceId, firstGeometry.resourceId);
-  assert.ok(updatedGeometry.version > firstGeometry.version, "Editing creates a new immutable manufacturing-resource version");
-  assert.equal(updated.payload.resourceVersion, firstGeometry.version);
-  assert.ok(updatedGeometry.volume < firstGeometry.volume - 40, "A larger open kerf removes more wall material");
+  assert.deepEqual(await invoke("GetTubeCadDocument", { partEntityId: id }), firstDocument, "Created CAD graph survives fresh native project reopening");
 
-  // A new part made from the edited recipe is an independent geometric oracle.
-  // Comparing real BRep intersection catches accumulated cuts at the old site.
-  const reference = await invoke("AddNestingSideSketchPart", { profileRef: { scope: "system", id: "round" }, parameters, length: 400,
-    sketch: updated.payload.sketch, name: "编辑结果独立几何参照" });
-  const comparison = await rpc({ action: "compare-geometry", payload: { firstPartEntityId: id, secondPartEntityId: reference.partEntityId } });
-  assert.ok(Math.abs(comparison.firstVolume - comparison.secondVolume) < baseVolume * 1e-7, JSON.stringify(comparison));
-  // OpenCascade's default volume integration on the common result is less
-  // precise than on these identical input shapes. 0.01% remains far below the
-  // omitted old window (over 1,000 mm3), so accumulated cuts still fail.
-  assert.ok(Math.abs(comparison.firstVolume - comparison.commonVolume) < baseVolume * 1e-4, JSON.stringify(comparison));
-
-  await rpc({ action: "save", payload: { file: "side-sketch-edited-native.ictd" } });
-  const finalReopen = await rpc({ action: "open", payload: { file: "side-sketch-edited-native.ictd" } });
-  const finalPart = partsIn(finalReopen.snapshot).find(part => part.entityId === id);
-  assert.equal(finalPart.properties["tubeDesigner.sideSketch"].trajectoryWidth, 4);
-  assert.ok(Math.abs(finalPart.properties["tubeDesigner.sideSketch"].entities.find(entity => entity.kind === "rectangle").y - 200) < 1e-3);
-
-  // End trimming changes the manufactured length but keeps the original
-  // drafting rectangle; reopening must still edit the same immutable blank.
+  // End trimming changes the manufactured length and persists its CAD graph.
   const perimeter = Number(created.payload.sketch.perimeter);
   const trimSketch = { ...created.payload.sketch, entities: [{ id: "end-trim", kind: "rectangle", x: -2 * perimeter - 7, y: -15, width: 5 * perimeter + 14, height: 45, radius: 0, closed: true }] };
   const trimmed = await invoke("AddNestingSideSketchPart", { profileRef: { scope: "system", id: "round" }, parameters, length: 400, sketch: trimSketch, name: "全周端部切除重开验收" });
   const trimmedPart = trimmed.tubeDesigner.nestingGroups.flatMap(group => group.parts ?? []).find(part => part.entityId === trimmed.partEntityId);
   assert.ok(Math.abs(trimmedPart.length - 370) < 0.1, JSON.stringify({ length: trimmedPart.length }));
-  assert.equal(trimmedPart.properties["tubeDesigner.sideSketchRecipe"].length, 400);
-  assert.equal(trimmedPart.properties["tubeDesigner.sideSketch"].entities[0].y, -15, "Only the mapping clips axial geometry; the saved drawing keeps its original extent");
-  assert.equal(trimmedPart.properties["tubeDesigner.sideSketch"].entities[0].width, 5 * perimeter + 14);
+  assert.equal(trimSketch.entities[0].y, -15);
+  assert.equal(trimSketch.entities[0].width, 5 * perimeter + 14);
+  const trimmedDocument = await invoke("GetTubeCadDocument", { partEntityId: trimmed.partEntityId });
   await rpc({ action: "save", payload: { file: "side-sketch-end-trim-native.ictd" } });
   const trimmedReopen = await rpc({ action: "open", payload: { file: "side-sketch-end-trim-native.ictd" } });
-  await page.evaluate(scene => { const f = window.fixture; f.view.scene = scene; f.render(); }, trimmedReopen.snapshot);
-  await page.locator(`[data-cam-action="tube-designer-part-open-sketch"][data-tube-designer-part-id="${trimmed.partEntityId}"]`).click(); await ready();
-  assert.ok(Math.abs(await page.evaluate(() => window.fixture.state.sideReference.unfolding.length) - 400) < 1e-6);
-  assert.equal(await page.evaluate(() => window.fixture.draft.entities[0].y), -15);
-  assert.ok(await page.evaluate(() => window.fixture.draft.entities[0].width) > perimeter * 5);
-  await page.evaluate(() => { const f = window.fixture; f.draft.selectedIds = [f.draft.entities[0].id]; f.render(); });
-  await input(field("height"), 50); await input(field("centerY"), 10);
-  await command("commit").click(); await idle();
-  const endUpdate = await page.evaluate(() => window.fixture.calls.findLast(call => call.method === "TubeDesigner.SavePartSketch"));
-  assert.equal(endUpdate.error, undefined, JSON.stringify(endUpdate));
-  assert.equal(endUpdate.payload.sketch.length, 400);
-  assert.equal(endUpdate.payload.sketch.coordinateSpace, "arc-length-axial");
-  assert.equal(endUpdate.payload.sketch.entities[0].y, -15);
-  const endUpdatedPart = partsIn(await invoke("List")).find(part => part.entityId === trimmed.partEntityId);
-  assert.ok(Math.abs(endUpdatedPart.length - 365) < 0.1, JSON.stringify({ length: endUpdatedPart.length }));
-  const endGeometry = await rpc({ action: "geometry", payload: { partEntityId: trimmed.partEntityId } }); assert.equal(endGeometry.valid, true);
-  assert.ok(Math.abs(endGeometry.volume - baseVolume * 365 / 400) < 1, "Multiple wraps map to one full-circumference cut and axial overflow is clipped");
+  assert.deepEqual(await invoke("GetTubeCadDocument", { partEntityId: trimmed.partEntityId }), trimmedDocument);
+  const endGeometry = await rpc({ action: "geometry", payload: { partEntityId: trimmed.partEntityId } });
+  assert.equal(endGeometry.valid, true);
+  assert.ok(Math.abs(endGeometry.volume - baseVolume * 370 / 400) < 1,
+    "Multiple wraps map to one full-circumference cut and axial overflow is clipped");
   const topSketch = { ...created.payload.sketch, entities: [{ id: "far-end-trim", kind: "rectangle", x: perimeter, y: 390, width: perimeter * 2, height: 25, radius: 0, closed: true }] };
   const topTrim = await invoke("AddNestingSideSketchPart", { profileRef: { scope: "system", id: "round" }, parameters, length: 400, sketch: topSketch, name: "另一端超界截断验收" });
   const topPart = topTrim.tubeDesigner.nestingGroups.flatMap(group => group.parts ?? []).find(part => part.entityId === topTrim.partEntityId);
   assert.ok(Math.abs(topPart.length - 390) < 0.1);
-  assert.equal(topPart.properties["tubeDesigner.sideSketch"].entities[0].height, 25);
+  assert.equal(topSketch.entities[0].height, 25);
   const topGeometry = await rpc({ action: "geometry", payload: { partEntityId: topTrim.partEntityId } }); assert.equal(topGeometry.valid, true);
   assert.ok(Math.abs(topGeometry.volume - baseVolume * 390 / 400) < 1, "Overflow at the far axial end is clipped to the blank");
   const outsideSketch = { ...created.payload.sketch, entities: [{ id: "entirely-outside", kind: "rectangle", x: perimeter * 5, y: 450, width: 16, height: 40, radius: 0, closed: true }] };
@@ -296,12 +248,14 @@ try {
   const outsidePart = await invoke("AddNestingSideSketchPart", { ...outsidePayload, name: "全部纵向域外草图保留验收" });
   const outsideGeometry = await rpc({ action: "geometry", payload: { partEntityId: outsidePart.partEntityId } });
   assert.equal(outsideGeometry.valid, true); assert.ok(Math.abs(outsideGeometry.volume - baseVolume) < 1, "An empty clipped intersection keeps the whole blank");
+  const outsideDocument = await invoke("GetTubeCadDocument", { partEntityId: outsidePart.partEntityId });
   await rpc({ action: "save", payload: { file: "side-sketch-all-outside-native.ictd" } });
   const outsideReopen = await rpc({ action: "open", payload: { file: "side-sketch-all-outside-native.ictd" } });
   const outsideStored = partsIn(outsideReopen.snapshot).find(part => part.entityId === outsidePart.partEntityId);
   assert.equal(outsideStored.length, 400);
-  assert.equal(outsideStored.properties["tubeDesigner.sideSketch"].entities[0].y, 450);
-  assert.equal(outsideStored.properties["tubeDesigner.sideSketch"].entities[0].height, 40);
+  assert.deepEqual(await invoke("GetTubeCadDocument", { partEntityId: outsidePart.partEntityId }), outsideDocument);
+  assert.equal(outsideSketch.entities[0].y, 450);
+  assert.equal(outsideSketch.entities[0].height, 40);
 
   // Reproduce the user's round tube with a rectangle and a circular opening.
   // Confirmation used to spend over four minutes assembling its cutters.
@@ -335,8 +289,8 @@ try {
   const circleGeometry = await rpc({ action: "geometry", payload: { partEntityId: circleCreated.result.partEntityId } });
   assert.equal(circleGeometry.valid, true);
   const circlePart = partsIn(await invoke("List")).find(part => part.entityId === circleCreated.result.partEntityId);
-  assert.ok(Math.abs(circlePart.properties["tubeDesigner.sideSketch"].entities.find(entity => entity.kind === "circle").radius - 23) < 1e-3);
-  assert.equal(circlePart.properties["tubeDesigner.sideSketchRecipe"].length, 1000);
+  assert.ok(Math.abs(circleCreated.payload.sketch.entities.find(entity => entity.kind === "circle").radius - 23) < 1e-3);
+  assert.ok((await invoke("GetTubeCadDocument", { partEntityId: circlePart.entityId })).documentResourceId);
   assert.ok(circleGeometry.volume > 0 && circleGeometry.volume < Math.PI * (31 ** 2 - 29 ** 2) * 1000 - 1000);
 
   const final = await page.evaluate(() => ({ calls: window.fixture.calls.map(call => ({ method: call.method, scope: call.scope, error: call.error })),
@@ -347,16 +301,16 @@ try {
   assert.ok(final.calls.some(call => call.method === "TubeDesigner.ReleaseNestingSideSketchPreview"));
   writeFileSync(resolve(artifacts, "acceptance-results.json"), JSON.stringify({ ...final, browserChannel: process.env.ICAX_BROWSER_CHANNEL || "msedge", nativeDll: { directory: dllDirectory, sha256: dllHash },
     coverage: "Real Debug production SDO, browser production dialogs and GPU resources, true BRep comparison, .ictd save/open; isolated host, no desktop file chooser or installed WebView", scopeFailures,
-    partEntityId: id, firstGeometry, reopenedGeometry, updatedGeometry, comparison,
+    partEntityId: id, firstGeometry, reopenedGeometry, firstEvaluated, documentResourceId: firstDocument.documentResourceId,
     coordinateSpace: "arc-length-axial", unboundedCircumferentialCenter: drawingPerimeter * 5,
-    endTrim: { partEntityId: trimmed.partEntityId, recipeLength: 400, wraps: 5, originalAxialStart: -15, initialManufacturedLength: trimmedPart.length, editedManufacturedLength: endUpdatedPart.length, geometry: endGeometry },
+    endTrim: { partEntityId: trimmed.partEntityId, blankLength: 400, wraps: 5, originalAxialStart: -15, manufacturedLength: trimmedPart.length, geometry: endGeometry },
     farEndTrim: { partEntityId: topTrim.partEntityId, originalAxialEnd: 415, manufacturedLength: topPart.length, geometry: topGeometry },
     entirelyOutside: { partEntityId: outsidePart.partEntityId, originalAxialStart: 450, manufacturedLength: outsideStored.length, geometry: outsideGeometry },
     circularConfirmation: { partEntityId: circleCreated.result.partEntityId, elapsedMs: circleSaveElapsed,
       circumference: circleCreated.payload.sketch.perimeter, blankLength: 1000, circleRadius: 23,
       visibleProgress: true, exitedAutomatically: true, geometry: circleGeometry },
     project: saved.file, requests }, null, 2));
-  console.log("Side sketch native browser acceptance passed: horizontal periodic U, vertical clipped S, closed seam cut at 5P, open kerf width, real 3D meshes, cancel without entity, correct scopes, .ictd reload, nonaccumulating edits, multi-wrap end clipping and circular confirmation with visible progress and automatic modal exit.");
+  console.log("Side sketch native browser acceptance passed: horizontal periodic U, vertical clipped S, closed seam cut at 5P, open kerf width, real 3D meshes, cancel without entity, correct scopes, .ictd reload, shared CAD graph persistence, multi-wrap end clipping and circular confirmation with visible progress and automatic modal exit.");
   console.log("Artifacts: " + artifacts);
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(artifacts, "failure.png") }).catch(() => {});

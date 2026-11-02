@@ -80,6 +80,8 @@ namespace
             return "Replay";
         case EOperationBatchKind::UserCommand:
             return "UserCommand";
+        case EOperationBatchKind::DerivedPublish:
+            return "DerivedPublish";
         }
 
         throw std::runtime_error("Invalid operation batch kind");
@@ -87,6 +89,7 @@ namespace
 
     EOperationBatchKind ToBatchKind(IN const std::string& strKind_)
     {
+        if (strKind_ == "DerivedPublish") return EOperationBatchKind::DerivedPublish;
         if (strKind_ == "LoadBaseline")
         {
             return EOperationBatchKind::LoadBaseline;
@@ -490,13 +493,12 @@ namespace
 
     ObjectMap ToVariantObject(IN const CRepositoryOperation& Operation_)
     {
-        ObjectMap _Object = {
-            { "type", Variant(ToString(Operation_.Type)) },
-            { "entityID", Variant(Operation_.EntityID) },
-            { "componentClass", Variant(Operation_.ComponentClass) },
-            { "previousProperties", Variant(Operation_.PreviousProperties) },
-            { "newProperties", Variant(Operation_.NewProperties) }
-        };
+        ObjectMap _Object;
+        _Object.emplace("type", ToString(Operation_.Type));
+        _Object.emplace("entityID", Operation_.EntityID);
+        _Object.emplace("componentClass", Operation_.ComponentClass);
+        _Object.emplace("previousProperties", Operation_.PreviousProperties);
+        _Object.emplace("newProperties", Operation_.NewProperties);
         if (Operation_.PreviousEnabled.has_value())
         {
             _Object["previousEnabled"] = Variant(*Operation_.PreviousEnabled);
@@ -675,12 +677,47 @@ iCAX::Database::CChangeSet iCAX::Database::BuildChangeSetFromOperationBatch(IN c
 
 iCAX::Database::COperationBatch iCAX::Database::FilterTransactionalOperationBatch(IN const COperationBatch& Batch_, IN const IMetaRegistry& Meta_)
 {
+    if (Batch_.Kind == EOperationBatchKind::DerivedPublish) return {};
     return FilterBatch(Batch_, Meta_, false);
+}
+
+iCAX::Database::COperationBatch iCAX::Database::FilterUndoCommandOperationBatch(
+    const COperationBatch& Batch_, const IMetaRegistry& Meta_,
+    const UndoObservableProperties& Included_)
+{
+    if (Batch_.Kind == EOperationBatchKind::DerivedPublish) return {};
+    if (Included_.empty()) return FilterTransactionalOperationBatch(Batch_, Meta_);
+    COperationBatch result;
+    result.Kind = Batch_.Kind;
+    result.Name = Batch_.Name;
+    result.Operations.reserve(Batch_.Operations.size());
+    for (const auto& operation : Batch_.Operations)
+    {
+        auto filtered = FilterOperation(operation, Meta_, false);
+        if (operation.Type == RepositoryEventArgs::kModifyComponent)
+        {
+            for (const auto& [name, previous] : operation.PreviousProperties)
+            {
+                if (!Included_.contains({operation.EntityID, operation.ComponentClass, name})) continue;
+                const auto next = operation.NewProperties.find(name);
+                if (next == operation.NewProperties.end()) continue;
+                if (Meta_.GetPropertyKindByName(operation.ComponentClass, name) != EPropertyKind::Value
+                    || Meta_.GetPropertyChangePolicyByName(operation.ComponentClass, name) != EPropertyChangePolicy::Observable
+                    || Meta_.GetPropertyPersistenceByName(operation.ComponentClass, name) != EPropertyPersistence::Persistent)
+                    throw std::invalid_argument("Undo inclusion metadata changed during command");
+                filtered.PreviousProperties.emplace(name, previous);
+                filtered.NewProperties.emplace(name, next->second);
+            }
+        }
+        if (!filtered.IsEmpty()) result.Operations.push_back(std::move(filtered));
+    }
+    return result;
 }
 
 iCAX::Database::COperationBatch iCAX::Database::FilterTransactionalOperationBatch(
     IN COperationBatch&& Batch_, IN const IMetaRegistry& Meta_)
 {
+    if (Batch_.Kind == EOperationBatchKind::DerivedPublish) return {};
     for (auto& operation : Batch_.Operations)
         FilterOperationInPlace(operation, Meta_, false);
     std::erase_if(Batch_.Operations, [](const auto& operation) { return operation.IsEmpty(); });
@@ -696,6 +733,7 @@ iCAX::Database::COperationBatch iCAX::Database::MakeInverseOperationBatch(IN con
 {
     COperationBatch _Result;
     _Result.Kind = EOperationBatchKind::Replay;
+    _Result.Operations.reserve(Batch_.Operations.size());
     if (!strName_.empty())
     {
         _Result.Name = strName_;
@@ -765,6 +803,7 @@ iCAX::Database::COperationBatch iCAX::Database::MakeInverseOperationBatch(IN con
 iCAX::Data::Variant iCAX::Database::OperationBatchToVariant(IN const COperationBatch& Batch_)
 {
     VariantArray _Operations;
+    _Operations.reserve(Batch_.Operations.size());
     for (const auto& _Operation : Batch_.Operations)
     {
         _Operations.emplace_back(ToVariantObject(_Operation));
@@ -773,8 +812,8 @@ iCAX::Data::Variant iCAX::Database::OperationBatchToVariant(IN const COperationB
     ObjectMap _Object;
     _Object["kind"] = Variant(ToString(Batch_.Kind));
     _Object["name"] = Variant(Batch_.Name);
-    _Object["operations"] = Variant(_Operations);
-    return Variant(_Object);
+    _Object["operations"] = Variant(std::move(_Operations));
+    return Variant(std::move(_Object));
 }
 
 iCAX::Database::COperationBatch iCAX::Database::OperationBatchFromVariant(IN const iCAX::Data::Variant& Value_)
@@ -895,6 +934,14 @@ void iCAX::Database::COperationBatchJournal::Append(IN const COperationBatch& Ba
     {
         throw std::runtime_error("Failed to append operation journal: " + m_strPath);
     }
+}
+
+bool iCAX::Database::COperationBatchJournal::Flush()
+{
+    if (!m_Stream.is_open()) return false;
+    m_Stream.flush();
+    if (!m_Stream.good()) throw std::runtime_error("Failed to flush operation journal: " + m_strPath);
+    return true;
 }
 
 std::vector<iCAX::Database::COperationBatch> iCAX::Database::COperationBatchJournal::ReadAll(

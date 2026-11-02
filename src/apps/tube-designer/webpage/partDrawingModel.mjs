@@ -3,8 +3,9 @@ import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
 import { previewSectionAnalysis } from "./moldApplicability.mjs";
 import { resolvePunchArraySkipPatterns } from "./arraySkipPatterns.mjs";
+import { normalizeCadBevel, validateCadBevel, changeCadBevel, bindBevelSelection } from "./cadBevel.mjs";
 
-// Editable three-dimensional part recipes. This module deliberately has no
+// Three-dimensional creation drafts and current CAD authoring operations. This module has no
 // machining-wizard state, message routing, UI lifecycle or preview dependency.
 const clone=value=>structuredClone(value);
 const uid=()=>globalThis.crypto?.randomUUID?.()??`drawing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -30,16 +31,91 @@ export function normalizeDrawingFeature(value={}) {
     opposite:!!feature.opposite};
 }
 
-export function createDrawingState(part={}) {
-  const recipe=clonePunchRecipe(part.properties?.["tubeDesigner.partDrawing"]??{});
+export function createDrawingState(part={},draft={}) {
+  const recipe=clonePunchRecipe(draft);
   const originals=recipe.features??[],features=originals.map(normalizeDrawingFeature);
   const length=Number(recipe.drawing?.length??recipe.baseLength??part.length??500);
-  return {partId:String(part.entityId??""),resourceId:part.manufacturingGeometryResourceId,
-    resourceVersion:part.manufacturingGeometryResourceVersion,baseLength:length,features,
+  return {partId:String(part.entityId??""),config:clone(recipe.config??{}),baseLength:length,features,
     originalFeatureRecipes:Object.fromEntries(features.map((feature,index)=>[feature.id,clone(originals[index])])),
     ends:clone({start:{type:"keep"},end:{type:"keep"},...recipe.ends}),
     draft:normalizeDrawingFeature({recordKind:"branch",station:length/2}),editingId:"",history:[],future:[],revision:0,
-    preview:null,previewMode:"tools",catalogueStatus:"idle",tools:[],error:""};
+    preview:null,previewMode:"finished",selectionMode:"edge",topologySelection:null,catalogueStatus:"idle",tools:[],error:""};
+}
+
+export function createDrawingCadState(part,document) {
+  const authoring=document?.authoringView;
+  if(authoring?.mode!=="drawing"||!authoring.drawing||typeof document.revision!=="string")
+    throw new Error("没有返回三维工作区可编辑的当前 CAD 文档。");
+  const state=createDrawingState(part,authoring);
+  state.drawing=clone(authoring.drawing);
+  state.drawing.name??=part.name??"三维零件";
+  state.drawing.quantity??=part.quantity??1;
+  state.drawing.material??=part.material??"";
+  state.baseLength=Number(state.drawing.length);
+  state.cadSession={revision:document.revision,resourceVersion:document.resourceVersion,
+    documentResourceId:document.documentResourceId,documentResourceVersion:document.documentResourceVersion,
+    bindings:clone(authoring.bindings??{}),readOnlyNodes:clone(authoring.readOnlyNodes??[]),bevelEditable:authoring.capabilities?.bevels===true,
+    mainReadOnly:authoring.drawing.readOnly===true||!authoring.drawing.section?.profile?.contours?.length};
+  captureDrawingCadBaseline(state);
+  return state;
+}
+
+export function captureDrawingCadBaseline(state) {
+  if(state.cadSession)state.cadSession.baseline=clone({drawing:state.drawing,features:state.features,ends:state.ends});
+}
+
+const comparable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==="object"&&!Array.isArray(item)
+  ?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
+const mainDrawing=drawing=>{
+  const result=clone(drawing);delete result.bevels;delete result.readOnly;
+  result.length=Number(result.length);result.quantity=Number(result.quantity);
+  result.name=String(result.name??"").trim();result.material=String(result.material??"").trim();
+  return result;
+};
+export function getDrawingCadPayload(state) {
+  const session=state?.cadSession,baseline=session?.baseline;
+  if(!baseline)throw new Error("当前三维 CAD 工作区尚未读取完成。");
+  const edit={mode:"drawing",features:[],ends:[]};
+  const main=mainDrawing(state.drawing),original=mainDrawing(baseline.drawing);
+  if(comparable(main)!==comparable(original)) {
+    if(!Number.isFinite(main.length)||main.length<1||main.length>100000)throw new Error("主管长度须为 1 至 100000 mm。");
+    if(!main.name||main.name.length>160)throw new Error("请填写零件名称（最多 160 个字符）。");
+    if(!Number.isSafeInteger(main.quantity)||main.quantity<1||main.quantity>1000000)throw new Error("数量须为 1 至 1000000 的整数。");
+    if(main.material.length>240)throw new Error("材料名称不能超过 240 个字符。");
+    if(session.mainReadOnly&&(main.length!==original.length||comparable(main.section)!==comparable(original.section)))
+      throw new Error("当前基体没有可安全编辑的拉伸截面，已保留其精确实体。");
+    if(main.section?.pendingParameters)throw new Error("截面参数正在更新，请等待更新完成。");
+    edit.main=main;
+  }
+  const originals=new Map(baseline.features.map(feature=>[feature.id,feature]));
+  for(const feature of state.features) {
+    const before=originals.get(feature.id);originals.delete(feature.id);
+    if(before&&comparable(feature)===comparable(before))continue;
+    if(isDrawingToolReadOnly(state,feature))throw new Error("当前构造没有可安全编辑的三维工具参数。");
+    const error=validateDrawingFeature(feature);if(error)throw new Error(error);
+    if(feature.section?.pendingParameters)throw new Error("截面参数正在更新，请等待更新完成。");
+    edit.features.push({operation:before?"update":"add",...(before?{nodeId:before.cadNodeId??before.id}:{}),feature:transportFeature(feature)});
+  }
+  for(const feature of originals.values())edit.features.push({operation:"remove",nodeId:feature.cadNodeId??feature.id});
+  for(const end of ["start","end"]) {
+    const feature=state.ends[end],before=baseline.ends[end];
+    if(comparable(feature)===comparable(before))continue;
+    const nodeId=before?.cadNodeId??before?.id;
+    if(feature.type==="keep") {
+      if(before?.type!=="keep")edit.ends.push({operation:"remove",end,...(nodeId?{nodeId}:{})});
+    } else {
+      const error=validateDrawing({...state,features:[],ends:{[end]:feature},drawing:{...state.drawing,bevels:[]}});
+      if(error)throw new Error(error);
+      edit.ends.push({operation:"update",end,...(nodeId?{nodeId}:{}),feature:clone(feature)});
+    }
+  }
+  if(comparable(state.drawing.bevels??[])!==comparable(baseline.drawing.bevels??[])) {
+    if(!session.bevelEditable)throw new Error("当前三维编辑暂不支持新增或修改坡口，原有坡口已保留。");
+    const error=validateDrawing({...state,features:[],ends:{},drawing:{...state.drawing,bevels:state.drawing.bevels}});
+    if(error)throw new Error(error);
+    edit.bevels=clone(state.drawing.bevels??[]);
+  }
+  return {partEntityId:state.partId,resourceVersion:session.resourceVersion,revision:session.revision,authoringEdit:edit};
 }
 
 export function checkpointDrawing(state) {
@@ -99,7 +175,7 @@ export function drawingToolDescriptor(state,item) {
 }
 export const getDrawingToolDescriptor=drawingToolDescriptor;
 export function isDrawingToolReadOnly(state,item) {
-  return state?.catalogueStatus==="ready"&&!!item?.toolRef&&!drawingToolDescriptor(state,item);
+  return item?.readOnly===true||state?.catalogueStatus==="ready"&&!!item?.toolRef&&!drawingToolDescriptor(state,item);
 }
 export function hasFrozenDrawingTool(item) {
   const frozen=item?.frozenTool;
@@ -134,7 +210,8 @@ export function installDrawingCatalogue(state,result) {
     const tool=state.tools.find(candidate=>candidate.id===item.type||candidate.target==="end"&&candidate.id===`end-${item.type}`);
     if(!tool)continue;
     const supplied={...Object.fromEntries((tool.parameters??[]).map(parameter=>[parameter.key,item[parameter.key]??parameter.defaultValue])),...item.toolParameters};
-    selectDrawingTool(state,item,tool.id);item.toolParameters=supplied;
+    const authored=state.cadSession?clone(item):null;
+    selectDrawingTool(state,item,tool.id);if(authored)Object.assign(item,authored);item.toolParameters=supplied;
   }
   state.catalogueErrors=clone(result?.errors??[]);
 }
@@ -187,6 +264,11 @@ export function validateDrawing(state) {
   if(state.editingId)return "当前特征尚未完成，请先修正参数。";
   if(!Number.isFinite(Number(state.baseLength))||Number(state.baseLength)<=0)return "主管长度必须是有效正数。";
   if(state.features.length>256)return "最多支持 256 个建模特征。";
+  for(const bevel of state.drawing?.bevels??[]) {
+    const error=validateCadBevel(bevel.bevel);if(error)return error;
+    if(bevel.bevel?.enabled!==false&&(!bevel.edgeIds?.length||!bevel.edgeIds.every(id=>Number.isSafeInteger(Number(id))&&Number(id)>0)))
+      return "请选择有效的三维边。";
+  }
   let total=0;
   for(const item of [...state.features,...Object.values(state.ends).filter(end=>end.type!=="keep")]) {
     if(isDrawingToolReadOnly(state,item)) {
@@ -203,6 +285,55 @@ export function validateDrawing(state) {
     }
   }
   return total>1000?"单个零件最多支持 1000 个展开刀具。":"";
+}
+
+export function selectedDrawingBevel(state) {
+  const selection=state.topologySelection;
+  if(!selection)return null;
+  const edgeIds=(selection.edgeIds??(selection.kind==="face"?[]:[selection.id])).map(Number);
+  if(!edgeIds.length||!edgeIds.every(id=>Number.isSafeInteger(id)&&id>0))return null;
+  const existing=state.drawing?.bevels?.find(item=>item.edgeIds?.length===edgeIds.length
+    &&edgeIds.every(id=>item.edgeIds.some(candidate=>Number(candidate)===id)));
+  return existing??bindBevelSelection({id:uid(),edgeIds,topologyRevision:state.preview?.topology?.revision,
+    referenceFaceId:selection.kind==="face"?Number(selection.id):0,
+    bevel:normalizeCadBevel()},state.preview?.topology);
+}
+
+export function updateSelectedDrawingBevel(state,field,target) {
+  const definition=selectedDrawingBevel(state);if(!definition)return false;
+  checkpointDrawing(state);
+  if(field==="referenceFaceId"){
+    definition.referenceFaceId=Number(target.value);
+    delete definition.referenceFaceName;
+    const name=state.preview?.topology?.faces?.find(face=>Number(face.id)===definition.referenceFaceId)?.persistentName;
+    if(name)definition.referenceFaceName=name;
+  }
+  else {
+    definition.bevel=changeCadBevel(definition.bevel,field,target);
+  }
+  state.drawing.bevels??=[];
+  const index=state.drawing.bevels.findIndex(item=>item.id===definition.id);
+  if(index>=0)state.drawing.bevels[index]=definition;else state.drawing.bevels.push(definition);
+  return true;
+}
+
+export function reselectDrawingBevel(state) {
+  const existing=state.drawing?.bevels?.find(item=>item.id===state.reselectBevelId);
+  const selection=state.topologySelection;
+  const edgeIds=(selection?.edgeIds??(selection?.kind==="edge"?[selection.id]:[])).map(Number);
+  if(!existing||!selection||!edgeIds.length||!edgeIds.every(id=>Number.isSafeInteger(id)&&id>0)
+    ||selection.topologyRevision!==state.preview?.topology?.revision)return false;
+  checkpointDrawing(state);existing.edgeIds=edgeIds;
+  existing.topologyRevision=selection.topologyRevision;
+  existing.referenceFaceId=selection.kind==="face"?Number(selection.id):0;
+  bindBevelSelection(existing,state.preview?.topology);
+  return true;
+}
+
+export function removeSelectedDrawingBevel(state) {
+  const definition=selectedDrawingBevel(state);
+  if(!definition||!state.drawing.bevels?.some(item=>item.id===definition.id))return false;
+  checkpointDrawing(state);state.drawing.bevels=state.drawing.bevels.filter(item=>item.id!==definition.id);return true;
 }
 
 function transportFeature(feature) {
@@ -229,8 +360,8 @@ function transportFeature(feature) {
   return item;
 }
 export function getDrawingPayload(state) {
-  return {partEntityId:String(state.partId??""),resourceId:state.resourceId,resourceVersion:state.resourceVersion,
-    features:state.features.map(feature=>isDrawingToolReadOnly(state,feature)
+  return {
+    ...(Object.keys(state.config??{}).length?{config:clone(state.config)}:{}),features:state.features.map(feature=>isDrawingToolReadOnly(state,feature)
       ? clone(state.originalFeatureRecipes?.[feature.id]??feature):transportFeature(feature)),ends:clone(state.ends)};
 }
 
@@ -300,7 +431,7 @@ export function editDrawingFeature(state,action,index) {
   if(isDrawingToolReadOnly(state,feature)&&action!=="remove"){state.error="退化定式刀具节点只读，仅可删除。";return false;}
   checkpointDrawing(state);
   if(action==="edit"){state.editingId=feature.id;state.draft=clone(feature);}
-  else if(action==="copy"){state.editingId="";state.draft={...clone(feature),id:uid(),enabled:true,station:feature.station+(feature.arrayPitch||50)};}
+  else if(action==="copy"){state.editingId="";state.draft={...clone(feature),id:uid(),enabled:true,station:feature.station+(feature.arrayPitch||50)};delete state.draft.cadNodeId;}
   else if(action==="toggle")feature.enabled=feature.enabled===false;
   else {state.features=state.features.filter((_,n)=>n!==i);if(state.editingId===feature.id)state.editingId="";}
   return true;

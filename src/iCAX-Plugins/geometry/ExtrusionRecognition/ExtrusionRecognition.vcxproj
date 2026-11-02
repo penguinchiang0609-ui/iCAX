@@ -38,18 +38,28 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/bigobj /utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ExtrusionRecognitionExport.h" />
     <ClInclude Include="ExtrudeRecognizesService.h" />
+    <ClInclude Include="HealWork.h" />
+    <ClInclude Include="MachiningEdgeAnalysisWork.h" />
+    <ClInclude Include="MachiningEdgeSkinSpans.inc" />
+    <ClInclude Include="SectionZeroAreaTrimFace.inc" />
     <ClInclude Include="ExtrusionRecognitionService.h" />
     <ClInclude Include="ExtrusionRecognitionTypes.h" />
     <ClInclude Include="SectionGeometry.h" />
+    <ClInclude Include="SectionExactClassifier.h" />
+    <ClInclude Include="SectionProjectionMultiplicity.h" />
+    <ClInclude Include="SectionMaterialProjection.h" />
+    <ClInclude Include="SectionFaceSubset.h" />
+    <ClInclude Include="SectionMaterialRecovery.inc" />
+    <ClInclude Include="SectionNominalReference.inc" />
     <ClInclude Include="SectionDefinitionCodec.h" />
     <ClInclude Include="SectionRuleEngine.h" />
     <ClInclude Include="framework.h" />
@@ -58,6 +68,8 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="ExtrudeRecognizesService.cpp" />
+    <ClCompile Include="HealWork.cpp" />
+    <ClCompile Include="MachiningEdgeAnalysisWork.cpp" />
     <ClCompile Include="SectionWireExtraction.cpp" />
     <ClCompile Include="ExtrusionRecognitionService.cpp" />
     <ClCompile Include="SectionGeometry.cpp" />
@@ -72,6 +84,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
@@ -88,6 +103,16 @@
     <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
       <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="SectionWireExtraction.cpp;ExtrudeRecognizesService.cpp;SectionGeometry.cpp;PythonSectionFitting.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />

@@ -109,10 +109,24 @@ namespace iCAX
             */
             virtual void End() = 0;
 
+            // Restore this command's committed transactional facts and discard
+            // the command. Existing Undo and Redo steps retain their identities.
+            virtual void Cancel() = 0;
+
+            // Include the committed Modify facts of one persistent Observable
+            // value in this command only. Default field metadata is unchanged.
+            virtual void IncludeObservableProperty(const iCAX::Data::uuid& EntityID_,
+                const std::string& ComponentClass_, const std::string& PropertyName_) = 0;
+
             /*
             * @brief 判断撤销记录是否已结束。
             */
             virtual bool IsCompleted() const = 0;
+            // Keep committed facts as initialization/migration baseline without
+            // adding a user step or discarding existing undo/redo history.
+            // Appended to retain the slot order of all existing methods.
+            // Until this succeeds Cancel still rolls back the whole command.
+            virtual void EndWithoutHistory() = 0;
         };
 
         /*
@@ -180,6 +194,14 @@ namespace iCAX
             */
             virtual ITransaction& BeginTransaction(IN const std::string& strName_ = std::string()) = 0;
 
+            // Atomic derived publication. The owner must exist. Only owned
+            // CDerivedComponentBase records may be created/updated; definitions
+            // and destructive structural operations are rejected and rolled back.
+            // Observers run read-only during apply, rollback and final batch
+            // notification; follow-up writes must be queued until it returns.
+            virtual ITransaction& BeginDerivedTransaction(const iCAX::Data::uuid& OwnerID_,
+                const std::string& Name_) = 0;
+
             /*
             * @brief 提交指定事务。
             * @param [in] Transaction_ BeginTransaction 返回的事务对象。
@@ -210,6 +232,12 @@ namespace iCAX
             *   Begin/End 之间提交的普通修改、批量修改和事务提交会被汇总为一个保序 undo step。
             */
             virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_) = 0;
+
+            // Retain an owned derived receipt created atomically with a user
+            // command. It remains journaled/persistent when that command is
+            // undone; ordinary user data cannot be exempted this way.
+            virtual void RetainDerivedEntityForUndo(const iCAX::Data::uuid& EntityID_,
+                const iCAX::Data::uuid& OwnerID_) = 0;
 
             /*
             * @brief 当前是否正在记录撤销还原步骤
@@ -547,6 +575,13 @@ namespace iCAX
             *   上层调用，每一帧结束的时候调用一次
             */
             virtual void ResetComponentChangedFlag() = 0;
+
+            // Checkpoints must never serialize an in-progress transaction or
+            // gesture. This includes a recorded undo command before its End.
+            virtual bool IsWriteInProgress() const = 0;
+            // False means no journal is open. An unhealthy stream throws;
+            // an append failure must not later be acknowledged as saved.
+            virtual bool FlushOperationLog() = 0;
         };
 
         /*

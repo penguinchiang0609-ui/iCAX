@@ -47,24 +47,20 @@ export function normalizePunchFeature(feature = {}) {
     rowCount: num(feature.rowCount, 1), rowPitch: num(feature.rowPitch, 20),
   };
 }
-export function readPunchWizardFeatures(part = {}) {
-  return (part?.properties?.["tubeDesigner.punchWizard"]?.features ?? []).map(normalizePunchFeature);
+export function readPunchWizardFeatures(draft = {}) {
+  return (draft.features ?? []).map(normalizePunchFeature);
 }
-export function createPunchWizardState(part = {}) {
-  const config = clonePunchRecipe(part?.properties?.["tubeDesigner.punchWizard"] ?? {});
+export function createPunchWizardState(part = {},creationDraft = {}) {
+  const config = clonePunchRecipe(creationDraft);
   const features=(config.features ?? []).map(normalizePunchFeature);
   const draft = normalizePunchFeature({ recordKind: "branch", face: punchWizardProfileInfo(part).round ? "round" : "top",
     station: Number(config.baseLength ?? part.length ?? 1000) / 2, layoutDatum: "base" });
-  return { partId: String(part.entityId ?? ""), resourceId: part.manufacturingGeometryResourceId,
-    resourceVersion: part.manufacturingGeometryResourceVersion, baseLength: Number(config.baseLength ?? part.length ?? 1000),
+  return { partId: String(part.entityId ?? ""), drawing: config.drawing ? structuredClone(config.drawing) : undefined, baseLength: Number(config.baseLength ?? part.length ?? 1000),
     features, originalFeatureRecipes:Object.fromEntries(features.map((feature,index)=>[feature.id,recipeItem(config.features[index])])),
     ends: Object.fromEntries(Object.entries(config.ends ?? { start: { type: "keep" }, end: { type: "keep" } }).map(([key,item])=>[key,recipeItem(item)])),
     draft, draftToolInitializationId: draft.id,
     editingId: "", history: [], future: [], revision: 0,
-    // Saved thumbnails are still in the original blank's 0..L coordinates.
-    // End cuts may shorten part.length; preserve the recipe's blank midpoint.
-    preview: part.thumbnailGeometryResourceId ? {geometry:{url:part.thumbnailGeometryResourceId,version:part.thumbnailGeometryResourceVersion},
-      length:Number(config.baseLength ?? part.length ?? 0),revision:-1,isOriginal:true} : null,
+    preview: null,
     catalogueStatus: "idle", tools: [], error: "", selectedFeatureIds: [], parameterEditor: null,
     // UI-only width for the punch list. It is deliberately not part of the
     // persisted recipe, but survives the wizard's incremental DOM renders.
@@ -80,7 +76,7 @@ export function punchWizardProfileInfo(part = {}) {
 }
 export function getPunchWizardPayload(view) {
   const s = view.tubeDesignerPunchWizard;
-  return { partEntityId: String(s?.partId ?? ""), resourceId: s?.resourceId, resourceVersion: s?.resourceVersion,
+  return { ...(s?.drawing ? {drawing:structuredClone(s.drawing)} : {}),
     features: (s?.features ?? []).map(feature=>{
       // Missing templates are immutable. Even harmless UI defaults change their
       // signed recipe and must not be sent when editing a different record.
@@ -895,9 +891,7 @@ export function renderPunchWizardDialog(part, view, options = {}) {
     ? "当前参数预览未完成，请检查下方提示"
     : s.preview?.revision===s.revision
       ? (s.preview.toolsOnly ? "当前刀具位置已更新 · 确认时才计算切除" : s.preview.includesDraft ? "当前孔刀参数已进入预览" : "当前显示参数已更新")
-      : s.preview?.isOriginal
-        ? (s.revision===0?"已保存的零件实体（无需本机刀具）":"参数已改变，旧预览已隐藏")
-        : s.preview
+      : s.preview
           ? "参数已改变，旧预览已隐藏"
           : options.previewHint??"编辑中显示主管与刀具体，确认时才计算切除";
   const wizardWindowPosition=s.wizardWindowPosition;

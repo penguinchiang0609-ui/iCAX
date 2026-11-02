@@ -8,9 +8,25 @@
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
+#include <Standard_Failure.hxx>
+#include <gp_Trsf.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
+#include <gp_Dir.hxx>
+#include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 
 namespace iCAX::ExtrusionRecognition
 {
+namespace direction_detail
+{
+    SSectionWiresResult ExtractCandidateSection(const iCAX::GeometryData::BRepModel&,
+        const SSectionWireOptions&);
+    bool TryContainingExtrusionVolume(const iCAX::GeometryData::BRepModel&,
+        const SSectionWiresResult&, const SSectionWireOptions&, double&, double&);
+}
 namespace
 {
     using iCAX::GeometryData::BRepModel;
@@ -106,6 +122,7 @@ namespace
         Vector3 Sum{};
         double dWeight = 0.0;
         std::size_t nEvidence = 0;
+        std::vector<std::pair<Direction3, double>> Evidence;
     };
 
     Direction3 ClusterDirection(IN const SDirectionCluster& Cluster_)
@@ -156,14 +173,46 @@ namespace
             }
             _Cluster.dWeight += Weight_;
             ++_Cluster.nEvidence;
+            _Cluster.Evidence.emplace_back(_Direction, Weight_);
             return;
         }
 
         Clusters_.push_back({
             Scale(_DirectionVector, Weight_),
             Weight_,
-            1
+            1,
+            { { _Direction, Weight_ } }
         });
+    }
+
+    void RefineClusterDirection(IN OUT SDirectionCluster& Cluster_)
+    {
+        // Angular clustering is deliberately tolerant of machining edges.
+        // Its arithmetic mean, however, invents a direction between the true
+        // generators and nearby sloped cut edges. Over a long part even that
+        // small tilt moves a stock wall outside the distance tolerance.
+        // The weighted angular medoid minimizes L1 unoriented angular error
+        // among actual generators, retaining the dominant measured direction.
+        double _BestCost = std::numeric_limits<double>::infinity();
+        double _BestWeight = -1.0;
+        Direction3 _Best = ClusterDirection(Cluster_);
+        for (const auto& [_Candidate, _Weight] : Cluster_.Evidence)
+        {
+            double _Cost = 0.0;
+            for (const auto& [_Other, _OtherWeight] : Cluster_.Evidence)
+            {
+                const auto _CrossLength = Length(Cross(ToVector(_Candidate), ToVector(_Other)));
+                _Cost += _OtherWeight * std::atan2(_CrossLength,
+                    std::abs(Dot(ToVector(_Candidate), ToVector(_Other))));
+            }
+            if (_Cost < _BestCost || (_Cost == _BestCost && _Weight > _BestWeight))
+            {
+                _BestCost = _Cost;
+                _BestWeight = _Weight;
+                _Best = _Candidate;
+            }
+        }
+        Cluster_.Sum = Scale(ToVector(_Best), Cluster_.dWeight);
     }
 
     struct SGeometryIndex final
@@ -288,6 +337,41 @@ namespace
                 {
                     return _Direction;
                 }
+            }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Bezier3>
+                || std::is_same_v<T, iCAX::GeometryData::BSpline3>
+                || std::is_same_v<T, iCAX::GeometryData::NURBS3>)
+            {
+                // IGES can encode exact straight trim edges as splines. A
+                // positive-weight curve stays in its control hull; collinear
+                // poles therefore prove a line without sampling a curved cut.
+                if (Value_.Poles.size() < 2) return std::nullopt;
+                if constexpr (std::is_same_v<T, iCAX::GeometryData::NURBS3>)
+                {
+                    if (Value_.Weights.size() != Value_.Poles.size()
+                        || std::any_of(Value_.Weights.begin(), Value_.Weights.end(),
+                            [](double weight) { return !std::isfinite(weight) || weight <= 0.0; }))
+                        return std::nullopt;
+                }
+                Vector3 span{};
+                double length = 0.0, scale = 1.0;
+                for (const auto& pole : Value_.Poles)
+                {
+                    if (!std::isfinite(pole.X) || !std::isfinite(pole.Y) || !std::isfinite(pole.Z))
+                        return std::nullopt;
+                    scale = std::max({scale, std::abs(pole.X), std::abs(pole.Y), std::abs(pole.Z)});
+                    const auto delta = Difference(pole, Value_.Poles.front());
+                    const auto distance = Length(delta);
+                    if (distance > length) { span = delta; length = distance; }
+                }
+                Direction3 direction;
+                if (!TryNormalize(span, direction)) return std::nullopt;
+                const auto tolerance = 64.0 * std::numeric_limits<double>::epsilon()
+                    * std::max(scale, length);
+                for (const auto& pole : Value_.Poles)
+                    if (Length(Cross(Difference(pole, Value_.Poles.front()), ToVector(direction))) > tolerance)
+                        return std::nullopt;
+                return direction;
             }
             return std::nullopt;
         }, Curve_);
@@ -519,6 +603,7 @@ namespace
         Direction3 ZAxis;
         Point3 Center;
         Transform3 TRSF;
+        gp_Trsf NativeTransform;
     };
 
     Point3 AddVector(IN const Point3& Point_, IN const Vector3& Vector_)
@@ -532,27 +617,20 @@ namespace
 
     Vector3 TransformVector(IN const SAlignmentFrame& Frame_, IN const Vector3& Vector_)
     {
-        return {
-            Dot(Vector_, ToVector(Frame_.XAxis)),
-            Dot(Vector_, ToVector(Frame_.YAxis)),
-            Dot(Vector_, ToVector(Frame_.ZAxis))
-        };
+        const auto value=gp_Vec(Vector_.X,Vector_.Y,Vector_.Z).Transformed(Frame_.NativeTransform);
+        return {value.X(),value.Y(),value.Z()};
     }
 
     Point3 TransformPoint(IN const SAlignmentFrame& Frame_, IN const Point3& Point_)
     {
-        return {
-            Dot(Difference(Point_, Frame_.Center), ToVector(Frame_.XAxis)),
-            Dot(Difference(Point_, Frame_.Center), ToVector(Frame_.YAxis)),
-            Dot(Difference(Point_, Frame_.Center), ToVector(Frame_.ZAxis))
-        };
+        const auto value=gp_Pnt(Point_.X,Point_.Y,Point_.Z).Transformed(Frame_.NativeTransform);
+        return {value.X(),value.Y(),value.Z()};
     }
 
     Direction3 TransformDirection(IN const SAlignmentFrame& Frame_, IN const Direction3& Direction_)
     {
-        const auto _Vector = TransformVector(Frame_, ToVector(Direction_));
-        Direction3 _Result;
-        return TryNormalize(_Vector, _Result) ? _Result : Direction3{};
+        const auto value=gp_Dir(Direction_.X,Direction_.Y,Direction_.Z).Transformed(Frame_.NativeTransform);
+        return {value.X(),value.Y(),value.Z()};
     }
 
     void ExtendBounds(
@@ -649,6 +727,11 @@ namespace
                 {
                     ExtendBounds(_Point, Minimum_, Maximum_, HasPoint_);
                 }
+            }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::RevolutionSurface3>
+                || std::is_same_v<T, iCAX::GeometryData::ExtrusionSurface3>)
+            {
+                ExtendCurveBounds(Value_.Basis, Minimum_, Maximum_, HasPoint_);
             }
             else
             {
@@ -786,6 +869,15 @@ namespace
         _Frame.TRSF.Matrix.Values[0][3] = -Dot(ToVector(Center_), ToVector(_Frame.XAxis));
         _Frame.TRSF.Matrix.Values[1][3] = -Dot(ToVector(Center_), ToVector(_Frame.YAxis));
         _Frame.TRSF.Matrix.Values[2][3] = -Dot(ToVector(Center_), ToVector(_Frame.ZAxis));
+        // Apply the same rigid transform to points, curve/surface placements
+        // and the reported matrix. Independent centered-dot arithmetic can
+        // move a vertex beyond its existing native tolerance by rounding even
+        // though the corresponding kernel transform remains valid.
+        auto& m=_Frame.TRSF.Matrix.Values;
+        _Frame.NativeTransform.SetValues(m[0][0],m[0][1],m[0][2],m[0][3],
+            m[1][0],m[1][1],m[1][2],m[1][3],m[2][0],m[2][1],m[2][2],m[2][3]);
+        for(int row=0;row<3;++row)for(int column=0;column<4;++column)
+            m[row][column]=_Frame.NativeTransform.Value(row+1,column+1);
         return _Frame;
     }
 
@@ -870,6 +962,17 @@ namespace
                     _Point = TransformPoint(Frame_, _Point);
                 }
             }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::RevolutionSurface3>)
+            {
+                TransformCurve(Frame_, Value_.Basis);
+                Value_.Axis.Location = TransformPoint(Frame_, Value_.Axis.Location);
+                Value_.Axis.Direction = TransformDirection(Frame_, Value_.Axis.Direction);
+            }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::ExtrusionSurface3>)
+            {
+                TransformCurve(Frame_, Value_.Basis);
+                Value_.Direction = TransformDirection(Frame_, Value_.Direction);
+            }
             else
             {
                 TransformPlacement(Frame_, Value_.Placement);
@@ -889,10 +992,24 @@ namespace
         IN const SAlignmentFrame& Frame_)
     {
         BRepModel _Result = Geometry_;
+        // A rigid transform preserves geometric uncertainty, but evaluating
+        // its coordinates in double precision adds arithmetic uncertainty.
+        // Propagate a coordinate-scale rounding bound, not a machining
+        // tolerance. Otherwise edges already at their native tolerance can
+        // become invalid by ~1e-11 mm after an ordinary rotation.
+        const double eps=std::numeric_limits<double>::epsilon();
+        double coordinateScale=0;
+        for(const auto& vertex:Geometry_.Vertices)
+            coordinateScale=std::max(coordinateScale,
+                std::abs(vertex.Position.X)+std::abs(vertex.Position.Y)+std::abs(vertex.Position.Z)
+                +std::abs(Frame_.Center.X)+std::abs(Frame_.Center.Y)+std::abs(Frame_.Center.Z));
+        const double roundoff=8*eps/(1-8*eps)*coordinateScale;
         for (auto& _Vertex : _Result.Vertices)
         {
             _Vertex.Position = TransformPoint(Frame_, _Vertex.Position);
+            _Vertex.Tolerance+=roundoff;
         }
+        for(auto& edge:_Result.Edges)edge.Tolerance+=roundoff;
         for (auto& _Record : _Result.Curves3)
         {
             TransformCurve(Frame_, _Record.Geometry);
@@ -1013,6 +1130,55 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                         Options_.dAngularToleranceRadians);
                 }
             }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::ExtrusionSurface3>)
+            {
+                const auto span = TrimmedFaceAxialSpan(_Face, _GeometryIndex, _SurfaceValue.Direction);
+                if (span > Options_.dMinimumEvidenceLength)
+                    AddDirectionEvidence(_Clusters, _SurfaceValue.Direction, span * span, Options_.dAngularToleranceRadians);
+            }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::RevolutionSurface3>)
+            {
+                // A straight generator parallel to a revolution axis is a
+                // cylinder. IGES may store cylinders in this exact form.
+                const auto _Axis = ToVector(_SurfaceValue.Axis.Direction);
+                const auto _Parallel = [&](const Vector3& Delta_) {
+                    Direction3 _Direction;
+                    return TryNormalize(Delta_, _Direction)
+                        && std::abs(Dot(ToVector(_Direction), _Axis))
+                            >= std::cos(Options_.dAngularToleranceRadians);
+                };
+                const bool _AxialLine = std::visit([&](const auto& Basis_) {
+                    using C = std::decay_t<decltype(Basis_)>;
+                    if constexpr (std::is_same_v<C, iCAX::GeometryData::Line3>
+                        || std::is_same_v<C, iCAX::GeometryData::Ray3>)
+                        return _Parallel(ToVector(Basis_.Axis.Direction));
+                    else if constexpr (std::is_same_v<C, iCAX::GeometryData::Segment3>)
+                        return _Parallel(Difference(Basis_.End, Basis_.Start));
+                    else if constexpr (std::is_same_v<C, iCAX::GeometryData::BSpline3>
+                        || std::is_same_v<C, iCAX::GeometryData::NURBS3>
+                        || std::is_same_v<C, iCAX::GeometryData::Bezier3>)
+                    {
+                        if (Basis_.Poles.size() < 2) return false;
+                        bool _HasLength = false;
+                        for (const auto& _Pole : Basis_.Poles)
+                        {
+                            const auto _Delta = Difference(_Pole, Basis_.Poles.front());
+                            if (Length(_Delta) <= Options_.dMinimumEvidenceLength) continue;
+                            if (!_Parallel(_Delta)) return false;
+                            _HasLength = true;
+                        }
+                        return _HasLength;
+                    }
+                    return false;
+                }, _SurfaceValue.Basis);
+                if (_AxialLine)
+                {
+                    const auto _Span = TrimmedFaceAxialSpan(_Face, _GeometryIndex, _SurfaceValue.Axis.Direction);
+                    if (_Span > Options_.dMinimumEvidenceLength)
+                        AddDirectionEvidence(_Clusters, _SurfaceValue.Axis.Direction,
+                            _Span * _Span, Options_.dAngularToleranceRadians);
+                }
+            }
             else if constexpr (std::is_same_v<T, iCAX::GeometryData::BSplineSurface3>)
             {
                 Direction3 _Direction;
@@ -1059,6 +1225,10 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
         }, *_Surface);
     }
 
+    for (auto& _Cluster : _Clusters)
+    {
+        RefineClusterDirection(_Cluster);
+    }
     if (_Clusters.empty())
     {
         _Result.Diagnostics.push_back("No straight-edge or parallel-generator direction was found");
@@ -1080,14 +1250,56 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
     _Result.dSecondaryEvidenceWeight = _SecondaryWeight;
 
     std::size_t _SelectedIndex = 0;
+    std::optional<double> _EnvelopeSeparation;
     std::vector<double> _NormalVotes(_Clusters.size(), 0.0);
+    bool _UsedCandidateSpan = false;
+    // Equal votes cannot distinguish separate, collinear pieces: their edge
+    // lengths do not include the distance between them. Compare actual trimmed
+    // model spans along tied directions before using face-normal/envelope votes.
+    // The weight allowance accounts only for floating-point summation roundoff.
+    const auto _WeightRoundoff = 64 * std::numeric_limits<double>::epsilon()
+        * std::max(1.0, _PrimaryWeight)
+        * std::max<std::size_t>(1, Geometry_.Edges.size() + Geometry_.Faces.size());
+    std::vector<std::size_t> _TiedCandidates;
+    for (std::size_t i = 0; i < _Clusters.size(); ++i)
+        if (std::abs(_Clusters[i].dWeight - _PrimaryWeight) <= _WeightRoundoff)
+            _TiedCandidates.push_back(i);
+    if (_TiedCandidates.size() > 1)
+    {
+        const auto _Built = iCAX::OpenCascade::BuildOpenCascadeShape(Geometry_);
+        if (_Built.bOK)
+        {
+            std::vector<std::pair<double, std::size_t>> _Spans;
+            for (const auto i : _TiedCandidates)
+            {
+                const auto _Direction = ClusterDirection(_Clusters[i]);
+                const auto _Frame = MakeAlignmentFrame(_Direction, ModelCenter(Geometry_, _GeometryIndex));
+                const auto _Shape = BRepBuilderAPI_Transform(_Built.Shape, _Frame.NativeTransform, true).Shape();
+                Bnd_Box _Bounds; BRepBndLib::AddOptimal(_Shape, _Bounds, false, false);
+                double x, y, z, X, Y, Z; _Bounds.Get(x, y, z, X, Y, Z);
+                _Spans.emplace_back(X - x, i);
+                _Result.Diagnostics.push_back("Tied axis evidence: direction=("
+                    + std::to_string(_Direction.X) + "," + std::to_string(_Direction.Y) + ","
+                    + std::to_string(_Direction.Z) + ") weight=" + std::to_string(_Clusters[i].dWeight)
+                    + " model-span=" + std::to_string(X - x) + " mm");
+            }
+            std::sort(_Spans.begin(), _Spans.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            if (_Spans[0].first - _Spans[1].first > Options_.dMinimumEvidenceLength)
+            {
+                _SelectedIndex = _Spans[0].second;
+                _UsedCandidateSpan = true;
+                _Result.Diagnostics.push_back("Selected the greatest model span among equal-evidence axis candidates: "
+                    + std::to_string(_Spans[0].first) + " mm versus " + std::to_string(_Spans[1].first) + " mm");
+            }
+        }
+    }
     const auto _IsAmbiguous = _Clusters.size() > 1
         && _SecondaryWeight >= _PrimaryWeight * Options_.dAmbiguousSecondToFirstRatio
         && std::abs(Dot(
             ToVector(_PrimaryDirection),
             ToVector(ClusterDirection(_Clusters[1]))))
             < std::cos(Options_.dAngularToleranceRadians * 2.0);
-    if (_IsAmbiguous)
+    if (_IsAmbiguous && !_UsedCandidateSpan)
     {
         _Result.bUsedFaceNormalDisambiguation = true;
         const auto _FaceNormalEvidence = CollectFaceNormalEvidence(
@@ -1117,7 +1329,55 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                 _SelectedIndex = _Index;
             }
         }
-        _Result.Diagnostics.push_back("Face normal area vote was used to disambiguate axis candidates");
+        // Edge lengths can be dominated by a wide cross-section on a short
+        // extrusion. Among ambiguous directions, prefer the smallest complete
+        // extruded material envelope, only after a Boolean containment check.
+        // The comparison uses geometric tolerance bounds, not a tuned vote.
+        struct SEnvelope { std::size_t Index; double Volume; double Uncertainty; };
+        std::vector<SEnvelope> envelopes;
+        bool allQualified = true;
+        const SSectionWireOptions sectionOptions;
+        for (std::size_t i = 0; i < _Clusters.size(); ++i)
+        {
+            if (_Clusters[i].dWeight < _PrimaryWeight * Options_.dAmbiguousSecondToFirstRatio) continue;
+            try
+            {
+                const auto frame = MakeAlignmentFrame(ClusterDirection(_Clusters[i]), ModelCenter(Geometry_, _GeometryIndex));
+                const auto aligned = AlignGeometry(Geometry_, frame);
+                const auto section = direction_detail::ExtractCandidateSection(aligned, sectionOptions);
+                double volume = 0, uncertainty = 0;
+                if (!direction_detail::TryContainingExtrusionVolume(aligned, section, sectionOptions, volume, uncertainty))
+                {
+                    allQualified = false;
+                    break;
+                }
+                envelopes.push_back({i, volume, uncertainty});
+            }
+            catch (const Standard_Failure& error)
+            {
+                _Result.Diagnostics.push_back(std::string("Could not qualify a competing extrusion envelope: ")
+                    + error.GetMessageString());
+                allQualified = false;
+                break;
+            }
+        }
+        if (allQualified && envelopes.size() > 1)
+        {
+            std::sort(envelopes.begin(), envelopes.end(), [](const auto& a, const auto& b) {
+                return a.Volume < b.Volume;
+            });
+            const auto& first = envelopes[0]; const auto& second = envelopes[1];
+            if (first.Volume + first.Uncertainty < second.Volume - second.Uncertainty)
+            {
+                _SelectedIndex = first.Index;
+                _EnvelopeSeparation = (second.Volume - first.Volume) / second.Volume;
+                _Result.bUsedFaceNormalDisambiguation = false;
+                _Result.Diagnostics.push_back("Selected the smallest verified containing extrusion envelope: "
+                    + std::to_string(first.Volume) + " mm3 versus " + std::to_string(second.Volume) + " mm3");
+            }
+        }
+        if (_Result.bUsedFaceNormalDisambiguation)
+            _Result.Diagnostics.push_back("Face normal area vote was used to disambiguate axis candidates");
     }
 
     _Result.Direction = ClusterDirection(_Clusters[_SelectedIndex]);
@@ -1140,9 +1400,9 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
         }
     }
     const auto _SelectedWeight = _Clusters[_SelectedIndex].dWeight;
-    const auto _Separation = _PrimaryWeight <= kEpsilon
+    const auto _Separation = _EnvelopeSeparation ? *_EnvelopeSeparation : (_PrimaryWeight <= kEpsilon
         ? 0.0
-        : (_SelectedWeight - _SecondaryWeight) / _PrimaryWeight;
+        : (_SelectedWeight - _SecondaryWeight) / _PrimaryWeight);
     _Result.dConfidence = std::clamp(
         0.5 + 0.5 * _Separation,
         0.0,

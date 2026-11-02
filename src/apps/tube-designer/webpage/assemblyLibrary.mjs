@@ -6,6 +6,7 @@ import { renderToolParameterDiagram } from "./toolParameterDiagram.mjs";
 import { bindParameterDiagramScopes } from "./parameterDiagramBinding.mjs";
 import { libraryDiagramPositionStyle, renderDiagramResizeHandles } from "./floatingParameterDiagram.mjs";
 import { createThreeViewport } from "../../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
+import { tubeDesignerViewportNavigation } from "./viewportNavigation.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
 import { buildIntegratedFormedPreview } from "./integratedFormedPreview.mjs";
 import { buildAssemblyFinishedShapePreview } from "./assemblyFinishedShape.mjs";
@@ -1131,6 +1132,7 @@ const stockInputBindings = new WeakMap();
 
 function createAssemblyViewport(state, viewportFactory) {
   const viewport = viewportFactory({
+    ...tubeDesignerViewportNavigation,
     backgroundColor: 0x13252d,
     continuousRender: false,
     constrainOrbit: false,

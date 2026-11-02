@@ -39,6 +39,7 @@ inline std::uint32_t PackageType(std::span<const unsigned char> package) {
     Require(package.size() >= 72 && package.size() <= MaxActivationBytes, "Invalid bundled package size");
     if (std::memcmp(package.data(), "TDACT001", 8) == 0) return 1;
     if (IsUpgradePackage(package)) return 2;
+    if (IsReissuePackage(package)) return 3;
     throw std::runtime_error("Unsupported or nested authorization bundle package");
 }
 inline void Validate(const AuthorizationBundle& bundle, bool requireSignatures) {
@@ -57,7 +58,9 @@ inline void Validate(const AuthorizationBundle& bundle, bool requireSignatures) 
         AddSize(manifestSize, 4 + slot.productId.size() + 4 + slot.issuerId.size() + 4);
         for (std::size_t index = 0; index < slot.chain.size(); ++index) {
             const auto& package = slot.chain[index];
-            Require(PackageType(package) == (index == 0 ? 1U : 2U), "Bundle chain must start with activation and continue with upgrades");
+            const auto type = PackageType(package);
+            Require(index == 0 ? type == 1U : type == 2U || type == 3U,
+                "Bundle chain must start with activation and continue with signed transitions");
             AddSize(manifestSize, 4 + 4 + 4 + Digest{}.size());
             AddSize(payloadSize, 4 + package.size());
         }
@@ -132,7 +135,8 @@ inline AuthorizationBundle ParseAuthorizationBundle(std::span<const unsigned cha
         std::vector<bundle_detail::PackageInfo> metadata; metadata.reserve(count);
         for (std::uint32_t item = 0; item < count; ++item) {
             bundle_detail::PackageInfo info; info.type = fields.U32(); info.size = fields.U32();
-            Require(info.type == (item == 0 ? 1U : 2U), "Invalid bundled authorization package type");
+            Require(item == 0 ? info.type == 1U : info.type == 2U || info.type == 3U,
+                "Invalid bundled authorization package type");
             Require(info.size >= 72 && info.size <= MaxActivationBytes, "Invalid bundled package size");
             const auto digest = fields.Field(info.hash.size());
             Require(digest.size() == info.hash.size(), "Invalid bundled package digest");

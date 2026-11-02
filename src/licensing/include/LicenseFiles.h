@@ -70,13 +70,19 @@ inline void InstallAuthorizationSourceAtDirectory(std::span<const unsigned char>
 }
 inline void RequireCertificateReplacementAtDirectory(const Bytes& certificate,
     const std::filesystem::path& folder, std::string_view issuer,
-    std::span<const unsigned char> trustedKey) {
+    std::span<const unsigned char> trustedKey,
+    std::span<const Bytes> transitionProof = {}) {
     const auto next = VerifyCertificate(certificate, issuer, trustedKey);
     const auto installed = folder / L"license.tdlic";
     if (std::filesystem::exists(installed)) {
-        const auto previous = VerifyCertificate(ReadFileBounded(installed,
-            static_cast<DWORD>(MaxCertificateBytes)), issuer, trustedKey);
-        RequireAuthorizationUpgrade(previous, next);
+        auto current = ReadFileBounded(installed, static_cast<DWORD>(MaxCertificateBytes));
+        const auto previous = VerifyCertificate(current, issuer, trustedKey);
+        if (transitionProof.empty()) RequireAuthorizationUpgrade(previous, next);
+        else {
+            for (const auto& package : transitionProof)
+                current = ResolveAuthorizationTransition(package, current, issuer, trustedKey);
+            Require(current == certificate, "Replacement certificate differs from its signed transition proof");
+        }
     }
 }
 }

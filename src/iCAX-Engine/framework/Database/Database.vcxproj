@@ -155,6 +155,7 @@
     <ClInclude Include="ComponentHelper.h" />
     <ClInclude Include="MaskRegistry.h" />
     <ClInclude Include="ComponentBase.h" />
+    <ClInclude Include="DerivedComponentBase.h" />
     <ClInclude Include="DerivedProperty.h" />
     <ClInclude Include="EntityInsert.h" />
     <ClInclude Include="EntityQuery.h" />

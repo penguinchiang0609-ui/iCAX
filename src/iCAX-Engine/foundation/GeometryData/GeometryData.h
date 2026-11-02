@@ -512,13 +512,27 @@ namespace iCAX::GeometryData
         bool VPeriodic = false;
     };
 
+    struct RevolutionSurface3
+    {
+        Curve3 Basis;
+        Axis3 Axis;
+    };
+
+    struct ExtrusionSurface3
+    {
+        Curve3 Basis;
+        Direction3 Direction;
+    };
+
     using Surface3 = std::variant<
         PlaneSurface3,
         CylindricalSurface3,
         ConicalSurface3,
         SphericalSurface3,
         ToroidalSurface3,
-        BSplineSurface3>;
+        BSplineSurface3,
+        RevolutionSurface3,
+        ExtrusionSurface3>;
 
     struct Triangulation3
     {
@@ -619,6 +633,9 @@ namespace iCAX::GeometryData
         std::uint64_t EndVertexId = 0;
         ParameterRange Range;
         ETopologyOrientation Orientation = ETopologyOrientation::Forward;
+        // A planar pcurve may be derived from its 3D edge without being stored
+        // on the native face. Keep its editable UV curve and this distinction.
+        bool PCurveStored = true;
     };
 
     struct BRepWire
@@ -641,6 +658,8 @@ namespace iCAX::GeometryData
         ETopologyOrientation Orientation = ETopologyOrientation::Forward;
         double Tolerance = 0.0;
         bool NaturalRestriction = false;
+        // Domain bounds an actual rectangular surface patch when true.
+        bool SurfaceTrimmed = false;
         EntityMetadata Metadata;
     };
 

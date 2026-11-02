@@ -35,16 +35,20 @@ template<std::size_t I = 0, class Record> void AllVariants(std::vector<Record>& 
 int main() {
     try {
         BRepModel model; Fill fill; fill.Set(model);
+        model.Wires.front().Coedges.front().PCurveStored = false;
+        model.Faces.front().SurfaceTrimmed = true;
         AllVariants(model.Curves2, fill); AllVariants(model.Curves3, fill); AllVariants(model.Surfaces3, fill);
         const auto bytes = Serialize(model);
         const auto restored = Deserialize(bytes);
         Expect(Serialize(restored) == bytes);
         Expect(restored.Metadata.Name == model.Metadata.Name);
         Expect(restored.Faces[0].Id == model.Faces[0].Id);
+        Expect(restored.Faces.front().SurfaceTrimmed);
+        Expect(!restored.Wires.front().Coedges.front().PCurveStored);
         Expect(restored.RootShapes[0].Location.Matrix.Values == model.RootShapes[0].Location.Matrix.Values);
         for (std::size_t n = 0; n < bytes.size(); ++n) Reject([&] { Deserialize(std::span(bytes).first(n)); });
         auto invalid = bytes; invalid[0] ^= 1; Reject([&] { Deserialize(invalid); });
-        invalid = bytes; invalid[7] = '2'; Reject([&] { Deserialize(invalid); });
+        invalid = bytes; invalid[7] = '1'; Reject([&] { Deserialize(invalid); });
         invalid = bytes; invalid.push_back(0); Reject([&] { Deserialize(invalid); });
         invalid = bytes; for (int n = 8; n < 12; ++n) invalid[n] = 255; Reject([&] { Deserialize(invalid); });
         { const std::array<std::uint8_t,4> bad{255,255,255,255}; Reader r(bad); Curve3 v; Reject([&] { r.Read(v); }); }

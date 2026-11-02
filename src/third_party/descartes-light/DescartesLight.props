@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ICAXDescartesRoot>$(MSBuildThisFileDirectory)</ICAXDescartesRoot></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\include;$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\include\console_bridge;$(ICAXDescartesRoot)descartes_light-49e2ee3305b5d7ba5018f28cf706e0dc71ecf6cf\descartes_light\core\include;$(ICAXDescartesRoot)console_bridge-1.0.2\include;$(ICAXDescartesRoot)..\coal\eigen-3.4.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>NOMINMAX;CONSOLE_BRIDGE_STATIC_DEFINE;_ENABLE_EXTENDED_ALIGNED_STORAGE;%(PreprocessorDefinitions)</PreprocessorDefinitions><OpenMPSupport>true</OpenMPSupport></ClCompile>
+    <Link><AdditionalDependencies>$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\lib\icax_descartes_light.lib;$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\lib\icax_console_bridge.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <Target Name="RequireDescartesLight" BeforeTargets="PrepareForBuild"><Error Condition="!Exists('$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\lib\icax_descartes_light.lib')" Text="Build Descartes Light first: src/third_party/descartes-light/prepare-descartes-light.ps1 -Configuration $(Configuration)" /></Target>
+  <Target Name="CopyDescartesLightNotices" AfterTargets="Build"><ItemGroup><DescartesNotices Include="$(ICAXDescartesRoot)install\$(Platform)\$(Configuration)\licenses\*" /></ItemGroup><Copy SourceFiles="@(DescartesNotices)" DestinationFolder="$(OutDir)Licenses\DescartesLight" SkipUnchangedFiles="true" /></Target>
+</Project>

@@ -1,0 +1,78 @@
+[
+  {
+    "id": "6bfa3015-1101-4500-9000-000000000001",
+    "name": "AC 双回转头",
+    "model": "GAC-3015",
+    "kind": "AC",
+    "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAC-3015/GAC-3015.urdf",
+    "headRoot": "C 回转叉架",
+    "toolLink": "A 激光切割头",
+    "supportLink": "工作台",
+    "headAxes": [
+      "C",
+      "A"
+    ],
+    "workpieceAxes": []
+  },
+  {
+    "id": "6bfa3015-1101-4500-9000-000000000002",
+    "name": "AB 双摆头",
+    "model": "GAB-3015",
+    "kind": "AB",
+    "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAB-3015/GAB-3015.urdf",
+    "headRoot": "AB 刀头安装座",
+    "toolLink": "A 激光切割头",
+    "supportLink": "工作台",
+    "headAxes": [
+      "B",
+      "A"
+    ],
+    "workpieceAxes": []
+  },
+  {
+    "id": "6bfa3015-1101-4500-9000-000000000003",
+    "name": "BC 双回转头",
+    "model": "GBC-3015",
+    "kind": "BC",
+    "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GBC-3015/GBC-3015.urdf",
+    "headRoot": "C 回转叉架",
+    "toolLink": "B 激光切割头",
+    "supportLink": "工作台",
+    "headAxes": [
+      "C",
+      "B"
+    ],
+    "workpieceAxes": []
+  },
+  {
+    "id": "6bfa3015-1101-4500-9000-000000000004",
+    "name": "4+1 A 单摆头",
+    "model": "GA-3015",
+    "kind": "4+1",
+    "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GA-3015/GA-3015.urdf",
+    "headRoot": "固定摆头叉架",
+    "toolLink": "A 激光切割头",
+    "supportLink": "中央装夹承托盘",
+    "headAxes": [
+      "A"
+    ],
+    "workpieceAxes": [
+      "C"
+    ]
+  },
+  {
+    "id": "6bfa3015-1101-4500-9000-000000000005",
+    "name": "3+2 固定头",
+    "model": "GF-3015",
+    "kind": "3+2",
+    "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GF-3015/GF-3015.urdf",
+    "headRoot": "固定激光切割头",
+    "toolLink": "固定激光切割头",
+    "supportLink": "C 回转工作台",
+    "headAxes": [],
+    "workpieceAxes": [
+      "A",
+      "C"
+    ]
+  }
+]

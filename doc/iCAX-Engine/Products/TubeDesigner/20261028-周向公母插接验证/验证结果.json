@@ -1,0 +1,166 @@
+{
+  "passed": true,
+  "date": "2026-10-28",
+  "meaning": {
+    "two": "theta,theta+180 degrees",
+    "four": "theta,theta+90,theta+180,theta+270 degrees"
+  },
+  "productNativeReleaseCases": 40,
+  "coldReopenCases": 8,
+  "exports": {
+    "caseCount": 40,
+    "passedCases": 40,
+    "STEPPrototypes": 89,
+    "physicalMembers": 160,
+    "nearbyPairsChecked": 160
+  },
+  "exactJointChecks": {
+    "joints": 80,
+    "checks": 28420,
+    "failed": 0
+  },
+  "globalNativeMoldConfigurations": 36,
+  "globalNativeSingleSolidOutputs": 72,
+  "disconnectedNativeRejections": [
+    {
+      "name": "rect-actual-disconnected-rejected",
+      "passed": true,
+      "error": "page.evaluate: SDOError: 零件 极简防护网 JJFHW-边框-01 的最终加工形状无效，不能导出\n    at SDOClient.receive (file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/SDO/sdoClient.mjs:248:22)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/SDO/sdoClient.mjs:60:23\n    at Object.__dispatchSDOFrame (file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/AppShell/index.html:193:9)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/AppShell/index.html:1:62",
+      "transactionPublishedParts": 0
+    },
+    {
+      "name": "round-actual-disconnected-rejected",
+      "passed": true,
+      "error": "page.evaluate: SDOError: 零件 极简防护网 JJFHW-边框-01 的最终加工形状无效，不能导出\n    at SDOClient.receive (file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/SDO/sdoClient.mjs:248:22)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/SDO/sdoClient.mjs:60:23\n    at Object.__dispatchSDOFrame (file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/AppShell/index.html:193:9)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/mixed-profile-insert-20261028/runtime-global/iCAX-UI/SDK/AppShell/index.html:1:62",
+      "transactionPublishedParts": 0
+    }
+  ],
+  "negativeExactConnectivity": {
+    "passed": true,
+    "cases": [
+      {
+        "kind": "rect",
+        "passed": true,
+        "audit": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\negative-connectivity\\rect-audit.json"
+      },
+      {
+        "kind": "round",
+        "passed": true,
+        "audit": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\negative-connectivity\\round-audit.json"
+      }
+    ]
+  },
+  "browserActualEdits": 30,
+  "focusedTests": 38,
+  "testedProfiles": {
+    "product": [
+      "rect",
+      "round"
+    ],
+    "molds": [
+      "rect",
+      "round",
+      "polygon",
+      "racetrack"
+    ]
+  },
+  "inputParametersUnchanged": true,
+  "productionCppChangedForThisWork": false,
+  "installerUpdated": false,
+  "formalInstallerVersion": "0.3.1",
+  "sourceMatchesLatestGlobalRuntime": true,
+  "productMachiningFunctionsMatchFrozenNativeProductRuntime": true,
+  "limits": [
+    "Exact offsets for arbitrary ellipse, concave and spline contours are not certified by these cases.",
+    "Multi-cell and open profiles are not claimed supported by the single hollow shell cutter.",
+    "Strength, machine cutting and real weld-process acceptance not covered.",
+    "Four old missing-tool/frozen-replay tests still fail; the frozen phase1 runtime reproduces all four. No blanket repository suite pass claimed."
+  ],
+  "reports": {
+    "product": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\native-final\\acceptance-report.json",
+    "cold": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\native-final\\cold-reopen-report.json",
+    "exports": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\export-audit-final\\summary.json",
+    "joints": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\joint-audit-final\\summary.json",
+    "globalMolds": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\native-global-phase-verified\\acceptance-report.json",
+    "browser": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\browser\\report.json",
+    "tests": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\directional-focused-final-tests.log",
+    "legacyBaseline": "D:\\penguinchinage0609\\iCAX\\output\\tests\\mixed-profile-insert-20261028\\legacy-baseline-confirmed.log"
+  },
+  "hashes": {
+    "product/minimal_protective_grille/template.json": {
+      "source": "e5b546510d41d9099a96171d9d0daf488933333463ddf6bff657f969536077c4",
+      "productRuntime": "e5b546510d41d9099a96171d9d0daf488933333463ddf6bff657f969536077c4",
+      "globalRuntime": "e5b546510d41d9099a96171d9d0daf488933333463ddf6bff657f969536077c4"
+    },
+    "product/minimal_protective_grille/display.json": {
+      "source": "a33c544926e186c0c2a6812340df3e552df63a621487b4b81e00395e65c636ae",
+      "productRuntime": "a33c544926e186c0c2a6812340df3e552df63a621487b4b81e00395e65c636ae",
+      "globalRuntime": "a33c544926e186c0c2a6812340df3e552df63a621487b4b81e00395e65c636ae"
+    },
+    "product/minimal_protective_grille/template.py": {
+      "source": "95283ec2b98fccc77d757d18ecfdde8deae130abba79e8db56e748fdf4fe929d",
+      "productRuntime": "95283ec2b98fccc77d757d18ecfdde8deae130abba79e8db56e748fdf4fe929d",
+      "globalRuntime": "95283ec2b98fccc77d757d18ecfdde8deae130abba79e8db56e748fdf4fe929d"
+    },
+    "product/minimal_protective_grille/manufacturing_rules.py": {
+      "source": "68d55605c684b55fcb333ab7b6086aaf543ecd84a5d419c24b5a300a248b3a41",
+      "productRuntime": "68d55605c684b55fcb333ab7b6086aaf543ecd84a5d419c24b5a300a248b3a41",
+      "globalRuntime": "68d55605c684b55fcb333ab7b6086aaf543ecd84a5d419c24b5a300a248b3a41"
+    },
+    "_shared/assembly_structural_machining.py": {
+      "source": "8f09dd0085bf59a0419b057653908674a9a89414d477ba89224a4ad993da41c4",
+      "productRuntime": "8f09dd0085bf59a0419b057653908674a9a89414d477ba89224a4ad993da41c4",
+      "globalRuntime": "8f09dd0085bf59a0419b057653908674a9a89414d477ba89224a4ad993da41c4"
+    },
+    "_shared/directional_tube_geometry.py": {
+      "source": "438a55ce04f765eb2b8d1d73a53eb8de744c80281ae47955dd1f8d3fb2005e12",
+      "productRuntime": "c86c6eb5597307d55ea864395ce5fa216d284da8cf19709b8e641b2f174e040a",
+      "globalRuntime": "438a55ce04f765eb2b8d1d73a53eb8de744c80281ae47955dd1f8d3fb2005e12"
+    },
+    "_shared/assembly_template_runtime.py": {
+      "source": "83017707fa4a8b54957c1f5cd70f095fae23567b4f44ce1e8d8c06f9d0d01aa6",
+      "productRuntime": "78a4cc78f95ed0589fd9ec1191133c73061ef7413ddfb4ae5cbec734df4bba3a",
+      "globalRuntime": "83017707fa4a8b54957c1f5cd70f095fae23567b4f44ce1e8d8c06f9d0d01aa6"
+    },
+    "_shared/assembly_post_machining.py": {
+      "source": "8a6a402996719fe99c41f2e783f96cd0a30384567df7804a7a33e7598a21bb45",
+      "productRuntime": "335eb93a48021dbbe41d153cd6253d31abb8441de56848448af5d8fdbbcfa998",
+      "globalRuntime": "8a6a402996719fe99c41f2e783f96cd0a30384567df7804a7a33e7598a21bb45"
+    },
+    "_shared/punch_tool_runtime.py": {
+      "source": "e7c91a9befca21fe32266a7772aafac8e54bdebf5ded9aaddfcca9536f9ba1d6",
+      "productRuntime": "e7c91a9befca21fe32266a7772aafac8e54bdebf5ded9aaddfcca9536f9ba1d6",
+      "globalRuntime": "e7c91a9befca21fe32266a7772aafac8e54bdebf5ded9aaddfcca9536f9ba1d6"
+    },
+    "mold/paired-end-tabs/tool.py": {
+      "source": "cefa2a4ef579a0d254130398c5554f17fea39622b605523034c77a004fbbeb9f",
+      "productRuntime": "50febd47cbc99a6267e816f0d708b55696750eb56a982e7a880ccc435f91ef86",
+      "globalRuntime": "cefa2a4ef579a0d254130398c5554f17fea39622b605523034c77a004fbbeb9f"
+    },
+    "mold/paired-end-tabs/tool.json": {
+      "source": "af7c40aa803414138cfad68677ca9182b0f78a087d716abe093594bb1d4bb366",
+      "productRuntime": "af7c40aa803414138cfad68677ca9182b0f78a087d716abe093594bb1d4bb366",
+      "globalRuntime": "af7c40aa803414138cfad68677ca9182b0f78a087d716abe093594bb1d4bb366"
+    },
+    "mold/paired-side-slots/tool.py": {
+      "source": "4d28d4bfeccde723daeba1db94c8d08c7095e50b5b32bcf601755a18910046ff",
+      "productRuntime": "d461743e20305691a8e98c0b424e108333d67f545a8903f4866c207009d86e8a",
+      "globalRuntime": "4d28d4bfeccde723daeba1db94c8d08c7095e50b5b32bcf601755a18910046ff"
+    },
+    "mold/paired-side-slots/tool.json": {
+      "source": "d06472f1712a8a66add737c734ed77d309d83321f8f2755632a86751ed734283",
+      "productRuntime": "d06472f1712a8a66add737c734ed77d309d83321f8f2755632a86751ed734283",
+      "globalRuntime": "d06472f1712a8a66add737c734ed77d309d83321f8f2755632a86751ed734283"
+    },
+    "assembly/end-side-tab-slot/assembly.json": {
+      "source": "2239e5df2255665dd7d52baacf953b38d2a65b9d08edb7a8ea8ab9c5f87575a2",
+      "productRuntime": "2239e5df2255665dd7d52baacf953b38d2a65b9d08edb7a8ea8ab9c5f87575a2",
+      "globalRuntime": "2239e5df2255665dd7d52baacf953b38d2a65b9d08edb7a8ea8ab9c5f87575a2"
+    },
+    "assembly/wrap-a-over-b/assembly.json": {
+      "source": "860ebf99a359109e397c560c19b12da86bf2c6ffcb0a0c2178abd6b29811ca50",
+      "productRuntime": "860ebf99a359109e397c560c19b12da86bf2c6ffcb0a0c2178abd6b29811ca50",
+      "globalRuntime": "860ebf99a359109e397c560c19b12da86bf2c6ffcb0a0c2178abd6b29811ca50"
+    }
+  }
+}

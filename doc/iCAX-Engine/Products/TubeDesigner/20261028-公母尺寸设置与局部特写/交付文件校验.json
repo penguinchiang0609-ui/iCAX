@@ -1,0 +1,42 @@
+[
+  {
+    "file": "TubeDesigner.exe",
+    "sha256": "5C5F5B7C1BA37CE4EFEAEB71829E826D09C3E5B16A30C2EC72FB92220E033629",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "TubeDesigner.dll",
+    "sha256": "138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/webpage/insertJointParameterDetails.mjs",
+    "sha256": "56EE08BDDC9BA7EF1ACFF8F6AC97D5F40C12EE9EDB0076DA658E55B0E145C60C",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/webpage/punchDomPatch.mjs",
+    "sha256": "F03098A738D2BD9FDA3B83C9F228D101777A30EFC47C8E52424CBFCC0E3E3D14",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/webpage/designerViews.mjs",
+    "sha256": "F99057078B4E81523EE715742ACFE04189349F4F78E3CBDCEA564854BCD22827",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/webpage/styles/tubeDesigner.css.mjs",
+    "sha256": "FC4EBF73E1AE76FED702BC5AC6B7F3FB26B95D7488329126AF9BB587BC9C6583",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/templates/product/minimal_protective_grille/template.json",
+    "sha256": "9135191B54FB15DA6A008DB85AAA2D9EFDF3AC9644680E753264AD8806DEEEB2",
+    "matchesTestedRuntime": true
+  },
+  {
+    "file": "apps/tube-designer/templates/product/minimal_protective_grille/display.json",
+    "sha256": "1081F764B9B876F70F857ED3F96987D0819F61495DC4D04E7E9D5CC67DB413BB",
+    "matchesTestedRuntime": true
+  }
+]

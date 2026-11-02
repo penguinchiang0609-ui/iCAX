@@ -272,8 +272,7 @@ namespace
         static std::unique_ptr<iCAX::TemplateRuntime::CPythonTemplateHost> _Host;
         static std::filesystem::path _Runtime;
         static std::filesystem::path _Worker;
-        static std::unique_lock<std::mutex> _Lock(_Mutex, std::defer_lock);
-        _Lock.lock();
+        std::scoped_lock _Lock(_Mutex);
         const auto _RuntimePath = ResolveRuntimeFile(
             Options_.PythonRuntimeLibraryPath,
             {
@@ -302,7 +301,6 @@ namespace
             _Runtime = _RuntimePath;
             _Worker = _WorkerPath;
         }
-        _Lock.unlock();
         return *_Host;
     }
 
@@ -716,8 +714,14 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
             _Direction.Diagnostics.begin(),
             _Direction.Diagnostics.end());
 
+        SSectionWireOptions _SectionOptions;
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 2
+        // Checked STL containers share a process-wide registration lock. These
+        // small geometry jobs contend on it in Debug; Release keeps the pool.
+        _SectionOptions.nMaximumConcurrency = 1;
+#endif
         const auto _Sections = _DirectionService.ExtractSectionWires(
-            _Direction.AlignedGeometry);
+            _Direction.AlignedGeometry, _SectionOptions);
         if (!_Sections.bSuccess)
         {
             _Result.Status = ERecognitionStatus::SectionExtractionFailed;

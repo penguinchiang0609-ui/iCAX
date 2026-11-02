@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Classify · 切割单元检查</title>
+<link rel="stylesheet" href="viewer.css">
+<header><strong>Classify · 切割单元检查</strong><span id="total">正在读取结果…</span><a href="faces.csv">逐面清单</a><a href="summary.json">统计</a></header>
+<main><aside id="left"><label>源文件搜索<input id="search" placeholder="输入文件名"></label><select id="fileFilter"><option value="all">全部文件</option><option value="pending">含待处理面</option><option value="split">含拆分面</option><option value="approximate">含近似面</option><option value="failed">文件执行失败</option></select><div id="files" class="scroll"></div></aside>
+<section id="workspace"><select id="casePicker" aria-label="选择源文件"></select><div class="toolbar"><button id="fit">查看整件</button><button id="focus">放大选中面</button><button id="front">正视选中面</button><button id="isolate">只看选中面</button><button id="iso">斜视</button><button data-axis="x">沿 X</button><button data-axis="y">沿 Y</button><button data-axis="z">沿 Z</button></div>
+<div id="viewport"><canvas id="canvas"></canvas><div id="caption"></div><div id="hint">左键旋转 · 中/右键平移 · 滚轮缩放 · 单击面查看编号</div><div id="loading" hidden>正在加载模型…</div></div>
+<div class="toolbar options"><label><input type="checkbox" id="edges" checked> 单元边界</label><label><input type="checkbox" id="roles"> 原面边界角色</label><label><input type="checkbox" id="rulings"> 采样母线</label><label><input type="checkbox" id="profile"> 截面轮廓</label><span>色块＝单元 · 灰色＝待处理</span></div><div id="legend">边界角色：<b style="color:#31bcd3">皮上</b> · <b style="color:#f59b38">侧边</b> · <b style="color:#d87df0">内部边</b> · <b style="color:#fa5567">未决</b>。母线仅供几何检查。</div></section>
+<aside id="right"><div id="caseInfo"></div><div class="faceControls"><input id="faceSearch" placeholder="原面编号，如 35"><select id="faceFilter"><option value="all">全部面</option><option value="pending">待处理</option><option value="split">已拆成多单元</option><option value="approximate">近似候选</option><option value="exact">精确曲面候选</option></select></div><div id="faces" class="scroll"></div><div id="details" class="scroll">选择一个源文件，再点选面查看拆分信息。</div></aside></main>
+<footer>当前仅检查几何候选；“精确曲面”表示保留原支撑曲面。母线区间及近似误差采用有限采样，未完成连续证书、摆放、半切透工艺或真实刀路验收。近似阈值 0.01 mm。</footer>
+<script src="index-data.js"></script><script type="module" src="viewer.js"></script></html>

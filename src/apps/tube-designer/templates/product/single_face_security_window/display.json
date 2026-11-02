@@ -1065,6 +1065,15 @@
         }
       },
       "annotations": {
+        "doorPosition": {
+          "kind": "parameter",
+          "group": "door_location",
+          "label": {
+            "zh-CN": "逃生窗位置"
+          },
+          "order": 199,
+          "editable": true
+        },
         "width": {
           "kind": "linear",
           "label": {
@@ -1350,6 +1359,12 @@
             "zh-CN": "竖杆最大中心距"
           },
           "order": 225,
+          "editable": true
+        },
+        "barDistribution": {
+          "kind": "parameter",
+          "group": "main_grid",
+          "order": 55,
           "editable": true
         }
       },

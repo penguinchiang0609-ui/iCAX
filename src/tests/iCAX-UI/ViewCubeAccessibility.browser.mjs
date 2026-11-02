@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const source = readFileSync(new URL("../../apps/_shared/workbench/viewport/viewCube.mjs", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../../apps/_shared/workbench/styles/laser3dcam.css", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../../apps/_shared/workbench/styles/workbench.css", import.meta.url), "utf8");
 const browser = await chromium.launch({
   headless: true,
   channel: process.env.ICAX_BROWSER_CHANNEL || "msedge",
@@ -17,11 +17,11 @@ try {
     if (new URL(route.request().url()).pathname === "/viewCube.mjs") {
       return route.fulfill({ contentType: "text/javascript", body: source });
     }
-    if (new URL(route.request().url()).pathname === "/laser3dcam.css") {
+    if (new URL(route.request().url()).pathname === "/workbench.css") {
       return route.fulfill({ contentType: "text/css", body: styles });
     }
     return route.fulfill({ contentType: "text/html", body: `
-      <link rel="stylesheet" href="/laser3dcam.css">
+      <link rel="stylesheet" href="/workbench.css">
       <div id="scroll" style="height:80px;overflow:auto">
         <div style="height:120px"></div><div id="mount" style="position:relative;height:116px"></div>
       </div>

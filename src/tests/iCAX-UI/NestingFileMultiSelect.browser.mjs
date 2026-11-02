@@ -36,7 +36,7 @@ try {
           ...paths.map((path, i) => ({ path, name: `${i + 1}_tube.step`, sizeBytes: 500, lastModifiedNs: '1001' })),
           { path: 'D:/CAD/readme.txt', name: 'readme.txt' } ] };
       if (method === 'TubeDesigner.PreviewNestingPartFile') return { sourcePath: payload.sourcePath, sizeBytes: 500, lastModifiedNs: '1001',
-        wireframe: { polylines: [[-100,-10,0,100,-10,0,100,10,0,-100,10,0,-100,-10,0]], edgeCount: 1, pointCount: 5 } };
+        wireframe: { polylinesJson: JSON.stringify([[-100,-10,0,100,-10,0,100,10,0,-100,10,0,-100,-10,0]]), edgeCount: 1, pointCount: 5 } };
       if (method === 'TubeDesigner.ReleaseNestingPartFilePreview') return { released: true };
       if (method === 'TubeDesigner.ImportNestingPart') {
         if (f.pendingImport) throw Error('Concurrent imports are forbidden');

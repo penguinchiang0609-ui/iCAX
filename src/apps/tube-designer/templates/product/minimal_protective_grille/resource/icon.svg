@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="极简防护网">
+  <rect x="1" y="1" width="94" height="94" rx="12" fill="#edf7f6"/>
+  <g fill="none" stroke="#168c83" stroke-width="3.5" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M20 13v70M76 13v70"/>
+    <path d="M20 22h56M20 34h56M20 46h56M42 58h34M20 70h56M20 82h56"/>
+    <path d="M42 46v24"/>
+  </g>
+  <path d="M24 50h14v16H24z" fill="#e8bc58" fill-opacity=".45"/>
+</svg>

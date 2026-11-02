@@ -51,6 +51,54 @@ void Sized(Bytes& b, const Bytes& value) {
     Require(value.size() <= 65535, "Test field too large");
     U16(b, static_cast<std::uint16_t>(value.size())); b.insert(b.end(), value.begin(), value.end());
 }
+void QuoteEvidenceTests() {
+    TestKey ak;
+    const auto pub = ak.Public();
+    auto area = tpm::AkTemplate();
+    area.resize(area.size() - 4); // Replace the template's empty ECC coordinates.
+    Sized(area, Bytes(pub.begin() + 8, pub.begin() + 40));
+    Sized(area, Bytes(pub.begin() + 40, pub.end()));
+    Bytes qualifiedInput; Append32(qualifiedInput, 0x40000001);
+    const auto name = TpmSha256Name(area);
+    qualifiedInput.insert(qualifiedInput.end(), name.begin(), name.end());
+    const auto qualified = TpmSha256Name(qualifiedInput);
+    const auto nonce = RandomChallenge();
+    const auto sign = [&](const Bytes& attest) {
+        const auto raw = SignDeviceChallenge(ak.key.value, attest);
+        Bytes wire; U16(wire, 0x18); U16(wire, 11);
+        Sized(wire, Bytes(raw.begin(), raw.begin() + 32));
+        Sized(wire, Bytes(raw.begin() + 32, raw.end()));
+        return tpm::Evidence{attest, wire};
+    };
+    const auto make = [&](std::uint8_t safe) {
+        Bytes data; Append32(data, 0xff544347); U16(data, 0x8018);
+        Sized(data, qualified); Sized(data, Bytes(nonce.begin(), nonce.end()));
+        Append64(data, 0); Append32(data, 2); Append32(data, 0); data.push_back(safe); Append64(data, 1);
+        Append32(data, 0); const auto digest = Hash({}); Sized(data, Bytes(digest.begin(), digest.end()));
+        return sign(data);
+    };
+    for (const auto safe : std::array<std::uint8_t, 2>{0, 1}) {
+        const auto evidence = make(safe);
+        tpm::VerifyQuote(area, qualified, nonce, evidence); ++checks;
+        Reject([&] { tpm::VerifyQuote(area, qualified, RandomChallenge(), evidence); }, "Quote replay rejected for either clock state");
+        auto wrongSigner = qualified; wrongSigner.back() ^= 1;
+        Reject([&] { tpm::VerifyQuote(area, wrongSigner, nonce, evidence); }, "Quote signer binding preserved");
+        for (std::size_t i = 0; i < evidence.attest.size(); ++i) {
+            auto bad = evidence; bad.attest[i] ^= 1;
+            Reject([&] { tpm::VerifyQuote(area, qualified, nonce, bad); }, "Quote byte tamper rejected");
+            const auto shortEvidence = sign(Bytes(evidence.attest.begin(), evidence.attest.begin() + i));
+            Reject([&] { tpm::VerifyQuote(area, qualified, nonce, shortEvidence); }, "Signed truncated quote rejected");
+        }
+        auto badSignature = evidence; badSignature.signature.back() ^= 1;
+        Reject([&] { tpm::VerifyQuote(area, qualified, nonce, badSignature); }, "Quote signature tamper rejected");
+        auto badDigest = evidence.attest; badDigest.back() ^= 1;
+        Reject([&] { tpm::VerifyQuote(area, qualified, nonce, sign(badDigest)); }, "Signed unexpected PCR digest rejected");
+        auto trailing = evidence.attest; trailing.push_back(0);
+        Reject([&] { tpm::VerifyQuote(area, qualified, nonce, sign(trailing)); }, "Signed trailing quote rejected");
+    }
+    for (unsigned int flag = 2; flag <= 255; ++flag)
+        Reject([&] { tpm::VerifyQuote(area, qualified, nonce, make(static_cast<std::uint8_t>(flag))); }, "Malformed TPMI_YES_NO rejected");
+}
 void NvEvidenceTests() {
     TestKey ak;
     const auto pub = ak.Public();
@@ -63,10 +111,10 @@ void NvEvidenceTests() {
     U16(nvArea, 0); U16(nvArea, 8);
     NvBinding binding{akArea, TpmSha256Name(akArea), nvArea, 25};
     const auto nonce = RandomChallenge();
-    const auto makeAttest = [&](std::uint64_t counter, bool safe = true) {
+    const auto makeAttest = [&](std::uint64_t counter, std::uint8_t safe = 1) {
         Bytes data; Append32(data, 0xff544347); U16(data, 0x8014);
         Sized(data, binding.attestationKeyQualifiedName); Sized(data, Bytes(nonce.begin(), nonce.end()));
-        Append64(data, 1000); Append32(data, 1); Append32(data, 1); data.push_back(safe ? 1 : 0); Append64(data, 1);
+        Append64(data, 1000); Append32(data, 1); Append32(data, 1); data.push_back(safe); Append64(data, 1);
         Sized(data, TpmSha256Name(nvArea)); U16(data, 0);
         Bytes value; Append64(value, counter); Sized(data, value); return data;
     };
@@ -92,8 +140,33 @@ void NvEvidenceTests() {
     Reject([&] { VerifyNvEvidence(writableKey, nonce, attest, signature); }, "Unrestricted AK rejected");
     auto old = makeAttest(24);
     Reject([&] { VerifyNvEvidence(binding, nonce, old, sign(old)); }, "Counter older than enrollment");
-    auto unsafe = makeAttest(26, false);
-    Reject([&] { VerifyNvEvidence(binding, nonce, unsafe, sign(unsafe)); }, "Unsafe TPM evidence rejected");
+    const auto discontinuousClock = makeAttest(26, 0);
+    Check(VerifyNvEvidence(binding, nonce, discontinuousClock, sign(discontinuousClock)).Value() == 26,
+        "Fresh signed non-orderly counter does not depend on TPM clock continuity");
+    Reject([&] { VerifyNvEvidence(binding, RandomChallenge(), discontinuousClock, sign(discontinuousClock)); },
+        "Clock discontinuity does not permit NV replay");
+    auto oldWithoutClock = makeAttest(24, 0);
+    Reject([&] { VerifyNvEvidence(binding, nonce, oldWithoutClock, sign(oldWithoutClock)); },
+        "Clock discontinuity does not permit counter rollback");
+    auto orderly = binding; orderly.nvPublicArea[6] |= 0x04;
+    Reject([&] { VerifyNvEvidence(orderly, nonce, discontinuousClock, sign(discontinuousClock)); },
+        "Orderly counter remains forbidden");
+    for (unsigned int flag = 2; flag <= 255; ++flag) {
+        const auto malformed = makeAttest(26, static_cast<std::uint8_t>(flag));
+        Reject([&] { VerifyNvEvidence(binding, nonce, malformed, sign(malformed)); }, "Malformed NV clock flag rejected");
+    }
+    for (std::size_t i = 0; i < discontinuousClock.size(); ++i) {
+        auto bad = discontinuousClock; bad[i] ^= 1;
+        Reject([&] { VerifyNvEvidence(binding, nonce, bad, sign(discontinuousClock)); }, "Discontinuous clock evidence tamper rejected");
+    }
+    Certificate trial; trial.kind = Kind::Trial; trial.notBefore = 100000; trial.expiresAt = trial.notBefore + 7200;
+    trial.trialNvPublic = nvArea; trial.trialInitialCounter = 25; trial.trialQuantumSeconds = 3600;
+    const auto verifiedCount = VerifyNvEvidence(binding, nonce, discontinuousClock, sign(discontinuousClock)).Value();
+    Check(!PlanTrialTime(trial, verifiedCount, trial.notBefore + 3600).expired, "Trial accepts fresh counter with discontinuous TPM Clock");
+    Reject([&] { PlanTrialTime(trial, verifiedCount, trial.notBefore); }, "System clock rollback still rejected with safe=0");
+    const auto exhausted = makeAttest(27, 0);
+    const auto exhaustedCount = VerifyNvEvidence(binding, nonce, exhausted, sign(exhausted)).Value();
+    Check(PlanTrialTime(trial, exhaustedCount, trial.notBefore).expired, "Persistent trial expiration still enforced with safe=0");
     auto forgedType = attest; forgedType[5] = 0x17;
     Reject([&] { VerifyNvEvidence(binding, nonce, forgedType, sign(forgedType)); }, "Wrong attestation type");
     auto trailing = attest; trailing.push_back(0);
@@ -211,6 +284,7 @@ int main(int argc, char** argv) {
         Reject([&] { VerifyAtSite<2, Feature::ProductExport>(Sign(issuer, Body(device.Public(), Kind::Permanent, 1)),
             "test-issuer", pub, 1, L"does-not-exist"); }, "Feature denial before device access");
         Reject([&] { VerifyAtSite<3, Feature::ProductDesign>(file, "test-issuer", pub, 3, L"does-not-exist"); }, "Version denial");
+        QuoteEvidenceTests();
         NvEvidenceTests();
         TrialTimeTests();
         std::cout << checks << " checks passed (ephemeral software-key tests, not TPM certification)\n";

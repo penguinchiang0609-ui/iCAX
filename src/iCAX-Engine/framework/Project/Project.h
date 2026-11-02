@@ -22,6 +22,7 @@ namespace iCAX
 {
     namespace Project
     {
+        enum class EAutoSaveCheckpoint { SnapshotRequired, Journal, Deferred };
         class CProject;
 
         enum class EProjectState : uint8_t
@@ -108,6 +109,10 @@ namespace iCAX
                 IN uint32_t nVersion_);
             void CloseQuickSaveLog();
             bool IsQuickSaveLogOpen() const;
+            // Capture only after an archive was restored (before journal
+            // replay), or after an archive was written successfully.
+            void CaptureAutoSaveBaseline(const std::string& strArchivePath_);
+            EAutoSaveCheckpoint TryAutoSaveJournal(const std::string& strArchivePath_);
 
             const std::string& GetStartupComponent() const;
 
@@ -162,6 +167,8 @@ namespace iCAX
             std::shared_ptr<CProjectScene> RequireMainScene() const;
             static EProjectState ConvertSceneState(IN ESceneState State_);
             static CProjectFault ConvertSceneFault(IN const CSceneFault& Fault_);
+            std::string AutoSaveSettingsSignature() const;
+            std::vector<iCAX::Resource::CResourceInfo> AutoSavePersistentResources() const;
 
         private:
             mutable std::recursive_mutex m_Mutex;
@@ -184,6 +191,11 @@ namespace iCAX
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
             SceneFrameHandler m_SceneFrameHandler;
             std::function<void(iCAX::Resource::CResourceLibrary&)> m_ResourceLibraryInitializer;
+            std::string m_AutoSaveArchivePath;
+            std::string m_AutoSaveSettingsSignature;
+            std::vector<iCAX::Resource::CResourceInfo> m_AutoSaveResources;
+            uint64_t m_nAutoSaveArchiveSize=0;
+            int64_t m_nAutoSaveArchiveWriteTime=0;
         };
     }
 }

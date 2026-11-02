@@ -35,16 +35,16 @@ try {
     ] } };
     const feature = { id: "recovered-curve", toolRef: { id: descriptor.id }, toolTarget: "side", section,
       toolParameters: {}, station: 100, face: "top", cutDepth: 0.2, blindHole: true };
-    const state = model.createDrawingState({ entityId: "P1026", length: 500, properties: { "tubeDesigner.partDrawing": {
+    const state = model.createDrawingState({entityId:"curve-draft",length:500},{
       features: [feature], ends: {}, drawing: { length: 500, section: { source: "recovered", name: "主管", profile: { contours: [{ kind: "circle", radius: 20 }] } } },
-    } } });
+    });
     model.installDrawingCatalogue(state, { tools: [{ ...descriptor, digest: "fixture" }] });
     state.drawing = { length: 500, name: "P1026", section: { name: "主管", profile: { contours: [{ kind: "circle", radius: 20 }] } } };
     // Enough real feature-tree rows to exercise independent left/nested scrolling.
     state.features.push(...Array.from({ length: 35 }, (_, index) => model.normalizeDrawingFeature({ ...structuredClone(feature), id: `extra-${index}` })));
     state.draft = state.features[0];
     const view = { activeAreaId: "nesting", pending: false, tubeDesignerPartDrawing: {
-      part: { entityId: "P1026" }, mainApplied: true, selected: feature.id, mode: "feature", state,
+      mainApplied: true, selected: feature.id, mode: "feature", state,
     } };
     const mount = document.querySelector("#app");
     mount.innerHTML = drawing.renderPartDrawingDialog(view);

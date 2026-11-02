@@ -171,6 +171,13 @@
     <ClCompile Include="Variant.cpp" />
     <ClCompile Include="VariantSerializer.cpp" />
   </ItemGroup>
+  <!-- Recursive value ownership/serialization is hot even in a Debug host. -->
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="Variant.cpp;VariantSerializer.cpp">
+      <Optimization>MaxSpeed</Optimization><InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks><FloatingPointModel>Precise</FloatingPointModel><PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

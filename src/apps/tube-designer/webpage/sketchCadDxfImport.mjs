@@ -1,5 +1,5 @@
 import { parseDxfDocument } from "../../../iCAX-UI/SDK/Cad/dxfDocument.mjs";
-import { curvePoint, reverseSegment, TAU } from "./sketchGeometry.mjs";
+import { curvePoint, reverseSegment, TAU } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 
 const unitScale = { 0: 1, 1: 25.4, 2: 304.8, 3: 1609344, 4: 1, 5: 10, 6: 1000, 7: 1000000, 8: 0.0000254, 9: 0.0254, 10: 914.4, 11: 1e-7, 12: 1e-6, 13: 0.001, 14: 100, 15: 10000, 16: 100000, 17: 1e12, 18: 1.495978707e14, 19: 9.4607304725808e18, 20: 3.085677581491367e19, 21: 1200000/3937, 22: 100000/3937, 23: 3600000/3937, 24: 6336000000/3937 };
 const finite = (value, label = "CAD 数值") => {

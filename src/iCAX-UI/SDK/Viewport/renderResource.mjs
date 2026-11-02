@@ -90,6 +90,7 @@ export function parseRenderGeometryResource(buffer) {
       textureCoordinates: readFloat32Vector(view, root, 7),
       vertexColors: readUint32Vector(view, root, 8),
       indices: readUint32Vector(view, root, 9),
+      ...parseTopologyEdges(readFloat32Vector(view, root, 15), readUint32Vector(view, root, 16)),
     });
   }
   if (kindCode === 2) {
@@ -137,6 +138,32 @@ export function parseRenderGeometryResource(buffer) {
     });
   }
   throw new Error(`Unsupported render geometry kind: ${kindCode}`);
+}
+
+// A CAD edge is an independent polyline. Never join the end of one range to the next.
+export function parseTopologyEdges(positions, ranges) {
+  if (positions.length % 3 || ranges.length % 3) throw new Error("Invalid CAD edge buffer");
+  const all = [], features = [];
+  let next = 0;
+  for (let i = 0; i < ranges.length; i += 3) {
+    const [first, count, feature] = ranges.subarray(i, i + 3);
+    if (first !== next || count < 2 || first + count > positions.length / 3 || feature > 1) {
+      throw new Error("Invalid CAD edge range");
+    }
+    for (let j = first; j + 1 < first + count; j++) {
+      const segment = Array.from(positions.subarray(j * 3, j * 3 + 6));
+      if (!segment.every(Number.isFinite)) throw new Error("Invalid CAD edge point");
+      all.push(...segment);
+      if (feature) features.push(...segment);
+    }
+    next = first + count;
+  }
+  if (next !== positions.length / 3) throw new Error("Incomplete CAD edge ranges");
+  return {
+    topologyEdgeCount: ranges.length / 3,
+    topologyEdges: new Float32Array(all),
+    topologyFeatureEdges: new Float32Array(features),
+  };
 }
 
 export function parseRenderMaterialResource(buffer) {

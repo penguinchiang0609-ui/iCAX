@@ -11,16 +11,23 @@
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
+#include <OpenCascadeResourceImport/TubeCadDocumentService.h>
+#include <OpenCascadeResourceImport/TubeCadJson.h>
+#include <OpenCascadeResourceImport/OpenCascadeTubeCSGConverter.h>
+#include <GeometryData/TubeNeutralPersistence.h>
 #include <ProjectContext/ISceneContext.h>
 #include <ProjectFile/ProjectFile.h>
 #include <Resources/ResourceLibrary.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <Resources/ResourceLoaderRegistrationCatalog.h>
+#include <Resources/ResourcePersistenceRegistrationCatalog.h>
 #include <Resources/FlatBufferResource.h>
 #include <RenderData/RenderData.h>
 #include <TubeDesigner/ComponentModelLibrary.h>
 #include <RenderInteraction/RenderInteractionComponents.h>
 #include <SDO/SDORegistrationCatalog.h>
+#include <Services/ServiceRegistrationCatalog.h>
+#include <Services/ServiceProvider.h>
 #include <TemplateRuntime/PythonTemplateHost.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
 #include <TemplateRuntime/TemplateCodec.h>
@@ -41,6 +48,7 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <cmath>
+#include <numbers>
 #include <cctype>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
@@ -67,8 +75,7 @@ bool logInvocations=true;
 using iCAX::Data::ObjectMap;
 using iCAX::Data::VariantArray;
 using iCAX::TubeDesigner::CManufacturingPartComponent;
-using iCAX::TubeDesigner::CPartDrawingComponent;
-using iCAX::TubeDesigner::CPunchWizardComponent;
+using iCAX::TubeDesigner::CTubePartCadComponent;
 using iCAX::GeometryData::BRepModel;
 
 class Application final : public iCAX::Application::IApplicationContext {
@@ -88,6 +95,7 @@ public:
     Scene(iCAX::Data::uuid projectId=iCAX::Data::GenerateNewUUID(),iCAX::Data::uuid sceneId=iCAX::Data::GenerateNewUUID(),bool root=true,bool resourceExporters=false)
         : project(projectId),id(sceneId) {
         (void)iCAX::TubeDesigner::GetTubeDesignerContractVersion();
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services);
         if(resourceExporters) {
             auto registry=std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
             iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayAll(*registry);
@@ -103,14 +111,12 @@ public:
              std::filesystem::path(transformModule).string(),std::filesystem::path(exe).string()});
         repository=iCAX::Database::GenerateRepository(id,registry);
         resources.SetScope(iCAX::Resource::MakeSceneResourceScope("icax","icax.tube-designer",project,id));
-        iCAX::Resource::CResourceVersionCodec codec;
-        codec.Serialize=[](const std::shared_ptr<void>& value)->std::optional<std::vector<uint8_t>> {
-            return iCAX::GeometryData::Persistence::Serialize(*std::static_pointer_cast<BRepModel>(value));
-        };
-        codec.Deserialize=[](std::span<const uint8_t> bytes)->std::shared_ptr<void> {
-            return std::make_shared<BRepModel>(iCAX::GeometryData::Persistence::Deserialize(bytes));
-        };
-        if(!resources.RegisterPersistenceCodec<BRepModel>(BRepModel::kResourceTypeName,codec))throw std::runtime_error("Cannot register BRep persistence");
+        wchar_t cadModule[32768]{};
+        const auto cadHandle = GetModuleHandleW(L"OpenCascadeResourceImport.dll");
+        if (!cadHandle || !GetModuleFileNameW(cadHandle,cadModule,32768))
+            throw std::runtime_error("Cannot locate production CAD persistence codecs");
+        iCAX::Resource::CResourcePersistenceRegistrationCatalog::ReplayByModulePaths(
+            resources,{std::filesystem::path(cadModule).string()});
         if(root) {
             repository->BeginLoadBaseline();
             auto entity=repository->GetMetaEntity();if(!entity)entity=repository->CreateEntity(id);
@@ -132,13 +138,14 @@ public:
     bool HasPDOHub() const override { return false; }
     iCAX::PDO::IPDOHub& PDOHub() override { throw std::logic_error("Acceptance does not create UI/PDO"); }
     const iCAX::PDO::IPDOHub& PDOHub() const override { throw std::logic_error("Acceptance does not create UI/PDO"); }
-    iCAX::Services::CServiceProvider& Services() const override { throw std::logic_error("Acceptance does not create scene services"); }
+    iCAX::Services::CServiceProvider& Services() const override { return services; }
     iCAX::Data::uuid project;
 private:
     iCAX::Data::uuid id;
     std::string name="Punch persistence acceptance";
     std::shared_ptr<iCAX::Database::IRepository> repository;
     iCAX::Resource::CResourceLibrary resources;
+    mutable iCAX::Services::CServiceProvider services;
 };
 
 ObjectMap invoke(Scene& scene,const std::string& method,const ObjectMap& payload,iCAX::Product::IProductContext* product=nullptr,
@@ -250,7 +257,7 @@ TEST(ProfileLibrarySDOTest, ImportedStepPersistsDirectFittingParameters)
     ObjectMap result;
     try {
         result=invoke(scene,"ImportNestingPart",{{"sourcePath",(std::filesystem::current_path()/
-            "samples/tube-one/01_round_tube_plain.step").string()}});
+            "samples/tube-geometry/01_round_tube_plain.step").string()}});
     } catch(...) {
         runtime(guard,{{"action",std::string("unguard")}});
         throw;
@@ -277,8 +284,11 @@ ObjectMap end(const std::string& id,ObjectMap parameters={},double trim=0,Object
     if(!profileSection.empty())e["section"]=profileSection;return e;
 }
 ObjectMap request(const std::string& name,const std::string& profileId,ObjectMap ends={},VariantArray features={}) {
+    const auto values=profileId=="rect"
+        ?ObjectMap{{"width",40.0},{"depth",20.0},{"wallThickness",2.0},{"cornerRadius",2.0}}
+        :ObjectMap{};
     return {{"name",name},{"quantity",2ull},{"material",std::string("acceptance-only")},
-        {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",1000.},{"section",section(systemProfile(profileId))}}},
+        {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",1000.},{"section",section(systemProfile(profileId,values))}}},
         {"features",features},{"ends",ends}};
 }
 
@@ -1466,11 +1476,21 @@ std::shared_ptr<CManufacturingPartComponent> part(Scene& scene,const std::string
     const auto p=std::dynamic_pointer_cast<CManufacturingPartComponent>(entity->GetComponent(CManufacturingPartComponent::S_ClassName));
     if(!p)throw std::runtime_error("Saved manufacturing component missing");return p;
 }
-ObjectMap recipe(const std::shared_ptr<CManufacturingPartComponent>& p) {
-    const auto component=std::dynamic_pointer_cast<CPunchWizardComponent>(
-        p->GetEntity()->GetComponent(CPunchWizardComponent::S_ClassName));
-    if(!component)throw std::runtime_error("Saved punch wizard component missing");
-    return component->GetDefinition();
+ObjectMap cadDocument(Scene& scene,const std::string& id) {
+    const auto component=std::dynamic_pointer_cast<CTubePartCadComponent>(
+        part(scene,id)->GetEntity()->GetComponent(CTubePartCadComponent::S_ClassName));
+    if(!component)throw std::runtime_error("Saved neutral CAD component missing");
+    const auto result=invoke(scene,"GetTubeCadDocument",{{"partEntityId",id}});
+    EXPECT_FALSE(result.at("nodes").To<VariantArray>().empty());
+    return result;
+}
+ObjectMap cadPayload(Scene& scene,const std::string& id) {
+    const auto document=cadDocument(scene,id);
+    return {{"partEntityId",id},{"resourceVersion",document.at("resourceVersion")},
+        {"revision",document.at("revision")},{"geometry",document.at("geometry")}};
+}
+ObjectMap assemblyPlanMetadata(const std::shared_ptr<CManufacturingPartComponent>& p) {
+    return p->GetItemProperties().at("manufacturing.assemblyProcessPlan").To<ObjectMap>();
 }
 TopoDS_Shape shape(Scene& scene,const std::shared_ptr<CManufacturingPartComponent>& p) {
     const auto data=scene.Resources().Get<BRepModel>(p->GetManufacturingGeometryResourceID(),p->GetManufacturingGeometryResourceVersion());
@@ -1478,7 +1498,7 @@ TopoDS_Shape shape(Scene& scene,const std::shared_ptr<CManufacturingPartComponen
     const auto result=iCAX::OpenCascade::BuildOpenCascadeShape(*data);
     if(!result.bOK||result.Shape.IsNull())throw std::runtime_error("Saved final BRep cannot rebuild");return result.Shape;
 }
-double volume(const TopoDS_Shape& shape) { GProp_GProps properties;BRepGProp::VolumeProperties(shape,properties);return properties.Mass(); }
+double volume(const TopoDS_Shape& shape) { GProp_GProps properties;BRepGProp::VolumeProperties(shape,properties,1.0e-9);return properties.Mass(); }
 std::vector<uint8_t> persistedShapeBytes(Scene& scene,const std::shared_ptr<CManufacturingPartComponent>& p) {
     return iCAX::GeometryData::Persistence::Serialize(*scene.Resources().Get<BRepModel>(p->GetManufacturingGeometryResourceID(),p->GetManufacturingGeometryResourceVersion()));
 }
@@ -1498,7 +1518,7 @@ void checkSameShape(const TopoDS_Shape& a,const TopoDS_Shape& b) {
         // This diagnostic does not decide persistence correctness: independently
         // rebuilt coincident OCCT faces can defeat Common despite identical bytes.
     }
-    GProp_GProps va,vb,sa,sb;BRepGProp::VolumeProperties(a,va);BRepGProp::VolumeProperties(b,vb);
+    GProp_GProps va,vb,sa,sb;BRepGProp::VolumeProperties(a,va,1.0e-9);BRepGProp::VolumeProperties(b,vb,1.0e-9);
     BRepGProp::SurfaceProperties(a,sa);BRepGProp::SurfaceProperties(b,sb);
     EXPECT_NEAR(sa.Mass(),sb.Mass(),std::max(1.,sa.Mass())*1e-7);
     EXPECT_NEAR(va.CentreOfMass().Distance(vb.CentreOfMass()),0,1e-5);
@@ -1506,126 +1526,62 @@ void checkSameShape(const TopoDS_Shape& a,const TopoDS_Shape& b) {
     double aa[6],ab[6];ba.Get(aa[0],aa[1],aa[2],aa[3],aa[4],aa[5]);bb.Get(ab[0],ab[1],ab[2],ab[3],ab[4],ab[5]);
     for(int i=0;i<6;++i)EXPECT_NEAR(aa[i],ab[i],1e-5);
 }
-ObjectMap editPayload(Scene& scene,const std::string& id,const ObjectMap& config) {
-    const auto p=part(scene,id);
-    return {{"partEntityId",id},{"resourceId",p->GetManufacturingGeometryResourceID()},
-        {"resourceVersion",p->GetManufacturingGeometryResourceVersion()},{"drawing",config.at("drawing")},
-        {"features",config.at("features")},{"ends",config.at("ends")}};
-}
-
-TEST(ImportedPartDrawingRecoverySDO, PlainTubeGetsReplayableDrawingWithoutChangingOriginal)
-{
-    Scene scene;
-    const auto imported=invoke(scene,"ImportNestingPart",{{"sourcePath",(std::filesystem::current_path()/
-        "samples/tube-one/01_round_tube_plain.step").string()}});
-    const auto id=imported.at("partEntityId").To<std::string>();
-    const auto original=part(scene,id);
-    const auto originalShape=shape(scene,original);
-    const auto originalBytes=persistedShapeBytes(scene,original);
-    const auto version=original->GetManufacturingGeometryResourceVersion();
-    EXPECT_THROW(invoke(scene,"RecoverImportedPartDrawing",{{"partEntityId",id},
-        {"resourceVersion",version+1}}),std::exception);
-    EXPECT_THROW(invoke(scene,"GetPartDrawing",{{"partEntityId",id}}),std::exception);
-    EXPECT_FALSE(original->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
-
-    const auto recovered=invoke(scene,"RecoverImportedPartDrawing",{{"partEntityId",id},
-        {"resourceVersion",version}});
-    EXPECT_FALSE(recovered.contains("tubeDesigner"));
-    EXPECT_TRUE(recovered.at("ready").To<bool>());
-    EXPECT_EQ(recovered.at("partEntityId").To<std::string>(),id);
-    const auto saved=part(scene,id);
-    EXPECT_EQ(originalBytes,persistedShapeBytes(scene,saved));
-    const auto component=std::dynamic_pointer_cast<CPartDrawingComponent>(
-        saved->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
-    ASSERT_TRUE(component);
-    const auto config=component->GetDefinition();
-    const auto fetched=invoke(scene,"GetPartDrawing",{{"partEntityId",id},
-        {"resourceVersion",version}});
-    EXPECT_THROW(invoke(scene,"GetPartDrawing",{{"partEntityId",id},
-        {"resourceVersion",version+1}}),std::exception);
-    EXPECT_FALSE(fetched.contains("tubeDesigner"));
-    EXPECT_EQ(fetched.at("definition").To<ObjectMap>(),config);
-    EXPECT_TRUE(config.at("features").To<VariantArray>().empty());
-    EXPECT_NE(config.at("baseResourceId").To<std::string>(),
-        saved->GetManufacturingGeometryResourceID());
-    EXPECT_EQ(config.at("drawing").To<ObjectMap>().at("section").To<ObjectMap>()
-        .at("profile").To<ObjectMap>().at("schema").To<std::string>(),
-        "icax.imported-tube-profile");
-
-    // The normal editor Apply path must accept the recovered base and section.
-    EXPECT_NO_THROW(invoke(scene,"ApplyPartDrawing",editPayload(scene,id,config)));
-    checkSameShape(originalShape,shape(scene,part(scene,id)));
-
-    // Changing length rebuilds the blank but keeps the imported part's start
-    // datum; it must not jump from its original -L/2 frame to X=0.
-    auto resized=editPayload(scene,id,config);
-    auto drawing=resized.at("drawing").To<ObjectMap>();
-    drawing["length"]=drawing.at("length").To<double>()+10.0;
-    resized["drawing"]=drawing;
-    try { invoke(scene,"ApplyPartDrawing",resized); }
-    catch(const std::exception& error) { FAIL()<<error.what(); }
-    const auto changed=part(scene,id);
-    const auto changedComponent=std::dynamic_pointer_cast<CPartDrawingComponent>(
-        changed->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
-    ASSERT_TRUE(changedComponent);
-    EXPECT_TRUE(changedComponent->GetDefinition().contains("blankOrigin"));
-    Bnd_Box beforeBox,afterBox;
-    BRepBndLib::AddOptimal(originalShape,beforeBox,false,false);
-    BRepBndLib::AddOptimal(shape(scene,changed),afterBox,false,false);
-    double x0,y0,z0,x1,y1,z1, ax0,ay0,az0,ax1,ay1,az1;
-    beforeBox.Get(x0,y0,z0,x1,y1,z1);
-    afterBox.Get(ax0,ay0,az0,ax1,ay1,az1);
-    EXPECT_NEAR(ax0,x0,1e-6);
-    EXPECT_NEAR(ax1,x1+10.0,1e-6);
-}
-void assertFrozenRecords(const ObjectMap& config) {
-    for(const auto& f:config.at("features").To<VariantArray>()) {
-        const auto record=f.To<ObjectMap>();EXPECT_FALSE(record.contains("toolSnapshot"));
-        EXPECT_TRUE(record.contains("frozenTool"));EXPECT_TRUE(record.contains("frozenCut"));
-    }
-    for(const auto& [key,value]:config.at("ends").To<ObjectMap>()) {
-        const auto record=value.To<ObjectMap>();if(record.at("type").To<std::string>()=="keep")continue;
-        EXPECT_FALSE(record.contains("toolSnapshot"));EXPECT_TRUE(record.contains("frozenTool"));EXPECT_TRUE(record.contains("frozenCut"));
-    }
+void checkSameCadShape(const TopoDS_Shape& a,const TopoDS_Shape& b) {
+    checkSameShape(a,b);
+    const auto proof=iCAX::OpenCascade::ValidateTubeCSGShapeReplay(a,b);
+    std::cout<<"[cad-shape-proof] source="<<std::setprecision(17)<<volume(a)
+        <<" result="<<volume(b)<<" missing="<<proof.MissingVolume
+        <<" unexpected="<<proof.UnexpectedVolume<<std::endl;
+    EXPECT_TRUE(proof.bEquivalent)<<"missing="<<proof.MissingVolume
+        <<" unexpected="<<proof.UnexpectedVolume<<" relative="<<proof.RelativeVolumeError;
 }
 void acceptance(const std::string& name,const ObjectMap& create,const std::function<void(ObjectMap&)>& change,
     const std::function<void(Scene&,const std::string&)>& verify={}) {
-    const auto dir=std::filesystem::current_path()/"tmp/punch-persistence-acceptance";std::filesystem::create_directories(dir);
-    Scene scene;const auto added=invoke(scene,"AddNestingPunchPart",create);const auto id=added.at("partEntityId").To<std::string>();
-    const auto initial=part(scene,id);EXPECT_EQ(initial->GetQuantity(),2ull);
-    EXPECT_FALSE(initial->GetItemProperties().contains("tubeDesigner.punchWizard"));
-    ASSERT_TRUE(std::dynamic_pointer_cast<CPunchWizardComponent>(
-        initial->GetEntity()->GetComponent(CPunchWizardComponent::S_ClassName)));
-    const auto initialRecipe=recipe(initial);const auto initialShape=shape(scene,initial);const auto initialBytes=persistedShapeBytes(scene,initial);assertFrozenRecords(initialRecipe);
+    const auto dir=std::filesystem::current_path()/"tmp/punch-persistence-acceptance";
+    std::filesystem::create_directories(dir);
+    Scene scene;
+    const auto originalId=invoke(scene,"AddNestingPunchPart",create).at("partEntityId").To<std::string>();
+    const auto initial=part(scene,originalId);EXPECT_EQ(initial->GetQuantity(),2ull);
+    const auto initialDocument=cadDocument(scene,originalId);
+    const auto initialShape=shape(scene,initial);
+    const auto initialBytes=persistedShapeBytes(scene,initial);
+    auto changed=create;change(changed);
+    const auto id=invoke(scene,"AddNestingPunchPart",changed).at("partEntityId").To<std::string>();
+    EXPECT_NE(originalId,id);
+    const auto changedDocument=cadDocument(scene,id);
+    const auto changedShape=shape(scene,part(scene,id));
+    const auto changedBytes=persistedShapeBytes(scene,part(scene,id));
+    if(verify)verify(scene,id);
     iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_TUBE_DESIGNER",.ProductID="icax.tube-designer",.CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});
     iCAX::ProjectFile::CProjectDocumentInfo info;info.ProjectID=scene.project;info.MainSceneID=scene.GetSceneID();info.ProjectName=name;
     const auto path=dir/(name+".ictd");file.Save(path,info,scene.Database(),scene.Resources());
     Scene reopened(scene.project,scene.GetSceneID(),false);file.Open(path,reopened.Database(),reopened.Resources());
-    EXPECT_EQ(initialRecipe,recipe(part(reopened,id)));EXPECT_EQ(initialBytes,persistedShapeBytes(reopened,part(reopened,id)));checkSameShape(initialShape,shape(reopened,part(reopened,id)));
-    auto changed=initialRecipe;change(changed);
-    invoke(reopened,"ApplyPunchWizard",editPayload(reopened,id,changed));
-    const auto edited=part(reopened,id);const auto editedRecipe=recipe(edited);const auto editedShape=shape(reopened,edited);const auto editedBytes=persistedShapeBytes(reopened,edited);
-    assertFrozenRecords(editedRecipe);EXPECT_EQ(editedRecipe.at("drawing"),changed.at("drawing"));
-    EXPECT_EQ(editedRecipe.at("features").To<VariantArray>().size(),changed.at("features").To<VariantArray>().size());
-    if(verify)verify(reopened,id);
+    EXPECT_EQ(initialDocument,cadDocument(reopened,originalId));
+    EXPECT_EQ(initialBytes,persistedShapeBytes(reopened,part(reopened,originalId)));
+    checkSameShape(initialShape,shape(reopened,part(reopened,originalId)));
+    EXPECT_EQ(changedDocument,cadDocument(reopened,id));
+    EXPECT_EQ(changedBytes,persistedShapeBytes(reopened,part(reopened,id)));
+    checkSameShape(changedShape,shape(reopened,part(reopened,id)));
+    // Persisted neutral geometry is the only saved editor input.
+    invoke(reopened,"ApplyTubeCadDocument",cadPayload(reopened,id));
+    EXPECT_EQ(changedDocument.at("nodes"),cadDocument(reopened,id).at("nodes"));
+    checkSameCadShape(changedShape,shape(reopened,part(reopened,id)));if(verify)verify(reopened,id);
+    const auto savedDocument=cadDocument(reopened,id);
     file.Save(path,info,reopened.Database(),reopened.Resources());
     Scene finalScene(scene.project,scene.GetSceneID(),false);file.Open(path,finalScene.Database(),finalScene.Resources());
-    EXPECT_EQ(editedRecipe,recipe(part(finalScene,id)));EXPECT_EQ(editedBytes,persistedShapeBytes(finalScene,part(finalScene,id)));checkSameShape(editedShape,shape(finalScene,part(finalScene,id)));
-    // Re-evaluate the persisted records through the same public edit SDO after a second open.
-    invoke(finalScene,"ApplyPunchWizard",editPayload(finalScene,id,recipe(part(finalScene,id))));
-    checkSameShape(editedShape,shape(finalScene,part(finalScene,id)));if(verify)verify(finalScene,id);
-    file.Save(path,info,finalScene.Database(),finalScene.Resources());
+    EXPECT_EQ(savedDocument,cadDocument(finalScene,id));
+    checkSameCadShape(changedShape,shape(finalScene,part(finalScene,id)));if(verify)verify(finalScene,id);
     std::ofstream evidence(dir/(name+".json"));evidence<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(ObjectMap{
-        {"name",name},{"projectFile",path.string()},{"partEntityId",id},{"createdRecipe",initialRecipe},{"editedRecipe",editedRecipe},
-        {"createdVolume",volume(initialShape)},{"editedVolume",volume(editedShape)},{"reopenedVolume",volume(shape(finalScene,part(finalScene,id)))}});
-    std::cout<<"[persistence-acceptance] "<<name<<" created="<<volume(initialShape)<<" edited="<<volume(editedShape)<<" file="<<path.string()<<std::endl;
+        {"name",name},{"projectFile",path.string()},{"partEntityId",id},{"createdDocument",initialDocument},{"changedDocument",savedDocument},
+        {"createdVolume",volume(initialShape)},{"changedVolume",volume(changedShape)},{"reopenedVolume",volume(shape(finalScene,part(finalScene,id)))}});
+    std::cout<<"[persistence-acceptance] "<<name<<" created="<<volume(initialShape)<<" changed="<<volume(changedShape)<<" file="<<path.string()<<std::endl;
 }
 
-TEST(PunchPersistenceSDO, ZeroHoleRoundTubeCreatesEditsAndReopens) {
+TEST(PunchPersistenceSDO, ZeroHoleRoundTubeCreationVariantsAndCadReopen) {
     acceptance("01-round-straight",request("验收-零孔圆管","round"),[](ObjectMap& config){auto d=config.at("drawing").To<ObjectMap>();d["length"]=1200.;config["drawing"]=d;},
-        [](Scene& scene,const std::string& id){EXPECT_TRUE(recipe(part(scene,id)).at("features").To<VariantArray>().empty());EXPECT_NEAR(part(scene,id)->GetLength(),1200,1e-4);});
+        [](Scene& scene,const std::string& id){EXPECT_EQ(cadDocument(scene,id).at("nodes").To<VariantArray>().size(),1u);EXPECT_NEAR(part(scene,id)->GetLength(),1200,1e-4);});
 }
-TEST(PunchPersistenceSDO, RoundEndOnlyMaleAndZReopensAndRemainsEditable) {
+TEST(PunchPersistenceSDO, RoundEndOnlyMaleAndZCreationVariantsAndCadReopen) {
     acceptance("02-round-end-only",request("验收-圆管仅端切","round",{{"start",end("end-key-joint",{{"gender",std::string("male")}})},
         {"end",end("end-step-z",{{"depth",20.}},5)}}),[](ObjectMap& config){auto ends=config.at("ends").To<ObjectMap>();
         auto e=ends.at("end").To<ObjectMap>();e["toolParameters"]=ObjectMap{{"depth",30.},{"hand",std::string("negative")}};ends["end"]=e;config["ends"]=ends;});
@@ -1637,25 +1593,31 @@ TEST(PunchPersistenceSDO, RoundedRectBranchAndDxfEndOnlyReopens) {
         auto e=ends.at("start").To<ObjectMap>();e["trim"]=15.;ends["start"]=e;config["ends"]=ends;});
 }
 void crossing(const std::string& profile) {
-    ObjectMap feature{{"id",std::string("cross-end")},{"type",std::string("circle")},{"diameter",10.},{"station",992.},
+    ObjectMap feature{{"id",std::string("cross-end")},{"toolTarget",std::string("side")},
+        {"toolRef",ObjectMap{{"id",std::string("circle")}}},{"toolParameters",ObjectMap{{"diameter",10.}}},{"station",992.},
         {"face",std::string(profile=="round"?"round":"top")},{"reference",std::string("start")},{"layoutDatum",std::string("base")},
         {"distributionMode",std::string("pitch")},{"arrayCount",3ull},{"arrayPitch",10.},{"arrayOffsets",VariantArray{0.,10.,20.}}};
     acceptance("04-"+profile+"-cross-end",request("验收-跨端阵列",profile,{},VariantArray{feature}),[](ObjectMap& config){auto features=config.at("features").To<VariantArray>();
         auto f=features[0].To<ObjectMap>();f["station"]=982.;f["arrayCount"]=4ull;f["arrayOffsets"]=VariantArray{0.,10.,20.,30.};features[0]=f;config["features"]=features;},
-        [profile](Scene& scene,const std::string& id){const auto f=recipe(part(scene,id)).at("features").To<VariantArray>()[0].To<ObjectMap>();
-            EXPECT_EQ(f.at("arrayOffsets").To<VariantArray>().size(),4u);EXPECT_EQ(f.at("distributionMode").To<std::string>(),"pitch");
-            EXPECT_EQ(f.at("frozenCut").To<ObjectMap>().at("instanceCount").To<unsigned long long>(),3ull);
+        [profile](Scene& scene,const std::string& id){
             const auto s=shape(scene,part(scene,id));const bool round=profile=="round";
+            const auto material=[&](double x,double y,double z,bool present) {
+                const auto probe=BRepPrimAPI_MakeBox(gp_Pnt(x-0.05,y-0.05,z-0.05),0.1,0.1,0.1).Shape();
+                auto common=BRepAlgoAPI_Common(s,probe);
+                ASSERT_TRUE(common.IsDone());
+                const auto actual=volume(common.Shape());
+                EXPECT_NEAR(actual,present?0.001:0.0,1.0e-7)<<"probe ("<<x<<","<<y<<","<<z<<")";
+            };
             for(double x:{982.,992.,999.}) {
-                EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,round?19:0,round?0:9),1e-6).State(),TopAbs_OUT);
-                EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,round?-19:0,round?0:-9),1e-6).State(),TopAbs_IN);
+                material(x,round?19:0,round?0:9,false);
+                material(x,round?-19:0,round?0:-9,true);
             }
-            EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(970,round?19:0,round?0:9),1e-6).State(),TopAbs_IN);
+            material(970,round?19:0,round?0:9,true);
         });
 }
 TEST(PunchPersistenceSDO, RoundCrossEndArrayReopensWithExactLayout) { crossing("round"); }
 TEST(PunchPersistenceSDO, RoundedRectCrossEndArrayReopensWithExactLayout) { crossing("rect"); }
-TEST(PunchPersistenceSDO, RoundedRectBranchAndDxfHolesReopenAndMove) {
+TEST(PunchPersistenceSDO, RoundedRectBranchAndDxfHoleCreationVariantsReopen) {
     const auto branch=systemProfile("round",{{"width",10.},{"wallThickness",1.}});
     const auto feature=[](const std::string& id,double station,ObjectMap section){return ObjectMap{{"id",id},{"toolTarget",std::string("part")},
         {"recordKind",std::string(id=="branch"?"branch":"dxf")},{"station",station},{"reference",std::string("start")},{"layoutDatum",std::string("base")},
@@ -1849,7 +1811,7 @@ TEST(PunchTargetSectionSDO, GenericProfileContoursDriveThroughOppositeAndBlindHo
     }
 }
 
-TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButCannotBeCreatedOrApplied) {
+TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButCannotBeCreated) {
     const auto polygon=[](double size){return systemProfile("polygon",{{"sideCount",8},
         {"radius",size/2},{"wallThickness",2.}});};
     for(const auto& mother:std::vector<std::string>{"round","rect","polygon"}) {
@@ -1867,7 +1829,7 @@ TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButC
         const auto valid=invoke(scene,"PreviewPunchWizard",payload);ASSERT_TRUE(valid.at("resultValid").To<bool>());ASSERT_TRUE(valid.contains("geometry"));
         auto blank=payload;blank["features"]=VariantArray{};
         const auto id=invoke(scene,"AddNestingPunchPart",blank).at("partEntityId").To<std::string>();
-        const auto initialRecipe=recipe(part(scene,id));const auto initialBytes=persistedShapeBytes(scene,part(scene,id));
+        const auto initialDocument=cadDocument(scene,id);const auto initialBytes=persistedShapeBytes(scene,part(scene,id));
         feature["section"]=section(polygon(60));payload["features"]=VariantArray{feature};
         const auto invalid=invoke(scene,"PreviewPunchWizard",payload);
         EXPECT_FALSE(invalid.at("resultValid").To<bool>());EXPECT_TRUE(invalid.contains("geometry"));
@@ -1889,10 +1851,7 @@ TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButC
             valid.at("toolGeometry").To<ObjectMap>().at("version").To<unsigned long long>());
         try{invoke(scene,"AddNestingPunchPart",payload);FAIL()<<"Disconnected part was accepted";}
         catch(const std::exception& error){EXPECT_NE(std::string(error.what()).find("3 段"),std::string::npos);}
-        auto apply=payload;apply["partEntityId"]=id;
-        try{invoke(scene,"ApplyPunchWizard",apply);FAIL()<<"Disconnected part was applied";}
-        catch(const std::exception& error){EXPECT_NE(std::string(error.what()).find("3 段"),std::string::npos);}
-        EXPECT_EQ(initialRecipe,recipe(part(scene,id)));EXPECT_EQ(initialBytes,persistedShapeBytes(scene,part(scene,id)));
+        EXPECT_EQ(initialDocument,cadDocument(scene,id));EXPECT_EQ(initialBytes,persistedShapeBytes(scene,part(scene,id)));
         feature["section"]=section(polygon(20));payload["features"]=VariantArray{feature};
         const auto corrected=invoke(scene,"PreviewPunchWizard",payload);EXPECT_TRUE(corrected.at("resultValid").To<bool>());
         EXPECT_TRUE(corrected.contains("geometry"));EXPECT_FALSE(corrected.contains("resultError"));
@@ -1948,8 +1907,9 @@ TEST(PunchPreviewDiagnosticsSDO, CompleteRemovalIsEditableWithoutAFalseResultMes
 
 TEST(PunchPreviewDiagnosticsSDO, EditingOneRecordPreservesOtherToolAndBlankResourceVersions) {
     Scene scene;
-    const auto feature=[](const std::string& id,double x){return ObjectMap{{"id",id},{"type",std::string("circle")},
-        {"diameter",10.},{"station",x},{"face",std::string("top")},{"reference",std::string("start")},{"layoutDatum",std::string("base")}};};
+    const auto feature=[](const std::string& id,double x){return ObjectMap{{"id",id},{"toolTarget",std::string("side")},
+        {"toolRef",ObjectMap{{"id",std::string("circle")}}},{"toolParameters",ObjectMap{{"diameter",10.}}},
+        {"station",x},{"face",std::string("top")},{"reference",std::string("start")},{"layoutDatum",std::string("base")}};};
     auto payload=request("局部预览资源","rect",{{"start",end("end-miter",{{"angle",45.}},10)}},
         VariantArray{feature("edit-this",200),feature("keep-this",700)});
     const auto readTools=[](const ObjectMap& preview){std::map<std::string,ObjectMap> result;
@@ -1968,7 +1928,8 @@ TEST(PunchPreviewDiagnosticsSDO, EditingOneRecordPreservesOtherToolAndBlankResou
 }
 
 TEST(PunchPlacementPreviewSDO, DefaultPreviewDoesNotCutOrRejectOutsideCandidates) {
-    Scene scene;const auto branch=systemProfile("polygon",{{"shapeMode",std::string("regular")},{"sideCount",8},{"width",40.},{"depth",40.},{"wallThickness",2.}});
+    Scene scene;const auto branch=systemProfile("polygon",{{"sideCount",8},{"radius",20./std::cos(std::numbers::pi/8.)},
+        {"wallThickness",2.},{"outerRadius",0.}});
     ObjectMap f{{"id",std::string("all-candidates")},{"toolTarget",std::string("part")},{"recordKind",std::string("branch")},
         {"toolRef",ObjectMap{{"id",std::string("branch-profile")}}},{"toolParameters",ObjectMap{}},{"section",section(branch)},
         {"station",600.},{"arrayCount",2ull},{"arrayPitch",50.},{"reference",std::string("start")},{"face",std::string("round")}};
@@ -1990,7 +1951,8 @@ TEST(PunchPlacementPreviewSDO, DefaultPreviewDoesNotCutOrRejectOutsideCandidates
 
 VariantArray rigidMatrix(double x=0,double y=0,double z=0) {return {1.,0.,0.,x,0.,1.,0.,y,0.,0.,1.,z,0.,0.,0.,1.};}
 ObjectMap arrayFeature(VariantArray transforms,unsigned long long candidates=1) {
-    return {{"id",std::string("matrix-array")},{"type",std::string("circle")},{"diameter",3.},{"station",200.},
+    return {{"id",std::string("matrix-array")},{"toolTarget",std::string("side")},
+        {"toolRef",ObjectMap{{"id",std::string("circle")}}},{"toolParameters",ObjectMap{{"diameter",3.}}},{"station",200.},
         {"face",std::string("top")},{"reference",std::string("start")},{"layoutDatum",std::string("base")},
         {"arrayGroups",VariantArray{ObjectMap{{"id",std::string("x")},{"type",std::string("linear")},{"axis",std::string("X")},{"count",3ull},{"spacing",100.}},
             ObjectMap{{"id",std::string("y")},{"type",std::string("linear")},{"axis",std::string("Y")},{"count",2ull},{"spacing",5.}}}},
@@ -1999,16 +1961,13 @@ ObjectMap arrayFeature(VariantArray transforms,unsigned long long candidates=1) 
         {"arrayOffsets",VariantArray{999.}},{"rowOffsets",VariantArray{999.}}};
 }
 
-TEST(PunchArrayGroupsSDO, SideMatricesReplaceLegacyArraysAndSurviveSaveReopenAndEdit) {
+TEST(PunchArrayGroupsSDO, SideMatricesCreateExactHolesAndCadSurvivesReopen) {
     auto f=arrayFeature({rigidMatrix(),rigidMatrix(100),rigidMatrix(0,5),rigidMatrix(100,5)},6);
     f["arraySkips"]=VariantArray{ObjectMap{{"x",2ull}}};
     acceptance("06-array-groups",request("多层阵列原生验收","rect",{},VariantArray{f}),[](ObjectMap& config){
         auto values=config.at("features").To<VariantArray>();auto feature=values[0].To<ObjectMap>();
         feature["station"]=250.;values[0]=feature;config["features"]=values;
-    },[](Scene& scene,const std::string& id){const auto saved=recipe(part(scene,id)).at("features").To<VariantArray>()[0].To<ObjectMap>();
-        EXPECT_EQ(saved.at("arrayCandidateCount").To<unsigned long long>(),6ull);EXPECT_EQ(saved.at("arrayCount").To<unsigned long long>(),1ull);
-        EXPECT_EQ(saved.at("rowCount").To<unsigned long long>(),1ull);EXPECT_EQ(saved.at("arrayTransforms").To<VariantArray>().size(),4u);
-        EXPECT_EQ(saved.at("arraySkips").To<VariantArray>().size(),1u);const auto s=shape(scene,part(scene,id));
+    },[](Scene& scene,const std::string& id){const auto s=shape(scene,part(scene,id));
         for(double x:{250.,350.})for(double y:{0.,5.})EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,y,9),1e-6).State(),TopAbs_OUT);
         for(double x:{200.,400.})EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,0,9),1e-6).State(),TopAbs_IN);
     });
@@ -2041,32 +2000,42 @@ TEST(PunchArrayGroupsSDO, RejectsMalformedTransformsAndCandidateBudgetButAllowsD
     EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",request("停用阵列草稿","round",{},VariantArray{f})));
 }
 
-TEST(PartDrawingIndependentSDO, OwnRecipeAllowsMultipleSolidsAndReopensIndependently) {
-    Scene scene;auto branch=systemProfile("polygon",{{"shapeMode",std::string("regular")},{"sideCount",8},{"width",40.},{"depth",40.},{"wallThickness",2.}});
+TEST(PartDrawingIndependentSDO, NeutralCadAllowsMultipleSolidsAndReopensIndependently) {
+    Scene scene;auto branch=systemProfile("polygon",{{"sideCount",8},{"radius",20./std::cos(std::numbers::pi/8.)},
+        {"wallThickness",2.},{"outerRadius",0.}});
     ObjectMap f{{"id",std::string("drawing-cutter")},{"toolTarget",std::string("part")},{"recordKind",std::string("branch")},
-        {"toolRef",ObjectMap{{"id",std::string("branch-profile")}}},{"section",section(branch)},{"station",600.},{"arrayCount",2ull},{"arrayPitch",50.}};
+        {"toolRef",ObjectMap{{"id",std::string("branch-profile")}}},{"toolParameters",ObjectMap{}},{"section",section(branch)},{"station",600.},
+        {"reference",std::string("start")},{"face",std::string("round")},{"layoutDatum",std::string("base")},
+        {"angle",90.},{"direction",std::string("through")},{"arrayCount",2ull},{"arrayPitch",50.}};
     auto payload=request("独立三维绘制多实体","round",{},VariantArray{f});
     EXPECT_FALSE(invoke(scene,"GetPartDrawingTools",{}).empty());const auto preview=invoke(scene,"PreviewPartDrawing",payload);
-    EXPECT_TRUE(preview.at("toolsOnly").To<bool>());EXPECT_FALSE(preview.contains("geometry"));
+    EXPECT_FALSE(preview.at("toolsOnly").To<bool>());EXPECT_TRUE(preview.contains("geometry"));
+    EXPECT_TRUE(preview.at("resultValid").To<bool>());
+    EXPECT_TRUE(preview.contains("topology"));
     const auto id=invoke(scene,"AddPartDrawing",payload).at("partEntityId").To<std::string>();const auto initial=part(scene,id);
     EXPECT_FALSE(initial->GetItemProperties().contains("tubeDesigner.partDrawing"));EXPECT_FALSE(initial->GetItemProperties().contains("tubeDesigner.punchWizard"));
-    const auto drawingComponent=std::dynamic_pointer_cast<CPartDrawingComponent>(
-        initial->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
-    ASSERT_TRUE(drawingComponent);EXPECT_FALSE(drawingComponent->GetDefinition().empty());
-    int n=0;for(TopExp_Explorer e(shape(scene,initial),TopAbs_SOLID);e.More();e.Next())++n;EXPECT_EQ(n,3);
-    const auto bytes=persistedShapeBytes(scene,initial);const auto original=drawingComponent->GetDefinition();
+    const auto original=cadDocument(scene,id);
+    // The two current eight-sided intersections separate the stock into three
+    // valid solids. Drawing permits this; single-piece punch creation rejects it.
+    const auto initialShape=shape(scene,initial);
+    int n=0;for(TopExp_Explorer e(initialShape,TopAbs_SOLID);e.More();e.Next())++n;EXPECT_EQ(n,3);
+    EXPECT_EQ(preview.at("solidCount").To<unsigned long long>(),static_cast<unsigned long long>(n));
+    const auto document=scene.Resources().Get<iCAX::GeometryData::Tube::CTubeCadDocument>(
+        original.at("documentResourceId").To<std::string>(),original.at("documentResourceVersion").To<unsigned long long>());
+    ASSERT_TRUE(document);
+    const auto evaluated=scene.Services().Resolve<iCAX::CAD::ITubeCadDocumentService>()->Evaluate(*document);
+    const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(evaluated.Shape);ASSERT_TRUE(rebuilt.bOK);
+    EXPECT_TRUE(iCAX::OpenCascade::ValidateTubeCSGShapeReplay(initialShape,rebuilt.Shape).bEquivalent);
+    const auto bytes=persistedShapeBytes(scene,initial);
     const auto path=std::filesystem::current_path()/"tmp/punch-persistence-acceptance/07-independent-part-drawing.ictd";
     iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_TUBE_DESIGNER",.ProductID="icax.tube-designer",.CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});
     iCAX::ProjectFile::CProjectDocumentInfo info;info.ProjectID=scene.project;info.MainSceneID=scene.GetSceneID();info.ProjectName="三维独立存储验收";
     file.Save(path,info,scene.Database(),scene.Resources());Scene reopened(scene.project,scene.GetSceneID(),false);file.Open(path,reopened.Database(),reopened.Resources());
-    EXPECT_EQ(bytes,persistedShapeBytes(reopened,part(reopened,id)));EXPECT_EQ(original,
-        std::dynamic_pointer_cast<CPartDrawingComponent>(part(reopened,id)->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName))->GetDefinition());
-    payload["partEntityId"]=id;payload["features"]=VariantArray{};invoke(reopened,"ApplyPartDrawing",payload);
-    const auto edited=part(reopened,id);EXPECT_FALSE(edited->GetItemProperties().contains("tubeDesigner.partDrawing"));EXPECT_FALSE(edited->GetItemProperties().contains("tubeDesigner.punchWizard"));
-    const auto editedDrawingComponent=std::dynamic_pointer_cast<CPartDrawingComponent>(
-        edited->GetEntity()->GetComponent(CPartDrawingComponent::S_ClassName));
-    ASSERT_TRUE(editedDrawingComponent);
-    EXPECT_TRUE(editedDrawingComponent->GetDefinition().at("features").To<VariantArray>().empty());
+    EXPECT_EQ(bytes,persistedShapeBytes(reopened,part(reopened,id)));EXPECT_EQ(original,cadDocument(reopened,id));
+    invoke(reopened,"ApplyTubeCadDocument",cadPayload(reopened,id));
+    const auto editedShape=shape(reopened,part(reopened,id));
+    n=0;for(TopExp_Explorer e(editedShape,TopAbs_SOLID);e.More();e.Next())++n;EXPECT_EQ(n,3);
+    EXPECT_TRUE(iCAX::OpenCascade::ValidateTubeCSGShapeReplay(initialShape,editedShape).bEquivalent);
     EXPECT_THROW(invoke(scene,"AddNestingPunchPart",request("冲孔仍须单段","round",{},VariantArray{f})),std::exception);
 }
 
@@ -3254,4 +3223,5 @@ namespace punch_persistence_acceptance {
 #include "ProductManufacturingConcurrencySDOTests.inc"
 #include "NestingPartFilePickerSDOTests.inc"
 #include "NestingSideSketchSDOTests.inc"
+#include "TubeCadDocumentSDOTests.inc"
 }

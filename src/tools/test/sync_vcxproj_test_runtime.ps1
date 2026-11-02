@@ -104,9 +104,10 @@ function Sync-ReferencedProject {
         }
 
         $targetDll = Get-Item -LiteralPath $targetDllPath -ErrorAction SilentlyContinue
-        if ($null -eq $targetDll -or
-            $targetDll.Length -ne $sourceDll.Length -or
-            $targetDll.LastWriteTimeUtc -lt $sourceDll.LastWriteTimeUtc) {
+        # An isolated ProjectReference build may have just produced a newer,
+        # ABI-compatible DLL here. A different length never authorizes an older
+        # shared runtime to overwrite that freshly built dependency.
+        if ($null -eq $targetDll -or $targetDll.LastWriteTimeUtc -lt $sourceDll.LastWriteTimeUtc) {
             Copy-Item -LiteralPath $sourceDll.FullName -Destination $DestinationDir -Force
         }
     }

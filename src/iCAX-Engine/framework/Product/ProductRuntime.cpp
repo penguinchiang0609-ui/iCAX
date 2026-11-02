@@ -652,6 +652,11 @@ namespace
     }
 }
 
+namespace {
+    std::shared_ptr<iCAX::Application::IProductUserDataStore> MakeUserDataHistoryStore(
+        std::shared_ptr<iCAX::Application::IProductUserDataStore>,
+        const std::vector<iCAX::Product::CProductUserDataFeatureDefinition>&);
+}
 iCAX::Product::CProductRuntime::CProductRuntime(
     IN const CProductDefinition& Definition_,
     IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
@@ -716,6 +721,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     {
         throw std::invalid_argument("Product user data store identity mismatch");
     }
+    m_pUserDataStore=MakeUserDataHistoryStore(m_pUserDataStore,m_Definition.UserDataFeatures);
     if (!m_pProductMetaRegistry)
     {
         throw std::invalid_argument("Product MetaRegistry cannot be null");
@@ -1011,6 +1017,9 @@ iCAX::Product::CProductData iCAX::Product::CProductRuntime::GetProductData() con
     return SnapshotProductData();
 }
 
+#include "ProductSettingsHistory.inc"
+#include "ProductUserDataHistory.inc"
+
 iCAX::Data::PropertyBag iCAX::Product::CProductRuntime::GetSettings() const
 {
     std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
@@ -1019,14 +1028,19 @@ iCAX::Data::PropertyBag iCAX::Product::CProductRuntime::GetSettings() const
 
 void iCAX::Product::CProductRuntime::ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_)
 {
-    CProductData _ProductData;
-    {
-        std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
-        m_ProductData.Settings = Settings_;
-        _ProductData = m_ProductData;
+    std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
+    auto _Updated = m_ProductData;
+    _Updated.Settings = Settings_;
+    SaveProductData(_Updated);
+    // An external non-history write invalidates only the affected scope.
+    // Recent projects and unrelated preferences never consume library history.
+    for (auto _It = m_SettingsRepositories.begin(); _It != m_SettingsRepositories.end();) {
+        bool _Changed = false;
+        for (const auto& [_Key, _Value] : SettingsFields(*_It->second))
+            if (!(Settings_.Get(_Key) == _Value)) { _Changed = true; break; }
+        if (_Changed) _It = m_SettingsRepositories.erase(_It); else ++_It;
     }
-
-    SaveProductData(_ProductData);
+    m_ProductData = std::move(_Updated);
 }
 
 const std::string& iCAX::Product::CProductRuntime::GetProductID() const
@@ -1330,6 +1344,7 @@ iCAX::Product::CProductRuntime::OpenProjectFile(
             _Prepared,
             _pProject->MainSceneDatabase(),
             _pProject->MainSceneResources());
+        _pProject->CaptureAutoSaveBaseline(strProjectPath_);
 
         const auto _QuickSaveMagic =
             _GetQuickSaveLogMagic(m_Definition.ProjectFile);
@@ -1459,6 +1474,7 @@ void iCAX::Product::CProductRuntime::SaveProjectFileSnapshot(
         strProjectPath_,
         _GetQuickSaveLogMagic(m_Definition.ProjectFile),
         m_Definition.ProjectFile.QuickSaveLogVersion);
+    Project_.CaptureAutoSaveBaseline(strProjectPath_);
     if (auto _pCatalog = FindProjectCatalogByProjectID(
         Project_.GetProjectID()))
     {
@@ -1842,6 +1858,7 @@ void iCAX::Product::CProductRuntime::LoadProductData()
     {
         std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
         m_ProductData = std::move(_ProductData);
+        m_SettingsRepositories.clear();
     }
 }
 
@@ -1998,6 +2015,25 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductSDO()
             return HandleCloseProjectCatalog(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
+    for (const auto& [_Method, _Direction] : std::vector<std::pair<std::string, std::string>>{
+        {"GetSettingsHistory", ""}, {"UndoSettings", "undo"}, {"RedoSettings", "redo"}}) {
+        _Methods.emplace_back(_Method, [this, _Direction](const iCAX::Interaction::CInvocation& Request_,
+            const iCAX::Application::IApplicationContext&, iCAX::Product::IProductContext* Product_,
+            iCAX::Project::IProjectContext* Project_, iCAX::Project::ISceneContext* Scene_) {
+            _RequireProductSDOContext(Product_, Project_, Scene_);
+            return _MakeProductPayloadResponse(SettingsHistory(_GetOptionalString(_DecodeObjectPayload(Request_), "scope"), _Direction));
+        });
+    }
+    for(const auto& [_Method,_Direction]:std::vector<std::pair<std::string,std::string>>{
+        {"GetUserDataHistory",""},{"UndoUserData","undo"},{"RedoUserData","redo"}}){
+        _Methods.emplace_back(_Method,[this,_Direction](const iCAX::Interaction::CInvocation& Request_,
+            const iCAX::Application::IApplicationContext&,iCAX::Product::IProductContext* Product_,
+            iCAX::Project::IProjectContext* Project_,iCAX::Project::ISceneContext* Scene_){
+            _RequireProductSDOContext(Product_,Project_,Scene_);
+            return _MakeProductPayloadResponse(std::static_pointer_cast<CProductUserDataHistoryStore>(m_pUserDataStore)->History(
+                _GetOptionalString(_DecodeObjectPayload(Request_),"featureId"),_Direction));
+        });
+    }
     auto _pSDO = std::make_shared<CStaticProductSDO>(kProductSDOName, std::move(_Methods));
     if (!m_pSDORegistry->Register(_pSDO))
     {
@@ -2056,6 +2092,11 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductSDO()
             return HandleProjectSave(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
+    _ProjectMethods.emplace_back(iCAX::Project::kProjectAutoSaveName,
+        [this](const iCAX::Interaction::CInvocation& request,const iCAX::Application::IApplicationContext& application,
+            iCAX::Product::IProductContext* product,iCAX::Project::IProjectContext* project,iCAX::Project::ISceneContext* scene){
+            return HandleProjectSave(request,application,product,project,scene,true);
+        });
     auto _pProjectSDO = std::make_shared<CStaticProductSDO>(
         iCAX::Project::kProjectSDOName,
         std::move(_ProjectMethods));
@@ -2202,7 +2243,8 @@ iCAX::Product::CProductRuntime::HandleProjectSave(
     IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
-    IN iCAX::Project::ISceneContext* pSceneContext_)
+    IN iCAX::Project::ISceneContext* pSceneContext_,
+    IN bool bAutoSave_)
 {
     _RequireSceneSDOContext(
         pProductContext_, pProjectContext_, pSceneContext_);
@@ -2235,12 +2277,21 @@ iCAX::Product::CProductRuntime::HandleProjectSave(
             "Project file path must be a local path");
     }
 
-    // Project SDO 在 Scene 每帧分发阶段执行；此处天然拥有 Database，
-    // 无需停止线程即可取得一致快照。
-    SaveProjectFileSnapshot(*_pProject, _ProjectPath);
-
     iCAX::Data::ObjectMap _Response;
+    const auto checkpointStart=std::chrono::steady_clock::now();
+    const auto checkpoint=bAutoSave_?_pProject->TryAutoSaveJournal(_ProjectPath):iCAX::Project::EAutoSaveCheckpoint::SnapshotRequired;
+    _Response["checkpointMilliseconds"]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-checkpointStart).count();
+    if(checkpoint==iCAX::Project::EAutoSaveCheckpoint::Deferred){
+        _Response["saved"]=false;_Response["deferred"]=true;_Response["persistence"]=std::string("Deferred");
+        _Response["projectPath"]=_ProjectPath;
+        return _MakeProductPayloadResponse(iCAX::Data::Variant(std::move(_Response)));
+    }
+    // The dispatch owns the scene. Explicit Save always writes the portable
+    // archive; AutoSave may acknowledge its already-flushed database journal.
+    if(checkpoint!=iCAX::Project::EAutoSaveCheckpoint::Journal)SaveProjectFileSnapshot(*_pProject,_ProjectPath);
     _Response["saved"] = true;
+    _Response["deferred"]=false;
+    _Response["persistence"]=std::string(checkpoint==iCAX::Project::EAutoSaveCheckpoint::Journal?"Journal":"Snapshot");
     _Response["projectPath"] = _ProjectPath;
     _Response["project"] = _MakeProjectPayload(_pRuntime);
     return _MakeProductPayloadResponse(

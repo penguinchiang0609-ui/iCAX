@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{70259b92-4f37-4cfe-85d2-aa3610cc8624}</ProjectGuid>
+    <RootNamespace>FiveAxisCAM</RootNamespace>
+    <ProjectName>FiveAxisCAM</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_FIVE_AXIS_CAM;NOMINMAX;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories);$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions) /bigobj</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="FiveAxisCAM.h" />
+    <ClInclude Include="FiveAxisBuiltinHeads.inc" />
+    <ClInclude Include="FiveAxisJobProgram.inc" />
+    <ClInclude Include="FiveAxisProgramCurves.inc" />
+    <ClInclude Include="FiveAxisPreparation.inc" />
+    <ClInclude Include="FiveAxisEngineeringData.inc" />
+    <ClInclude Include="FiveAxisFixtureDesign.inc" />
+    <ClInclude Include="FiveAxisFixtureCylinder.inc" />
+    <ClInclude Include="FiveAxisFixtureDrawing.inc" />
+    <ClInclude Include="FiveAxisComponents.h" />
+    <ClInclude Include="FiveAxisFilePreview.inc" />
+    <ClInclude Include="FiveAxisScaling.inc" />
+    <ClInclude Include="FiveAxisRegistration.inc" />
+    <ClInclude Include="FiveAxisAlignment.inc" />
+    <ClInclude Include="FiveAxisPicking.inc" />
+    <ClInclude Include="FiveAxisFixtures.inc" />
+    <ClInclude Include="FiveAxisFixtureUnits.inc" />
+    <ClInclude Include="FiveAxisFixtureLibrary.inc" />
+    <ClInclude Include="FiveAxisRecognition.inc" />
+    <ClInclude Include="FiveAxisCutCreate.inc" />
+    <ClInclude Include="FiveAxisCutEditing.inc" />
+    <ClInclude Include="FiveAxisCutSplitting.inc" />
+    <ClInclude Include="FiveAxisStandardHoles.inc" />
+    <ClInclude Include="FiveAxisPolicies.inc" />
+    <ClInclude Include="FiveAxisLeads.inc" />
+    <ClInclude Include="FiveAxisProcessEditing.inc" />
+    <ClInclude Include="FiveAxisProcessCompilation.inc" />
+    <ClInclude Include="FiveAxisPlanGeneration.inc" />
+    <ClInclude Include="FiveAxisPathPreviewTasks.inc" />
+    <ClInclude Include="FiveAxisToolAxis.inc" />
+    <ClInclude Include="FiveAxisToolAxisPoints.inc" />
+    <ClInclude Include="FiveAxisToolAxisSamples.inc" />
+    <ClInclude Include="FiveAxisOrdering.h" />
+    <ClInclude Include="FiveAxisOrderingTask.inc" />
+    <ClInclude Include="FiveAxisOrderOptions.inc" />
+    <ClInclude Include="FiveAxisOrderingEstimate.inc" />
+    <ClInclude Include="FiveAxisCutTree.inc" />
+    <ClInclude Include="FiveAxisCutTreeState.inc" />
+    <ClInclude Include="FiveAxisRapidPlanning.inc" />
+    <ClInclude Include="FiveAxisStateProjection.inc" />
+    <None Include="Schema\CamPathSamples.fbs" />
+    <ClInclude Include="FiveAxisSimulationCollision.inc" />
+    <ClInclude Include="FiveAxisMachineSimulation.inc" />
+    <ClInclude Include="FiveAxisMachinePlacement.inc" />
+    <ClInclude Include="FiveAxisMachineProgram.inc" />
+    <ClInclude Include="FiveAxisMachineCollision.inc" />
+    <ClInclude Include="FiveAxisMachinePlanning.inc" />
+    <ClInclude Include="FiveAxisInteractiveIK.inc" />
+    <ClInclude Include="FiveAxisMachineJog.inc" />
+    <ClInclude Include="FiveAxisInteractiveIKPDO.inc" />
+    <ClInclude Include="Generated\MachineIKTarget_generated.h" />
+    <ClInclude Include="Generated\MachineIKResult_generated.h" />
+    <ClInclude Include="Generated\MachineJogControl_generated.h" />
+    <ClInclude Include="Generated\MachineJogResult_generated.h" />
+    <ClInclude Include="FiveAxisCollisionRotation.inc" />
+    <ClInclude Include="FiveAxisIntentGeometry.h" />
+    <ClInclude Include="FiveAxisIntentPreview.inc" />
+    <ClInclude Include="FiveAxisIntentRuntime.inc" />
+    <ClInclude Include="FiveAxisIntentProjection.h" />
+    <ClInclude Include="FiveAxisIntentScene.h" />
+    <ClInclude Include="FiveAxisIntentScene.inc" />
+    <ClInclude Include="FiveAxisIntentAccess.inc" />
+    <ClInclude Include="FiveAxisIntentBranchEditing.inc" />
+    <ClCompile Include="FiveAxisIntentGeometry.cpp" />
+    <ClInclude Include="FiveAxisIntentOperations.h" />
+    <ClCompile Include="FiveAxisIntentOperations.cpp" />
+    <ClInclude Include="FiveAxisIntentPoseField.h" />
+    <ClCompile Include="FiveAxisIntentPoseField.cpp" />
+    <ClCompile Include="FiveAxisIntentProjection.cpp" />
+    <ClCompile Include="FiveAxisIntentBranchProcess.cpp" />
+    <ClInclude Include="FiveAxisIntentBranchProcess.h" />
+    <ClCompile Include="FiveAxisCAM.cpp" />
+    <ClCompile Include="FiveAxisSDO.cpp" />
+    <ClCompile Include="FiveAxisSceneBehaviour.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\PDO\PDO.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj" />
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectFile\ProjectFile.vcxproj" />
+    <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj" />
+    <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj" />
+    <ProjectReference Include="..\..\common\Transform\Transform.vcxproj" />
+    <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj" />
+    <ProjectReference Include="..\..\geometry\OpenCascadeGeometryServices\OpenCascadeGeometryServices.vcxproj" />
+    <ProjectReference Include="..\..\geometry\CoalCollisionServices\CoalCollisionServices.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
+    <ProjectReference Include="..\..\cam\CutRecognition\CutRecognition.vcxproj" /><ProjectReference Include="..\..\cam\ProcessPlanning\ProcessPlanning.vcxproj" />
+    <ProjectReference Include="..\..\cam\IntentToolpath\IntentToolpath.vcxproj" />
+    <ProjectReference Include="..\..\cam\Machine\Machine.vcxproj" />
+  </ItemGroup>
+  <!-- Match the Debug host ABI; keep precise floating point in CPU-heavy paths. -->
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="FiveAxisCAM.cpp;FiveAxisIntentOperations.cpp;FiveAxisIntentBranchProcess.cpp;FiveAxisIntentGeometry.cpp;FiveAxisIntentPoseField.cpp;FiveAxisIntentProjection.cpp">
+      <Optimization>MaxSpeed</Optimization><InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks><FloatingPointModel>Precise</FloatingPointModel>
+    </ClCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
+

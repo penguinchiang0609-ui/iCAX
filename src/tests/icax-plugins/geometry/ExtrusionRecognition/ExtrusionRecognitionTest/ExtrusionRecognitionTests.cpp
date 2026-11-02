@@ -799,6 +799,53 @@ TEST(ExtrusionRecognitionTest, RecognizesMarkedProductionAngleWithoutFollowingLe
     EXPECT_NEAR(0.0, _Result.Direction.Z, 1.0e-9);
 }
 
+TEST(ExtrusionRecognitionTest, ExtractsSeparateSimpleLoopsAtARepeatedJunction)
+{
+    std::vector<std::pair<Curve3,ParameterRange>> edges;
+    const auto square=[&](double x,double y,double size){
+        const std::array<Point2,4> p{{{x,y},{x+size,y},{x+size,y+size},{x,y+size}}};
+        for(std::size_t i=0;i<p.size();++i)edges.push_back(ProjectedSegment(p[i],p[(i+1)%p.size()]));
+    };
+    square(0,0,20);square(2,2,4);square(6,6,4);
+    edges.push_back(ProjectedSegment({0,0},{2,2})); // leading bridge, not a contour tail
+    const auto result=CExtrudeRecognizesService().ExtractSectionWires(MakeProjectedBoundaryBRep(edges));
+    ASSERT_TRUE(result.bSuccess);ASSERT_EQ(3u,result.Wires.size());
+    EXPECT_NEAR(400,result.Wires[0].dSignedArea,1e-8);
+    for(std::size_t i=1;i<result.Wires.size();++i){
+        EXPECT_TRUE(result.Wires[i].bInner);EXPECT_EQ(4u,result.Wires[i].Edges.size());
+        EXPECT_NEAR(-16,result.Wires[i].dSignedArea,1e-8);
+    }
+}
+
+TEST(ExtrusionRecognitionTest, PrunedInteriorTailStillPreventsAnInnerContour)
+{
+    std::vector<std::pair<Curve3,ParameterRange>> edges;
+    for(const auto size:{20.0,10.0}){
+        const double offset=(20-size)/2;
+        const std::array<Point2,4> p{{{offset,offset},{offset+size,offset},
+            {offset+size,offset+size},{offset,offset+size}}};
+        for(std::size_t i=0;i<p.size();++i)edges.push_back(ProjectedSegment(p[i],p[(i+1)%p.size()]));
+    }
+    edges.push_back(ProjectedSegment({5,10},{8,10}));
+    const auto result=CExtrudeRecognizesService().ExtractSectionWires(MakeProjectedBoundaryBRep(edges));
+    ASSERT_TRUE(result.bSuccess);ASSERT_EQ(1u,result.Wires.size());
+    EXPECT_NEAR(400,result.Wires[0].dSignedArea,1e-8);
+}
+
+TEST(ExtrusionRecognitionTest, ObliqueProjectionUsesTheProjectedLengthForExactCurves)
+{
+    const double length=std::hypot(100.0,10.0);
+    const auto result=CExtrudeRecognizesService().ExtractSectionWires(MakeProjectedBoundaryBRep({
+        {Line3{{{0,0,0},{100/length,10/length,0}}},{0,length}},
+        ProjectedSegment({10,0},{10,10}),ProjectedSegment({10,10},{0,10}),ProjectedSegment({0,10},{0,0})}));
+    ASSERT_TRUE(result.bSuccess);ASSERT_EQ(1u,result.Wires.size());
+    EXPECT_NEAR(100,result.Wires[0].dSignedArea,1e-8);
+    for(const auto& edge:result.Wires[0].Edges){
+        ASSERT_TRUE(std::holds_alternative<Line2>(edge.Curve));
+        EXPECT_NEAR(10,edge.Range.Last-edge.Range.First,1e-8);
+    }
+}
+
 TEST(ExtrusionRecognitionTest, ExtractsOuterSectionWireFromProjectedSideFaces)
 {
     CExtrudeRecognizesService _Service;
@@ -1192,7 +1239,7 @@ TEST(ExtrusionRecognitionTest, FindsOuterContourWithMultipleInternalConnections)
         }));
 }
 
-TEST(ExtrusionRecognitionTest, FindsConcaveOuterContourWithMultipleInternalConnections)
+TEST(ExtrusionRecognitionTest, SplitsCrossingConnectionAndIncludesItsExteriorTriangle)
 {
     CExtrudeRecognizesService _Service;
     SSectionWireOptions _Options;
@@ -1211,8 +1258,12 @@ TEST(ExtrusionRecognitionTest, FindsConcaveOuterContourWithMultipleInternalConne
 
     const auto& _Outer = _Result.Wires.front();
     EXPECT_FALSE(_Outer.bInner);
-    EXPECT_NEAR(3700.0, std::abs(_Outer.dSignedArea), 1.0e-6);
-    EXPECT_EQ(10u, _Outer.Edges.size());
+    // The (30,25)->(0,0) connection crosses the re-entrant notch at
+    // (15,12.5) and (6,5). Its exterior triangle is real line-network area:
+    // 0.5 * 9 * 7.5 = 33.75. Ignoring these intersections previously accepted
+    // a boundary that did not enclose the complete network.
+    EXPECT_NEAR(3700.0 + 33.75, std::abs(_Outer.dSignedArea), 1.0e-6);
+    EXPECT_EQ(11u, _Outer.Edges.size());
     EXPECT_EQ(1u, std::count_if(
         _Result.Wires.begin(),
         _Result.Wires.end(),
@@ -1235,7 +1286,7 @@ TEST(ExtrusionRecognitionTest, FindsConcaveOuterContourWithMultipleInternalConne
 TEST(ExtrusionRecognitionTest, ExtractsSectionWiresFromResetStepBRep)
 {
     const auto _Path = RepositoryRoot()
-        / "samples" / "tube-one" / "01_round_tube_plain.step";
+        / "samples" / "tube-geometry" / "01_round_tube_plain.step";
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
         _Path.string(),
         0.001);
@@ -1319,7 +1370,7 @@ TEST(ExtrusionRecognitionTest, RunsAllTemplateDirectFittersOnNativeExtractedCont
 TEST(ExtrusionRecognitionTest, MatchesImportedStepThroughOrderedDirectFitters)
 {
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
-        (RepositoryRoot() / "samples/tube-one/01_round_tube_plain.step").string(), 0.001);
+        (RepositoryRoot() / "samples/tube-geometry/01_round_tube_plain.step").string(), 0.001);
     ASSERT_TRUE(_Read.bOK);
     const auto _Fitters = DiscoverPythonSectionFitters(
         (RepositoryRoot() / "src/apps/tube-designer/templates/profile").string());
@@ -1341,7 +1392,7 @@ TEST(ExtrusionRecognitionTest, MatchesImportedStepThroughOrderedDirectFitters)
 TEST(ExtrusionRecognitionTest, MatchesMachinedRoundTubeThroughOrderedDirectFitters)
 {
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
-        (RepositoryRoot() / "samples/tube-one/03_round_tube_through_hole.step").string(), 0.001);
+        (RepositoryRoot() / "samples/tube-geometry/03_round_tube_through_hole.step").string(), 0.001);
     ASSERT_TRUE(_Read.bOK);
     const auto _Fitters = DiscoverPythonSectionFitters(
         (RepositoryRoot() / "src/apps/tube-designer/templates/profile").string());
@@ -1516,7 +1567,7 @@ TEST(ExtrusionRecognitionTest, RejectsMultipleMatchingAlternativeAxesWithoutPart
 TEST(ExtrusionRecognitionTest, DoesNotReinterpretOriginalDoubleCavityTubeAsWeakTransverseSolidBar)
 {
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
-        (RepositoryRoot() / "samples/tube-one/05_double_cavity_blind_hole.step").string(), 0.001);
+        (RepositoryRoot() / "samples/tube-geometry/05_double_cavity_blind_hole.step").string(), 0.001);
     ASSERT_TRUE(_Read.bOK);
     const auto _OriginalBytes = iCAX::GeometryData::Persistence::Serialize(_Read.Geometry);
     const auto _Primary = CExtrudeRecognizesService().Recognize(_Read.Geometry);
@@ -1586,7 +1637,7 @@ TEST(ExtrusionRecognitionTest, DistinguishesUnsupportedAndFailedFittersFromNonMa
     const auto _Fitters = DiscoverPythonSectionFitters(_Catalog);
     ASSERT_EQ(3u, _Fitters.size());
     const auto _Read = iCAX::OpenCascade::ReadBRepFile(
-        (RepositoryRoot() / "samples/tube-one/01_round_tube_plain.step").string(), 0.001);
+        (RepositoryRoot() / "samples/tube-geometry/01_round_tube_plain.step").string(), 0.001);
     ASSERT_TRUE(_Read.bOK);
     SForbidForwardFitting _Guard;
     for (const auto& _Fitter : _Fitters)
@@ -1746,7 +1797,7 @@ TEST(ExtrusionRecognitionTest, LoadsStandardJsonAndPreservesDefinitionOrder)
     EXPECT_EQ("rectangular-tube", _Result.SectionTypeID);
 }
 
-TEST(ExtrusionRecognitionTest, RecognizesAllTubeOneStepRegressionSamples)
+TEST(ExtrusionRecognitionTest, RecognizesAllTubeGeometryStepRegressionSamples)
 {
     CExtrusionRecognitionService _Service;
     _Service.OnLoad();
@@ -1768,7 +1819,7 @@ TEST(ExtrusionRecognitionTest, RecognizesAllTubeOneStepRegressionSamples)
     for (const auto& [_FileName, _ExpectedType] : _Cases)
     {
         SCOPED_TRACE(_FileName);
-        const auto _Path = RepositoryRoot() / "samples" / "tube-one" / _FileName;
+        const auto _Path = RepositoryRoot() / "samples" / "tube-geometry" / _FileName;
         const auto _Read = iCAX::OpenCascade::ReadBRepFile(
             _Path.string(),
             0.001);
@@ -1804,7 +1855,7 @@ TEST(ExtrusionRecognitionTest, RebuildsNormalizedResourceForOnDemandCadIntent)
     ASSERT_TRUE(_Definitions.bValid);
 
     const auto _Path = RepositoryRoot()
-        / "samples" / "tube-one" / "01_round_tube_plain.step";
+        / "samples" / "tube-geometry" / "01_round_tube_plain.step";
     STEPControl_Reader _DirectReader;
     ASSERT_EQ(IFSelect_RetDone, _DirectReader.ReadFile(_Path.string().c_str()));
     ASSERT_GT(_DirectReader.TransferRoots(), 0);
@@ -1865,7 +1916,7 @@ TEST(ExtrusionRecognitionTest, RebuildsNormalizedMultiCavityResourceForCadIntent
     const auto _Definitions = _Service.ParseDefinitionsJSON(kSampleDefinitions);
     ASSERT_TRUE(_Definitions.bValid);
     const auto _Path = RepositoryRoot()
-        / "samples" / "tube-one" / "02_double_cavity_rectangular_tube.step";
+        / "samples" / "tube-geometry" / "02_double_cavity_rectangular_tube.step";
     STEPControl_Reader _DirectReader;
     ASSERT_EQ(IFSelect_RetDone, _DirectReader.ReadFile(_Path.string().c_str()));
     ASSERT_GT(_DirectReader.TransferRoots(), 0);
@@ -1932,7 +1983,7 @@ TEST(ExtrusionRecognitionTest, PreservesVolumeWhenNormalizingMultiCavityBeveledP
     const auto _Definitions = _Service.ParseDefinitionsJSON(kSampleDefinitions);
     ASSERT_TRUE(_Definitions.bValid);
     const auto _Path = RepositoryRoot()
-        / "samples" / "tube-one" / "08_double_cavity_beveled_hole.step";
+        / "samples" / "tube-geometry" / "08_double_cavity_beveled_hole.step";
 
     STEPControl_Reader _DirectReader;
     ASSERT_EQ(IFSelect_RetDone, _DirectReader.ReadFile(_Path.string().c_str()));

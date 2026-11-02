@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdirSync,writeFileSync,readdirSync,statSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+const require=createRequire('C:/Users/pengu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json');const {chromium}=require('playwright');
+const root=resolve(process.env.ICAX_ESCAPE_EVIDENCE||'output/tests/customer-escape-window-20261023/interaction');mkdirSync(root,{recursive:true});
+const browser=await chromium.connectOverCDP('http://127.0.0.1:19427');const page=browser.contexts()[0].pages().find(p=>p.url().includes('/AppShell/index.html'));page.setDefaultTimeout(120000);await page.setViewportSize({width:1600,height:1000});
+const report={nativeBusinessMocked:false,creationThroughVisibleDialog:true};
+const walk=d=>readdirSync(d).flatMap(n=>{const p=join(d,n);return statSync(p).isDirectory()?walk(p):[p]});
+try{
+ await page.reload();await page.waitForFunction(()=>window.__icaxWorkbench?.getState().projectId);
+ await page.locator('[data-command-id="designer.add"]').click();
+ const dialog=page.locator('[data-tube-designer-add-dialog]');
+ const card=dialog.locator('[data-cam-action="tube-designer-select-template"][data-tube-designer-template-id="single-face-security-window"]');
+ if(await card.count())await card.first().click();
+ const position=dialog.locator('[data-tube-designer-parameter="doorPosition"]');await position.waitFor();
+ report.positionChoices=await position.locator('option').evaluateAll(ns=>ns.map(n=>n.value));assert.equal(report.positionChoices.length,9);
+ await position.selectOption('left_bottom');
+ const openingPolygon=dialog.locator('.product-diagram-door');
+ const lowerLeft=await openingPolygon.getAttribute('points');
+ await position.selectOption('right_top');
+ await page.waitForFunction(points=>document.querySelector('[data-tube-designer-add-dialog] .product-diagram-door')?.getAttribute('points')!==points,lowerLeft);
+ const upperRight=await openingPolygon.getAttribute('points');assert.notEqual(lowerLeft,upperRight);
+ assert.equal(await dialog.locator('.product-diagram-opening-grid[clip-path]').count(),1);
+ report.schematicTracksPositionAndSharedGrid=true;
+ await position.selectOption('left_bottom');
+ const fixedStructure=dialog.locator('[data-tube-designer-parameter="doorFrameStructure"]');
+ if(await fixedStructure.count())assert(!await fixedStructure.locator('option').evaluateAll(ns=>ns.some(n=>n.value==='folded')));
+ await dialog.locator('[data-tube-designer-parameter="doorColumnCount"]').fill('4');
+ await dialog.locator('[data-tube-designer-parameter="doorRowCount"]').fill('1');
+ await dialog.locator('[data-cam-action="tube-designer-confirm-add"]').click();
+ await page.waitForFunction(()=>window.__icaxWorkbench.getTubeDesignerState().product?.parameters?.doorPosition==='left_bottom');
+ await dialog.waitFor({state:'hidden'});
+ assert.equal(await position.count(),0);
+ await page.evaluate(async()=>{await window.__icaxWorkbench.waitForRenderableViewport();await window.__icaxWorkbench.setStandardView('front');await window.__icaxWorkbench.fitView();});
+ assert.equal(await page.locator('[data-tube-designer-parameter-form] [data-tube-designer-parameter="doorPosition"]').count(),0);
+ const trigger=page.locator('[data-cam-action="tube-designer-edit-scene-specification"][data-tube-designer-parameter-key="doorColumnCount"]');
+ const box=await trigger.boundingBox();assert(box);
+ // Resting labels intentionally pass pointer events to the real canvas.
+ await page.mouse.dblclick(box.x+box.width/2,box.y+box.height/2);
+ const input=page.locator('[data-tube-designer-scene-specification-input="doorColumnCount"]');await input.fill('5');await input.press('Enter');
+ await page.waitForFunction(()=>window.__icaxWorkbench.getTubeDesignerState().product?.parameters?.doorColumnCount===5&&window.__icaxWorkbench.getTubeDesignerState().product?.modelOutdated);
+ report.countChangedBySceneAnnotation=true;
+ await page.locator('[data-cam-action="tube-designer-confirm-update"]').click();
+ await page.waitForFunction(()=>!window.__icaxWorkbench.getTubeDesignerState().product?.modelOutdated);
+ await page.locator('[data-command-id="designer.disassemble"]').click();await page.locator('[data-cam-action="tube-designer-batch-disassembly-confirm"]').click();
+ await page.waitForFunction(()=>window.__icaxWorkbench.getTubeDesignerState().parts.length>0&&!document.querySelector('[data-command-id="designer.export-active-product-parts"]')?.disabled);
+ const native=await page.evaluate(async()=>{const {AppProxy}=await import('../../AppProxy/AppProxy.mjs');const app=await AppProxy.create(window.icax??window.icaxNativeBridge,{sdo:{initialCallId:1900000000}});await app.getState();const product=app.getProduct('icax.tube-designer');await product.getState();const project=product.getProject(window.__icaxWorkbench.getState().projectId);const scene=project.getMainScene();window.__escapeInteraction={project,scene};return (await scene.invoke('TubeDesigner.List',{})).tubeDesigner;});
+ report.model=native;report.name='界面添加及占格标注编辑';report.types=native.parts.length;report.physicalQuantity=native.parts.reduce((n,p)=>n+p.quantity,0);
+ report.path=join(root,report.name+'.ictd');report.target=join(root,report.name+'-export');mkdirSync(report.target,{recursive:true});
+ await page.evaluate(target=>{(window.icax??window.icaxNativeBridge).openDirectoryDialog=async()=>target},report.target);
+ await page.locator('[data-command-id="designer.export-active-product-parts"]').click();await page.waitForFunction(target=>document.body.innerText.includes(target),report.target);
+ assert.equal(walk(report.target).filter(p=>p.endsWith('.step')).length,report.types);report.files=walk(report.target);
+ assert.equal(await page.evaluate(async path=>(await window.__escapeInteraction.project.save(path)).saved,report.path),true);
+ await page.screenshot({path:join(root,'界面添加及占格编辑.png')});report.passed=true;
+ writeFileSync(join(root,'acceptance-report.json'),JSON.stringify({passed:true,cases:[report]},null,2));
+}catch(e){report.error=e.stack;process.exitCode=1;await page.screenshot({path:join(root,'interaction-failure.png')}).catch(()=>{});}
+finally{writeFileSync(join(root,'interaction-report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({passed:report.passed,error:report.error}));await browser.close();}

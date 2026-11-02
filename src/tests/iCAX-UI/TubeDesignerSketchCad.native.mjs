@@ -13,14 +13,15 @@ const draft = extras => ({schema:'icax.tube-sketch',schemaVersion:1,kind:'side',
 const payload = sketch => ({profile,length:200,quantity:2,name:'CAD实体验收',sketch});
 const parts = snapshot => snapshot.tubeDesigner.nestingGroups.flatMap(g=>g.parts);
 const geometry = id => bridge.rpc({action:'geometry',payload:{partEntityId:id}});
+const document = partEntityId => bridge.invoke('GetTubeCadDocument',{partEntityId});
 try {
   let sketch = draft({endCuts:{start:{position:20,angleDegrees:0,rotationDegrees:0},end:{position:180,angleDegrees:0,rotationDegrees:0}},arrays:[{id:'preserved-array',spec:{columns:2}}]});
   let added = await bridge.invoke('AddNestingSideSketchPart',payload(sketch));
   let part = parts(added).find(p=>p.entityId===added.partEntityId), solid = await geometry(part.entityId);
   assert.equal(solid.valid,true); assert.ok(Math.abs(solid.volume-224*160)<.01); assert.ok(Math.abs(part.length-160)<.001);
-  assert.deepEqual(part.properties['tubeDesigner.sideSketch'].arrays,sketch.arrays);
-  const trimmedReference=await bridge.invoke('PreviewNestingSideSketchPart',{partEntityId:part.entityId,
-    resourceVersion:part.manufacturingGeometryResourceVersion,previewResourceKey:'cad-trimmed-reference'});
+  const trimmedDocument=await document(part.entityId);
+  assert.ok(trimmedDocument.documentResourceId && trimmedDocument.geometry.SolidNodes.length);
+  const trimmedReference=await bridge.invoke('PreviewNestingSideSketchPart',{...payload(sketch),previewResourceKey:'cad-trimmed-reference'});
   assert.equal(trimmedReference.length,200); assert.equal(trimmedReference.unfolding.length,200);
   report.scenarios.push({name:'Empty drawing with two end planes produces true trimmed BRep',volume:solid.volume,length:part.length});
   const oblique = draft({endCuts:{start:{position:30,angleDegrees:30,rotationDegrees:37},end:{position:170,angleDegrees:30,rotationDegrees:37}}});
@@ -45,25 +46,22 @@ try {
   assert.deepEqual(created.map(p=>Math.round(p.length)),[90,100]);
   assert.ok(created.every(p=>p.quantity===2)); assert.match(created[0].name,/1\/2/); assert.match(created[1].name,/2\/2/);
   const solids=await Promise.all(created.map(p=>geometry(p.entityId))); assert.ok(solids.every(s=>s.valid));
+  const documents=await Promise.all(created.map(p=>document(p.entityId)));
+  assert.ok(documents.every(cad=>cad.documentResourceId && cad.geometry.SolidNodes.length));
   assert.ok(Math.abs(solids.reduce((n,s)=>n+s.volume,0)-224*190)<.05);
   report.scenarios.push({name:'One circumferential removal becomes two independent manufacturing solids',lengths:created.map(p=>p.length),volumes:solids.map(s=>s.volume)});
   const projectFile='split-cad.ictd'; await bridge.rpc({action:'save',payload:{file:projectFile}});
   const reopened=await bridge.rpc({action:'open',payload:{file:projectFile}});
-  for(const p of created) {
+  for(const [index,p] of created.entries()) {
     const restored=parts(reopened.snapshot).find(v=>v.entityId===p.entityId);
-    assert.deepEqual(restored.properties['tubeDesigner.sideSketch'].entities,ring.entities);
-    assert.equal(restored.properties['tubeDesigner.sideSketchRecipe'].length,200);
-    assert.equal((await geometry(p.entityId)).valid,true);
-    const reference=await bridge.invoke('PreviewNestingSideSketchPart',{partEntityId:p.entityId,
-      resourceVersion:restored.manufacturingGeometryResourceVersion,previewResourceKey:`cad-split-reference-${p===created[0]?0:1}`});
-    assert.equal(reference.length,200); assert.equal(reference.unfolding.length,200); assert.equal(reference.splitPartCount,2);
+    assert.ok(restored);
+    assert.deepEqual(await document(p.entityId),documents[index]);
+    const reopenedSolid=await geometry(p.entityId);
+    assert.equal(reopenedSolid.valid,true);
+    assert.ok(Math.abs(reopenedSolid.volume-solids[index].volume)<1e-5);
   }
-  const first=parts(reopened.snapshot).find(p=>p.entityId===created[1].entityId);
-  const changed=await bridge.invoke('SavePartSketch',{partEntityId:first.entityId,resourceVersion:first.manufacturingGeometryResourceVersion,sketch:draft({splitParts:true})});
-  assert.deepEqual(changed.partEntityIds,[first.entityId]); assert.equal(changed.splitPartCount,1);
-  assert.ok(!parts(changed).some(p=>p.entityId===created[0].entityId));
-  assert.ok(Math.abs((await geometry(first.entityId)).volume-224*200)<.01);
-  report.scenarios.push({name:'Editing split member atomically replaces group, retains edited ID and frozen blank'});
+  assert.deepEqual(await document(part.entityId),trimmedDocument);
+  report.scenarios.push({name:'Independent split parts and trimmed part preserve their complete CAD documents and BRep through disk reopen'});
   const text=await bridge.invoke('GenerateSketchTextOutline',{text:'O',fontFamily:'Arial',height:20,x:5,y:60,rotation:0,letterSpacing:0},'product');
   assert.equal(text.bOK,true,text.message); assert.equal(text.entities.length,2);
   text.entities.forEach((entity,index)=>{entity.id=`glyph-O-${index}`;});

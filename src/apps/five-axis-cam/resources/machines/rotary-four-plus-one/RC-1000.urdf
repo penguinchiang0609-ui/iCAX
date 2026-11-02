@@ -1,0 +1,834 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="iCAX RC-1000 4+1 转盘五轴激光加工中心">
+  <link name="床身与直线导轨">
+    <visual name="base_dark">
+      <geometry>
+        <mesh filename="meshes/base_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="base_shell">
+      <geometry>
+        <mesh filename="meshes/base_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="base_blue">
+      <geometry>
+        <mesh filename="meshes/base_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <visual name="base_rail">
+      <geometry>
+        <mesh filename="meshes/base_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="base_black">
+      <geometry>
+        <mesh filename="meshes/base_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <visual name="base_steel">
+      <geometry>
+        <mesh filename="meshes/base_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <collision name="base_box_1">
+      <origin xyz="0.0 0.0 -0.44" rpy="0 0 0" />
+      <geometry>
+        <box size="2.5 1.8 0.3" />
+      </geometry>
+    </collision>
+    <collision name="base_box_2">
+      <origin xyz="0.0 -0.72 -0.123" rpy="0 0 0" />
+      <geometry>
+        <box size="2.44 0.26 1.186" />
+      </geometry>
+    </collision>
+    <collision name="base_box_3">
+      <origin xyz="0.0 0.72 -0.123" rpy="0 0 0" />
+      <geometry>
+        <box size="2.44 0.26 1.186" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="C 轴轴承座">
+    <visual name="chuck_base_dark">
+      <geometry>
+        <mesh filename="meshes/chuck_base_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="chuck_base_shell">
+      <geometry>
+        <mesh filename="meshes/chuck_base_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="chuck_base_black">
+      <geometry>
+        <mesh filename="meshes/chuck_base_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <visual name="chuck_base_blue">
+      <geometry>
+        <mesh filename="meshes/chuck_base_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <collision name="chuck_base_box_1">
+      <origin xyz="0.0 0.0 -0.03999999523162842" rpy="0 0 0" />
+      <geometry>
+        <box size="0.68 0.68 0.16" />
+      </geometry>
+    </collision>
+    <collision name="chuck_base_box_2">
+      <origin xyz="0.0 0.0 0.07750000476837159" rpy="0 0 0" />
+      <geometry>
+        <box size="0.6 0.6 0.085" />
+      </geometry>
+    </collision>
+    <collision name="chuck_base_box_3">
+      <origin xyz="0.286 0.0 0.053000004768371585" rpy="0 0 0" />
+      <geometry>
+        <box size="0.1 0.18 0.09" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="C 三爪回转卡盘">
+    <visual name="c_chuck_dark">
+      <geometry>
+        <mesh filename="meshes/c_chuck_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="c_chuck_rail">
+      <geometry>
+        <mesh filename="meshes/c_chuck_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="c_chuck_steel">
+      <geometry>
+        <mesh filename="meshes/c_chuck_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <visual name="c_chuck_black">
+      <geometry>
+        <mesh filename="meshes/c_chuck_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <collision name="c_chuck_box_1">
+      <origin xyz="0.0 0.0 -0.0330000005364418" rpy="0 0 0" />
+      <geometry>
+        <box size="0.54 0.54 0.139" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_2">
+      <origin xyz="0.205 0.0 0.0689999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.15 0.067 0.067" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_3">
+      <origin xyz="-0.10249999999999995 0.17753520777580994 0.0689999994635582" rpy="0 0 2.0943951023931953" />
+      <geometry>
+        <box size="0.15 0.067 0.067" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_4">
+      <origin xyz="-0.10250000000000009 -0.1775352077758099 0.0689999994635582" rpy="0 0 4.1887902047863905" />
+      <geometry>
+        <box size="0.15 0.067 0.067" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_5">
+      <origin xyz="0.23022469209254756 0.08379493511478883 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_6">
+      <origin xyz="0.12250000000000003 0.21217622392718746 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_7">
+      <origin xyz="-0.04254380352839792 0.24127789948799097 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_8">
+      <origin xyz="-0.1876808885641496 0.15748296437320217 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_9">
+      <origin xyz="-0.245 3.0003846579110155e-17 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_10">
+      <origin xyz="-0.1876808885641497 -0.15748296437320203 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_11">
+      <origin xyz="-0.04254380352839793 -0.24127789948799097 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_12">
+      <origin xyz="0.12249999999999985 -0.21217622392718757 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+    <collision name="c_chuck_box_13">
+      <origin xyz="0.23022469209254756 -0.08379493511478882 0.0384999994635582" rpy="0 0 0" />
+      <geometry>
+        <box size="0.012 0.012 0.006" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="中央装夹承托盘">
+    <icax_work_support />
+    <visual name="c_support_rail">
+      <geometry>
+        <mesh filename="meshes/c_support_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="c_support_steel">
+      <geometry>
+        <mesh filename="meshes/c_support_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <collision name="c_support_box_1">
+      <origin xyz="0.0 0.0 1.899898052215576e-10" rpy="0 0 0" />
+      <geometry>
+        <box size="0.52 0.52 0.008" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="X 移动龙门">
+    <visual name="x_bridge_blue">
+      <geometry>
+        <mesh filename="meshes/x_bridge_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <visual name="x_bridge_dark">
+      <geometry>
+        <mesh filename="meshes/x_bridge_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="x_bridge_shell">
+      <geometry>
+        <mesh filename="meshes/x_bridge_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="x_bridge_rail">
+      <geometry>
+        <mesh filename="meshes/x_bridge_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="x_bridge_black">
+      <geometry>
+        <mesh filename="meshes/x_bridge_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <visual name="x_bridge_steel">
+      <geometry>
+        <mesh filename="meshes/x_bridge_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <collision name="x_bridge_box_1">
+      <origin xyz="0.0 -0.72 -0.12750000762939454" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.25 0.81" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_2">
+      <origin xyz="0.0 0.72 -0.12750000762939454" rpy="0 0 0" />
+      <geometry>
+        <box size="0.45 0.25 0.81" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_3">
+      <origin xyz="0.014 0.0 0.33049999237060546" rpy="0 0 0" />
+      <geometry>
+        <box size="0.392 1.7 0.28" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_4">
+      <origin xyz="-0.082 -0.18 0.5004999923706055" rpy="0 0 0" />
+      <geometry>
+        <box size="0.106 1.0 0.058" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="Y 滑鞍">
+    <visual name="y_saddle_dark">
+      <geometry>
+        <mesh filename="meshes/y_saddle_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="y_saddle_shell">
+      <geometry>
+        <mesh filename="meshes/y_saddle_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="y_saddle_rail">
+      <geometry>
+        <mesh filename="meshes/y_saddle_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="y_saddle_black">
+      <geometry>
+        <mesh filename="meshes/y_saddle_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <collision name="y_saddle_box_1">
+      <origin xyz="-0.015250000655651092 0.0 -0.07249997735023499" rpy="0 0 0" />
+      <geometry>
+        <box size="0.18 0.3 0.45" />
+      </geometry>
+    </collision>
+    <collision name="y_saddle_box_2">
+      <origin xyz="0.0027499993443489074 0.0 0.22750002264976502" rpy="0 0 0" />
+      <geometry>
+        <box size="0.165 0.21 0.14" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="Z 滑枕与摆头叉架">
+    <visual name="z_ram_shell">
+      <geometry>
+        <mesh filename="meshes/z_ram_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="z_ram_blue">
+      <geometry>
+        <mesh filename="meshes/z_ram_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <visual name="z_ram_rail">
+      <geometry>
+        <mesh filename="meshes/z_ram_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.77 0.81 0.84 1" />
+      </material>
+    </visual>
+    <visual name="z_ram_dark">
+      <geometry>
+        <mesh filename="meshes/z_ram_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="z_ram_steel">
+      <geometry>
+        <mesh filename="meshes/z_ram_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <visual name="z_ram_black">
+      <geometry>
+        <mesh filename="meshes/z_ram_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <collision name="z_ram_box_1">
+      <origin xyz="0.0 0.0 0.09350002624094486" rpy="0 0 0" />
+      <geometry>
+        <box size="0.188 0.176 1.05" />
+      </geometry>
+    </collision>
+    <collision name="z_ram_box_2">
+      <origin xyz="0.0 0.0 -0.45949997375905516" rpy="0 0 0" />
+      <geometry>
+        <box size="0.185 0.205 0.064" />
+      </geometry>
+    </collision>
+    <collision name="z_ram_box_3">
+      <origin xyz="0.0 -0.097 -0.5334999737590551" rpy="0 0 0" />
+      <geometry>
+        <box size="0.135 0.16 0.17" />
+      </geometry>
+    </collision>
+    <collision name="z_ram_box_4">
+      <origin xyz="0.0 0.097 -0.5334999737590551" rpy="0 0 0" />
+      <geometry>
+        <box size="0.135 0.16 0.17" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="B 摆动激光切割头">
+    <icax_tool name="RC-1000 物理喷嘴" type="laser_cutting_head" tcp_mm="0.0 0.0 -220.0" beam="0 0 -1" />
+    <visual name="b_head_dark">
+      <geometry>
+        <mesh filename="meshes/b_head_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="b_head_shell">
+      <geometry>
+        <mesh filename="meshes/b_head_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="b_head_steel">
+      <geometry>
+        <mesh filename="meshes/b_head_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <visual name="b_head_copper">
+      <geometry>
+        <mesh filename="meshes/b_head_copper.stl" />
+      </geometry>
+      <material name="copper">
+        <color rgba="0.8 0.47 0.2 1" />
+      </material>
+    </visual>
+    <visual name="b_head_black">
+      <geometry>
+        <mesh filename="meshes/b_head_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <visual name="b_head_blue">
+      <geometry>
+        <mesh filename="meshes/b_head_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <collision name="b_head_box_1">
+      <origin xyz="0.0 0.0 -0.015" rpy="0 0 0" />
+      <geometry>
+        <box size="0.11000199999999999 0.166002 0.120002" />
+      </geometry>
+    </collision>
+    <collision name="b_head_box_2">
+      <origin xyz="0.0 0.0 -0.115" rpy="0 0 0" />
+      <geometry>
+        <box size="0.086002 0.086002 0.08000199999999999" />
+      </geometry>
+    </collision>
+    <collision name="b_head_box_3">
+      <origin xyz="0.0 0.0 -0.166" rpy="0 0 0" />
+      <geometry>
+        <box size="0.06600199999999999 0.06600199999999999 0.032002" />
+      </geometry>
+    </collision>
+    <collision name="b_head_box_4">
+      <origin xyz="0.0 0.0 -0.197" rpy="0 0 0" />
+      <geometry>
+        <box size="0.046002 0.046002 0.034002000000000004" />
+      </geometry>
+    </collision>
+    <collision name="b_head_box_5">
+      <origin xyz="0.0 0.0 -0.217" rpy="0 0 0" />
+      <geometry>
+        <box size="0.014002 0.014002 0.0060019999999999995" />
+      </geometry>
+    </collision>
+    <collision name="b_head_box_6">
+      <origin xyz="0.02075 0.0165 0.0775" rpy="0 0 0" />
+      <geometry>
+        <box size="0.154502 0.08300199999999999 0.06500199999999999" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="外罩（剖视）">
+    <visual name="enclosure_dark">
+      <geometry>
+        <mesh filename="meshes/enclosure_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_shell">
+      <geometry>
+        <mesh filename="meshes/enclosure_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_blue">
+      <geometry>
+        <mesh filename="meshes/enclosure_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_steel">
+      <geometry>
+        <mesh filename="meshes/enclosure_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_green">
+      <geometry>
+        <mesh filename="meshes/enclosure_green.stl" />
+      </geometry>
+      <material name="green">
+        <color rgba="0.08 0.7 0.35 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_amber">
+      <geometry>
+        <mesh filename="meshes/enclosure_amber.stl" />
+      </geometry>
+      <material name="amber">
+        <color rgba="0.97 0.56 0.06 1" />
+      </material>
+    </visual>
+    <visual name="enclosure_red">
+      <geometry>
+        <mesh filename="meshes/enclosure_red.stl" />
+      </geometry>
+      <material name="red">
+        <color rgba="0.76 0.055 0.045 1" />
+      </material>
+    </visual>
+    <collision name="enclosure_box_1">
+      <origin xyz="0.0 0.9565000023841858 -0.13049998569488525" rpy="0 0 0" />
+      <geometry>
+        <box size="2.345 0.103 2.38" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_2">
+      <origin xyz="-1.295 -0.9649999976158142 -0.13249998569488525" rpy="0 0 0" />
+      <geometry>
+        <box size="0.115 0.125 2.39" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_3">
+      <origin xyz="-1.295 0.8950000023841858 -0.13249998569488525" rpy="0 0 0" />
+      <geometry>
+        <box size="0.115 0.125 2.39" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_4">
+      <origin xyz="1.295 -0.9649999976158142 -0.13249998569488525" rpy="0 0 0" />
+      <geometry>
+        <box size="0.115 0.125 2.39" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_5">
+      <origin xyz="1.295 0.8950000023841858 -0.13249998569488525" rpy="0 0 0" />
+      <geometry>
+        <box size="0.115 0.125 2.39" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_6">
+      <origin xyz="-1.295 -0.03499999761581421 1.1075000143051148" rpy="0 0 0" />
+      <geometry>
+        <box size="0.125 1.98 0.135" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_7">
+      <origin xyz="1.295 -0.03499999761581421 1.1075000143051148" rpy="0 0 0" />
+      <geometry>
+        <box size="0.125 1.98 0.135" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_8">
+      <origin xyz="0.0 0.9650000023841858 1.1075000143051148" rpy="0 0 0" />
+      <geometry>
+        <box size="2.7 0.125 0.135" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_9">
+      <origin xyz="1.23 0.9050000023841858 1.2385000143051148" rpy="0 0 0" />
+      <geometry>
+        <box size="0.068 0.068 0.182" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="电气柜">
+    <visual name="cabinet_dark">
+      <geometry>
+        <mesh filename="meshes/cabinet_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="cabinet_shell">
+      <geometry>
+        <mesh filename="meshes/cabinet_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="cabinet_blue">
+      <geometry>
+        <mesh filename="meshes/cabinet_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.045 0.28 0.49 1" />
+      </material>
+    </visual>
+    <visual name="cabinet_black">
+      <geometry>
+        <mesh filename="meshes/cabinet_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <collision name="cabinet_box_1">
+      <origin xyz="-7.152557373046875e-09 -0.0004999901056289672 0.01374999189376831" rpy="0 0 0" />
+      <geometry>
+        <box size="0.59 0.748 1.412" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="操作台">
+    <visual name="console_dark">
+      <geometry>
+        <mesh filename="meshes/console_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="console_shell">
+      <geometry>
+        <mesh filename="meshes/console_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="console_black">
+      <geometry>
+        <mesh filename="meshes/console_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.022 0.03 0.04 1" />
+      </material>
+    </visual>
+    <visual name="console_screen">
+      <geometry>
+        <mesh filename="meshes/console_screen.stl" />
+      </geometry>
+      <material name="screen">
+        <color rgba="0.05 0.22 0.28 1" />
+      </material>
+    </visual>
+    <visual name="console_steel">
+      <geometry>
+        <mesh filename="meshes/console_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.51 0.58 0.63 1" />
+      </material>
+    </visual>
+    <visual name="console_amber">
+      <geometry>
+        <mesh filename="meshes/console_amber.stl" />
+      </geometry>
+      <material name="amber">
+        <color rgba="0.97 0.56 0.06 1" />
+      </material>
+    </visual>
+    <visual name="console_red">
+      <geometry>
+        <mesh filename="meshes/console_red.stl" />
+      </geometry>
+      <material name="red">
+        <color rgba="0.76 0.055 0.045 1" />
+      </material>
+    </visual>
+    <collision name="console_box_1">
+      <origin xyz="-2.384185791015625e-08 3.5762786865234374e-09 -0.1487500023841858" rpy="0 0 0" />
+      <geometry>
+        <box size="0.09 0.09 1.14" />
+      </geometry>
+    </collision>
+    <collision name="console_box_2">
+      <origin xyz="-2.384185791015625e-08 3.5762786865234374e-09 -0.7387500023841858" rpy="0 0 0" />
+      <geometry>
+        <box size="0.44 0.35 0.04" />
+      </geometry>
+    </collision>
+    <collision name="console_box_3">
+      <origin xyz="-2.384185791015625e-08 -0.036999996423721315 0.5212499976158143" rpy="0 0 0" />
+      <geometry>
+        <box size="0.47 0.24 0.475" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="chuck_base_mount" type="fixed">
+    <parent link="床身与直线导轨" />
+    <child link="C 轴轴承座" />
+    <origin xyz="0.0 0.0 -0.24500000476837158" />
+  </joint>
+  <joint name="C" type="revolute">
+    <parent link="C 轴轴承座" />
+    <child link="C 三爪回转卡盘" />
+    <origin xyz="0.0 0.0 0.20850000530481339" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="5000" velocity="1.2" />
+    <icax_home position="0" />
+  </joint>
+  <joint name="work_support_mount" type="fixed">
+    <parent link="C 三爪回转卡盘" />
+    <child link="中央装夹承托盘" />
+    <origin xyz="0.0 0.0 0.03249999927356839" />
+  </joint>
+  <joint name="X" type="prismatic">
+    <parent link="床身与直线导轨" />
+    <child link="X 移动龙门" />
+    <origin xyz="-0.32 0.0 0.9045000076293945" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.6" upper="0.6" effort="5000" velocity="0.8" />
+    <icax_home position="0" />
+  </joint>
+  <joint name="Y" type="prismatic">
+    <parent link="X 移动龙门" />
+    <child link="Y 滑鞍" />
+    <origin xyz="0.2852500006556511 0.0 0.33799996972084045" />
+    <axis xyz="0 1 0" />
+    <limit lower="-0.4" upper="0.4" effort="5000" velocity="0.8" />
+    <icax_home position="0" />
+  </joint>
+  <joint name="Z" type="prismatic">
+    <parent link="Y 滑鞍" />
+    <child link="Z 滑枕与摆头叉架" />
+    <origin xyz="0.03474999934434891 0.0 -0.031000003591179846" />
+    <axis xyz="0 0 1" />
+    <limit lower="-0.4" upper="0.12" effort="5000" velocity="0.5" />
+    <icax_home position="0.12" />
+  </joint>
+  <joint name="B" type="revolute">
+    <parent link="Z 滑枕与摆头叉架" />
+    <child link="B 摆动激光切割头" />
+    <origin xyz="0.0 0.0 -0.5614999737590551" />
+    <axis xyz="0 1 0" />
+    <limit lower="-2.0943951023931953" upper="2.0943951023931953" effort="5000" velocity="1.2" />
+    <icax_home position="0" />
+  </joint>
+  <joint name="enclosure_mount" type="fixed">
+    <parent link="床身与直线导轨" />
+    <child link="外罩（剖视）" />
+    <origin xyz="0.0 0.06499999761581421 0.7024999856948853" />
+  </joint>
+  <joint name="cabinet_mount" type="fixed">
+    <parent link="床身与直线导轨" />
+    <child link="电气柜" />
+    <origin xyz="1.6800000071525574 0.638499990105629 -0.02724999189376831" />
+  </joint>
+  <joint name="console_mount" type="fixed">
+    <parent link="床身与直线导轨" />
+    <child link="操作台" />
+    <origin xyz="1.600000023841858 -0.8400000035762787 0.02875000238418579" />
+  </joint>
+</robot>

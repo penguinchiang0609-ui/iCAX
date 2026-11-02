@@ -17,6 +17,14 @@ public:
     }
     bool End() const { return reader_.End(); }
 };
+inline void ReadAttestationClockInfo(TpmReader& reader) {
+    reader.U64(); reader.U32(); reader.U32(); // clock, resetCount, restartCount
+    // TPMS_CLOCK_INFO.safe describes Clock continuity, not signature validity or
+    // NV counter persistence. Fresh nonces establish evidence freshness; trial
+    // watermarks use non-orderly NV counters, never this Clock value.
+    // Still validate the wire type: TPMI_YES_NO permits only 0 and 1.
+    Require(reader.U8() <= 1, "Invalid TPM clock safe flag");
+}
 inline Bytes TpmSha256Name(std::span<const unsigned char> publicArea) {
     const auto digest = Hash(publicArea);
     Bytes name{0, 0x0b}; name.insert(name.end(), digest.begin(), digest.end()); return name;
@@ -96,8 +104,7 @@ inline VerifiedCounter VerifyNvEvidence(const NvBinding& binding, const Digest& 
     const auto returnedNonce = r.Sized(64);
     Require(returnedNonce.size() == nonce.size()
         && std::equal(returnedNonce.begin(), returnedNonce.end(), nonce.begin()), "Stale NV evidence");
-    r.U64(); r.U32(); r.U32(); // TPM clock, resetCount and restartCount; not wall time
-    Require(r.U8() == 1, "TPM clock state unsafe; recovery required");
+    ReadAttestationClockInfo(r);
     r.U64(); // Firmware version is covered by signature; enrollment handles firmware policy.
     Require(r.Sized(68) == TpmSha256Name(binding.nvPublicArea), "Counter name mismatch");
     Require(r.U16() == 0, "Counter certification offset must be zero");

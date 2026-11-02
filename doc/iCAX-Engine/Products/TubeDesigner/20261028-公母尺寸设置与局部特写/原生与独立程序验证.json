@@ -1,0 +1,156 @@
+{
+  "passed": true,
+  "standaloneRelease": true,
+  "nativeBusinessMocked": false,
+  "templateVersion": "2.3.1",
+  "previewCases": [
+    {
+      "frame": "rect",
+      "inner": "rect",
+      "form": "tongue",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "rect",
+      "form": "tongue",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "rect",
+      "form": "full_section",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "rect",
+      "form": "full_section",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "round",
+      "form": "tongue",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "round",
+      "form": "tongue",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "round",
+      "form": "full_section",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "rect",
+      "inner": "round",
+      "form": "full_section",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "rect",
+      "form": "tongue",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "rect",
+      "form": "tongue",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "rect",
+      "form": "full_section",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "rect",
+      "form": "full_section",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "round",
+      "form": "tongue",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "round",
+      "form": "tongue",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "round",
+      "form": "full_section",
+      "through": false,
+      "inputPreserved": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "round",
+      "form": "full_section",
+      "through": true,
+      "inputPreserved": true,
+      "passed": true
+    }
+  ],
+  "uiCases": [
+    {
+      "frame": "rect",
+      "inner": "rect",
+      "form": "tongue",
+      "through": false,
+      "nativeParameterCommit": true,
+      "designRemainsCurrent": true,
+      "passed": true
+    },
+    {
+      "frame": "round",
+      "inner": "round",
+      "form": "full_section",
+      "through": true,
+      "automaticThroughDetailPresent": true,
+      "passed": true
+    }
+  ],
+  "runtime": "file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-joint-ui-20261028/runtime/iCAX-UI/SDK/AppShell/index.html"
+}

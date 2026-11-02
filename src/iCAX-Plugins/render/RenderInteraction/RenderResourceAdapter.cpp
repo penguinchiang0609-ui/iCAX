@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 #include "RenderResourceAdapter.h"
 
@@ -349,4 +349,31 @@ iCAX::RenderInteraction::EnsureFrontendMaterialResource(
         "material",
         iCAX::Render::kRenderMaterialIdentifier,
         iCAX::Render::MakeRenderMaterialResource(_Material));
+}
+
+// The adapter only packs neutral data. The geometry service owns curve evaluation.
+iCAX::Resource::CResourceReference iCAX::RenderInteraction::EnsureFrontendBRepGeometryResource(
+    iCAX::Resource::CResourceLibrary& Resources_, const std::string& strSourceResourceURL_,
+    const iCAX::GeometryData::BRepDisplayEdges& Edges_)
+{
+    const auto version = Resources_.GetVersion(strSourceResourceURL_);
+    const auto model = Resources_.Get<iCAX::GeometryData::BRepModel>(strSourceResourceURL_);
+    if (!version || !model) throw std::invalid_argument("Frontend BRep display requires an existing BRep resource");
+    return StoreDerived(Resources_, MakeDerivedURL(Resources_, "brep-display", strSourceResourceURL_),
+        strSourceResourceURL_, version, "geometry", iCAX::Render::kRenderGeometryIdentifier,
+        MakeFrontendBRepGeometry(*model, Edges_, version));
+}
+
+iCAX::Resource::CFlatBufferResource iCAX::RenderInteraction::MakeFrontendBRepGeometry(
+    const iCAX::GeometryData::BRepModel& Model_, const iCAX::GeometryData::BRepDisplayEdges& Edges_, uint64_t Version_)
+{
+    iCAX::Render::SRenderMeshEdges edges;
+    for (const auto& edge : Edges_.Edges) {
+        if (edge.Points.size() < 2 || edges.Positions.size() + edge.Points.size() > UINT32_MAX)
+            throw std::invalid_argument("Invalid BRep display edge range");
+        edges.Ranges.insert(edges.Ranges.end(), {static_cast<uint32_t>(edges.Positions.size()),
+            static_cast<uint32_t>(edge.Points.size()), edge.Feature ? 1u : 0u});
+        for (const auto& p : edge.Points) edges.Positions.push_back(ToFloat3(p));
+    }
+    return iCAX::Render::MakeRenderGeometryResource(MakeMesh(Model_, Version_), edges);
 }

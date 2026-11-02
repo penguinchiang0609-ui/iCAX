@@ -15,7 +15,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.route('http://floating-editors.test/**', serveBrowserAsset);
   await page.goto('http://floating-editors.test/');
-  await page.addStyleTag({ content: readBrowserAsset('apps/_shared/workbench/styles/laser3dcam.css') + `
+  await page.addStyleTag({ content: readBrowserAsset('apps/_shared/workbench/styles/workbench.css') + `
     *{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}
     #app{width:1600px;height:950px}.cam-workbench{position:relative;display:grid!important;grid-template-areas:none!important;grid-template-columns:230px 950px 420px!important;grid-template-rows:950px!important;height:950px!important;min-height:0}
     .cam-context-pane,.cam-info-pane{grid-area:auto!important;grid-row:1!important;display:block!important;height:950px;min-height:0;overflow:auto!important}

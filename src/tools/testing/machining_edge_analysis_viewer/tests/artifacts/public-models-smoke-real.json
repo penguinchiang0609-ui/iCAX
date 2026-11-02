@@ -1,0 +1,516 @@
+{
+  "passed": true,
+  "publicData": true,
+  "checked": [
+    {
+      "caseId": "247",
+      "name": "左辊压梁.STEP",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=247",
+      "faces": 267,
+      "segments": 828,
+      "renderedSegments": 818,
+      "skinRelations": [
+        "PartialOnSkin",
+        "OnSkin",
+        "OffSkin"
+      ],
+      "convexities": [
+        "Coplanar",
+        "Free",
+        "Concave",
+        "Convex"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -1094.5,
+          -37.65180000000001,
+          -14.937500000000004
+        ],
+        "meshMax": [
+          1093.3000000000002,
+          36.34819999999999,
+          16.062499999999996
+        ],
+        "diagonalMm": 2189.2706182653624,
+        "checkedEdgeSamplePoints": 3206,
+        "maxSampleSegmentMm": 2187.8,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/%E5%B7%A6%E8%BE%8A%E5%8E%8B%E6%A2%81.brep",
+          "bytes": 476088,
+          "sha256": "0b5d3d5d66689f3c38f4d28dd253ddc41aed542a3b7e6fb377035ee13c3b4f85",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/%E5%B7%A6%E8%BE%8A%E5%8E%8B%E6%A2%81.step",
+          "bytes": 3838315,
+          "sha256": "08067711fc6e2ee0aed008350b7c08060bdcb5850404f0ed5a94f8de853a2f13",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/%E5%B7%A6%E8%BE%8A%E5%8E%8B%E6%A2%81.json",
+          "bytes": 14099097,
+          "sha256": "740b9f6a00b7c41ff67e5b44ddb37f27d18ac4f6f6d529b44a4bc20240439538",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "1",
+      "edgeListSelection": "E1:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E2:S1",
+        "selectedEdgeKey": "E746:S1",
+        "representative": "E746:S1",
+        "worldPoint": [
+          -704.3477590650225,
+          -1.8171668647301877,
+          -12.937500000000004
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.json": "740b9f6a00b7c41ff67e5b44ddb37f27d18ac4f6f6d529b44a4bc20240439538",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.brep": "0b5d3d5d66689f3c38f4d28dd253ddc41aed542a3b7e6fb377035ee13c3b4f85",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.step": "08067711fc6e2ee0aed008350b7c08060bdcb5850404f0ed5a94f8de853a2f13"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.json": "740b9f6a00b7c41ff67e5b44ddb37f27d18ac4f6f6d529b44a4bc20240439538",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.brep": "0b5d3d5d66689f3c38f4d28dd253ddc41aed542a3b7e6fb377035ee13c3b4f85",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\左辊压梁.step": "08067711fc6e2ee0aed008350b7c08060bdcb5850404f0ed5a94f8de853a2f13"
+      },
+      "pageErrors": []
+    },
+    {
+      "caseId": "158",
+      "name": "AB52小边管右 20X20X2.0X753 (一车一个)(1).stp",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=158",
+      "faces": 33,
+      "segments": 132,
+      "renderedSegments": 127,
+      "skinRelations": [
+        "OnSkin",
+        "PartialOnSkin",
+        "OffSkin"
+      ],
+      "convexities": [
+        "Free",
+        "Coplanar",
+        "Concave",
+        "Convex"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -380.89445960443004,
+          44.496446474184495,
+          38.49673749989819
+        ],
+        "meshMax": [
+          372.10854767266585,
+          64.4964464741845,
+          58.496737499900405
+        ],
+        "diagonalMm": 753.5340264170891,
+        "checkedEdgeSamplePoints": 687,
+        "maxSampleSegmentMm": 17.090844242660456,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)(1).brep",
+          "bytes": 186084,
+          "sha256": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)(1).step",
+          "bytes": 1144324,
+          "sha256": "21a991d868d3f16160450795daefd33e19b4fbfec4e71c57176377d6158c5143",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)(1).json",
+          "bytes": 2343980,
+          "sha256": "6d94ed79e43ad000e9cc30912df5abe41260f9a3dd6f5ac967963217ee57fce9",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "3",
+      "edgeListSelection": "E7:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E5:S1",
+        "selectedEdgeKey": "E110:S1",
+        "representative": "E110:S1",
+        "worldPoint": [
+          -380.8564827770836,
+          45.35663397934387,
+          57.55003286525718
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).json": "6d94ed79e43ad000e9cc30912df5abe41260f9a3dd6f5ac967963217ee57fce9",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).brep": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).step": "21a991d868d3f16160450795daefd33e19b4fbfec4e71c57176377d6158c5143"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).json": "6d94ed79e43ad000e9cc30912df5abe41260f9a3dd6f5ac967963217ee57fce9",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).brep": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)(1).step": "21a991d868d3f16160450795daefd33e19b4fbfec4e71c57176377d6158c5143"
+      },
+      "pageErrors": []
+    },
+    {
+      "caseId": "160",
+      "name": "AB52小边管右 20X20X2.0X753 (一车一个).stp",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=160",
+      "faces": 33,
+      "segments": 132,
+      "renderedSegments": 127,
+      "skinRelations": [
+        "OnSkin",
+        "PartialOnSkin",
+        "OffSkin"
+      ],
+      "convexities": [
+        "Free",
+        "Coplanar",
+        "Concave",
+        "Convex"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -380.89445960443004,
+          44.496446474184495,
+          38.49673749989819
+        ],
+        "meshMax": [
+          372.10854767266585,
+          64.4964464741845,
+          58.496737499900405
+        ],
+        "diagonalMm": 753.5340264170891,
+        "checkedEdgeSamplePoints": 687,
+        "maxSampleSegmentMm": 17.090844242660456,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)__stp.brep",
+          "bytes": 186084,
+          "sha256": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)__stp.step",
+          "bytes": 1144324,
+          "sha256": "f7bfb904e11ff8b4023d915a55b87c985233dd9305db94f323df8f40f162b30a",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/AB52%E5%B0%8F%E8%BE%B9%E7%AE%A1%E5%8F%B3%2020X20X2.0X753%20(%E4%B8%80%E8%BD%A6%E4%B8%80%E4%B8%AA)__stp.json",
+          "bytes": 2343977,
+          "sha256": "1f9fee228f0dc8aa07dd98f0fa205e7bbc7b6d636fedb3c9bceef47d41ae5c88",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "3",
+      "edgeListSelection": "E7:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E5:S1",
+        "selectedEdgeKey": "E110:S1",
+        "representative": "E110:S1",
+        "worldPoint": [
+          -380.8564827770836,
+          45.35663397934387,
+          57.55003286525718
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.json": "1f9fee228f0dc8aa07dd98f0fa205e7bbc7b6d636fedb3c9bceef47d41ae5c88",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.brep": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.step": "f7bfb904e11ff8b4023d915a55b87c985233dd9305db94f323df8f40f162b30a"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.json": "1f9fee228f0dc8aa07dd98f0fa205e7bbc7b6d636fedb3c9bceef47d41ae5c88",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.brep": "794ac1436e057d3c105a4eb15445738d0b55869b2c820cd2736148ceb6af6dfd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\AB52小边管右 20X20X2.0X753 (一车一个)__stp.step": "f7bfb904e11ff8b4023d915a55b87c985233dd9305db94f323df8f40f162b30a"
+      },
+      "pageErrors": []
+    },
+    {
+      "caseId": "246",
+      "name": "套管.IGS",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=246",
+      "faces": 10,
+      "segments": 180,
+      "renderedSegments": 172,
+      "skinRelations": [
+        "PartialOnSkin",
+        "OnSkin"
+      ],
+      "convexities": [
+        "Coplanar",
+        "Free"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -350.0000000008154,
+          -15.111510064616397,
+          -13.499999993180433
+        ],
+        "meshMax": [
+          349.9999999991846,
+          11.888489921991603,
+          13.499999993427567
+        ],
+        "diagonalMm": 701.0406550254797,
+        "checkedEdgeSamplePoints": 406,
+        "maxSampleSegmentMm": 550,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/%E5%A5%97%E7%AE%A1.brep",
+          "bytes": 114856,
+          "sha256": "bd8abe143bc2f5c6cd05c63ec2eaba80c0022bbbcac1f79b0f6d318fd732b264",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/%E5%A5%97%E7%AE%A1.step",
+          "bytes": 699204,
+          "sha256": "adeff8c85c77b8ecd490c6ab2b0ab99496f652bff5888b92522d30520c001bcd",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/%E5%A5%97%E7%AE%A1.json",
+          "bytes": 2876267,
+          "sha256": "07da9cfffb19983f75fa5c5c2aa5d5f85530c222ba5ee64448d1cb033700b106",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "1",
+      "edgeListSelection": "E1:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E7:S1",
+        "selectedEdgeKey": "E5:S6",
+        "representative": "E5:S6",
+        "worldPoint": [
+          303.36523889043457,
+          -15.065056876812397,
+          0.7915200663735645
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.json": "07da9cfffb19983f75fa5c5c2aa5d5f85530c222ba5ee64448d1cb033700b106",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.brep": "bd8abe143bc2f5c6cd05c63ec2eaba80c0022bbbcac1f79b0f6d318fd732b264",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.step": "adeff8c85c77b8ecd490c6ab2b0ab99496f652bff5888b92522d30520c001bcd"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.json": "07da9cfffb19983f75fa5c5c2aa5d5f85530c222ba5ee64448d1cb033700b106",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.brep": "bd8abe143bc2f5c6cd05c63ec2eaba80c0022bbbcac1f79b0f6d318fd732b264",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.step": "adeff8c85c77b8ecd490c6ab2b0ab99496f652bff5888b92522d30520c001bcd"
+      },
+      "pageErrors": []
+    },
+    {
+      "caseId": "131",
+      "name": "222.igs",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=131",
+      "faces": 11,
+      "segments": 84,
+      "renderedSegments": 74,
+      "skinRelations": [
+        "PartialOnSkin",
+        "OnSkin"
+      ],
+      "convexities": [
+        "Convex",
+        "Free",
+        "Concave",
+        "Coplanar"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -218.10613100822695,
+          -20.000000000023007,
+          -15.00000000008757
+        ],
+        "meshMax": [
+          218.10613100822056,
+          19.999999999978503,
+          15.00000000001191
+        ],
+        "diagonalMm": 439.0684884314883,
+        "checkedEdgeSamplePoints": 248,
+        "maxSampleSegmentMm": 430.2122620164438,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/222.brep",
+          "bytes": 37870,
+          "sha256": "850669b84190fca034ed6aa15870a75905cd398ad405311d891cbf2b950bf7cf",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/222.step",
+          "bytes": 278988,
+          "sha256": "3d712bdfe4c8ca0b6fb978142cfee13239424d79b742bea44b84c31ca1495f65",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/222.json",
+          "bytes": 1371138,
+          "sha256": "f5bb10dd35e34ec42a5c21ed8da7b6175a0c8572ba51b628d42eceea9a5db9fd",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "1",
+      "edgeListSelection": "E1:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E18:S1",
+        "selectedEdgeKey": "E20:S1",
+        "representative": "E20:S1",
+        "worldPoint": [
+          203.1396649142014,
+          -0.8656609248561491,
+          -14.999999999993067
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.json": "f5bb10dd35e34ec42a5c21ed8da7b6175a0c8572ba51b628d42eceea9a5db9fd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.brep": "850669b84190fca034ed6aa15870a75905cd398ad405311d891cbf2b950bf7cf",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.step": "3d712bdfe4c8ca0b6fb978142cfee13239424d79b742bea44b84c31ca1495f65"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.json": "f5bb10dd35e34ec42a5c21ed8da7b6175a0c8572ba51b628d42eceea9a5db9fd",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.brep": "850669b84190fca034ed6aa15870a75905cd398ad405311d891cbf2b950bf7cf",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\222.step": "3d712bdfe4c8ca0b6fb978142cfee13239424d79b742bea44b84c31ca1495f65"
+      },
+      "pageErrors": []
+    },
+    {
+      "caseId": "24",
+      "name": "015.iges",
+      "url": "http://127.0.0.1:8769/?revision=repair-round2-review-20261028#case=24",
+      "faces": 15,
+      "segments": 84,
+      "renderedSegments": 72,
+      "skinRelations": [
+        "OnSkin",
+        "PartialOnSkin"
+      ],
+      "convexities": [
+        "Free",
+        "Coplanar",
+        "Convex"
+      ],
+      "pixelWidth": 2.4,
+      "worldUnits": false,
+      "zoomDoesNotChangeWidthsOrPatterns": true,
+      "geometry": {
+        "meshMin": [
+          -2000.0000000000011,
+          -200.00000000000003,
+          -100
+        ],
+        "meshMax": [
+          1999.9999999999989,
+          200,
+          100
+        ],
+        "diagonalMm": 4024.9223594996215,
+        "checkedEdgeSamplePoints": 264,
+        "maxSampleSegmentMm": 348,
+        "outOfModelSamplePoints": 0
+      },
+      "downloads": [
+        {
+          "label": "整件 BREP",
+          "url": "http://127.0.0.1:8769/data/015.brep",
+          "bytes": 26385,
+          "sha256": "7b57f9a07f7c031ee5a051b3f35b0fc1c2543cdb858594f8712a649a5a8bedb0",
+          "status": 200
+        },
+        {
+          "label": "整件 STEP",
+          "url": "http://127.0.0.1:8769/data/015.step",
+          "bytes": 268758,
+          "sha256": "c549659631786b9706ea1155bcd84e7d6e1adb14a79f43f7c0fe3cbb8ab2d1c1",
+          "status": 200
+        },
+        {
+          "label": "判定数据",
+          "url": "http://127.0.0.1:8769/data/015.json",
+          "bytes": 1298005,
+          "sha256": "68241309d3c3622ed01842e22a9b79c39c74b8e0361de9bff7b9b8eb624270fb",
+          "status": 200
+        }
+      ],
+      "faceListSelection": "4",
+      "edgeListSelection": "E21:S1",
+      "canvasPick": {
+        "requestedEdgeKey": "E21:S1",
+        "selectedEdgeKey": "E22:S1",
+        "representative": "E22:S1",
+        "worldPoint": [
+          -2000.0000000000011,
+          -183.13458834812397,
+          7.865411651876041
+        ]
+      },
+      "sourceFilesBefore": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.json": "68241309d3c3622ed01842e22a9b79c39c74b8e0361de9bff7b9b8eb624270fb",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.brep": "7b57f9a07f7c031ee5a051b3f35b0fc1c2543cdb858594f8712a649a5a8bedb0",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.step": "c549659631786b9706ea1155bcd84e7d6e1adb14a79f43f7c0fe3cbb8ab2d1c1"
+      },
+      "sourceFilesAfter": {
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.json": "68241309d3c3622ed01842e22a9b79c39c74b8e0361de9bff7b9b8eb624270fb",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.brep": "7b57f9a07f7c031ee5a051b3f35b0fc1c2543cdb858594f8712a649a5a8bedb0",
+        "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\015.step": "c549659631786b9706ea1155bcd84e7d6e1adb14a79f43f7c0fe3cbb8ab2d1c1"
+      },
+      "pageErrors": []
+    }
+  ],
+  "combinedSkinRelations": [
+    "PartialOnSkin",
+    "OnSkin",
+    "OffSkin"
+  ],
+  "combinedConvexities": [
+    "Coplanar",
+    "Free",
+    "Concave",
+    "Convex"
+  ],
+  "sourceFilesUnchanged": true
+}

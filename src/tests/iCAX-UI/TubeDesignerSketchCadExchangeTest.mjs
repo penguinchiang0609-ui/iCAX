@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import "./TubeDesignerSketchCadDxfImportTest.mjs";
 import { buildSketchDxf, createRacetrack, createRegularPolygon, createStar, parseSketchDxf } from "../../apps/tube-designer/webpage/sketchCadExchange.mjs";
-import { curvePoint, editableSegments } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint, editableSegments } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 import { sketchRibbonGroups } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 
 function parseDxf(text) {

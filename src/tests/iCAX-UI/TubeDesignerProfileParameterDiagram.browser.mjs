@@ -41,7 +41,7 @@ try {
     return route.fulfill({ contentType: "text/javascript", body: readFileSync(file, "utf8") });
   });
   await page.goto("http://parameter-diagram.test/");
-  const commonCss = readFileSync(new URL("../../apps/_shared/workbench/styles/laser3dcam.css", import.meta.url), "utf8");
+  const commonCss = readFileSync(new URL("../../apps/_shared/workbench/styles/workbench.css", import.meta.url), "utf8");
   await page.addStyleTag({ content: "*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}.diagram-test-scopes{display:grid;gap:20px;padding:16px;max-width:1000px;margin:auto}.diagram-test-scope{min-width:0;border:1px solid #adc4c5;padding:10px}.diagram-test-inputs{display:flex;flex-wrap:wrap;gap:10px}.diagram-test-inputs label{display:grid;gap:4px}.diagram-test-inputs input{width:100px}" + commonCss + tubeDesignerCss });
   await page.evaluate(async () => {
     const diagram = await import("/src/apps/tube-designer/webpage/profileParameterDiagram.mjs");

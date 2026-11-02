@@ -1,0 +1,50 @@
+// Narrow real standalone CEF reopen check. Never generate, adopt or export.
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {chromium} from 'playwright';
+const runtime=resolve(process.env.ICAX_CEF_RUNTIME),output=resolve(process.env.ICAX_BROWSER_REPORT_DIRECTORY),project=resolve(process.env.ICAX_FIXTURE_PROJECT);
+const base=pathToFileURL(runtime+'/').href,hash=()=>createHash('sha256').update(readFileSync(project)).digest('hex'),beforeHash=hash();
+mkdirSync(output,{recursive:true});
+const report={passed:false,standaloneCef:true,project,runtime,cases:[],errors:[],coverage:{freshNativeProcess:true,actualSavedProject:true,generate:false,adopt:false,breakdown:false,export:false,userProjectModified:false}};
+const browser=await chromium.connectOverCDP('http://127.0.0.1:'+process.env.ICAX_CEF_PORT);
+const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url()===base+'iCAX-UI/SDK/AppShell/index.html');assert.ok(page,'Owned AppShell tab');page.setDefaultTimeout(45000);page.on('pageerror',e=>report.errors.push(e.message));
+const idle=()=>page.waitForFunction(()=>!__icaxAppShell.getState().pendingCount&&!fixture.view.pending&&!fixture.view.fixtureRequest,null,{timeout:120000});
+const bind=()=>page.evaluate(async base=>{const {getProjectView}=await import(base+'apps/_shared/workbench/state/projectViewStore.mjs');window.fixture={view:getProjectView(__icaxAppShell.getState().activeProjectId)};},base);
+try{
+  await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');
+  await page.evaluate(p=>__icaxAppShell.openProject(p,'icax.five-axis-cam'),project);
+  await page.waitForFunction(()=>__icaxWorkbench.currentProjectId===__icaxAppShell.getState().activeProjectId);await bind();
+  await page.locator('[data-tab-id="workpiece"]').click();await idle();
+  const state=await page.evaluate(()=>fixture.view.viewportSceneProxy.invoke('CamScene.ReadState',{}, {timeoutMs:120000}));
+  const unit=state.fixtureUnits.find(u=>u.kind==='Generated'&&u.design.recipe.windowMode==='Automatic');assert.ok(unit);assert.equal(unit.partIds.length,10);
+  const parts=unit.design.assembly.parts;assert.equal(parts.filter(p=>p.role==='Support').length,9);assert.equal(parts.filter(p=>p.role==='Base').length,1);
+  assert.equal(parts.filter(p=>p.role==='Support').reduce((n,p)=>n+p.holes.length,0),19);assert.equal(parts.find(p=>p.role==='Base').holes.length,35);
+  assert.equal(state.intentToolpaths.length,0);
+  const opening=unit.design.assembly.openingPreclearance;assert.equal(opening.status,'Partial');assert.equal(opening.validity,'Current');assert.equal(Number(opening.boundaryCount),3);assert.equal(Number(opening.unclassifiedFaceCount),4);assert.equal(opening.toolpathRequired,false);assert.equal(opening.toolpathStatus,'NotChecked');
+  await page.waitForFunction(ids=>ids.every(id=>{const mesh=fixture.view.viewport?.sceneObjects.get(id);return !!mesh&&mesh.visible&&mesh.geometry?.getAttribute('position')?.count>0;}),unit.partIds,{timeout:120000});
+  const meshes=await page.evaluate(ids=>ids.map(id=>{const mesh=fixture.view.viewport.sceneObjects.get(id);return {id,visible:mesh.visible,vertices:mesh.geometry.getAttribute('position').count};}),unit.partIds);
+  await page.evaluate(()=>{const proxy=fixture.view.viewportSceneProxy,invoke=proxy.invoke.bind(proxy);window.openingReopenCalls=[];proxy.invoke=async(method,...args)=>{openingReopenCalls.push(method);if(/^CamFixture\.(SetRecipe|Generate|Confirm|Breakdown|Export|UnitUpdate|UnitRemove)$/.test(method))throw Error('Reopen acceptance forbids native mutation '+method);return invoke(method,...args);};});
+  await page.locator(`[data-five-command="five.preparation.unit:${unit.id}"]`).click();await idle();
+  await page.getByText('部分孔洞待处理',{exact:true}).waitFor();
+  assert.match(await page.locator('[data-five-key="opening-preclearance-result"]').innerText(),/3 条.*4 个/s);
+  await page.evaluate(()=>{fixture.view.viewport.setViewDirection([1,-1,.8]);fixture.view.viewport.fitView();document.querySelector('.cam-info-pane').scrollTop=0;});
+  await page.screenshot({path:resolve(output,'standalone-reopened-automatic.png')});
+  const reread=await page.evaluate(()=>fixture.view.viewportSceneProxy.invoke('CamScene.ReadState',{}, {timeoutMs:120000}));assert.deepEqual(reread.expected,state.expected);
+  report.cases.push('A fresh standalone CEF process reopens the saved automatic unit: nine support meshes and one base mesh display real resources, with 19/35 inner contours and zero toolpaths');
+  report.cases.push('The adopted unit shows Partial for three reserved opening boundaries and four unclassified faces; its actual optical check remains NotChecked');
+  const created=await page.evaluate(()=>__icaxAppShell.createProject({productId:'icax.five-axis-cam',projectName:'新建夹具默认参数验收'}));
+  await page.waitForFunction(id=>__icaxWorkbench.currentProjectId===id,created.activeProjectId);await bind();await idle();
+  await page.evaluate(()=>__icaxAppShell.executeRibbonCommand('five.fixture.focus.design'));await idle();
+  const defaults=await page.evaluate(()=>{const d=fixture.view.fixtureDesignDraft;return {windowMode:d.windowMode,windowWeb:Number(d.windowWeb),spacing:Number(d.spacing),baseDrop:Number(d.baseDrop),jointMode:d.jointMode,cutClearanceMode:d.cutClearanceMode};});
+  assert.deepEqual(defaults,{windowMode:'None',windowWeb:8,spacing:220,baseDrop:40,jointMode:'TabSlot',cutClearanceMode:'None'});
+  assert.equal(await page.locator('[data-five-fixture-field="design:windowWeb"]').count(),0);
+  assert.equal(await page.locator('[data-five-command="five.fixture.design.generate"]').isDisabled(),true);
+  await page.screenshot({path:resolve(output,'standalone-new-defaults.png')});
+  report.cases.push('A separate unsaved empty project defaults to no windows, 220 mm support span, 40 mm base drop and TabSlot; no generation is performed');
+  assert.equal(hash(),beforeHash,'The saved acceptance source project is unchanged');assert.deepEqual(report.errors,[]);
+  Object.assign(report,{passed:true,openingPreclearance:opening,meshes,defaults,sourceProjectSha256:beforeHash,sourceProjectUnchanged:true});
+}catch(error){report.error=error.stack||error.message;process.exitCode=1;await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});}
+finally{writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser.close();}

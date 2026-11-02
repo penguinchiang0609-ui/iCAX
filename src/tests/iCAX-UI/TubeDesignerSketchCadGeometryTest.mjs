@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { boundsOfEntities, transformSketchEntities, intersectionsOfEntities, trimSketchEntity, extendSketchEntity, offsetSketchEntity, filletSketchEntities, repairSketchEntities, diagnoseSketchEntities } from "../../apps/tube-designer/webpage/sketchCadGeometry.mjs";
-import { curvePoint, editableSegments } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint, editableSegments } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 
 const near = (a, b, tolerance = 1e-7) => {
   if (Array.isArray(a)) { assert.equal(a.length, b.length); a.forEach((v, i) => near(v, b[i], tolerance)); }
@@ -153,5 +153,40 @@ const snapshot = e => JSON.stringify(e);
   assert.equal(typeof diagnoseSketchEntities, "function"); assert.equal(typeof repairSketchEntities, "function");
   const repaired = repairSketchEntities(circles, { tolerance: .01, removeDuplicates: true });
   assert.equal(repaired.entities.length, 1); assert.equal(snapshot(circles), before);
+}
+// Boundary recipes follow original edge geometry through cuts and inserted joins.
+{
+  const bevel = segmentIndices => ({ enabled: true, side: "outer", angleDegrees: 45, rootFace: 1, segmentIndices });
+  const path = { kind: "path", segments: [line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 20, 10)], bevel: bevel([2]) };
+  const before = snapshot(path), cutter = line(0, 5, 20, 5);
+  assert.deepEqual(trimSketchEntity(path, [cutter], [3, 0]).parts[0].bevel.segmentIndices, [1]);
+  const removed = trimSketchEntity({ ...path, bevel: bevel([0]) }, [cutter], [3, 0]).parts[0].bevel;
+  assert.deepEqual(removed.segmentIndices, []); assert.equal(removed.enabled, false);
+  assert.equal(snapshot(path), before);
+  const square = { kind: "rectangle", x: 0, y: 0, width: 20, height: 20, bevel: bevel([0]) };
+  const wrap = trimSketchEntity(square, [line(5, -5, 5, 25), line(15, -5, 15, 25)], [10, 0]).parts[0];
+  assert.deepEqual(wrap.bevel.segmentIndices, [0, 4]);
+  assert.ok(wrap.bevel.segmentIndices.every(index => wrap.segments[index].y1 === 0 && wrap.segments[index].y2 === 0));
+  const implicit = { kind: "path", closed: true, segments: [line(0, 0, 10, 0), line(10, 0, 10, 10), line(10, 10, 0, 10)], bevel: bevel([3]) };
+  const implicitTrim = trimSketchEntity(implicit, [line(-5, 3, 15, 3), line(-5, 7, 15, 7)], [0, 5]).parts[0];
+  assert.deepEqual(implicitTrim.bevel.segmentIndices, [0, 4]);
+  assert.ok(implicitTrim.bevel.segmentIndices.every(index => implicitTrim.segments[index].x1 === 0 && implicitTrim.segments[index].x2 === 0));
+  assert.deepEqual(filletSketchEntities([{ ...square, bevel: bevel([1, 2]) }], { radius: 2, point: [20, 0] }).parts[0].bevel.segmentIndices, [2, 3]);
+  assert.deepEqual(filletSketchEntities([{ ...square, bevel: bevel([0, 1]) }], { chamfer: true, distance: 2, point: [20, 0] }).parts[0].bevel.segmentIndices, [0, 1, 2]);
+  assert.deepEqual(filletSketchEntities([{ ...square, bevel: bevel([3, 0]) }], { radius: 2, point: [0, 0] }).parts[0].bevel.segmentIndices, [0, 3, 4]);
+  const pair = [line(0, 0, 20, 0), { ...line(20, 0, 20, 20), bevel: bevel([0]) }];
+  assert.deepEqual(filletSketchEntities(pair, { radius: 2 }).parts[0].bevel.segmentIndices, [2]);
+  const matching = pair.map(entity => ({ ...entity, bevel: bevel([0]) }));
+  assert.deepEqual(filletSketchEntities(matching, { radius: 2 }).parts[0].bevel.segmentIndices, [0, 1, 2]);
+  const conflicting = [matching[0], { ...matching[1], bevel: { ...bevel([0]), angleDegrees: 30 } }], frozen = snapshot(conflicting);
+  assert.throws(() => filletSketchEntities(conflicting, { radius: 2 }), /坡口参数不同/); assert.equal(snapshot(conflicting), frozen);
+  const curve = { kind: "path", segments: [line(0, 0, 10, 0), { kind: "circleArc", cx: 5, cy: 0, radius: 5, startAngle: 0, sweep: Math.PI / 2 }], bevel: bevel([0]) }, curveBefore = snapshot(curve);
+  assert.throws(() => filletSketchEntities([curve], { radius: 1 }), /保留指定坡口边段/); assert.equal(snapshot(curve), curveBefore);
+  const curved = { kind: "path", segments: [{ kind: "bezier", points: [[0, 0], [5, -3], [10, 0]] }, line(10, 0, 10, 10)], bevel: bevel([0]) };
+  const offset = offsetSketchEntity(curved, -1).parts[0];
+  assert.deepEqual(offset.bevel.segmentIndices, [0, 1]); assert.equal(offset.segments[2].kind, "circleArc");
+  assert.deepEqual(offsetSketchEntity({ ...curved, bevel: bevel([0, 1]) }, -1).parts[0].bevel.segmentIndices, [0, 1, 2, 3]);
+  const whole = { ...curved, bevel: { enabled: true, side: "outer", angleDegrees: 45, rootFace: 1 } };
+  assert.equal(offsetSketchEntity(whole, -1).parts[0].bevel.segmentIndices, undefined);
 }
 console.log("TubeDesigner sketch CAD geometry tests passed");

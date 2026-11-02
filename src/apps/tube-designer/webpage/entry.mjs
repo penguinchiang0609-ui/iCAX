@@ -1,3 +1,4 @@
+export { getStartupPresentation } from "./startup.mjs";
 import * as workbench from "../../_shared/workbench/entry.mjs";
 import { releaseProject as releaseWorkbenchProject } from "../../_shared/workbench/createWorkbench.mjs";
 import { installTubeDesignerBranding } from "./branding.mjs";
@@ -11,6 +12,7 @@ import { attachPartDrawingEditor, renderPartDrawingDialog } from "./partDrawing.
 import { attachPartDrawingPreview, disposePartDrawingPreview } from "./partDrawingPreview.mjs";
 import { disposeSideSketchPreview } from "./sideSketchPreview.mjs";
 import { patchPartDrawingDom, rememberPartDrawingDom } from "./partDrawingDom.mjs";
+import { renderTubeCadEditor, patchTubeCadEditor, attachTubeCadEditor, closeTubeCadEditor } from "./tubeCadEditor.mjs";
 import { patchLibraryDom, rememberLibraryDom } from "./libraryDomPatch.mjs";
 import { bindFloatingEditorWindows, patchFloatingEditorDom, rememberFloatingEditorDom } from "./floatingEditorDom.mjs";
 import { capturePaneInteraction } from "../../_shared/workbench/utils/paneInteractionState.mjs";
@@ -45,6 +47,7 @@ import {
 } from "./designerViews.mjs";
 import { getRibbonDefinition as getDesignerRibbonDefinition } from "./ribbonDefinition.mjs";
 import { ensureTubeDesignerStyles } from "./styles/ensureStyles.mjs";
+import { tubeDesignerViewportNavigation } from "./viewportNavigation.mjs";
 import { renderNestingSettingsDialogs } from "./nestingSettings.mjs";
 import { connectBatchExcelAutomation, renderBatchExcelAutomationDialog, stopBatchExcelAutomation } from "./batchExcelAutomation.mjs";
 import { renderNestingStandardPartDialog, captureNestingStandardPartDisclosures,
@@ -59,7 +62,8 @@ import {
   productSceneMemberIds,
 } from "./productParameterDiagram.mjs";
 import { renderNestingPunchPartDialog } from "./nestingPunchPart.mjs";
-import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs } from "./machiningArea.mjs";
+import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs, renderTubeMachiningWorkflow } from "./machiningArea.mjs";
+import { patchMachiningDom, rememberMachiningDom } from "./machiningDomPatch.mjs";
 import { hasUnsavedMachiningPaths } from "./machiningEditor.mjs";
 import { findProjectView, getProjectView } from "../../_shared/workbench/state/projectViewStore.mjs";
 import { restoreProductResources } from "./productResourceSession.mjs";
@@ -106,7 +110,6 @@ import {
   renderNestingResultDock,
   renderNestingRightPane,
   renderNestingViewportOverlay,
-  renderPunchWizardDialog,
   restoreNestingPartListScroll,
 } from "./partsArea.mjs";
 import {
@@ -203,6 +206,7 @@ export async function releaseProject(context) {
     cleanup(() => cancelDesignerPartThumbnailHydration(context));
     cleanup(() => disposeDesignerPartInspection(context));
     cleanup(() => disposePartDrawingPreview(context.mount));
+    cleanup(() => closeTubeCadEditor(view,context.mount));
     cleanup(() => disposeSideSketchPreview(context.mount));
     cleanup(() => stopBatchExcelAutomation());
   }
@@ -467,6 +471,7 @@ function withDesignerContext(context) {
     errorPresentation: "log",
     forceThreeViewport: true,
     showViewportGrid: false,
+    viewportOptions: { ...context.viewportOptions, ...tubeDesignerViewportNavigation },
     areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "单件工艺库", assemblies: "装配库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
@@ -518,19 +523,24 @@ function withDesignerContext(context) {
         ? tabId : "view";
     },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
-      className: `tube-designer-workspace ${areaId === "view" ? "tube-designer-product-workspace" : ""} ${areaId === "nesting" ? `tube-designer-production-workspace ${Object.entries(nestingDockZoneCounts(_view, _context)).filter(([, count]) => !count).map(([zone]) => `tube-designer-dock-${zone}-empty`).join(" ")}` : ""} ${areaId === "assemblies" ? "tube-designer-assembly-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
+      className: `tube-designer-workspace ${areaId === "view" ? "tube-designer-product-workspace" : ""} ${areaId === "machining" ? "tube-designer-machining-workspace" : ""} ${areaId === "nesting" ? `tube-designer-production-workspace ${Object.entries(nestingDockZoneCounts(_view, _context)).filter(([, count]) => !count).map(([zone]) => `tube-designer-dock-${zone}-empty`).join(" ")}` : ""} ${areaId === "assemblies" ? "tube-designer-assembly-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
       style: areaId === "nesting" ? renderNestingWorkspaceStyle(_view, _context) : areaId === "view" ? renderProductWorkspaceStyle() : "",
     }),
     resolveViewportBackgroundColor: () => 0x13252d,
     configureViewport: configureDesignerViewport,
     resolveAreaViewDefinition: resolveDesignerAreaViewDefinition,
     renderViewportOverlay: renderDesignerAreaViewportOverlay,
+    renderWorkbenchPrefix: (_context, view) => renderTubeMachiningWorkflow(view),
     renderWorkbenchSuffix: renderDesignerWorkbenchSuffix,
     refreshLicenseWorkspace: () => mountProject(context),
     refreshLicenseControls: (view) => applyLicenseControlState(context, view, context.mount),
     async handleAreaAction(context, view, action, target, ops) {
       if (await handleLicenseCommand(context, view, action, ops)) return { handled: true };
-      if (!allowDesignerInteraction(context, view, actionLicenseFeature(action, view.activeAreaId))) return { handled: true };
+      const feature = action === "tube-machining-command"
+        ? commandLicenseFeature(`machining.${target?.dataset?.machiningCommand ?? ""}`, view.activeAreaId)
+        : actionLicenseFeature(action, view.activeAreaId);
+      const navigation = ["tube-machining-stage", "tube-machining-search", "tube-machining-select"].includes(action);
+      if (!navigation && !allowDesignerInteraction(context, view, feature)) return { handled: true };
       const result = await handleDesignerAreaAction(context, view, action, target, ops);
       rememberDesignerCreationWindowState(context, view);
       rememberLinkedWindowControls(context, view, action, target);
@@ -546,6 +556,15 @@ function withDesignerContext(context) {
       return handleDesignerRibbonCommand(context, view, commandId, ops);
     },
     tryRenderProjectPatch(context,view,mount,ops) {
+      if (view.activeAreaId === "machining" && patchMachiningDom(view, mount, {
+        left: renderTubeMachiningLeftPane(context, view), right: renderTubeMachiningRightPane(context, view),
+        overlay: renderTubeMachiningViewportOverlay(context, view), workflow: renderTubeMachiningWorkflow(view),
+        suffix: renderDesignerWorkbenchSuffix(context, view, view.scene ?? {}), sceneProxy: context.sceneProxy ?? null,
+      })) return true;
+      if(patchTubeCadEditor(view,mount)) {
+        attachTubeCadEditor(context,view,mount,ops);
+        return true;
+      }
       if (patchSketchDialogDom(context, view, mount, ops)) return true;
       if(view.activeAreaId==='nesting' && !view.tubeDesignerPartDrawing && !view.tubeDesignerPunchWizard
         && !view.tubeDesignerNestingStandardPartDraft && patchFloatingEditorDom(view,mount,{
@@ -590,7 +609,7 @@ function withDesignerContext(context) {
         return true;
       }
       if(!view.tubeDesignerPunchWizard||view.tubeDesignerPartDrawing||view.activeAreaId!=="nesting")return false;
-      const html=(renderNestingPunchPartDialog(view)||renderPunchWizardDialog(context,view))
+      const html=renderNestingPunchPartDialog(view)
         +renderDesignerOperationOverlay(context,view);
       if(!patchPunchDom(view,mount,html))return false;
       bindProfileParameterDiagrams(mount);
@@ -610,6 +629,7 @@ function withDesignerContext(context) {
       captureProductTemplateLibraryScrollState(context, view);
     },
     afterProjectPatch(context, view, _mount, ops) {
+      if (view.activeAreaId === "machining") attachTubeMachining(context, view, _mount, ops);
       applyLicenseControlState(context, view, _mount);
       bindFloatingEditorWindows(_mount,view);
       rememberFloatingEditorDom(view,_mount,{suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
@@ -627,6 +647,7 @@ function withDesignerContext(context) {
       bindTubeDesignerWindowMemory(context, view, ops);
     },
     afterProjectRender(context, view, mount, ops) {
+      rememberMachiningDom(view, mount, renderDesignerWorkbenchSuffix(context, view, view.scene ?? {}), context.sceneProxy ?? null);
       applyLicenseControlState(context, view, mount);
       bindFloatingEditorWindows(mount,view);
       rememberFloatingEditorDom(view,mount,{suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
@@ -693,6 +714,7 @@ function withDesignerContext(context) {
       attachSketchAreaInteractions(context, view, mount, ops);
       attachComponentLibrary(context, view, mount, ops);
       rememberPartDrawingDom(view,mount);
+      attachTubeCadEditor(context,view,mount,ops);
       if(view.tubeDesignerPartDrawing) {
         attachPartDrawingPreview(context,view,mount,ops);
         attachPartDrawingEditor(context,view,mount,ops);
@@ -760,6 +782,8 @@ function configureDesignerViewport(_context, view, areaId) {
   }
   const viewport = view.viewport;
   if (!viewport) return;
+  viewport.options.zoomToPointer = true;
+  viewport.options.avoidSpecificationOverlap = true;
   const normalizedAreaId = areaId === "parts" ? "nesting"
     : (["view", "nesting", "machining", "templates", "profiles", "tools", "assemblies", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
   view.tubeDesignerProjectionModes ??= {};
@@ -866,9 +890,6 @@ export function handleDesignerViewportHover(context, view, userData, hit, event,
 }
 
 function renderDesignerWorkbenchSuffix(context, view, scene) {
-  const punchWizardDialog = view.activeAreaId === "nesting"
-    ? renderPunchWizardDialog(context, view)
-    : "";
   const nestingStandardPartDialog = view.activeAreaId === "nesting"
     ? renderNestingStandardPartDialog(view)
     : "";
@@ -892,7 +913,7 @@ function renderDesignerWorkbenchSuffix(context, view, scene) {
   // startup screen. Later project/history loads retain their regular feedback.
   const startupOwnsProgress = loadProgress
     && context.actions?.reportStartupProgress?.(loadProgress, context.project?.projectId) === true;
-  return `${renderBatchExcelAutomationDialog(view)}${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${productPartsDock}${areaDialogs}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${punchWizardDialog}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
+  return `${renderTubeCadEditor(view)}${renderBatchExcelAutomationDialog(view)}${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${productPartsDock}${areaDialogs}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
     loadProgress && !startupOwnsProgress ? renderProgress(loadProgress) : ""
   }`;
 }

@@ -209,6 +209,17 @@
       "step": 0.05,
       "unit": "mm",
       "level": "basic"
+    },
+    {
+      "key": "tabAngle",
+      "displayName": "插舌周向角",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 1,
+      "unit": "°",
+      "level": "basic"
     }
   ],
   "partProcesses": [
@@ -233,7 +244,7 @@
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
         "pairRotation": 90,
-        "allowEndOpening": false
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "part",
@@ -264,7 +275,8 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "trim": 0,
-        "rotation": 0
+        "rotation": 0,
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "end",
@@ -294,7 +306,7 @@
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
         "pairRotation": 90,
-        "allowEndOpening": false
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "part",
@@ -325,7 +337,8 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "trim": 0,
-        "rotation": 0
+        "rotation": 0,
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "end",

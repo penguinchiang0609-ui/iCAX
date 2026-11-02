@@ -1,0 +1,71 @@
+支撑生成策略调研（2026-10-25）
+
+结论
+Tebis 的公开资料可用于参考夹具设计、加工轮廓调整和全机碰撞校核。
+CENIT FASTSUITE / FASTCUBE 的官方操作文档公开了更具体的激光切割板架生成步骤，适合作为本次支撑生成器的直接功能参照。
+没有取得这些产品的专有几何算法，不将本地实现称为复刻其算法。
+
+官方资料与可确认的做法
+
+1. Tebis：三维激光切割
+https://www.tebis.com/en/software/cam-software/3d-laser-cutting
+确认：自动计算后可交互调整；对工件、夹具、切割头和机床进行碰撞分析；激光路径修改后更新碰撞分析。
+应用：夹具几何准备与后续刀路、光路、头部及空移仿真各自保持清晰状态。
+
+2. Tebis：修边和激光切割专用 CAD/CAM
+https://www.tebis.com/en/tebis-specialist-cad-cam-for-trimming-machining-and-laser-cutting/n2562
+确认：提供专用修边夹具 CAD 设计工具；碰撞检查覆盖工件与夹具，也覆盖路径间连接运动。
+边界：该页面没有公布激光板架的自动开窗、孔洞识别或最小板带算法。
+
+3. FASTSUITE：夹具减重开窗
+https://documentation.fastsuite.com/en/fastsuite-e2/learn-fastsuite-e2/engineering-planning/fixture-builder/design-details/fixture-builder-details-weight/
+原文：Apply weight reduction separately for X, Y, and base plates.
+确认：X/Y 支撑板和底板分别支持自动减重；边界参数控制最小保留材料宽度；小型塔板默认不开减重窗；大型夹具可以拆分底板再缩小。
+应用：支撑与底板同时支持多孔，保留承托、底梁、支脚、接头和中肋；狭小区域不强行开窗。
+边界：资料讲的是减重；将开窗用于辅助气体通风和落料，是本次用户工艺要求。
+
+4. FASTSUITE：承托轮廓局部避让
+https://documentation.fastsuite.com/en/fastsuite-e2/learn-fastsuite-e2/engineering-planning/fixture-builder/design-details/fixture-builder-details-relief/
+原文：The support plate shape that carries the workpiece is computed directly from the workpiece shape.
+确认：承托轮廓由工件几何生成；Process geometry relief 沿激光加工轮廓局部让空；Circular notch radius 控制缺口；拐角避让允许自动检测和人工编辑。
+应用：先按工件生成承托，再按已有几何孔界进行预避让；有刀路后继续按实际加工姿态让空与验证。
+边界：该页没有证明软件会将所有已有工件孔洞自动竖直投影到整个夹具。
+
+5. FASTSUITE：激光切割基本流程
+https://documentation.fastsuite.com/en/fastsuite-e2/learn-fastsuite-e2/manufacturing-processes/laser-cutting/basic/laser-cut1-bas-step2/
+确认：从工件先建立夹具，可移动、缩短、拆分和增删支撑；下一步才设置激光切割项目。
+应用：基础支撑、多孔开窗与几何孔界预避让不要求已有刀路。
+
+6. FASTSUITE：板件排样与制造输出
+https://documentation.fastsuite.com/en/fastsuite-e2/learn-fastsuite-e2/engineering-planning/fixture-builder/design-details/fixture-builder-details-nesting/
+确认：支持板件排样、板间距与板幅设置，夹具变更后更新排样，导出 DXF。
+应用：最终制造验收应检查闭合外轮廓与内孔、单位、连接结构和实际板件几何。
+
+7. FASTCUBE Fixture Builder 产品说明
+https://www.fastsuite.com/software/fastcube/fixture-builder
+确认：从 STEP 自动生成底板和支撑，支持切割轮廓让空、减重、榫接、装配标识及 DXF/STEP 输出。
+
+本次本地设计决策（并非供应商公开算法）
+- 新建夹具默认开启支撑与底板自动开窗，保留板带初值 8 mm，可调；仍共同满足板厚、最小连接板带与榫卯约束。
+- 大开窗按最大跨度 4 倍保留板带分格，保留中肋；该比例是本地几何规则，尚非强度计算结论。
+- 对可靠识别的下侧平面内孔边界，使用精确 BRep 曲线极值生成保守竖直包络，外扩 1 mm，贯穿支撑与底板。
+- 平面可以是解析平面，也可以是样条表示的几何平面。后者要求完整控制网有限、全部权重为正，并证明全曲面偏离平面的上界不超过 1e-7 mm；不以少量采样点拟合代替证明。
+- 封闭实体按材料外法向，仅使用朝下的出口边界，避免将盆口、上侧卷边内界投影成巨大空洞；单面薄片单独处理。跳过的非下出口内界可能包括真通孔的上口，其计数不等于“非通孔数量”。
+- 暂未可靠分类的非平面多边界面单独计数并提示。跨曲面接缝的孔可能不表现为单个面的内线，当前预避让只覆盖可证明的平面内线子集；“已生成”或未分类数为零均不代表所有孔洞已覆盖。
+- 预避让结果不代表实际激光方向安全，曲面孔、侧向切割、引入引出及切割头仍需后续实际刀路校核。
+- 承托、连接、孔界预避让与真实刀路光路校核分别记录，避免用几何生成结果替代最终加工验收。
+
+验证记录
+- 最终相关原生回归实际执行 24 项，24 项通过、0 项失败；另有 1 项禁用的保存工程回放未执行，不计入通过项。证据为 output/tests/fixture-opening-strategy/native/complete-final-tests.xml 与 .log。
+- 几何服务新增 4 项回归通过：支撑及底板多孔与板带、连续圆孔走廊零材料交集、倾斜工件且仅板厚边缘相交时的避让、样条表达的真实平面孔界。
+- 180×180 mm 样本：底板 16 孔，3 块支撑合计 27 孔，保留板带不小于 8 mm。
+- 参数与状态浏览器回归通过；延迟刷新保留输入节点、监听器、输入值、焦点、选区及左右和内层滚动。
+- 实际壁灯盘 STEP 的无刀路浏览器流程已完成生成和采用。采用 Weld、8 mm 板带、40 mm 间距、100 mm 底座下移时：21 支撑与 1 底板，新增支撑通风窗 57 个、底板通风窗 8 个。
+- 同一实际模型在 TabSlot、15 mm 板带配置下可生成和采用，但支撑未能开出通风窗，因此不把此配置判为“支撑多孔通过”；这是将新建默认板带调整为 8 mm 的直接验证依据。8 mm 配置仍需分别核对全默认参数与各工件，不能推定任意布置都能开窗。
+- 实际模型的全新默认流程已通过：TabSlot、8 mm 板带、35 mm 间距、40 mm 底座下移、Automatic Grid、自动底座范围。无刀路生成并采用 9 块支撑及 1 块底板；9 块支撑均开出通风窗，共 19 个；底板在 24 个榫槽与 3 条源孔通道之外新增 8 个通风窗。没有改写尺寸或连接方式来完成这次验证。
+- 同一默认配置已通过独立原生实体检验：从真实源模型取得 3 个圆孔的精确边界，对各自外扩 1 mm 并贯穿底板的空间，逐一与全部成品实体相交，交叠体积均为零；盆口仍完整存在，承托检查与实际采用通过。
+- 实际模型识别 3 个向下平面孔口，跳过 4 条非下出口边界，另有 4 个曲面面的多边界未自动处理；结果保持 Partial，实际光路仍未验证。
+- 上述全默认工程已在隔离原生环境拆单、导出并核对 10 个 DXF。外轮廓及 54 条内轮廓全部闭合，内轮廓逐块与最终板件一致，单位为 mm；底板新增的 8 个通风窗已进入制造文件。导出坐标往返最大差约 4.99e-11 mm，此值是文件坐标核对误差，不是物理加工精度或承载能力结论。
+- 全新启动的独立 FiveAxisCAM 程序已只读重开该默认测试工程，10 个实际板件资源均正常显示；Partial 与实际光路未验证状态保留。另开空项目核对默认参数正确；测试工程文件哈希前后一致，用户当前程序与工程未被修改。
+- 已有圆盖换三个摆放角度生成支撑，共完成 288581 次原 CAD 曲面独立射线检查，未出现支撑上穿工件。过程中修复了二次轮廓简化产生的微小加料：保留已校核布尔运算结果的完整顶点，未放宽原精度或上穿守卫。
+- 原生实际模型、制造 DXF 和独立程序的最终验收状态以 output/tests/fixture-opening-strategy 的相关报告为准，不能由上述子项推定全部通过。

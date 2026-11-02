@@ -1,5 +1,7 @@
 # 02 CAM 核心数据结构详细设计
 
+> 历史模型说明（2026-10-25）：本文的 CCAMPath、独立曲线/姿态资源及 Block 字段保留原 Laser3DCAM 设计背景，不再作为 FiveAxisCAM 刀路的现行存储契约。当前唯一编辑定义、精确结果、组织及有效输出以 [IntentToolpath 共享设计](../../../../iCAX-Plugins/cam/IntentToolpath/README.md)为准，不提供旧字段兼容迁移。
+
 ## 1. 模块定位
 
 本模块定义三维线条切割 CAM 的核心数据结构。核心数据分为 Database Component、Resource 和运行时缓存三类。
@@ -294,7 +296,7 @@ CCAMPathComponent : CCAMProgramNodeComponent
   PoseFieldResourceID
 ```
 
-刀路主身份是 Path EntityID。当前阶段会把来源拓扑记录到组件和曲线资源中；真实空间曲线生成后，刀路仍然以 `CurveResourceID` 指向的曲线资源为权威几何，以 `PoseFieldResourceID` 指向姿态场资源。曲线资源和姿态场资源都统一使用世界坐标。`CuttingLayerID` 决定切割系统工艺分组，`VisibleLayerID` 决定前端显示分组。刀路顺序不写在 Path 自身，而由所属 Block 的 `Children[]` 决定。
+本节历史模型以 Path EntityID 标识刀路，曲线、姿态和 Block 分别保存。当前统一模型由 `CEditableOperationComponent` 保存来源及编辑定义，`CEditableDerivedComponent` 保存精确几何、姿态通道和来源映射；显示采样与资源引用不构成第二权威，组织和加工约束由方案单独管理。
 
 ## 9. PathCurveResource
 

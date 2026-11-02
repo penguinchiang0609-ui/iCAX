@@ -1,5 +1,7 @@
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
+import { tubeDesignerViewportNavigation } from "./viewportNavigation.mjs";
 import { bindPartDrawingLayout, disposePartDrawingLayout } from "./partDrawingLayout.mjs";
+import { retainDrawingPreviewRenderer, releaseDrawingPreviewResources } from "./partDrawingSession.mjs";
 
 // A drawing owns its viewport and resource lifetime. It never subscribes to the
 // main scene, invokes a modelling command, or refreshes the project workbench.
@@ -66,19 +68,76 @@ function centeredMatrix(preview) {
   return [1, 0, 0, -center[0], 0, 1, 0, -center[1], 0, 0, 1, -center[2], 0, 0, 0, 1];
 }
 
-export function buildPartDrawingPreviewRows(preview = {}) {
-  if (!preview.baseGeometry?.url) return [];
+export function drawingTopologyEntries(preview, kind) {
+  return (preview?.topology?.[kind === "face" ? "faces" : "edges"] ?? [])
+    .filter(item => Number.isSafeInteger(Number(item.id)) && Number(item.id) > 0);
+}
+
+const topologyEntityId = (kind, id) => `drawing:topology:${kind}:${id}`;
+
+export function resolvePartDrawingTopologyPick(preview, mode, userData, hit, hits = []) {
+  // A render row is keyed by the native topology ID. Raycast triangle/vertex
+  // indices are only display details and never enter the CAD recipe.
+  const entries = new Map(drawingTopologyEntries(preview, mode).map(item => [topologyEntityId(mode, item.id), item]));
+  const candidates = [userData, ...hits.filter(item => !Number.isFinite(hit?.distance)
+    || !Number.isFinite(item.distance) || item.distance <= hit.distance + 2).map(item => item.object?.userData)];
+  for (const data of candidates) {
+    const item = entries.get(String(data?.entityId ?? data?.objectId ?? ""));
+    if (item) return { ...item, kind: mode, id: Number(item.id), topologyRevision: preview?.topology?.revision };
+  }
+  return null;
+}
+
+export function buildPartDrawingPreviewRows(preview = {}, { mode = "finished", selectionMode = "edge", referenceFaceId = 0 } = {}) {
+  if (!preview.geometry?.url && !preview.cutBoundaryGeometry?.url && !preview.baseGeometry?.url) return [];
   const localToWorldMatrix = centeredMatrix(preview);
-  const row = (entityId, geometry, material, renderClass) => ({ entityId, data: {
-    geometry, material, geometryKind: 1, renderClass, visible: true, selectable: false, localToWorldMatrix,
+  const row = (entityId, geometry, material, renderClass, selectable = false) => ({ entityId, data: {
+    geometry, material, geometryKind: geometry?.kind === "polyline" ? 2 : 1,
+    renderClass, visible: true, selectable, localToWorldMatrix,
   } });
-  return [row("drawing:base", preview.baseGeometry, preview.baseMaterial, 1),
+  if (mode === "base") return preview.baseGeometry?.url ? [row("drawing:base", preview.baseGeometry, preview.baseMaterial, 1)] : [];
+  if (mode === "tools") return [
+    ...(preview.baseGeometry?.url ? [row("drawing:base", preview.baseGeometry, preview.baseMaterial, 1)] : []),
     ...(preview.toolPreviews ?? []).filter(tool => tool.geometry?.url).map(tool =>
       row(`drawing:${tool.target}:${tool.key}`, tool.geometry, preview.toolMaterial, 5))];
+  const topology = drawingTopologyEntries(preview, selectionMode).filter(item => item.geometry?.url);
+  const referenceFace = selectionMode === "edge" && referenceFaceId
+    ? drawingTopologyEntries(preview, "face").find(item => Number(item.id) === Number(referenceFaceId)) : null;
+  return [
+    row("drawing:finished", preview.geometry ?? preview.cutBoundaryGeometry ?? preview.baseGeometry,
+      preview.material ?? preview.cutBoundaryMaterial ?? preview.baseMaterial, 1),
+    ...topology.map(item => row(topologyEntityId(selectionMode, item.id), item.geometry,
+      item.material ?? (selectionMode === "face" ? preview.topologyMaterial : preview.edgeMaterial)
+        ?? preview.material ?? preview.baseMaterial, selectionMode === "edge" ? 4 : 1, true)),
+    ...(referenceFace?.geometry?.url ? [row(topologyEntityId("face", referenceFace.id), referenceFace.geometry,
+      preview.topologyMaterial ?? preview.material ?? preview.baseMaterial, 1)] : []),
+  ].filter(item => item.data.geometry?.url);
+}
+
+function selectedReferenceFace(state) {
+  const selection = state.topologySelection;
+  if (!selection) return 0;
+  if (selection.kind === "face") return Number(selection.id);
+  const ids = selection.edgeIds ?? [selection.id];
+  return Number(state.drawing?.bevels?.find(item => item.edgeIds?.length === ids.length
+    && ids.every(id => item.edgeIds.some(edge => Number(edge) === Number(id))))?.referenceFaceId ?? 0);
+}
+
+function selectionObjectIds(state) {
+  const selection = state.topologySelection;
+  if (!selection || selection.topologyRevision !== state.preview?.topology?.revision) return [];
+  const selected = (selection.kind === "edge" ? selection.edgeIds ?? [selection.id] : [selection.id])
+    .filter(id => drawingTopologyEntries(state.preview, selection.kind).some(item => Number(item.id) === Number(id)))
+    .map(id => topologyEntityId(selection.kind, id));
+  const face = selectedReferenceFace(state);
+  if (selection.kind === "edge" && face) selected.push(topologyEntityId("face", face));
+  return selected;
 }
 
 function isCurrentPreview(state) {
-  return !!state.preview?.baseGeometry?.url && state.preview.revision === state.revision;
+  return state.preview?.revision === state.revision && (!!state.preview?.geometry?.url
+    || !!state.preview?.resultError && !!state.preview?.topology?.revision
+      && !!(state.preview.cutBoundaryGeometry?.url || state.preview.baseGeometry?.url));
 }
 
 const baseRecipeKey = recipe => JSON.stringify([recipe?.partEntityId, recipe?.resourceId,
@@ -86,6 +145,7 @@ const baseRecipeKey = recipe => JSON.stringify([recipe?.partEntityId, recipe?.re
   recipe?.baseLength, recipe?.drawing]);
 
 function unchangedRows(controller, state, drawing) {
+  if (state.previewMode === "finished") return controller.rows;
   const previous = controller.recipe, next = state.pendingPreviewRecipe;
   if (previous && next) {
     if (baseRecipeKey(previous) !== baseRecipeKey(next)) return [];
@@ -114,7 +174,8 @@ function unchangedRows(controller, state, drawing) {
 function desiredPresentation(controller) {
   const { state, drawing } = controller;
   const accepted = isCurrentPreview(state);
-  const rows = accepted ? buildPartDrawingPreviewRows(state.preview) : unchangedRows(controller, state, drawing);
+  const rows = accepted ? buildPartDrawingPreviewRows(state.preview, { mode: state.previewMode,
+    selectionMode: state.selectionMode, referenceFaceId: selectedReferenceFace(state) }) : unchangedRows(controller, state, drawing);
   return { rows, key: rowsKey(rows), accepted, preview: state.preview,
     boundsKey: JSON.stringify(state.preview?.baseBounds ?? { length: state.preview?.length }),
     recipe: accepted ? state.previewRecipe : controller.recipe };
@@ -126,9 +187,11 @@ function updateStatus(controller) {
   const loading = !!state.previewPending || !!state.previewRenderPending;
   const error = state.previewRenderError || (state.previewComputeError?.revision === state.revision
     ? state.previewComputeError.message : "");
-  const message = error ? `当前特征预览失败：${error}` : state.previewRenderPending
-    ? "正在加载并显示当前特征…" : state.previewPending ? String(state.previewPhase || "正在更新当前特征…")
-    : desired?.accepted ? "" : state.preview ? "当前特征等待更新；其余模型保持显示。" : "选择主管截面后显示三维模型";
+  controller.viewport?.setPickingEnabled?.(!!desired?.accepted && controller.displayKey === desired.key
+    && state.previewMode === "finished" && !loading && !state.previewRenderError);
+  const message = error ? `三维成品预览失败：${error}` : state.previewRenderPending
+    ? "正在加载并显示三维成品…" : state.previewPending ? String(state.previewPhase || "正在更新三维成品…")
+    : desired?.accepted ? "" : state.preview ? "三维成品等待更新。" : "选择主管截面后显示三维模型";
   let status = host.querySelector("[data-part-drawing-preview-notice]");
   if (!message && !loading) {
     status?.remove();
@@ -165,7 +228,7 @@ function updateStatus(controller) {
     }
   }
   host.setAttribute("aria-busy", String(loading));
-  if (desired?.accepted && controller.displayKey === desired.key && !state.previewRenderPending && !error)
+  if (desired?.accepted && controller.displayKey === desired.key && !state.previewRenderPending && !state.previewRenderError)
     host.dataset.partDrawingPreviewReady = "true";
   else delete host.dataset.partDrawingPreviewReady;
 }
@@ -204,8 +267,27 @@ async function ensureViewport(controller) {
     const create = controller.ops?.createPartDrawingViewport
       ?? (await import("../../../iCAX-UI/SDK/Viewport/threeViewport.mjs")).createThreeViewport;
     if (!stillOwned(controller)) return null;
-    const viewport = await create({ backgroundColor: 0x13252d, continuousRender: false, constrainOrbit: false, projectionMode: "orthographic",
-      showProjectionToggle: true, pickingEnabled: false, blankDoubleClickFitEnabled: true, antialias: true, pixelRatioCap: 2 });
+    const viewport = await create({ ...tubeDesignerViewportNavigation, backgroundColor: 0x13252d, continuousRender: false, constrainOrbit: false, projectionMode: "orthographic",
+      showProjectionToggle: true, pickingEnabled: true, blankDoubleClickFitEnabled: true, antialias: true, pixelRatioCap: 2,
+      onPick(userData, hit, event, hits) {
+        if (!stillOwned(controller) || !isCurrentPreview(controller.state)
+          || controller.state.previewMode !== "finished" || controller.state.previewPending || controller.state.previewRenderPending) return;
+        const selection = resolvePartDrawingTopologyPick(controller.state.preview,
+          controller.state.selectionMode, userData, hit, hits);
+        const prior = controller.state.topologySelection;
+        if (selection?.kind === "edge" && prior?.kind === "edge" && (event?.ctrlKey || event?.metaKey)) {
+          const ids = new Set(prior.edgeIds ?? [prior.id]);
+          if (ids.has(selection.id)) ids.delete(selection.id); else ids.add(selection.id);
+          selection.edgeIds = [...ids];
+          const edges = drawingTopologyEntries(controller.state.preview, "edge").filter(edge => ids.has(Number(edge.id)));
+          selection.adjacentFaceIds = (edges[0]?.adjacentFaceIds ?? []).filter(id =>
+            edges.every(edge => edge.adjacentFaceIds?.some(face => Number(face) === Number(id))));
+        }
+        controller.state.topologySelection = selection?.edgeIds?.length === 0 ? null : selection;
+        viewport.setSelectedObjectIds?.(selection ? (selection.kind === "edge" ? selection.edgeIds ?? [selection.id] : [selection.id])
+          .map(id => topologyEntityId(selection.kind, id)) : []);
+        controller.ops.renderProject?.(controller.context, controller.view);
+      } });
     if (!stillOwned(controller)) { viewport?.dispose(); return null; }
     controller.viewport = viewport; mountController(controller, controller.host, controller.mount);
     updateStatus(controller);
@@ -229,7 +311,8 @@ export function attachPartDrawingPreview(context, view, mount, ops = {}) {
   if (controller?.state !== state || controller?.drawing !== drawing) {
     disposePartDrawingPreview(mount);
     controller = { mount, context, view, drawing, state, ops, host: null, viewport: null, viewportPromise: null,
-      ready: false, sequence: 0, flight: null, requestKey: null, displayKey: null, rows: [], tools: new Map(), recipe: null };
+      ready: false, sequence: 0, flight: null, requestKey: null, displayKey: null, rows: [], tools: new Map(), recipe: null,
+      releaseRenderer: retainDrawingPreviewRenderer(state) };
     controllers.set(mount, controller);
   }
   controller.context = context; controller.ops = ops;
@@ -238,6 +321,10 @@ export function attachPartDrawingPreview(context, view, mount, ops = {}) {
     if (stillOwned(controller)) controller.viewport?.resize?.();
   } });
   const desired = desiredPresentation(controller); controller.desired = desired;
+  controller.viewport?.setPickingEnabled?.(desired.accepted && state.previewMode === "finished" && !state.previewPending);
+  if (desired.accepted && drawing.mode !== "bevel" && state.topologySelection?.topologyRevision
+    && state.topologySelection.topologyRevision !== state.preview?.topology?.revision) state.topologySelection = null;
+  controller.viewport?.setSelectedObjectIds?.(selectionObjectIds(state));
   keepUnchangedVisible(controller, desired);
   if (controller.flight && controller.requestKey === desired.key) { updateStatus(controller); return controller.flight; }
   if (!controller.flight && controller.displayKey === desired.key) {
@@ -282,6 +369,7 @@ export function attachPartDrawingPreview(context, view, mount, ops = {}) {
     // Do not restore a camera captured before loading: the user may have orbited
     // in the meantime. Ordinary operand updates never change the live camera.
     viewport.setVisibleEntityIds(desired.rows.map(row => row.entityId));
+    viewport.setSelectedObjectIds?.(selectionObjectIds(state));
     viewport.retainViewResources?.(references(desired.rows));
     await frame();
     return current() && controller.desired.accepted;
@@ -327,4 +415,6 @@ export function disposePartDrawingPreview(mount) {
   controller.viewport?.renderer?.forceContextLoss?.();
   controller.viewport?.axisRenderer?.forceContextLoss?.();
   controller.viewport?.dispose();
+  controller.releaseRenderer();
+  void releaseDrawingPreviewResources(controller.state);
 }

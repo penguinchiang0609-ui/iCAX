@@ -1,0 +1,42 @@
+namespace iCAX.FiveAxisCAM;
+file_identifier "F5IR";
+table MachineCollisionCollider {
+  owner_element_id:string (required);
+  owner_element_name:string (required);
+  box_id:string;
+  box_name:string (required);
+  box_index:int = -1; // original owner.GetCollisions() attachment index
+  representation:string (required);
+  editable:bool;
+}
+table MachineCollisionPair {
+  first:MachineCollisionCollider (required);
+  second:MachineCollisionCollider (required);
+}
+table MachineIKResult {
+  schema_version:uint = 1;
+  edit_token:string (required);
+  epoch:string (required);
+  result_sequence:ulong;
+  processed_sequence:ulong;
+  applied_sequence:ulong;
+  mutation_sequence:ulong;
+  status:string (required);
+  collision_status:string;
+  reason:string;
+  positions:[double]; // exact Begin jointIds order, fixed nodes included
+  tip_world:[double]; // 16 entries computed from the actual accepted joint state
+  cache_reused:bool;
+  capture_ms:double;
+  prepare_ms:double;
+  solve_ms:double;
+  collision_ms:double;
+  commit_ms:double;
+  total_ms:double;
+  position_error_mm:double;
+  rotation_error_radians:double;
+  world_matrices:[double]; // 16 row-major entries per Begin worldIds/worldTransformIds
+  collision_pairs:[MachineCollisionPair];
+  collision_diagnostics_complete:bool;
+}
+root_type MachineIKResult;

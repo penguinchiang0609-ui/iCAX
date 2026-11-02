@@ -13,6 +13,8 @@
 #include <Database/IEntity.h>
 #include <Database/ComponentBase.h>
 #include <GeometryData/GeometryData.h>
+#include <NestingAdapter.h>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <fstream>
@@ -46,6 +48,32 @@ ObjectMap Invoke(const std::shared_ptr<iCAX::Project::CProject>& project, const 
     throw std::runtime_error(std::string(method) + " timed out");
 }
 void Expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+std::vector<iCAX::Application::CUserDataFeatureDescriptor> UserDataDescriptors(
+    const iCAX::Product::CProductDefinition& definition) {
+    std::vector<iCAX::Application::CUserDataFeatureDescriptor> features;
+    for (const auto& sourceFeature : definition.UserDataFeatures) {
+        iCAX::Application::CUserDataFeatureDescriptor feature;
+        feature.FeatureID = sourceFeature.FeatureID;
+        for (const auto& sourceRecord : sourceFeature.RecordTypes) {
+            iCAX::Application::CUserDataRecordTypeDescriptor record;
+            record.RecordType = sourceRecord.RecordType;
+            record.SubjectTypes = sourceRecord.SubjectTypes;
+            record.SchemaVersion = sourceRecord.SchemaVersion;
+            record.AllowMultiple = sourceRecord.AllowMultiple;
+            for (const auto& sourceRelation : sourceRecord.Relations) {
+                iCAX::Application::CUserDataRelationDescriptor relation;
+                relation.RelationType = sourceRelation.RelationType;
+                relation.TargetKind = sourceRelation.TargetKind;
+                relation.TargetFeatureID = sourceRelation.TargetFeatureID;
+                relation.TargetType = sourceRelation.TargetType;
+                record.Relations.emplace_back(std::move(relation));
+            }
+            feature.RecordTypes.emplace_back(std::move(record));
+        }
+        features.emplace_back(std::move(feature));
+    }
+    return features;
+}
 int main(int argc, char** argv) {
     try {
         if (argc != 2 && argc != 3) throw std::runtime_error("Source root required");
@@ -58,7 +86,8 @@ int main(int argc, char** argv) {
         auto app = std::make_shared<iCAX::Application::CApplicationContext>(descriptor, paths, PropertyBag{});
         auto runtime = std::make_shared<iCAX::Product::CProductRuntime>(definition, app,
             std::make_shared<iCAX::Interaction::CSDOChannelRegistry>(),
-            std::make_shared<iCAX::Application::CProductUserDataStore>(std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"), definition.ProductID),
+            std::make_shared<iCAX::Application::CProductUserDataStore>(std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"),
+                definition.ProductID, UserDataDescriptors(definition)),
             std::make_shared<MemoryHistory>());
         runtime->Start();
         const auto directory = std::filesystem::temp_directory_path() / ("tube-drawing-test-" + to_string(GenerateNewUUID()));
@@ -124,7 +153,10 @@ int main(int argc, char** argv) {
         Expect(!designer.at("members").To<VariantArray>().empty(), "Display did not rebuild");
         designer = Invoke(project, "Disassemble").at("tubeDesigner").To<ObjectMap>();
         runtime->SaveProjectFile(project->GetProjectID(), path.string());
-        Expect(project->GetMainScene().Resources().GetManifest(false).empty(), "Unstaged machining geometry must not be embedded");
+        // Current committed product manufacturing retains its frozen BRep
+        // resources. Independent CAD documents are created by staging below.
+        for (const auto& resource : project->GetMainScene().Resources().GetManifest(false))
+            Expect(resource.ResourceTypeID == "geometry.brep", "Unstaged manufacturing baseline contains an unexpected resource type");
         designer = reopen();
         Expect(designer.at("product").To<ObjectMap>().at("quantity").To<unsigned long long>() == 3, "Instance quantity lost on reopen");
         // Disassembly results are intentionally transient. Rebuild them after
@@ -147,6 +179,7 @@ int main(int argc, char** argv) {
         }
         Expect(!parts.empty(), "Disassembly did not rebuild");
         const auto sourceForStage = repeated.front().To<ObjectMap>();
+        const auto sourceManifest = project->GetMainScene().Resources().GetManifest(false);
         VariantArray selection{sourceForStage.at("entityId")};
         const auto staged = Invoke(project,"StageNestingParts",{{"partEntityIds",selection}});
         const auto snapshotIds = staged.at("partEntityIds").To<VariantArray>();
@@ -154,6 +187,10 @@ int main(int argc, char** argv) {
         const auto stagedParts = staged.at("stagedParts").To<VariantArray>();
         Expect(stagedParts.size() == 1, "One source type must create one nesting part entity");
         const auto stagedPart = stagedParts.front().To<ObjectMap>();
+        const auto stagedDocument = Invoke(project, "GetTubeCadDocument",
+            {{"partEntityId", snapshotIds.front()}});
+        Expect(stagedDocument.at("revision").To<std::string>() == "1",
+            "New independent tube must own an initial CAD document");
         Expect(stagedPart.at("partEntityId") == snapshotIds.front(), "Staged mapping has wrong ID");
         Expect(stagedPart.at("manufacturingGeometryResourceId")
             == sourceForStage.at("manufacturingGeometryResourceId"),
@@ -164,10 +201,26 @@ int main(int argc, char** argv) {
         runtime->SaveProjectFile(project->GetProjectID(), path.string());
         const auto machiningSize = std::filesystem::file_size(path);
         const auto manifest = project->GetMainScene().Resources().GetManifest(false);
-        Expect(manifest.size() == 1 && manifest[0].ResourceTypeID == "geometry.brep", "Only selected machining BRep may be embedded");
+        bool hasBRep = false, hasCadDocument = false;
+        for (const auto& resource : manifest) {
+            hasBRep |= resource.ResourceTypeID == "geometry.brep";
+            hasCadDocument |= resource.ResourceTypeID == "tube.cad_document";
+            Expect(resource.ResourceTypeID == "geometry.brep" || resource.ResourceTypeID == "tube.cad_document",
+                "Staging embedded an unrelated resource");
+            const bool existed = std::any_of(sourceManifest.begin(), sourceManifest.end(), [&](const auto& sourceResource) {
+                return sourceResource.Key.Source == resource.Key.Source && sourceResource.nVersion == resource.nVersion;
+            });
+            if (!existed)
+                Expect(resource.Key.Source == stagedDocument.at("documentResourceId").To<std::string>()
+                    || resource.Key.Source == stagedPart.at("manufacturingGeometryResourceId").To<std::string>(),
+                    "Staging added a resource unrelated to the selected BRep and its CAD document");
+        }
+        Expect(hasBRep && hasCadDocument, "Selected BRep and its authoritative CAD document must be embedded");
         designer = reopen();
         Expect(designer.at("nestingTask").To<ObjectMap>().at("parts").To<VariantArray>().size() == 1, "Nesting task missing after reopen");
-        Expect(project->GetMainScene().Resources().GetManifest(false).size() == 1, "Rebuild polluted saved resources");
+        Expect(project->GetMainScene().Resources().GetManifest(false).size() == manifest.size(), "Rebuild polluted saved resources");
+        Expect(Invoke(project, "GetTubeCadDocument", {{"partEntityId", snapshotIds.front()}}) == stagedDocument,
+            "Staged CAD document changed during project save/reopen");
         const auto nestingGroups = designer.at("nestingGroups").To<VariantArray>();
         Expect(!nestingGroups.empty(), "Independent nesting group missing after reopen");
         const auto nestedGroupParts = nestingGroups.front().To<ObjectMap>().at("parts").To<VariantArray>();
@@ -177,20 +230,20 @@ int main(int argc, char** argv) {
             "Source provenance was not projected from its component slice");
         const auto sourceResourceId = sourceForStage.at("manufacturingGeometryResourceId").To<std::string>();
         const auto sourceCurrentVersion = project->GetMainScene().Resources().GetVersion(sourceResourceId);
-        const auto edited = Invoke(project, "SavePartSketch", {
+        // A current CAD save publishes independent geometry even when the
+        // material definition itself is retained. It must never version the
+        // product resource shared by the newly staged snapshot.
+        (void)Invoke(project, "ApplyTubeCadDocument", {
             {"partEntityId", snapshotIds.front()},
-            {"resourceVersion", stagedPart.at("manufacturingGeometryResourceVersion")},
-            {"sketch", ObjectMap{
-                {"schema", std::string("icax.tube-sketch")},
-                {"schemaVersion", 1ull},
-                {"kind", std::string("side")},
-                {"unit", std::string("mm")},
-                {"faceHeight", 100.0},
-                {"length", sourceForStage.at("length")},
-                {"entities", VariantArray{}}
-            }}
+            {"resourceVersion", stagedDocument.at("resourceVersion")},
+            {"revision", stagedDocument.at("revision")},
+            {"geometry", stagedDocument.at("geometry")}
         });
-        const auto editedPart = edited.at("tubeDesigner").To<ObjectMap>()
+        const auto editedDocument = Invoke(project, "GetTubeCadDocument", {{"partEntityId", snapshotIds.front()}});
+        Expect(editedDocument.at("documentResourceId") == stagedDocument.at("documentResourceId"),
+            "Current save replaced the authoritative document identity");
+        Expect(editedDocument.at("revision").To<std::string>() == "2", "Current save did not advance the CAD revision");
+        const auto editedPart = Invoke(project, "List").at("tubeDesigner").To<ObjectMap>()
             .at("nestingGroups").To<VariantArray>().front().To<ObjectMap>()
             .at("parts").To<VariantArray>().front().To<ObjectMap>();
         Expect(editedPart.at("manufacturingGeometryResourceId")
@@ -200,13 +253,8 @@ int main(int argc, char** argv) {
             == sourceCurrentVersion,
             "Editing a staged part changed the product geometry resource");
         const auto first = parts.front().To<ObjectMap>();
-        const auto profile = first.at("profile").To<ObjectMap>();
-        ObjectMap section;
-        for (const auto* key : {"id", "kind", "packageVersion", "width", "depth", "diameter", "wallThickness",
-            "cornerRadius", "hollow", "contentDigest", "parameters", "contours", "specification"}) {
-            if (profile.contains(key)) section[key] = profile.at(key);
-        }
-        const auto profileKey = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(section));
+        const auto profile = editedPart.at("profile").To<ObjectMap>();
+        const auto profileKey = iCAX::TubeDesigner::BuildNestingSectionIdentity(profile);
         ObjectMap nestingRequest{{"parts", VariantArray{ObjectMap{{"partEntityId", snapshotIds.front()}, {"profileKey", profileKey}, {"quantity", first.at("quantity")}}}},
             {"stocks", VariantArray{ObjectMap{{"id", std::string("test-stock")}, {"profileKey", profileKey}, {"length", 6000.0}, {"quantity", -1}}}},
             {"parameters", ObjectMap{{"partGap", 2.0}}}};
@@ -276,6 +324,8 @@ int main(int argc, char** argv) {
             .To<ObjectMap>().at("parts").To<VariantArray>().front().To<ObjectMap>();
         Expect(retainedPart.at("entityId") == snapshotIds.front(),
             "Independent nesting part changed after deleting its source product and reopening");
+        Expect(Invoke(project, "GetTubeCadDocument", {{"partEntityId", snapshotIds.front()}}) == editedDocument,
+            "Independent CAD document was lost after deleting its source product and reopening");
         Expect(project->GetMainScene().Resources().Get<iCAX::GeometryData::BRepModel>(
             retainedPart.at("manufacturingGeometryResourceId").To<std::string>(),
             retainedPart.at("manufacturingGeometryResourceVersion").To<unsigned long long>()) != nullptr,

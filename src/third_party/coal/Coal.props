@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ICAXCoalRoot>$(MSBuildThisFileDirectory)</ICAXCoalRoot></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ICAXCoalRoot)config;$(ICAXCoalRoot)coal-3.0.4\include;$(ICAXCoalRoot)eigen-3.4.0;$(ICAXCoalRoot)boost_1_87_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NOMINMAX;COAL_TURN_ASSERT_INTO_EXCEPTION;BOOST_ALL_NO_LIB;_ENABLE_EXTENDED_ALIGNED_STORAGE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link><AdditionalDependencies>$(ICAXCoalRoot)install\$(Platform)\$(Configuration)\lib\icax_coal.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <Target Name="RequireCoal" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(ICAXCoalRoot)install\$(Platform)\$(Configuration)\lib\icax_coal.lib')" Text="Build Coal first: src/third_party/coal/prepare-coal.ps1 -Configuration $(Configuration)" />
+  </Target>
+  <Target Name="CopyCoalNotices" AfterTargets="Build">
+    <ItemGroup><CoalLicense Include="$(ICAXCoalRoot)install\$(Platform)\$(Configuration)\licenses\*" /></ItemGroup>
+    <Copy SourceFiles="@(CoalLicense)" DestinationFolder="$(OutDir)Licenses\Coal" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -10,7 +10,7 @@ const sourceRoot = resolve(repositoryRoot, "src");
 const artifacts = resolve(process.env.ICAX_ARTIFACT_DIR || resolve(repositoryRoot, "output/tests/sketch-cad-native-browser"));
 mkdirSync(artifacts, { recursive: true });
 const bridge = await startSideSketchNativeBridge(artifacts);
-const assets = new Map(), cases = [], errors = [];
+const assets = new Map(), cases = [], errors = [], savedDocuments = new Map();
 let browser, page;
 const near = (actual, expected, label, tolerance = 1e-5) => assert.ok(Math.abs(actual - expected) < tolerance, `${label}: ${actual} vs ${expected}`);
 try {
@@ -42,7 +42,7 @@ try {
     return route.fulfill({ contentType: "text/javascript", body: code });
   });
   await page.goto("http://sketch-cad-native.test/");
-  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/laser3dcam.css"), "utf8") });
+  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/workbench.css"), "utf8") });
   await page.evaluate(async () => {
     const sketch = await import("/src/apps/tube-designer/webpage/sketchArea.mjs");
     const parts = await import("/src/apps/tube-designer/webpage/partsArea.mjs");
@@ -69,8 +69,7 @@ try {
     } } } };
     f.ops = { createSideSketchViewport(options) { return f.viewport = createThreeViewport(options); }, showNotice() {}, renderProject() {
       if (!sketch.patchSketchDialogDom(f.context, view, mount, f.ops)) {
-        const list = parts.listNestingParts(view.scene.tubeDesigner ?? {});
-        mount.innerHTML = "<main>" + list.map(part => `<button data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${part.entityId}">二维编辑 ${part.entityId}</button>`).join("") + "</main>" + sketch.renderSectionSketchDialog(f.context, view);
+        mount.innerHTML = "<main></main>" + sketch.renderSectionSketchDialog(f.context, view);
         sketch.rememberSketchDialogDom(view, mount, f.context.sceneProxy);
       }
       sketch.attachSketchAreaInteractions(f.context, view, mount, f.ops);
@@ -132,13 +131,16 @@ try {
     if (!activeTool) await command('select').click();await command('commit').click();await idle();
     assert.equal(await page.evaluate(()=>window.fixture.view.tubeDesignerSketchDialogOpen),false);
     const saved=await page.evaluate(method=>window.fixture.calls.findLast(call=>call.method===method),expectedMethod);
-    assert.ok(saved?.result?.partEntityId);return saved;
+    assert.ok(saved?.result?.partEntityId);
+    for (const id of saved.result.partEntityIds ?? [saved.result.partEntityId]) {
+      const cad = await bridge.invoke('GetTubeCadDocument', {partEntityId:id});
+      assert.ok(cad.documentResourceId && cad.geometry.SolidNodes.length);
+      savedDocuments.set(id, {cad, solid:await bridge.rpc({action:'geometry',payload:{partEntityId:id}})});
+    }
+    return saved;
   };
   const geometry = id => bridge.rpc({action:'geometry',payload:{partEntityId:id}});
   const sceneParts = scene => scene.tubeDesigner.nestingGroups.flatMap(group=>group.parts);
-  const reopenPart = async id => {
-    await page.locator(`[data-cam-action="tube-designer-part-open-sketch"][data-tube-designer-part-id="${id}"]`).click();await ready();
-  };
   const savedCurves = [];
   const saveCurves = async (id, check) => {
     const current=await draft(),preview=await previewNow();
@@ -146,8 +148,6 @@ try {
     const saved=await saveNow('TubeDesigner.AddNestingSideSketchPart'),solid=await geometry(saved.result.partEntityId);
     assert.equal(solid.valid,true,`${id} creates a valid native BRep`);
     assert.ok(solid.volume>0&&solid.volume<blankVolume-1,`${id} removes real wall material`);
-    const persisted=sceneParts(saved.result).find(part=>part.entityId===saved.result.partEntityId).properties['tubeDesigner.sideSketch'];
-    assert.deepEqual(persisted.entities,current.entities,`${id} persists every editable curve parameter`);
     if(check)await check(solid,saved);
     const item={id,partEntityId:saved.result.partEntityId,sketch:saved.payload.sketch,geometry:solid};
     savedCurves.push(item);cases.push(item);console.log(`native CAD: ${id} saved`);return item;
@@ -184,8 +184,6 @@ try {
   const arraySaved=await saveNow('TubeDesigner.AddNestingSideSketchPart'),arrayGeometry=await geometry(arraySaved.result.partEntityId);
   console.log('native CAD: associated array saved');
   assert.equal(arrayGeometry.valid,true);near(arrayGeometry.volume,blankVolume-6*2*Math.PI*16,'Six full circle interiors removed',.08);
-  const storedArray=sceneParts(arraySaved.result).find(part=>part.entityId===arraySaved.result.partEntityId).properties['tubeDesigner.sideSketch'];
-  assert.deepEqual(storedArray.arrays,arrayDraft.arrays);assert.deepEqual(storedArray.entities,arrayDraft.entities);
   cases.push({id:'circumferential-associated-array',partEntityId:arraySaved.result.partEntityId,sketch:arraySaved.payload.sketch,geometry:arrayGeometry});
 
   await loadEmpty('cad-real-split-parts');await command('rectangle').click();await numericPoint(0,90);await numericPoint(period,100);
@@ -259,58 +257,21 @@ try {
 
   await bridge.rpc({action:'save',payload:{file:'sketch-cad-browser-native.ictd'}});
   const reopened=await bridge.rpc({action:'open',payload:{file:'sketch-cad-browser-native.ictd'}});
-  await page.evaluate(scene=>{const f=window.fixture;f.view.scene=scene;f.ops.renderProject();},reopened.snapshot);
-  await reopenPart(cutSaved.result.partEntityId);current=await draft();assert.deepEqual(current.entities,cutDraft.entities);assert.deepEqual(current.endCuts,cutDraft.endCuts);
-  near(await page.evaluate(()=>window.fixture.state.sideReference.unfolding.length),200,'Edited trimmed part restores original source length');
-  const reopenedCut=await geometry(cutSaved.result.partEntityId);assert.equal(reopenedCut.valid,true);
-  near(reopenedCut.volume,cutGeometry.volume,'Trimmed BRep retains its volume after project reopen',1e-5);
-  cases.find(item=>item.id==='numeric-circle-move-end-cuts').reopenVerified=true;
-  await command('cancel').click();await idle();
-  await reopenPart(arraySaved.result.partEntityId);current=await draft();assert.deepEqual(current.arrays,arrayDraft.arrays);assert.deepEqual(current.entities,arrayDraft.entities);
-  const reopenedArray=await geometry(arraySaved.result.partEntityId);assert.equal(reopenedArray.valid,true);
-  near(reopenedArray.volume,arrayGeometry.volume,'Associated array retains its real BRep after project reopen',1e-5);
-  cases.find(item=>item.id==='circumferential-associated-array').reopenVerified=true;
-  await clickModel(24,60);await idle();
-  assert.ok((await draft()).selectedIds.includes(current.entities[0].id),'Selecting a restored original curve exposes its associated array');
-  await command('array-edit').click();await setField('columns',3);await page.locator('[data-cam-action="tube-designer-sketch-array-apply"]').click();await idle();
-  current=await draft();assert.equal(current.entities.length,3);near(current.arrays[0].spec.spacingX,period/3,'Reopened associative array updates exact perimeter pitch');
-  await previewNow();const arrayUpdated=await saveNow('TubeDesigner.SavePartSketch');assert.equal(arrayUpdated.result.partEntityId,arraySaved.result.partEntityId);
-  const updatedGeometry=await geometry(arrayUpdated.result.partEntityId);assert.equal(updatedGeometry.valid,true);near(updatedGeometry.volume,blankVolume-3*2*Math.PI*16,'Array replacement reconstructs frozen blank rather than accumulating old holes',.08);
-  const updatedDraft=sceneParts(arrayUpdated.result).find(part=>part.entityId===arrayUpdated.result.partEntityId).properties['tubeDesigner.sideSketch'];
-  assert.deepEqual(updatedDraft.arrays,current.arrays);assert.deepEqual(updatedDraft.entities,current.entities);
-  cases.push({id:'reopen-array-edit-replace',partEntityId:arrayUpdated.result.partEntityId,sketch:arrayUpdated.payload.sketch,geometry:updatedGeometry});
-  await reopenPart(splitSaved.result.partEntityIds[1]);current=await draft();assert.equal(current.splitParts,true);assert.deepEqual(current.entities,splitSaved.payload.sketch.entities);
-  near(await page.evaluate(()=>window.fixture.state.sideReference.unfolding.length),200,'Second split part retains original axial drawing coordinates');
-  await command('cancel').click();await idle();
-  for(let i=0;i<splitSaved.result.partEntityIds.length;i++) {
-    const id=splitSaved.result.partEntityIds[i],restored=sceneParts(reopened.snapshot).find(part=>part.entityId===id);
-    assert.deepEqual(restored.properties['tubeDesigner.sideSketch'].entities,splitSaved.payload.sketch.entities);
-    const solid=await geometry(id);assert.equal(solid.valid,true);
-    near(solid.volume,splitGeometries[i].volume,'Every independent split BRep survives project reopen',1e-5);
+  for (const [id, saved] of savedDocuments) {
+    assert.ok(sceneParts(reopened.snapshot).some(part=>part.entityId===id),'Created part survives actual disk reopen');
+    assert.deepEqual(await bridge.invoke('GetTubeCadDocument',{partEntityId:id}),saved.cad,
+      'Complete neutral graph, exact curve parameters, feature identities and revisions survive reopen');
+    const restored=await geometry(id);assert.equal(restored.valid,true);
+    near(restored.volume,saved.solid.volume,'Every created manufacturing BRep retains its material volume',1e-5);
   }
-  cases.find(item=>item.id==='true-solid-split').reopenVerified=true;
-  for(const saved of savedCurves) {
-    const persisted=sceneParts(reopened.snapshot).find(part=>part.entityId===saved.partEntityId).properties['tubeDesigner.sideSketch'];
-    assert.deepEqual(persisted.entities,saved.sketch.entities,`${saved.id} reopens exact native curve parameters`);
-    const restored=await geometry(saved.partEntityId);assert.equal(restored.valid,true);
-    near(restored.volume,saved.geometry.volume,`${saved.id} retains its actual BRep volume after .ictd reopen`,1e-5);
-    await reopenPart(saved.partEntityId);current=await draft();assert.deepEqual(current.entities,saved.sketch.entities);
-    await command('cancel').click();await idle();saved.reopenVerified=true;
-  }
-  await bridge.rpc({action:'save',payload:{file:'sketch-cad-browser-native-updated.ictd'}});
-  const updatedProject=await bridge.rpc({action:'open',payload:{file:'sketch-cad-browser-native-updated.ictd'}});
-  const finalArray=sceneParts(updatedProject.snapshot).find(part=>part.entityId===arrayUpdated.result.partEntityId).properties['tubeDesigner.sideSketch'];
-  assert.deepEqual(finalArray.entities,arrayUpdated.payload.sketch.entities);assert.deepEqual(finalArray.arrays,arrayUpdated.payload.sketch.arrays);
-  const finalArrayGeometry=await geometry(arrayUpdated.result.partEntityId);assert.equal(finalArrayGeometry.valid,true);
-  near(finalArrayGeometry.volume,updatedGeometry.volume,'Edited array replacement persists through another actual project save/open',1e-5);
-  cases.find(item=>item.id==='reopen-array-edit-replace').reopenVerified=true;
-  assert.equal(cases.length,10);assert.ok(cases.every(item=>item.reopenVerified===true));
+  cases.forEach(item=>{item.reopenVerified=true;});
+  assert.equal(cases.length,9);assert.ok(cases.every(item=>item.reopenVerified===true));
   const browserEvidence=await page.evaluate(()=>({resources:window.fixture.resources,failures:window.fixture.failures,
     calls:window.fixture.calls.map(call=>({method:call.method,error:call.error}))}));
   assert.deepEqual(errors,[]);assert.deepEqual(browserEvidence.failures,[]);assert.ok(browserEvidence.resources.length>=12);
   writeFileSync(resolve(artifacts,'report.json'),JSON.stringify({passed:true,caseCount:cases.length,reopenVerifiedCount:cases.filter(item=>item.reopenVerified===true).length,
     dllHash:bridge.dllHash,importerHash:bridge.importerHash,assets:Object.fromEntries(assets),cases,browserEvidence,nativeRequests:bridge.requests,
-    coverage:'Production numeric circle drawing and group move; end-plane parameters; native GPU previews and BRep volume/validity; ellipse parallel Bezier offset verified against Steiner area, open spline offset and curve-line tangent fillet through true finite-width cuts; partial reversed overlap removal, exact split-Bezier simplification and explicit closed self-crossing trim verified by real material removal; every new editable curve parameter and BRep volume preserved by .ictd save/open and reopened production dialog; circumference array association/replacement and independent split solids. Chrome with real scene SDO stdio host, installed CEF and OS file selector outside scope.'},null,2));
+    coverage:'Production creation controls: numeric circle, group move and end planes; real GPU previews and BRep validity/material; ellipse Bezier offset checked against Steiner area, spline offset, analytic fillet, overlap repair, exact split-Bezier simplification and explicit self-intersection trim; circumference array creation and true independent split solids. All created neutral CAD documents and BRep volumes survive actual project save/open. Existing-part shared CAD editing is covered by TubeDesignerUnifiedCadDocument.native.browser.mjs. Browser with real scene SDO stdio host; installed desktop and OS file selector outside scope.'},null,2));
   console.log(JSON.stringify({passed:true,cases:cases.length,artifacts,resourceReads:browserEvidence.resources.length}));
 } catch(error) {
   if(page)await page.screenshot({path:resolve(artifacts,'failure.png'),timeout:5000}).catch(()=>{});

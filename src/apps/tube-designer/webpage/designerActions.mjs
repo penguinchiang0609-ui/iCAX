@@ -51,12 +51,14 @@ import { handleNestingPartImportRibbonCommand } from "./nestingPartImport.mjs";
 import { handleNestingStandardPartAction, handleNestingStandardPartRibbonCommand } from "./nestingStandardPart.mjs";
 import { handleNestingPunchPartAction, handleNestingPunchPartRibbonCommand } from "./nestingPunchPart.mjs";
 import { handlePartDrawingAction, handlePartDrawingRibbonCommand } from "./partDrawing.mjs";
+import { handleTubeCadEditorAction, closeTubeCadEditor } from "./tubeCadEditor.mjs";
 import { handleNestingRibbonCommand, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { handleNestingExportAction } from "./nestingExport.mjs";
 import { handleTubeMachiningAction, handleTubeMachiningRibbonCommand } from "./machiningArea.mjs";
 import {
   beginNewSectionSketch,
   beginProfileSectionSketch,
+  openPartSideSketch,
   handleSketchAreaAction,
   handleSketchRibbonCommand,
 } from "./sketchArea.mjs";
@@ -428,6 +430,28 @@ async function preloadProductResources(context, view, onProgress) {
 }
 
 export async function handleDesignerAreaAction(context, view, action, target, ops) {
+  if (["tube-designer-part-open-sketch", "tube-designer-drawing-open", "tube-designer-punch-open"].includes(action)) {
+    if (view.pending) return { handled: true };
+    view.tubeDesignerSideOpenRequest = null;
+    if (view.tubeDesignerSketchDialogOpen) {
+      const closed = await handleSketchAreaAction(context, view, "tube-designer-sketch-cancel-section", null, ops);
+      if (closed.result === false) return { handled: true };
+    }
+    if (action !== "tube-designer-drawing-open" && view.tubeDesignerPartDrawing)
+      await handlePartDrawingAction(context, view, "tube-designer-drawing-cancel", null, ops);
+    if (action !== "tube-designer-punch-open" && view.tubeDesignerCadEditor) {
+      closeTubeCadEditor(view, context.mount);
+      view.tubeDesignerCadEditor = null;
+    }
+  }
+  if (action === "tube-designer-part-open-sketch") {
+    const partId = String(target?.dataset?.tubeDesignerPartId ?? "");
+    const part = listNestingParts(view.scene?.tubeDesigner ?? {}).find(item => String(item.entityId) === partId);
+    if (!part) throw new Error("当前下料零件已不存在，请重新选择。");
+    return { handled: true, result: await openPartSideSketch(context, view, part, ops) };
+  }
+  const cadResult=await handleTubeCadEditorAction(context,view,action,target,ops);
+  if(cadResult.handled)return cadResult;
   const drawingResult=await handlePartDrawingAction(context,view,action,target,ops);
   if(drawingResult.handled)return drawingResult;
   const machiningResult = await handleTubeMachiningAction(context, view, action, target, ops);
@@ -5104,7 +5128,11 @@ async function exportProductPartList(context, view, ops, partEntityIds, {
     // live product snapshot: doing so discards the dock's realised parts when
     // an older host happens to include a lightweight tubeDesigner payload.
     await afterSuccess?.();
-    const message = `已导出 ${view.tubeDesignerLastOperation.exportedGroups.length} 个产品、${view.tubeDesignerLastOperation.exportedCount} 个零件及 Excel 清单。`;
+    const directories = view.tubeDesignerLastOperation.exportedGroups
+      .map((group) => String(group.directory ?? "")).filter(Boolean);
+    const message = `已导出 ${view.tubeDesignerLastOperation.exportedGroups.length} 个产品、${view.tubeDesignerLastOperation.exportedCount} 种零件 STEP 及 Excel 清单。`
+      + ` 输出目录：${directories.join("；") || targetDirectory}。`
+      + (view.tubeDesignerLastOperation.partListFile ? ` 清单：${view.tubeDesignerLastOperation.partListFile}` : "");
     if (preserveWorkbench) {
       view.notice = message;
       view.noticeRevision = Number(view.noticeRevision ?? 0) + 1;

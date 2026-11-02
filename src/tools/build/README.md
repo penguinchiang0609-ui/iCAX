@@ -63,9 +63,17 @@ pwsh -NoProfile -File src/tools/build/build_tube_designer_installer.ps1 `
     -ReleaseDate 20261007
 ```
 
-`BuildDirectory` 默认为 `src/x64/Release`；`ReleaseDate` 默认使用制作当天的 `yyyyMMdd` 日期，产品版本保持 `0.1.0`。需要其他构建目录或 VC 运行库位置时可传入 `-BuildDirectory`、`-VisualCppRuntimeDirectory`。脚本先调用运行包脚本的 `-ValidateOnly`，再按已验证的正式文件清单生成安装器；不会打包任意构建目录文件或 Python 缓存。文件路径含 NSIS 特殊字符（引号、美元符号或换行）或经过链接时会拒绝。
+`BuildDirectory` 默认为 `src/x64/Release`；`ReleaseDate` 默认使用制作当天的 `yyyyMMdd` 日期，产品版本从部署后的产品清单读取。需要其他构建目录或 VC 运行库位置时可传入 `-BuildDirectory`、`-VisualCppRuntimeDirectory`。脚本先调用运行包脚本的 `-ValidateOnly`，再按已验证的正式文件清单生成安装器；不会打包任意构建目录文件或 Python 缓存。文件路径含 NSIS 特殊字符（引号、美元符号或换行）或经过链接时会拒绝。
 
-输出为 `TubeDesigner-0.1.0-20261007-x64-Setup.exe` 和对应 `.sha256` 校验文件。文件清单、安装/卸载指令和编译日志保存在输出目录的 `.installer-metadata/TubeDesigner-0.1.0-20261007-x64`，供验收使用，不进入运行包。输出目录必须与运行包分开。
+输出为 `TubeDesigner-<版本>-<日期>-x64-Setup.exe`、对应 `.sha256` 校验文件和 `README.md`。文件清单、安装/卸载指令和编译日志保存在输出目录的 `.installer-metadata/TubeDesigner-<版本>-<日期>-x64`，供验收使用，不进入运行包。输出目录必须与运行包分开。
+
+### 每个版本的发布说明与版本号
+
+修复升级补丁号，新增功能升级次版本号；按实际发布内容递增，不能重复使用旧版本号发布不同内容。同步修改 TubeDesigner 产品清单、关于页及 `apps/branding/TubeDesigner.rc` 的版本；配套签发器有变更时也更新 `licensing/CMakeLists.txt` 的版本并重建。共享启动器由各产品资源声明版本，不连带升级其他产品。
+
+每次发布必须新增 `src/apps/tube-designer/releases/<版本>.md`，首行使用 `# TubeDesigner <版本>`，至少包含 `## Fix（修复）`、`## Add（新增）`，逐项写清与上一版的差异；没有对应变更时写“无”。同时写明发布日期、升级说明、已验证内容与仍待验证事项，不把历史功能列为本次新增。历史版本说明保留。
+
+运行包脚本检查对应版本的说明、关于页和 EXE 版本，自动把说明作为 `README.md` 放入程序目录并校验内容；缺少说明或版本不一致时拒绝打包。安装器脚本从产品清单生成版本属性、安装界面及卸载记录，并将同一 README 放到安装包旁。整理发行目录时，其根目录和配套签发工具目录也附同版 README。
 
 正式安装需要管理员权限，默认路径为 `Program Files/TubeDesigner`，建立桌面和开始菜单快捷方式，以及 Windows 应用卸载记录。安装程序不结束正在运行的程序、不添加文件关联、不自动启动 TubeDesigner；覆盖安装前先保存工作并退出程序。卸载仅删除本次明确声明的程序文件和空目录，不递归清空安装目录，也不删除用户项目或 LocalAppData 中的数据。
 

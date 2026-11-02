@@ -4,6 +4,7 @@
 
 namespace tube::license {
 inline constexpr std::string_view UpgradeFormat = "TDUPG001";
+inline constexpr std::string_view ReissueFormat = "TDREI001";
 inline constexpr std::size_t MaxActivationBytes = 16384;
 
 struct UpgradePackage final {
@@ -11,10 +12,25 @@ struct UpgradePackage final {
     Bytes certificate;
     Certificate parsed;
 };
+struct ReissuePackage final {
+    Digest baseDigest{};
+    Bytes certificate;
+    Certificate parsed;
+};
+struct AuthorizationTransition final {
+    Digest baseDigest{};
+    Bytes certificate;
+    Certificate parsed;
+    bool reissue{};
+};
 
 inline bool IsUpgradePackage(std::span<const unsigned char> file) {
     return file.size() >= UpgradeFormat.size()
         && std::memcmp(file.data(), UpgradeFormat.data(), UpgradeFormat.size()) == 0;
+}
+inline bool IsReissuePackage(std::span<const unsigned char> file) {
+    return file.size() >= ReissueFormat.size()
+        && std::memcmp(file.data(), ReissueFormat.data(), ReissueFormat.size()) == 0;
 }
 
 inline void RequireAuthorizationUpgrade(const Certificate& base, const Certificate& next) {
@@ -40,6 +56,72 @@ inline void RequireAuthorizationUpgrade(const Certificate& base, const Certifica
             && next.trialQuantumSeconds == base.trialQuantumSeconds,
             "Upgrade cannot reset the trial counter binding");
     }
+}
+
+inline void RequireAuthorizationReissue(const Certificate& base, const Certificate& next) {
+    Require(base.issuerId == next.issuerId && base.product == next.product,
+        "Reissue belongs to another issuer or product");
+    Require(base.customerId == next.customerId, "Reissue belongs to another customer");
+    Require(base.strategy == Strategy::Tpm2 && next.strategy == Strategy::Tpm2
+        && base.devicePublicKey == next.devicePublicKey, "Reissue belongs to another TPM device");
+    Require(base.licenseId != next.licenseId && base.requestId != next.requestId,
+        "Reissue requires a new license and enrollment request");
+    Require(next.issuedAt >= base.issuedAt, "Reissue issue date predates the current license");
+    Require(base.kind != Kind::Permanent || next.kind == Kind::Permanent,
+        "A permanent license cannot become a trial");
+    if (next.kind == Kind::Trial) {
+        Require(next.notBefore == next.issuedAt && next.expiresAt > next.notBefore
+            && next.expiresAt - next.notBefore <= 30 * 86400ULL
+            && (next.expiresAt - next.notBefore) % 86400 == 0,
+            "Reissued trial must start at issuance and last 1 to 30 whole days");
+        Require(base.kind != Kind::Trial || next.trialNvPublic != base.trialNvPublic
+            || next.trialInitialCounter != base.trialInitialCounter,
+            "Reissued trial requires a fresh TPM counter binding");
+    }
+}
+
+inline Bytes ReissueBody(const Certificate& base, std::span<const unsigned char> certificate,
+    std::string_view issuer, std::span<const unsigned char> trustedKey,
+    const ProductDescriptor& product = TubeDesignerProduct) {
+    const auto next = VerifyCertificateForProduct(certificate, product, issuer, trustedKey);
+    RequireAuthorizationReissue(base, next);
+    Bytes body(ReissueFormat.begin(), ReissueFormat.end());
+    AppendField(body, base.bodyDigest); AppendField(body, certificate);
+    return body;
+}
+
+inline ReissuePackage VerifyReissuePackage(std::span<const unsigned char> file,
+    std::string_view issuer, std::span<const unsigned char> trustedKey,
+    const ProductDescriptor& product = TubeDesignerProduct) {
+    Require(file.size() > 64 && file.size() <= MaxActivationBytes, "Invalid reissue file size");
+    const auto body = file.first(file.size() - 64);
+    VerifySignature(trustedKey, body, file.last(64));
+    Reader reader(body);
+    const auto magic = reader.Take(ReissueFormat.size());
+    Require(std::memcmp(magic.data(), ReissueFormat.data(), ReissueFormat.size()) == 0,
+        "Unknown reissue format");
+    ReissuePackage result;
+    const auto digest = reader.Field(result.baseDigest.size());
+    Require(digest.size() == result.baseDigest.size(), "Invalid reissue predecessor digest");
+    std::copy(digest.begin(), digest.end(), result.baseDigest.begin());
+    result.certificate = reader.Field(MaxCertificateBytes);
+    Require(reader.End(), "Trailing reissue data");
+    result.parsed = VerifyCertificateForProduct(result.certificate, product, issuer, trustedKey);
+    return result;
+}
+
+inline Bytes ResolveReissueCertificate(std::span<const unsigned char> package,
+    std::span<const unsigned char> installed, std::string_view issuer,
+    std::span<const unsigned char> trustedKey,
+    const ProductDescriptor& product = TubeDesignerProduct) {
+    const auto reissue = VerifyReissuePackage(package, issuer, trustedKey, product);
+    const auto base = VerifyCertificateForProduct(installed, product, issuer, trustedKey);
+    if (installed.size() == reissue.certificate.size()
+        && std::equal(installed.begin(), installed.end(), reissue.certificate.begin()))
+        return reissue.certificate;
+    Require(base.bodyDigest == reissue.baseDigest, "Install the license used to issue this reauthorization first");
+    RequireAuthorizationReissue(base, reissue.parsed);
+    return reissue.certificate;
 }
 
 // The issuer signs this body and appends its 64-byte P-256 signature. The
@@ -88,6 +170,29 @@ inline Bytes ResolveUpgradeCertificate(std::span<const unsigned char> package,
     Require(base.bodyDigest == upgrade.baseDigest, "Install the license used to issue this upgrade first");
     RequireAuthorizationUpgrade(base, upgrade.parsed);
     return upgrade.certificate;
+}
+
+inline AuthorizationTransition VerifyAuthorizationTransition(std::span<const unsigned char> file,
+    std::string_view issuer, std::span<const unsigned char> trustedKey,
+    const ProductDescriptor& product = TubeDesignerProduct) {
+    if (IsReissuePackage(file)) {
+        auto package = VerifyReissuePackage(file, issuer, trustedKey, product);
+        return {package.baseDigest, std::move(package.certificate), std::move(package.parsed), true};
+    }
+    auto package = VerifyUpgradePackage(file, issuer, trustedKey, product);
+    return {package.baseDigest, std::move(package.certificate), std::move(package.parsed), false};
+}
+inline void RequireAuthorizationTransition(const Certificate& base, const AuthorizationTransition& next) {
+    if (next.reissue) RequireAuthorizationReissue(base, next.parsed);
+    else RequireAuthorizationUpgrade(base, next.parsed);
+}
+inline Bytes ResolveAuthorizationTransition(std::span<const unsigned char> package,
+    std::span<const unsigned char> installed, std::string_view issuer,
+    std::span<const unsigned char> trustedKey,
+    const ProductDescriptor& product = TubeDesignerProduct) {
+    return IsReissuePackage(package)
+        ? ResolveReissueCertificate(package, installed, issuer, trustedKey, product)
+        : ResolveUpgradeCertificate(package, installed, issuer, trustedKey, product);
 }
 // The signed predecessor digest binds each upgrade to the installed chain tip.
 // These checks reject downgrades while that tip is present. Offline authorization

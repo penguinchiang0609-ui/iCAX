@@ -8,6 +8,7 @@ import {
   validatePunchWizard,
 } from "./punchWizard.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
+import { tubeDesignerViewportNavigation } from "./viewportNavigation.mjs";
 import { rememberPunchDom } from "./punchDomPatch.mjs";
 import { attachPunchParameterWindow } from "./punchParameterWindow.mjs";
 import { bindDiagramDragging } from "./floatingParameterDiagram.mjs";
@@ -162,8 +163,7 @@ function initializePunchCamera(viewport,preview,baseLength) {
 
 function previewIsCurrent(state) {
   return !!state?.preview && (state.preview.revision === state.revision
-    && (state.requestedPreviewIncludesDraft===undefined||state.preview.includesDraft===state.requestedPreviewIncludesDraft)
-    || (state.preview.isOriginal === true && state.revision === 0));
+    && (state.requestedPreviewIncludesDraft===undefined||state.preview.includesDraft===state.requestedPreviewIncludesDraft));
 }
 function displaySourceRecipe(state,includesDraft) {
   const input=state.creationInput,draft=input?.draft;
@@ -173,7 +173,7 @@ function displaySourceRecipe(state,includesDraft) {
     if(index>=0)features[index]={...structuredClone(state.draft),id:features[index].id};
     else features.push(structuredClone(state.draft));
   }
-  return {blank:JSON.stringify([state.partId,state.resourceId,state.resourceVersion,state.baseLength,
+  return {blank:JSON.stringify([state.partId,state.baseLength,
     draft?.profileKey,draft?input.profileParameters?.[draft.profileKey]:null]),features,ends:structuredClone(state.ends??{})};
 }
 function previewReferences(preview) {
@@ -187,8 +187,7 @@ function unchangedPreviewEntities(state, mode) {
   const previous=state.previewSourceRecipe??state.previewRecipe;
   const next=state.previewSourceRecipe?displaySourceRecipe(state,state.requestedPreviewIncludesDraft??state.preview.includesDraft):state.pendingPreviewRecipe;
   if(!previous||!next)return [];
-  const blank=recipe=>recipe.blank??JSON.stringify([recipe.partEntityId,recipe.resourceId,recipe.resourceVersion,
-    recipe.profileRef,recipe.parameters,recipe.length,recipe.drawing]);
+  const blank=recipe=>recipe.blank??JSON.stringify([recipe.profileRef,recipe.parameters,recipe.length,recipe.drawing]);
   if(blank(previous)!==blank(next))return [];
   const ids=["punch-preview-blank"];
   for(const item of state.preview.toolPreviews??[]) {
@@ -238,6 +237,7 @@ function recordPreviewFailure(state, message, includesDraft) {
 }
 
 export async function previewPunch(context, view, part, ops, creation = null, previewOptions = {}) {
+  if(!creation)throw new Error("冲孔创建预览需要当前新零件的管坯参数。");
   const state = view.tubeDesignerPunchWizard;
   // A shared batch hole definition is not an instance on the selected part.
   // Only its assigned feature rows belong in the stock preview.
@@ -247,8 +247,7 @@ export async function previewPunch(context, view, part, ops, creation = null, pr
   state.requestedPreviewIncludesDraft=includeDraft;
   // Retry the displayed recipe, not an unrelated unfinished new-row draft.
   // This is a resource-only operation and does not accept or save that draft.
-  if(state.previewRenderError&&(state.preview?.revision===state.revision
-    ||(state.preview?.isOriginal===true&&state.revision===0))) {
+  if(state.previewRenderError&&state.preview?.revision===state.revision) {
     state.requestedPreviewIncludesDraft=state.preview.includesDraft;
     const controller=presentations.get(state);
     if(controller?.state===state)controller.failedKey=null;
@@ -269,9 +268,9 @@ export async function previewPunch(context, view, part, ops, creation = null, pr
   } catch(error) {
     recordPreviewFailure(state,error?.message??String(error),includeDraft);ops.renderProject(context,view);return false;
   }
-  if(creation){delete payload.partEntityId;delete payload.resourceId;delete payload.resourceVersion;Object.assign(payload,creation);}
+  Object.assign(payload,creation);
   // Editing only constructs/places display tools. Manufacturing subtraction is
-  // deliberately reserved for the final Add/Apply action.
+  // deliberately reserved for the final Add action.
   payload.toolsOnly=true;
   payload.individualToolPreviews=true;
   state.pendingPreviewRecipe=structuredClone(payload);
@@ -384,18 +383,6 @@ export function attachPunchEditor(context,view,mount,ops) {
     }).catch(error=>{
       if(view.tubeDesignerPunchWizard===state){state.catalogueStatus="error";state.error=error?.message??String(error);}
     }).finally(()=>{finishPunchOperation(view,catalogueOperation);ops.renderProject(context,view);});
-  }
-  // A saved thumbnail is only the initial fallback. Opening the wizard restores
-  // its independent blank and tool bodies after the catalogue/display hold.
-  if(state?.initialToolsPreviewPart&&state.catalogueStatus==="ready"&&!view.pending&&!state.initialToolsPreviewQueued) {
-    state.initialToolsPreviewQueued=true;
-    queueMicrotask(()=>{
-      state.initialToolsPreviewQueued=false;
-      if(view.tubeDesignerPunchWizard!==state||view.pending)return;
-      const part=state.initialToolsPreviewPart;
-      delete state.initialToolsPreviewPart;
-      void previewPunch(context,view,part,ops,null,{quiet:true,includeDraft:false});
-    });
   }
   void hydrate(context,view,mount,ops);
 }
@@ -801,7 +788,7 @@ function hydrate(context,view,mount,ops) {
   controller.flight=Promise.resolve().then(async()=>{
     const {createThreeViewport}=await import("../../../iCAX-UI/SDK/Viewport/threeViewport.mjs");
     if(!current())return false;
-    if(!controller.viewport)controller.viewport=createThreeViewport({backgroundColor:0x13252d,continuousRender:false,constrainOrbit:false,projectionMode:"orthographic",
+    if(!controller.viewport)controller.viewport=createThreeViewport({...tubeDesignerViewportNavigation,backgroundColor:0x13252d,continuousRender:false,constrainOrbit:false,projectionMode:"orthographic",
       showProjectionToggle:true,pickingEnabled:false,blankDoubleClickFitEnabled:true,antialias:true,pixelRatioCap:2});
     mountPunchController(controller,controller.host,mount);
     const viewport=controller.viewport;

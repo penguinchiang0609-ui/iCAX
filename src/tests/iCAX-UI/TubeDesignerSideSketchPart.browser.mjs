@@ -50,10 +50,10 @@ try {
         }
         return { partEntityId:"created", tubeDesigner:{ nestingGroups:[{parts:[{
         entityId:"created",independentNesting:true,length:300,profile,manufacturingGeometryResourceVersion:7,
-        properties:{"tubeDesigner.sideSketch":payload.sketch,"tubeDesigner.sideSketchRecipe":{profile,length:300}}
+        properties:{"manufacturing.partKind":"tube","manufacturing.process":"side-sketch",
+          "tubeDesigner.cadDocument":{documentResourceId:"document-created",documentResourceVersion:1}}
       }]}] } };
       }
-      if (method === "TubeDesigner.SavePartSketch") return {tubeDesigner:view.scene.tubeDesigner};
       throw Error(`Unexpected ${method}`);
     } }, actions: {async selectRibbonTab() {}, async refreshActiveSceneState() {}} };
     const ops = { renderProject: render, showNotice() {}, createSideSketchViewport() {
@@ -285,20 +285,8 @@ try {
   assert.equal(result.calls.find(c=>c.method==="TubeDesigner.AddNestingSideSketchPart").payload.sketch.coordinateSpace,"arc-length-axial");
   assert.ok(result.calls.find(c=>c.method==="TubeDesigner.AddNestingSideSketchPart").payload.sketch.entities.some(e=>e.kind==="rectangle"&&e.y<0));
   assert.equal(result.selected,"created");
-  // Reopening the same part mutates the shared sketch state object. Its old
-  // controller must release its own key without clearing the new editor's key.
-  for(const key of ["reopened-one","reopened-two"]) {
-    await page.evaluate(key=>{
-      const c=window.check,part=c.view.scene.tubeDesigner.nestingGroups[0].parts[0];
-      c.sketch.beginPartSideSketch(c.view,part,{...c.reference,previewResourceKey:key});
-      c.view.tubeDesignerSketchDialogOpen=true;c.render();
-    },key);
-    await page.locator("[data-side-sketch-preview-ready=true]").waitFor();
-  }
-  assert.equal(await page.evaluate(()=>window.check.view.tubeDesignerSketch.sidePreviewResourceKey),"reopened-two");
-  await page.getByRole("button",{name:"取消",exact:true}).click();
-  const released=await page.evaluate(()=>window.check.calls.filter(c=>c.method==="TubeDesigner.ReleaseNestingSideSketchPreview").map(c=>c.payload.previewResourceKey));
-  assert.ok(released.includes("reopened-one"));assert.ok(released.includes("reopened-two"));
+  assert.equal(await page.evaluate(()=>window.check.view.scene.tubeDesigner.nestingGroups[0].parts[0]
+    .properties["tubeDesigner.cadDocument"].documentResourceId),"document-created");
   assert.deepEqual(errors,[]);
   console.log("TubeDesignerSideSketchPart.browser: UI workflow, periodic drawing, canvas/listener retention, latest scroll/focus/selection, conditional removal, delayed save feedback, duplicate suppression, visible logged failure and retry/exit passed (native geometry mocked)");
 } finally { await browser.close(); }

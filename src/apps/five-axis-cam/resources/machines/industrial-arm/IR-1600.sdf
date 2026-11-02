@@ -1,0 +1,773 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sdf version="1.7">
+  <model name="iCAX IR-1600 六轴激光加工工作站">
+    <static>false</static>
+    <link name="锚固底座">
+      <pose relative_to="__model__">0.0 0.0 0.0 0 0 0</pose>
+      <visual name="pedestal_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/pedestal_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+      </visual>
+      <visual name="pedestal_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/pedestal_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+      </visual>
+      <visual name="pedestal_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/pedestal_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+      </visual>
+      <collision name="pedestal_box_1">
+        <pose>0.0 0.0 0.115 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.64 0.64 0.23</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J1 回转腰座">
+      <pose relative_to="__model__">0.0 0.0 0.3627220594882965 0 0 0</pose>
+      <visual name="turret_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/turret_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>0.0 0.0 -0.12272205948829651 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="turret_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/turret_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.0 -0.12272205948829651 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="turret_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/turret_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.0 -0.12272205948829651 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="turret_teal">
+        <geometry>
+          <mesh>
+            <uri>meshes/turret_teal.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.16 0.19 0.22 1</diffuse>
+          <ambient>0.16 0.19 0.22 1</ambient>
+        </material>
+        <pose>0.0 0.0 -0.12272205948829651 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="turret_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/turret_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.0 -0.12272205948829651 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="turret_box_1">
+        <pose>0.04 -0.015 0.007277940511703496 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.4 0.3 0.26</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J2 大臂">
+      <pose relative_to="__model__">0.13 -0.0507500022649765 0.46 0 0 0</pose>
+      <visual name="upper_arm_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/upper_arm_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>0.0 0.0507500022649765 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="upper_arm_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/upper_arm_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.0507500022649765 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="upper_arm_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/upper_arm_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.0507500022649765 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="upper_arm_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/upper_arm_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.0507500022649765 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="upper_arm_teal">
+        <geometry>
+          <mesh>
+            <uri>meshes/upper_arm_teal.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.16 0.19 0.22 1</diffuse>
+          <ambient>0.16 0.19 0.22 1</ambient>
+        </material>
+        <pose>0.0 0.0507500022649765 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="upper_arm_box_1">
+        <pose>0.0 0.005750002264976503 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.32 0.39 0.32</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="upper_arm_box_2">
+        <pose>0.125 0.0507500022649765 0.35 0.0 0.352 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.215 0.255 0.62</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J3 小臂">
+      <pose relative_to="__model__">0.38 -0.04725000262260437 1.14 0 0 0</pose>
+      <visual name="forearm_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/forearm_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>0.0 0.04725000262260437 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="forearm_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/forearm_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.04725000262260437 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="forearm_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/forearm_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.04725000262260437 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="forearm_teal">
+        <geometry>
+          <mesh>
+            <uri>meshes/forearm_teal.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.16 0.19 0.22 1</diffuse>
+          <ambient>0.16 0.19 0.22 1</ambient>
+        </material>
+        <pose>0.0 0.04725000262260437 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="forearm_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/forearm_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.04725000262260437 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="forearm_box_1">
+        <pose>0.0 0.007250002622604369 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.25 0.35 0.25</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="forearm_box_2">
+        <pose>0.33 0.04725000262260437 0.028 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.59 0.225 0.19</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J4 腕部回转">
+      <pose relative_to="__model__">1.1122499999776483 0.0 1.19 0 0 0</pose>
+      <visual name="wrist_roll_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_roll_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>-0.08224999997764826 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_roll_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_roll_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>-0.08224999997764826 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_roll_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_roll_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>-0.08224999997764826 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_roll_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_roll_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>-0.08224999997764826 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="wrist_roll_box_1">
+        <pose>0.012750000022351743 0.0 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.21 0.17 0.17</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J5 腕部俯仰">
+      <pose relative_to="__model__">1.23 -0.0247500017285347 1.19 0 0 0</pose>
+      <visual name="wrist_pitch_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_pitch_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>0.0 0.0247500017285347 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_pitch_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_pitch_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.0247500017285347 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_pitch_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_pitch_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.0247500017285347 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_pitch_teal">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_pitch_teal.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.16 0.19 0.22 1</diffuse>
+          <ambient>0.16 0.19 0.22 1</ambient>
+        </material>
+        <pose>0.0 0.0247500017285347 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="wrist_pitch_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/wrist_pitch_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.0247500017285347 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="wrist_pitch_box_1">
+        <pose>0.0 0.004750001728534698 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.145 0.23 0.145</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="wrist_pitch_box_2">
+        <pose>0.0 0.0247500017285347 -0.1 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.125 0.12 0.14</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="J6 激光加工头">
+      <pose relative_to="__model__">1.23 0.0 0.9102499948069454 0 1.5707963267948966 0</pose>
+      <visual name="tool_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="tool_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="tool_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="tool_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="tool_copper">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_copper.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.78 0.46 0.19 1</diffuse>
+          <ambient>0.78 0.46 0.19 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="tool_teal">
+        <geometry>
+          <mesh>
+            <uri>meshes/tool_teal.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.16 0.19 0.22 1</diffuse>
+          <ambient>0.16 0.19 0.22 1</ambient>
+        </material>
+        <pose>-0.11975000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="tool_box_1">
+        <pose>-0.04475000519305468 0.0 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.18 0.135 0.108</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="tool_box_2">
+        <pose>0.05224999480694531 0.0 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.065 0.07 0.07</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="tool_box_3">
+        <pose>0.11724999480694531 0.0 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.066 0.048 0.048</size>
+          </box>
+        </geometry>
+      </collision>
+      <plugin name="icax_machine_tool" filename="icax.machine.tool">
+        <tcp_position_mm>160.24999480694532 0.0 0.0</tcp_position_mm>
+        <beam_direction>1 0 0</beam_direction>
+      </plugin>
+    </link>
+    <link name="工件装夹台">
+      <icax_work_support />
+      <pose relative_to="__model__">1.2 0.0 0.328249993827194 0 0 0</pose>
+      <visual name="work_table_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/work_table_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.0 0.321750006172806 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="work_table_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/work_table_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.0 0.321750006172806 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="work_table_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/work_table_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.0 0.321750006172806 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="work_table_box_1">
+        <pose>0.0 0.0 0.251750006172806 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.9 0.85 0.14</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="work_table_box_2">
+        <pose>-0.355 -0.33 -0.03324999382719396 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.16 0.16 0.59</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="work_table_box_3">
+        <pose>-0.355 0.33 -0.03324999382719396 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.16 0.16 0.59</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="work_table_box_4">
+        <pose>0.355 -0.33 -0.03324999382719396 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.16 0.16 0.59</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="work_table_box_5">
+        <pose>0.355 0.33 -0.03324999382719396 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.16 0.16 0.59</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <link name="控制柜">
+      <pose relative_to="__model__">-0.75 -0.7725000083446503 0.4699999988079071 0 0 0</pose>
+      <visual name="cabinet_shell">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_shell.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.91 0.31 0.055 1</diffuse>
+          <ambient>0.91 0.31 0.055 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="cabinet_dark">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_dark.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.08 0.11 0.14 1</diffuse>
+          <ambient>0.08 0.11 0.14 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="cabinet_black">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_black.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.025 0.035 0.043 1</diffuse>
+          <ambient>0.025 0.035 0.043 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="cabinet_screen">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_screen.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.07 0.22 0.28 1</diffuse>
+          <ambient>0.07 0.22 0.28 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="cabinet_steel">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_steel.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.54 0.61 0.65 1</diffuse>
+          <ambient>0.54 0.61 0.65 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <visual name="cabinet_red">
+        <geometry>
+          <mesh>
+            <uri>meshes/cabinet_red.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.72 0.06 0.04 1</diffuse>
+          <ambient>0.72 0.06 0.04 1</ambient>
+        </material>
+        <pose>0.0 0.02250000834465027 -0.4699999988079071 0.0 0.0 0.0</pose>
+      </visual>
+      <collision name="cabinet_box_1">
+        <pose>0.0 0.002500008344650268 1.19209286886246e-09 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.52 0.7 0.94</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="J1" type="revolute">
+      <parent>锚固底座</parent>
+      <child>J1 回转腰座</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-2.9670597283903604</lower>
+          <upper>2.9670597283903604</upper>
+          <velocity>1.9198621771937625</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="J2" type="revolute">
+      <parent>J1 回转腰座</parent>
+      <child>J2 大臂</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1.9198621771937625</lower>
+          <upper>1.9198621771937625</upper>
+          <velocity>1.7453292519943295</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="J3" type="revolute">
+      <parent>J2 大臂</parent>
+      <child>J3 小臂</child>
+      <axis>
+        <xyz expressed_in="__model__">0 1 0</xyz>
+        <limit>
+          <lower>-2.6179938779914944</lower>
+          <upper>2.6179938779914944</upper>
+          <velocity>1.9198621771937625</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="J4" type="revolute">
+      <parent>J3 小臂</parent>
+      <child>J4 腕部回转</child>
+      <axis>
+        <xyz>1 0 0</xyz>
+        <limit>
+          <lower>-3.141592653589793</lower>
+          <upper>3.141592653589793</upper>
+          <velocity>2.9670597283903604</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="J5" type="revolute">
+      <parent>J4 腕部回转</parent>
+      <child>J5 腕部俯仰</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-2.0943951023931953</lower>
+          <upper>2.0943951023931953</upper>
+          <velocity>2.9670597283903604</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="J6" type="revolute">
+      <parent>J5 腕部俯仰</parent>
+      <child>J6 激光加工头</child>
+      <axis>
+        <xyz>1 0 0</xyz>
+        <limit>
+          <lower>-6.283185307179586</lower>
+          <upper>6.283185307179586</upper>
+          <velocity>4.014257279586958</velocity>
+          <effort>1200</effort>
+        </limit>
+      </axis>
+    </joint>
+    <joint name="pedestal_mount" type="fixed">
+      <parent>world</parent>
+      <child>锚固底座</child>
+    </joint>
+    <joint name="work_table_mount" type="fixed">
+      <parent>world</parent>
+      <child>工件装夹台</child>
+    </joint>
+    <joint name="cabinet_mount" type="fixed">
+      <parent>world</parent>
+      <child>控制柜</child>
+    </joint>
+  </model>
+</sdf>

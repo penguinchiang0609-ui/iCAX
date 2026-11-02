@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup><ClInclude Include="EditableToolpathFingerprint.inc" /></ItemGroup>
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
@@ -30,10 +31,10 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode>
-      <PreprocessorDefinitions>_INTENT_TOOLPATH;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;_INTENT_TOOLPATH;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader><PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile><LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /FS /wd4251 /bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
   </ItemDefinitionGroup>
@@ -41,10 +42,28 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" /><ClInclude Include="pch.h" /><ClInclude Include="ComponentValueHelpers.h" />
-    <ClInclude Include="IntentToolpathExport.h" /><ClInclude Include="IntentToolpath.h" /><ClInclude Include="IntentToolpathComponents.h" /><ClInclude Include="IntentGeometryResources.h" /><ClInclude Include="IntentToolpathRelations.h" /><ClInclude Include="TubeMachiningIntent.h" />
+    <ClInclude Include="IntentToolpathExport.h" /><ClInclude Include="IntentToolpath.h" /><ClInclude Include="IntentToolpathComponents.h" /><ClInclude Include="IntentGeometryResources.h" /><ClInclude Include="IntentToolpathRelations.h" />
+    <ClInclude Include="EditableToolpath.h" /><ClInclude Include="EditableToolpathInternal.h" /><ClInclude Include="EditableToolpathHostEdit.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp" /><ClCompile Include="IntentToolpath.cpp" /><ClCompile Include="IntentToolpathRelations.cpp" /><ClCompile Include="TubeMachiningIntent.cpp" />
+    <ClCompile Include="dllmain.cpp" /><ClCompile Include="IntentToolpath.cpp" /><ClCompile Include="IntentToolpathRelations.cpp" />
+    <ClCompile Include="IntentCurvePersistence.cpp" />
+    <ClCompile Include="EditableToolpathData.cpp" />
+    <ClCompile Include="EditableToolpathImport.cpp" />
+    <ClCompile Include="EditableToolpathLabels.cpp" />
+    <ClCompile Include="EditableToolpathLayers.cpp" />
+    <ClInclude Include="EditableToolpathLayers.h" />
+    <ClCompile Include="EditableToolpathPreview.cpp" />
+    <ClInclude Include="EditableToolpathPreview.h" />
+    <ClInclude Include="EditableToolpathLabels.h" />
+    <ClCompile Include="EditableToolpathHostEdit.cpp" />
+    <ClCompile Include="EditableToolpathGeometry.cpp" />
+    <ClCompile Include="EditableToolpathProjection.cpp" />
+    <ClInclude Include="EditableToolpathProjection.h" />
+    <ClCompile Include="EditableToolpathOperations.cpp" />
+    <ClCompile Include="EditableToolpathDocument.cpp" />
+    <ClCompile Include="EditableToolpathClone.cpp" />
+    <ClCompile Include="EditableToolpathAttachments.cpp" />
     <ClCompile Include="pch.cpp"><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader></ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -54,6 +73,13 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\GeometryAlgo\GeometryAlgo.vcxproj"><Project>{9d763025-4802-45a0-a25e-512561f5a8c7}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj"><Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj"><Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project></ProjectReference>
+  </ItemGroup>
+  <!-- Keep the host's Debug CRT/iterator ABI while optimizing numerical/data kernels. -->
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="EditableToolpathData.cpp;EditableToolpathDocument.cpp;EditableToolpathAttachments.cpp;EditableToolpathProjection.cpp;EditableToolpathPreview.cpp;EditableToolpathGeometry.cpp">
+      <Optimization>MaxSpeed</Optimization><InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks><FloatingPointModel>Precise</FloatingPointModel><PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

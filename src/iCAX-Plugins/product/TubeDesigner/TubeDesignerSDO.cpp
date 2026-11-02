@@ -17,10 +17,12 @@
 #include "BRepTubeUnfoldingService.h"
 #include "TubeSideSketchCurveService.h"
 #include "TubeSideSketchCadService.h"
+#include "TubeSideSketchPlanarCurves.h"
 #include "SketchTextOutlineService.h"
 #include "RecoveredPartDrawingFeatures.h"
 #include "DisassemblyProgress.h"
 #include "ExtrusionRecognition/ExtrusionRecognitionService.h"
+#include "ExtrusionRecognition/HealWork.h"
 
 #include "ApplicationContext/IApplicationContext.h"
 #include "Data/VariantSerializer.h"
@@ -30,15 +32,23 @@
 #include "GeometryData/BRepPersistence.h"
 #include "OpenCascadeResourceImport/OpenCascadeBRepReader.h"
 #include "OpenCascadeResourceImport/CadDocumentImportService.h"
+#include "OpenCascadeResourceImport/CadBRepImportService.h"
+#include "OpenCascadeResourceImport/CadBevelService.h"
+#include "OpenCascadeResourceImport/TubeCadDocumentService.h"
+#include "OpenCascadeResourceImport/TubeBoundaryGeometry.h"
+#include "OpenCascadeResourceImport/OpenCascadeAssemblyImport.h"
+#include "OpenCascadeResourceImport/TubeCadJson.h"
 #include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
 #include "OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h"
 #include "OpenCascadeResourceImport/OpenCascadeTubeCSGConverter.h"
 #include "OpenCascadeResourceImport/OpenCascadeTaskExecution.h"
+#include "OpenCascadeResourceImport/OpenCascadeShapeBounds.h"
 #include "ProductContext/IProductContext.h"
 #include "ApplicationContext/UserDataStore.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
 #include "RenderData/RenderData.h"
+#include "RenderData/RenderResource.h"
 #include "RenderInteraction/RenderInteraction.h"
 #include "RenderInteraction/RenderInteractionComponents.h"
 #include "Resources/FlatBufferResource.h"
@@ -183,8 +193,10 @@ namespace
         iCAX::Project::ISceneContext&);
 
     bool RestoreIdenticalManufacturingSourceItems(ObjectMap&);
+    gp_Trsf ProductProcessSpanPlacement(const ObjectMap&);
     std::vector<std::size_t> MergeIdenticalManufacturingParts(
-        SPreparedProductDisassembly&, const SProductAssemblyProcessGeometry&);
+        SPreparedProductDisassembly&, const SProductAssemblyProcessGeometry&,
+        const std::map<std::string, TopoDS_Shape>&);
 
     void ValidateProductStockSourceMappings(
         const iCAX::TemplateRuntime::SNeutralModel&, const iCAX::TemplateRuntime::SNeutralModel&);
@@ -345,6 +357,20 @@ namespace
     {
         return GetRequiredObjectView(Payload_, Name_);
     }
+
+    STubeSideSketchResult ApplySceneTubeSideSketch(const TopoDS_Shape& Shape_,
+        const ObjectMap& Sketch_, iCAX::Project::ISceneContext& Scene_)
+    {
+        const auto _Service = Scene_.Services().Resolve<iCAX::CAD::ICadBevelService>();
+        STubeSideSketchOptions _Options;
+        _Options.BevelService = _Service.get();
+        // The borrowed service stays alive until the synchronous geometry task
+        // has completed; neither the recipe nor the kernel retains this scope.
+        return ApplyTubeSideSketch(Shape_, Sketch_, _Options);
+    }
+
+    void MarkPartDrawingPreviewGeometry(iCAX::Project::ISceneContext& Scene_,
+        const std::string& Owner_, const std::string& URL_);
 
     template <typename TComponent>
     std::shared_ptr<TComponent> GetComponent(const std::shared_ptr<iCAX::Database::IEntity>& Entity_)
@@ -1699,6 +1725,25 @@ namespace
         return { ResourceID_, _StoredInfo.nVersion };
     }
 
+    iCAX::Resource::CResourceReference StoreTubeCadDocument(
+        iCAX::Project::ISceneContext& Scene_, const std::string& StableName_,
+        const std::string& Name_, const iCAX::GeometryData::Tube::CTubeCadDocument& Document_,
+        const std::string& ResourceID_ = {})
+    {
+        const auto _URL = ResourceID_.empty() ? Scene_.Resources().MakeNamedResourceURL(StableName_) : ResourceID_;
+        iCAX::Resource::CResourceInfo _Info;
+        _Info.Name = Name_; _Info.ResourceTypeID = iCAX::GeometryData::Tube::CTubeCadDocument::kResourceTypeName;
+        _Info.Persistence = iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+        _Info.nSchemaVersion = 1; _Info.Metadata["source"] = "tube-designer";
+        iCAX::Resource::CResourceInfo _Stored;
+        const auto _Mutation = Scene_.Resources().PutVersioned<iCAX::GeometryData::Tube::CTubeCadDocument>(
+            _URL, std::make_shared<iCAX::GeometryData::Tube::CTubeCadDocument>(Document_), _Info,
+            iCAX::Resource::EResourceVersionCondition::None, 0, &_Stored);
+        if (_Mutation == iCAX::Resource::EResourceMutationResult::PreconditionFailed || !_Stored.nVersion)
+            throw std::runtime_error("无法保存管材 CAD 文档版本");
+        return {_URL, _Stored.nVersion};
+    }
+
     // Defined with the punch-wizard helpers below.  The side-sketch save
     // handler also uses the same task-backed conversion and versioned BRep
     // storage path, so keep one implementation for both features.
@@ -2289,10 +2334,11 @@ namespace
         return "管材";
     }
 
-    ObjectMap ShapeBounds(const TopoDS_Shape& Shape_)
+    ObjectMap ShapeBounds(const TopoDS_Shape& Shape_, bool bParallel_ = false)
     {
         Bnd_Box _Box;
-        BRepBndLib::AddOptimal(Shape_, _Box, false, false);
+        if (bParallel_) _Box = iCAX::OpenCascade::ExactShapeBounds(Shape_);
+        else BRepBndLib::AddOptimal(Shape_, _Box, false, false);
         _Box.SetGap(0);
         if (_Box.IsVoid() || _Box.IsOpen()) throw std::invalid_argument("零件实体包络无效");
         double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
@@ -2481,24 +2527,10 @@ namespace
         auto _Properties = Part_.GetItemProperties();
         const auto _Entity = Part_.GetEntity();
         if (!_Entity) return _Properties;
-        if (const auto _Drawing = GetComponent<CPartDrawingComponent>(_Entity);
-            _Drawing && !_Drawing->GetDefinition().empty())
-        {
-            _Properties["tubeDesigner.partDrawing"] = _Drawing->GetDefinition();
-            const auto& _Definition = _Drawing->GetDefinition();
-            if (const auto _Ends = _Definition.find("baseEndProcess");
-                _Ends != _Definition.end() && _Ends->second.Is<ObjectMap>())
-                _Properties["tubeDesigner.endProcess"] = _Ends->second;
-        }
-        if (const auto _Punch = GetComponent<CPunchWizardComponent>(_Entity);
-            _Punch && !_Punch->GetDefinition().empty())
-        {
-            _Properties["tubeDesigner.punchWizard"] = _Punch->GetDefinition();
-            const auto& _Definition = _Punch->GetDefinition();
-            if (const auto _Ends = _Definition.find("baseEndProcess");
-                _Ends != _Definition.end() && _Ends->second.Is<ObjectMap>())
-                _Properties["tubeDesigner.endProcess"] = _Ends->second;
-        }
+        if (const auto _Cad = GetComponent<CTubePartCadComponent>(_Entity))
+            _Properties["tubeDesigner.cadDocument"] = ObjectMap{
+                {"documentResourceId",_Cad->GetDocumentResourceID()},
+                {"documentResourceVersion",_Cad->GetDocumentResourceVersion()}};
         if (const auto _Source = GetComponent<CNestingSourceComponent>(_Entity))
         {
             _Properties["nesting.source"] = ObjectMap{
@@ -2630,6 +2662,8 @@ namespace
         return _Result;
     }
 
+    void SyncNestingPersistence(iCAX::Project::ISceneContext& Scene_);
+
     void ReleaseTransientParts(
         iCAX::Project::ISceneContext& Scene_,
         const std::set<std::string>& SelectedPartIDs_)
@@ -2660,6 +2694,16 @@ namespace
             }
             if (_Scene->second.Products.empty()) gTransientDisassembly.erase(_Scene);
         }
+        // Direct export can reuse URLs owned by committed manufacturing rows.
+        // Deleting a URL also drops its archived versions, including the exact
+        // version saved by those rows. Release only resources with no DB owner.
+        bool _RetainedCommittedResource = false;
+        for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(Scene_.Database()))
+            for (const auto& _URL : {_Part->GetManufacturingGeometryResourceID(),
+                    _Part->GetThumbnailGeometryResourceID()})
+                if (_ResourceIDs.erase(_URL)) _RetainedCommittedResource = true;
+        if (_RetainedCommittedResource) SyncNestingPersistence(Scene_);
+
         // Unload the complete dependency set first so no retained derived
         // resource can keep a source BRep resident while records are removed.
         for (const auto& _ResourceID : _ResourceIDs)
@@ -2703,6 +2747,26 @@ namespace
         const auto _Ready = _Plan.find("ready");
         return _Ready == _Plan.end() || !_Ready->second.Is<bool>()
             || !_Ready->second.To<bool>();
+    }
+
+    // Exporting the executed machining geometry to a downstream CAM system
+    // does not certify the fit of the assembled product. Raw/external-template
+    // stock still needs assembly validation; only host-checked final parts may
+    // use this narrower handoff. Bind the check to the immutable BRep version.
+    bool AssemblyPartBlocksManufacturingExport(const ObjectMap& Properties_,
+        const std::string& ResourceID_, std::uint64_t ResourceVersion_)
+    {
+        if (!AssemblyPartAwaitingValidation(Properties_)) return false;
+        const auto _Found = Properties_.find("tubeDesigner.manufacturingValidation");
+        if (_Found == Properties_.end() || !_Found->second.Is<ObjectMap>()) return true;
+        const auto& _Check = std::get<ObjectMap>(_Found->second.m_Value);
+        return GetString(_Check, "schema") != "icax.manufacturing-geometry-validation"
+            || GetUInt64(_Check, "schemaVersion", 0) != 1
+            || GetString(_Check, "scope") != "executed-product-parts"
+            || GetString(_Check, "status") != "verified"
+            || GetString(_Check, "resourceId") != ResourceID_
+            || ResourceVersion_ == 0
+            || GetUInt64(_Check, "resourceVersion", 0) != ResourceVersion_;
     }
 
     ObjectMap MakeTransientPartSnapshot(
@@ -2799,6 +2863,16 @@ namespace
         return Part_.GetProductID().is_nil() && Part_.GetItemProperties().contains("nesting.snapshot");
     }
 
+    bool IsTubeCadMaterialPart(const ObjectMap& Properties_)
+    {
+        if (Properties_.contains("manufacturing.plate")) return false;
+        auto _Kind = TrimText(GetString(Properties_, "manufacturing.partKind"));
+        std::transform(_Kind.begin(), _Kind.end(), _Kind.begin(), [](unsigned char Value_) {
+            return static_cast<char>(std::tolower(Value_));
+        });
+        return _Kind == "tube" || _Kind == "linear" || _Kind == "profile";
+    }
+
     std::string EditableNestingGeometryResourceID(
         iCAX::Project::ISceneContext& Scene_,
         const iCAX::Data::uuid& PartID_,
@@ -2828,6 +2902,13 @@ namespace
                 if (!_BRepInfo || _BRepInfo->ResourceTypeID
                     != iCAX::GeometryData::BRepModel::kResourceTypeName)
                     throw std::runtime_error("下料快照的独立几何资源缺失");
+                if (const auto _Cad = GetComponent<CTubePartCadComponent>(_Entity)) {
+                    const auto _Document = _Resources.GetInfo(_Cad->GetDocumentResourceID(),
+                        _Cad->GetDocumentResourceVersion());
+                    if (!_Document || _Document->ResourceTypeID
+                        != iCAX::GeometryData::Tube::CTubeCadDocument::kResourceTypeName)
+                        throw std::runtime_error("下料零件的管材 CAD 文档版本缺失");
+                }
                 if (!RestoreThumbnails_) continue;
 
                 const auto _Thumbnail = !_Part->GetThumbnailGeometryResourceID().empty()
@@ -5960,6 +6041,37 @@ namespace
         return { _X, _Y };
     }
 
+    void ValidateSideSketchBevel(const ObjectMap& Entity_)
+    {
+        const auto _It = Entity_.find("bevel");
+        if (_It == Entity_.end()) return;
+        if (!_It->second.Is<ObjectMap>()) throw std::invalid_argument("坡口设置格式无效");
+        const auto _Bevel = _It->second.To<ObjectMap>();
+        if (const auto _Enabled = _Bevel.find("enabled"); _Enabled != _Bevel.end()) {
+            if (!_Enabled->second.Is<bool>()) throw std::invalid_argument("坡口启用状态无效");
+            if (!_Enabled->second.To<bool>()) return;
+        }
+        if (GetString(Entity_, "kind") == "text") throw std::invalid_argument("文字须先转换为轮廓才能设置坡口");
+        const auto _Side = GetString(_Bevel, "side", "outer");
+        const auto _Angle = _Bevel.contains("angleDegrees") ? RequiredSketchNumber(_Bevel, "angleDegrees") : 45.0;
+        const auto _Root = _Bevel.contains("rootFace") ? RequiredSketchNumber(_Bevel, "rootFace") : 0.0;
+        if (_Side != "outer" && _Side != "inner" && _Side != "both") throw std::invalid_argument("坡口侧无效");
+        if (_Angle <= 0 || _Angle >= 90) throw std::invalid_argument("坡口角须大于 0° 且小于 90°");
+        if (_Root < 0) throw std::invalid_argument("钝边须为有效的非负数");
+        if (const auto _Segments = _Bevel.find("segmentIndices"); _Segments != _Bevel.end()) {
+            if (!_Segments->second.Is<VariantArray>()) throw std::invalid_argument("坡口边段选择格式无效");
+            const auto _Values = _Segments->second.To<VariantArray>();
+            if (_Values.empty() || _Values.size() > 4096) throw std::invalid_argument("至少选择一条有效的坡口边段");
+            std::set<std::size_t> _Unique;
+            for (const auto& _Value : _Values) {
+                const auto _Index = RequiredSketchNumber(ObjectMap{{"index", _Value}}, "index");
+                if (_Index < 0 || _Index >= 4096 || std::floor(_Index) != _Index
+                    || !_Unique.insert(static_cast<std::size_t>(_Index)).second)
+                    throw std::invalid_argument("坡口边段编号无效或重复");
+            }
+        }
+    }
+
     ObjectMap ValidateSideSketch(const ObjectMap& Sketch_, const double ExpectedLength_)
     {
         const auto _Space = GetString(Sketch_, "coordinateSpace", "axial-arc-length");
@@ -6040,6 +6152,7 @@ namespace
             const auto _ID = GetRequiredText(_Entity, "id", 160);
             if (!_IDs.insert(_ID).second)
                 throw std::invalid_argument("TubeDesigner sketch entity IDs must be unique");
+            ValidateSideSketchBevel(_Entity);
 
             if (_Kind == "line")
             {
@@ -6334,7 +6447,7 @@ namespace
         STubeSideSketchResult _ApplyResult;
         if (!_Removing)
         {
-            _ApplyResult = ApplyTubeSideSketch(_BaseBuild.Shape, _Sketch);
+            _ApplyResult = ApplySceneTubeSideSketch(_BaseBuild.Shape, _Sketch, *Scene_);
             if (!_ApplyResult.bOK || _ApplyResult.Shape.IsNull())
                 throw std::runtime_error(_ApplyResult.Diagnostic.empty()
                     ? "产品侧面草图没有生成有效的切除结果" : _ApplyResult.Diagnostic);
@@ -6458,205 +6571,6 @@ namespace
                 {"length", GetDouble(_Bounds, "width", 0.0)}, {"bounds", _Bounds}});
         }
         return _Parts;
-    }
-
-    iCAX::Interaction::CInvocationResult HandleSavePartSketch(
-        const iCAX::Interaction::CInvocation& Request_,
-        const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*,
-        iCAX::Project::IProjectContext*,
-        iCAX::Project::ISceneContext* Scene_)
-    {
-        if (!Scene_ || Request_.Payload.size() > 2 * 1024 * 1024)
-            throw std::invalid_argument("Invalid manufacturing part sketch request");
-        const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _PartID = ParseRequiredUuid(
-            GetString(_Payload, "partEntityId"), "partEntityId");
-        auto& _Repository = Scene_->Database();
-        const auto _Part = GetComponent<CManufacturingPartComponent>(
-            _Repository.GetEntity(_PartID));
-        if (!_Part || !IsIndependentNestingPart(*_Part))
-            throw std::invalid_argument("只能直接保存下料区中的独立零件草图");
-        if (!IsTubeManufacturingPart(_Part->GetItemProperties()))
-            throw std::invalid_argument("二维包覆只支持管材零件");
-        const auto _ExpectedVersion = GetUInt64(
-            _Payload, "resourceVersion", _Part->GetManufacturingGeometryResourceVersion());
-        if (_ExpectedVersion != _Part->GetManufacturingGeometryResourceVersion())
-            throw std::runtime_error("零件几何已经变化，请重新打开二维草图");
-
-        RestoreNestingResources(*Scene_);
-        const auto _ExistingProperties = _Part->GetItemProperties();
-        const auto _BaseLength = _ExistingProperties.contains("tubeDesigner.sideSketchRecipe")
-            ? GetDouble(GetRequiredObject(_ExistingProperties, "tubeDesigner.sideSketchRecipe"), "length", _Part->GetLength())
-            : _Part->GetLength();
-        auto _Sketch = ValidateSideSketch(
-            GetRequiredObject(_Payload, "sketch"), _BaseLength);
-        _Sketch["targetPartId"] = UuidToString(_PartID);
-        auto _ItemProperties = _Part->GetItemProperties();
-
-        const auto _ResourceID = _Part->GetManufacturingGeometryResourceID();
-        const auto _ResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
-        if (_ResourceID.empty() || _ResourceVersion == 0)
-            throw std::runtime_error("零件没有可用的最终 BRep 几何");
-        const auto _CurrentBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
-            _ResourceID, _ResourceVersion);
-        if (!_CurrentBRep)
-            throw std::runtime_error("零件最终 BRep 几何不可用，请重新加入下料");
-
-        // Always rebuild from the frozen pre-sketch shape.  A later edit is a
-        // replacement of the trajectory, not another cut on top of the last
-        // result; this is the same immutable-base rule used by the punch
-        // wizard.
-        auto _BaseResourceID = GetString(
-            _ItemProperties, "tubeDesigner.sideSketchBaseResourceId");
-        auto _BaseResourceVersion = GetUInt64(
-            _ItemProperties, "tubeDesigner.sideSketchBaseResourceVersion", 0);
-        if (_BaseResourceID.empty() || _BaseResourceVersion == 0)
-        {
-            _BaseResourceID = Scene_->Resources().MakeNamedResourceURL(
-                "tube-designer/nesting/side-sketch-base/" + UuidToString(_PartID));
-            const auto _Base = StorePreparedBRep(
-                *Scene_, _BaseResourceID, "二维包覆编辑基准",
-                iCAX::GeometryData::BRepModel(*_CurrentBRep));
-            _BaseResourceID = _Base.URL;
-            _BaseResourceVersion = _Base.nVersion;
-        }
-        const auto _BaseBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
-            _BaseResourceID, _BaseResourceVersion);
-        if (!_BaseBRep)
-            throw std::runtime_error("二维包覆基准几何版本不可用，请重新加入下料");
-        const auto _BaseBuild = iCAX::OpenCascade::BuildOpenCascadeShape(*_BaseBRep);
-        if (!_BaseBuild.bOK || _BaseBuild.Shape.IsNull())
-            throw std::runtime_error("无法读取二维包覆基准几何");
-
-        const bool _Removing = _Sketch.at("entities").To<VariantArray>().empty() && !_Sketch.contains("endCuts");
-        auto _Shape = _BaseBuild.Shape;
-        STubeSideSketchResult _ApplyResult;
-        if (!_Removing)
-        {
-            _ApplyResult = ApplyTubeSideSketch(_Shape, _Sketch);
-            if (!_ApplyResult.bOK || _ApplyResult.Shape.IsNull())
-                throw std::invalid_argument(_ApplyResult.Diagnostic.empty() ? "二维绘制没有生成有效实体" : _ApplyResult.Diagnostic);
-            _Shape = _ApplyResult.Shape;
-        }
-        const auto _Pieces = NestingCadPieces(_Shape, _Sketch);
-        const auto _OldSplit = _ItemProperties.contains("tubeDesigner.sideSketchSplit")
-            ? GetRequiredObject(_ItemProperties, "tubeDesigner.sideSketchSplit") : ObjectMap();
-        const auto _GroupID = GetString(_OldSplit, "groupId", UuidToString(iCAX::Data::GenerateNewUUID()));
-        const auto _BaseName = GetString(_OldSplit, "sourceName", _Part->GetName().empty() ? _Part->GetPartNumber() : _Part->GetName());
-        std::set<iCAX::Data::uuid> _Obsolete;
-        std::uint64_t _NextIndex = 1;
-        for (const auto& [_Entity, _Other] : Collect<CManufacturingPartComponent>(_Repository))
-        {
-            if (!IsIndependentNestingPart(*_Other)) continue;
-            _NextIndex = std::max(_NextIndex, _Other->GetPartIndex() + 1);
-            const auto _OtherProperties = _Other->GetItemProperties();
-            if (_Entity->GetID() != _PartID && _OtherProperties.contains("tubeDesigner.sideSketchSplit")
-                && GetString(GetRequiredObject(_OtherProperties, "tubeDesigner.sideSketchSplit"), "groupId") == _GroupID)
-                _Obsolete.insert(_Entity->GetID());
-        }
-        const auto _Profile = GetComponent<CTubeProfileComponent>(_Repository.GetEntity(_PartID));
-        if (!_Profile) throw std::invalid_argument("二维绘制零件缺少冻结截面");
-        const auto _ProfileData = ProfileSnapshot(*_Profile);
-        _ItemProperties["tubeDesigner.sideSketchBaseResourceId"] = _BaseResourceID;
-        _ItemProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _BaseResourceVersion;
-        if (!_ItemProperties.contains("tubeDesigner.sideSketchRecipe"))
-            _ItemProperties["tubeDesigner.sideSketchRecipe"] = ObjectMap{{"length", _BaseLength}, {"quantity", _Part->GetQuantity()}};
-        if (_Removing) _ItemProperties.erase("tubeDesigner.sideSketch");
-        else
-        {
-            _ItemProperties["tubeDesigner.sideSketchApplyMethod"] = _ApplyResult.Method;
-            _ItemProperties["tubeDesigner.sideSketchDiagnostic"] = _ApplyResult.Diagnostic;
-            _ItemProperties["tubeDesigner.sideSketchClosedLoopCount"] = static_cast<unsigned long long>(_ApplyResult.ClosedLoopCount);
-            _ItemProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] = static_cast<unsigned long long>(_ApplyResult.OpenTrajectoryCount);
-        }
-        std::vector<std::pair<iCAX::Data::uuid, iCAX::Data::PropertySet>> _Prepared;
-        VariantArray _PartIDs;
-        for (std::size_t _Index = 0; _Index < _Pieces.size(); ++_Index)
-        {
-            const auto _ID = _Index == 0 ? _PartID : iCAX::Data::GenerateNewUUID();
-            const auto _Name = _Pieces.size() == 1 ? _BaseName : _BaseName + " (" + std::to_string(_Index + 1) + "/" + std::to_string(_Pieces.size()) + ")";
-            const auto _PartNumber = _Index == 0 ? _Part->GetPartNumber()
-                : MakeSafePathSegment(_Name + "-" + UuidToString(_ID).substr(0, 8), "side-sketch");
-            const auto _Target = _Index == 0 ? EditableNestingGeometryResourceID(*Scene_, _PartID, *_Part)
-                : "tube-designer/nesting/side-sketch/" + UuidToString(_ID);
-            const auto _Resource = StorePunchBRep(*Scene_, _Target, _Name, _Pieces[_Index].Shape, Request_, false);
-            const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-                Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
-            auto _Properties = _ItemProperties;
-            if (!_Removing) { auto _Draft = _Sketch; _Draft["targetPartId"] = UuidToString(_ID); _Properties["tubeDesigner.sideSketch"] = _Draft; }
-            _Properties["tubeDesigner.sideSketchSplit"] = ObjectMap{{"groupId", _GroupID},
-                {"index", static_cast<unsigned long long>(_Index + 1)}, {"count", static_cast<unsigned long long>(_Pieces.size())},
-                {"sourceName", _BaseName}, {"axialStart", _Pieces[_Index].AxialStart}};
-            auto _Measurement = MeasureFinalPartGeometry(_Pieces[_Index].Shape, _Resource.URL, _Resource.nVersion);
-            _Measurement["nestingEnvelopeLength"] = _Pieces[_Index].Length; _Measurement["normalizedAxis"] = std::string("+X");
-            _Properties["manufacturing.geometryMeasurement"] = _Measurement;
-            auto _Snapshot = _Properties.contains("nesting.snapshot") ? GetRequiredObject(_Properties, "nesting.snapshot") : ObjectMap();
-            _Snapshot["name"] = _Name; _Snapshot["length"] = _Pieces[_Index].Length; _Snapshot["quantity"] = _Part->GetQuantity();
-            _Properties["nesting.snapshot"] = _Snapshot;
-            iCAX::Data::PropertySet _Fields{
-                {CManufacturingPartComponent::PropertyName_ProductID, PropertyValue(iCAX::Data::uuid())},
-                {CManufacturingPartComponent::PropertyName_SourceMemberID, PropertyValue(iCAX::Data::uuid())},
-                {CManufacturingPartComponent::PropertyName_GenerationRunID, PropertyValue(_Part->GetGenerationRunID())},
-                {CManufacturingPartComponent::PropertyName_PartIndex, PropertyValue(_Index == 0 ? _Part->GetPartIndex() : _NextIndex++)},
-                {CManufacturingPartComponent::PropertyName_StableKey, PropertyValue("side-sketch/" + UuidToString(_ID))},
-                {CManufacturingPartComponent::PropertyName_PartNumber, PropertyValue(_PartNumber)},
-                {CManufacturingPartComponent::PropertyName_Name, PropertyValue(_Name)},
-                {CManufacturingPartComponent::PropertyName_Role, PropertyValue(_Part->GetRole())},
-                {CManufacturingPartComponent::PropertyName_Quantity, PropertyValue(_Part->GetQuantity())},
-                {CManufacturingPartComponent::PropertyName_QuantityOverride, PropertyValue(_Part->GetQuantityOverride())},
-                {CManufacturingPartComponent::PropertyName_Length, PropertyValue(_Pieces[_Index].Length)},
-                {CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceID, PropertyValue(_Resource.URL)},
-                {CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceVersion, PropertyValue(_Resource.nVersion)},
-                {CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID, PropertyValue(_Thumbnail.URL)},
-                {CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion, PropertyValue(_Thumbnail.nVersion)},
-                {CManufacturingPartComponent::PropertyName_FileName, PropertyValue(MakeStepFileName(_PartNumber))},
-                {CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready"))},
-                {CManufacturingPartComponent::PropertyName_ItemProperties, PropertyValue(_Properties)}};
-            _Prepared.emplace_back(_ID, std::move(_Fields)); _PartIDs.emplace_back(UuidToString(_ID));
-        }
-        const auto _Meta = _Repository.GetMetaEntity();
-        const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
-        auto _Task = _Root ? _Root->GetNestingTask() : ObjectMap();
-        VariantArray _References;
-        if (const auto _Old = _Task.find("parts"); _Old != _Task.end() && _Old->second.Is<VariantArray>())
-            for (const auto& _Reference : _Old->second.To<VariantArray>())
-                if (_Reference.Is<ObjectMap>() && IsProductNestingReference(_Reference.To<ObjectMap>())) _References.emplace_back(_Reference);
-        for (const auto& [_Entity, _Other] : Collect<CManufacturingPartComponent>(_Repository))
-            if (IsIndependentNestingPart(*_Other) && _Entity->GetID() != _PartID && !_Obsolete.contains(_Entity->GetID()))
-                _References.emplace_back(ObjectMap{{"partEntityId", UuidToString(_Entity->GetID())}, {"generationRunId", UuidToString(_Other->GetGenerationRunID())}});
-        for (const auto& [_ID, _Fields] : _Prepared)
-            _References.emplace_back(ObjectMap{{"partEntityId", UuidToString(_ID)}, {"generationRunId", UuidToString(_Part->GetGenerationRunID())}});
-        _Task["parts"] = _References; _Task["request"] = ObjectMap(); _Task["result"] = ObjectMap();
-        _Task["revision"] = UuidToString(iCAX::Data::GenerateNewUUID());
-        auto _Undo = _Repository.BeginUndoCommand("Save manufacturing part side sketch");
-        auto& _Transaction = _Repository.BeginTransaction("Update manufacturing part side sketch");
-        bool _Committing = false;
-        try
-        {
-            for (const auto& _ID : _Obsolete) _Transaction.DisposeEntity(_ID);
-            for (std::size_t _Index = 0; _Index < _Prepared.size(); ++_Index)
-            {
-                const auto& [_ID, _Fields] = _Prepared[_Index];
-                if (_Index == 0) _Transaction.ModifyComponent(_ID, CManufacturingPartComponent::S_ClassName, _Fields);
-                else
-                {
-                    _Transaction.CreateEntity(_ID);
-                    _Transaction.AttachComponent(_ID, CManufacturingPartComponent::S_ClassName, _Fields);
-                    _Transaction.AttachComponent(_ID, CTubeProfileComponent::S_ClassName, TubeProfileComponentProperties(_ProfileData, "side-sketch"));
-                }
-            }
-            if (_Root) _Transaction.ModifyComponent(_Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
-                {{CTubeDesignerRootComponent::PropertyName_NestingTask, PropertyValue(_Task)}});
-            std::string _Error; _Committing = true;
-            if (!_Repository.CommitTransaction(_Transaction, _Error)) throw std::runtime_error(_Error.empty() ? "保存二维零件失败" : _Error);
-        }
-        catch (...) { if (!_Committing) { try { _Repository.CancelTransaction(_Transaction); } catch (...) {} } throw; }
-        _Undo->End(); SyncNestingPersistence(*Scene_);
-        auto _Response = BuildSnapshot(*Scene_, ApplicationContext_, false);
-        _Response["partEntityId"] = UuidToString(_PartID); _Response["partEntityIds"] = _PartIDs;
-        _Response["splitPartCount"] = static_cast<unsigned long long>(_Prepared.size());
-        return MakeResponse(_Response);
     }
 
     const iCAX::TemplateRuntime::SOutputSet* FindOutputSet(
@@ -7163,56 +7077,14 @@ namespace
         return BRepBuilderAPI_Transform(_Shape,_Center,true).Shape();
     }
 
-    TopoDS_Shape PlaceDrawingBlank(const TopoDS_Shape& Blank_, const ObjectMap& Config_)
-    {
-        const auto _It = Config_.find("blankOrigin");
-        if (_It == Config_.end()) return Blank_;
-        if (!_It->second.Is<VariantArray>())
-            throw std::invalid_argument("三维编辑主管原点无效");
-        const auto _Values = _It->second.To<VariantArray>();
-        if (_Values.size() != 3)
-            throw std::invalid_argument("三维编辑主管原点须有三个坐标");
-        const double _X = ToDouble(_Values[0],"blankOrigin.x");
-        const double _Y = ToDouble(_Values[1],"blankOrigin.y");
-        const double _Z = ToDouble(_Values[2],"blankOrigin.z");
-        if (!std::isfinite(_X) || !std::isfinite(_Y) || !std::isfinite(_Z))
-            throw std::invalid_argument("三维编辑主管原点必须为有限数值");
-        gp_Trsf _Placement;
-        _Placement.SetTranslation(gp_Vec(_X,_Y,_Z));
-        return BRepBuilderAPI_Transform(Blank_,_Placement,true).Shape();
-    }
-
-    // Imported parts retain their original BRep until an independently
-    // replayed drawing is shown to represent exactly the same material.
     double ShapeMaterialVolume(const TopoDS_Shape& Shape_)
     {
         if (Shape_.IsNull()) return 0.0;
         GProp_GProps _Properties;
-        BRepGProp::VolumeProperties(Shape_, _Properties);
+        // Curved bevel faces need adaptive integration; fixed quadrature can
+        // misreport a NURBS edit as a material increase on unchanged geometry.
+        BRepGProp::VolumeProperties(Shape_, _Properties, 1.0e-9);
         return std::abs(_Properties.Mass());
-    }
-
-    double DrawingReplayError(const TopoDS_Shape& Source_, const TopoDS_Shape& Replayed_)
-    {
-        if (Source_.IsNull() || Replayed_.IsNull()
-            || !BRepCheck_Analyzer(Source_).IsValid()
-            || !BRepCheck_Analyzer(Replayed_).IsValid())
-            throw std::runtime_error("原始实体或回放实体无效，不能建立三维编辑定义");
-        const auto _DifferenceVolume = [](const TopoDS_Shape& Left_, const TopoDS_Shape& Right_) {
-            BRepAlgoAPI_Cut _Cut;
-            NCollection_List<TopoDS_Shape> _Arguments, _Tools;
-            _Arguments.Append(Left_); _Tools.Append(Right_);
-            _Cut.SetArguments(_Arguments); _Cut.SetTools(_Tools);
-            _Cut.SetFuzzyValue(1.0e-6);
-            iCAX::OpenCascade::COpenCascadeCancellationScope::Build(_Cut);
-            if (!_Cut.IsDone() || _Cut.Shape().IsNull()
-                || !BRepCheck_Analyzer(_Cut.Shape()).IsValid())
-                throw std::runtime_error("回放实体几何差计算失败，不能建立三维编辑定义");
-            return ShapeMaterialVolume(_Cut.Shape());
-        };
-        const auto _Missing = _DifferenceVolume(Source_, Replayed_);
-        const auto _Extra = _DifferenceVolume(Replayed_, Source_);
-        return (_Missing + _Extra) / std::max(ShapeMaterialVolume(Source_), 1.0);
     }
 
     // Some section-aware notch analyzers need BRep-derived wall roles.  This is
@@ -7417,10 +7289,12 @@ namespace
     class CPunchToolsPreviewCache final
     {
     public:
-        std::shared_ptr<SPunchPreviewSceneCache> Scene(const iCAX::Project::ISceneContext& Scene_)
+        std::shared_ptr<SPunchPreviewSceneCache> Scene(const iCAX::Project::ISceneContext& Scene_,
+            const std::string& Editor_ = {})
         {
             const auto _Scope = UuidToString(Scene_.GetSceneID()) + ":"
-                + UuidToString(Scene_.GetSceneChannelID()) + ":" + Scene_.Resources().GetResourceCollectionURL();
+                + UuidToString(Scene_.GetSceneChannelID()) + ":" + Scene_.Resources().GetResourceCollectionURL()
+                + ":" + Editor_;
             std::lock_guard<std::mutex> _Lock(Mutex);
             auto _It = Scenes.find(_Scope);
             if (_It != Scenes.end()) { _It->second->LastUse = ++Clock; return _It->second; }
@@ -7436,11 +7310,35 @@ namespace
             return _Scene;
         }
 
+        void Release(const iCAX::Project::ISceneContext& Scene_, const std::string& Editor_)
+        {
+            const auto _Scope = UuidToString(Scene_.GetSceneID()) + ":"
+                + UuidToString(Scene_.GetSceneChannelID()) + ":" + Scene_.Resources().GetResourceCollectionURL()
+                + ":" + Editor_;
+            std::shared_ptr<SPunchPreviewSceneCache> _Cached;
+            {
+                std::lock_guard<std::mutex> _Lock(Mutex);
+                const auto _It = Scenes.find(_Scope);
+                if (_It == Scenes.end()) return;
+                _Cached = _It->second;
+            }
+            std::unique_lock<std::mutex> _EditorLock(_Cached->Mutex);
+            std::lock_guard<std::mutex> _Lock(Mutex);
+            const auto _It = Scenes.find(_Scope);
+            if (_It != Scenes.end() && _It->second == _Cached) Scenes.erase(_It);
+        }
+
     private:
         std::mutex Mutex;
         std::map<std::string, std::shared_ptr<SPunchPreviewSceneCache>> Scenes;
         std::uint64_t Clock = 0;
     };
+
+    CPunchToolsPreviewCache& PartDrawingPreviewCaches()
+    {
+        static CPunchToolsPreviewCache _Caches;
+        return _Caches;
+    }
 
     struct SPunchPreviewReuse final
     {
@@ -7480,7 +7378,8 @@ namespace
     }
 
     SPunchPreviewDisplay StorePunchPreviewDisplay(iCAX::Project::ISceneContext& Scene_, const std::string& Key_,
-        const std::string& Name_, const TopoDS_Shape& Shape_, const iCAX::Interaction::CInvocation& Request_)
+        const std::string& Name_, const TopoDS_Shape& Shape_, const iCAX::Interaction::CInvocation& Request_,
+        const std::string& PreviewOwner_ = {})
     {
         // Meshing writes triangulation into a TShape. Export a private deep copy,
         // including any finer section-analysis mesh retained by the original
@@ -7488,8 +7387,10 @@ namespace
         const auto _Private = iCAX::Tasks::Run([&] { return BRepBuilderAPI_Copy(Shape_, true, true).Shape(); },
             iCAX::OpenCascade::detail::GeometryTaskScheduler()).Result();
         const auto _Source = StorePunchBRep(Scene_, Key_, Name_, _Private, Request_, true);
+        if (!PreviewOwner_.empty()) MarkPartDrawingPreviewGeometry(Scene_, PreviewOwner_, _Source.URL);
         const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_.Resources(), _Source.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        if (!PreviewOwner_.empty()) MarkPartDrawingPreviewGeometry(Scene_, PreviewOwner_, _Mesh.URL);
         return {_Source, _Mesh, Shape_, Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(_Source.URL, _Source.nVersion),
             Scene_.Resources().Get<iCAX::Resource::CFlatBufferResource>(_Mesh.URL, _Mesh.nVersion)};
     }
@@ -7514,6 +7415,9 @@ namespace
         if (DeferredGeometry_ && (Purpose_ != EPunchEvaluationPurpose::ProductManufacturing
             || Request_.CanReport() || Statistics_ || PreviewDiagnostics_ || ToolsOnly_))
             throw std::logic_error("延迟刀具计算只支持无回调的产品制造");
+        const auto _ModelService = PreviewDiagnostics_
+            ? Scene_.Services().Resolve<iCAX::CAD::ICadFeatureModelService>() : nullptr;
+        if (PreviewDiagnostics_) PreviewDiagnostics_->ModelService = _ModelService.get();
         const auto _PrepareStart = std::chrono::steady_clock::now();
         // The task below runs on a CAD worker, so bind the scene signal there
         // explicitly instead of relying on the calling thread's scope.
@@ -7938,7 +7842,7 @@ namespace
                             _PreviewShape, "产品二维包覆基准", _BaseResourceID, 0.025));
                     _MemberProperties["tubeDesigner.sideSketchBaseResourceId"] = _Base.URL;
                     _MemberProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _Base.nVersion;
-                    const auto _Applied = ApplyTubeSideSketch(_PreviewShape, *_Sketch);
+                    const auto _Applied = ApplySceneTubeSideSketch(_PreviewShape, *_Sketch, Scene_);
                     if (!_Applied.bOK || _Applied.Shape.IsNull())
                         throw std::runtime_error(_Applied.Diagnostic.empty()
                             ? "产品侧面草图没有生成有效的切除结果" : _Applied.Diagnostic);
@@ -8937,12 +8841,147 @@ namespace
         _Prepared.AssemblyBindings = _Bindings;
         _Prepared.ManufacturingDefinition = std::move(_ManufacturingDefinition);
         _Prepared.ManufacturingParameters = std::move(_ManufacturingParameters);
+        // The executor has two geometry paths: frozen native stock resources
+        // and ordinary neutral CSG. Count only actual executed CSG belonging
+        // to the declared target and still on that output's material lineage.
+        // Preparation alone (or a template's ready flag) is not a joint cut.
+        std::map<std::string, std::set<std::string>> _ExecutedJointProcesses;
+        std::map<std::string, ObjectMap> _DeclaredJointProcesses;
+        if (const auto _Processes = _Prepared.ManufacturingDefinition.find("processes");
+            _Processes != _Prepared.ManufacturingDefinition.end())
+            for (const auto& _Value : _Processes->second.To<VariantArray>())
+            {
+                const auto _Process = _Value.To<ObjectMap>();
+                _DeclaredJointProcesses.emplace(GetString(_Process, "key"),
+                    GetRequiredObject(_Process, "definition"));
+            }
+        std::unordered_map<std::string, const iCAX::TemplateRuntime::SGeometryNode*> _ExecutedGeometryNodes;
+        for (const auto& _Node : _Model.Geometry) _ExecutedGeometryNodes.emplace(_Node.Key, &_Node);
+        const auto _MaterialDescendsFrom = [&](std::string Key_, const std::string& Source_) {
+            std::set<std::string> _Visited;
+            while (_Visited.insert(Key_).second)
+            {
+                if (Key_ == Source_) return _ExecutedGeometryNodes.contains(Key_);
+                const auto _Node = _ExecutedGeometryNodes.find(Key_);
+                if (_Node == _ExecutedGeometryNodes.end() || _Node->second->Inputs.empty()) return false;
+                // The first Boolean input is its material target. Cutter
+                // inputs are not evidence that this stock was machined.
+                if (_Node->second->Operator != iCAX::TemplateRuntime::EGeometryOperator::Boolean
+                    && _Node->second->Operator != iCAX::TemplateRuntime::EGeometryOperator::Transform)
+                    return false;
+                Key_ = _Node->second->Inputs.front();
+            }
+            return false;
+        };
+        if (const auto _Execution = _Model.Extensions.find("tubeDesigner.assemblyGeometryProcesses");
+            _Execution != _Model.Extensions.end() && _Execution->second.Is<ObjectMap>())
+        {
+            const auto _Plan = _Execution->second.To<ObjectMap>();
+            const auto _Records = _Plan.find("instances");
+            if (GetString(_Plan, "schema") == "icax.assembly-geometry-process-plan"
+                && GetUInt64(_Plan, "schemaVersion", 0) == 1
+                && _Records != _Plan.end() && _Records->second.Is<VariantArray>())
+                for (const auto& _Value : _Records->second.To<VariantArray>())
+                {
+                    const auto _Record = _Value.To<ObjectMap>();
+                    const auto _Key = GetString(_Record, "stockId");
+                    const auto _Declared = _DeclaredJointProcesses.find(GetString(_Record, "instanceId"));
+                    if (_Declared == _DeclaredJointProcesses.end()
+                        || GetString(_Declared->second, "templateId") != GetString(_Record, "templateId")
+                        || GetString(_Record, "functionDigest").empty()
+                        || std::find(_Output.ItemKeys.begin(), _Output.ItemKeys.end(), _Key) == _Output.ItemKeys.end())
+                        continue;
+                    const auto _Targets = GetRequiredObject(_Declared->second, "targets");
+                    if (std::none_of(_Targets.begin(), _Targets.end(), [&](const auto& _Entry) {
+                        return _Entry.second.template Is<std::string>() && _Entry.second.template To<std::string>() == _Key;
+                    })) continue;
+                    const auto _Result = GetRequiredObject(_Record, "result");
+                    const auto _Operations = _Result.find("operations");
+                    if (_Operations == _Result.end() || !_Operations->second.Is<VariantArray>()
+                        || _Operations->second.To<VariantArray>().empty()) continue;
+                    const auto _Target = GetString(_Record, "targetGeometry");
+                    const auto _Finished = GetString(_Record, "resultGeometry");
+                    const auto& _Item = FindModelItem(_Model, _Key);
+                    const auto _Representation = _Item.Representations.find(_Output.Purpose);
+                    if (_Finished != _Target && _MaterialDescendsFrom(_Finished, _Target)
+                        && _Representation != _Item.Representations.end()
+                        && _MaterialDescendsFrom(_Representation->second, _Finished))
+                        _ExecutedJointProcesses[GetString(_Record, "instanceId")].insert(_Key);
+                }
+        }
+        bool _HasPendingPreparation = false;
+        // An unresolved assembly node is not the same as a declared welded
+        // contact with finished cut geometry. Valid raw solids alone cannot
+        // establish that its connection work has been executed.
+        if (const auto _Connections = _Prepared.ManufacturingDefinition.find("connections");
+            _Connections != _Prepared.ManufacturingDefinition.end())
+            for (const auto& _Value : _Connections->second.To<VariantArray>())
+            {
+                const auto _Connection = _Value.To<ObjectMap>();
+                if (GetString(_Connection, "kind") != "assembly") continue;
+                // A manufacturing-set process can replace design identities.
+                // Preserve its complete executed-output proof. For mixed
+                // machining, require this connection's declared processes on
+                // each participant. An unrelated cut elsewhere on the same
+                // stock cannot prove that this connection was machined.
+                if (std::all_of(_Output.ItemKeys.begin(), _Output.ItemKeys.end(),
+                    [&](const auto& Key_) { return _ProcessGeometry.Shapes.contains(Key_); }))
+                    continue;
+                const auto _Participants = _Connection.find("items");
+                if (_Participants == _Connection.end() || !_Participants->second.Is<VariantArray>())
+                {
+                    _HasPendingPreparation = true;
+                    continue;
+                }
+                const auto& _Items = std::get<VariantArray>(_Participants->second.m_Value);
+                const auto _Properties = _Connection.find("properties");
+                if (_Properties == _Connection.end() || !_Properties->second.Is<ObjectMap>())
+                {
+                    _HasPendingPreparation = true;
+                    continue;
+                }
+                const auto& _ConnectionProperties = std::get<ObjectMap>(_Properties->second.m_Value);
+                const auto _ProcessBindings = _ConnectionProperties.find("manufacturingProcesses");
+                if (_ProcessBindings == _ConnectionProperties.end() || !_ProcessBindings->second.Is<ObjectMap>())
+                {
+                    _HasPendingPreparation = true;
+                    continue;
+                }
+                const auto& _ParticipantProcesses = std::get<ObjectMap>(_ProcessBindings->second.m_Value);
+                if (_Items.empty() || _ParticipantProcesses.size() != _Items.size()
+                    || std::any_of(_Items.begin(), _Items.end(), [&](const auto& _Item) {
+                        if (!_Item.template Is<std::string>()) return true;
+                        const auto _Key = _Item.template To<std::string>();
+                        const auto _Bound = _ParticipantProcesses.find(_Key);
+                        if (_Bound == _ParticipantProcesses.end() || !_Bound->second.template Is<VariantArray>()) return true;
+                        const auto& _Required = std::get<VariantArray>(_Bound->second.m_Value);
+                        return _Required.empty() || std::any_of(_Required.begin(), _Required.end(), [&](const auto& _Process) {
+                            if (!_Process.template Is<std::string>()) return true;
+                            const auto _Executed = _ExecutedJointProcesses.find(_Process.template To<std::string>());
+                            return _Executed == _ExecutedJointProcesses.end() || !_Executed->second.contains(_Key);
+                        });
+                    })) _HasPendingPreparation = true;
+            }
+        if (const auto _Processes = _Prepared.ManufacturingDefinition.find("processes");
+            _Processes != _Prepared.ManufacturingDefinition.end())
+            for (const auto& _Value : _Processes->second.To<VariantArray>())
+            {
+                const auto _Definition = GetRequiredObject(_Value.To<ObjectMap>(), "definition");
+                const auto _Input = GetRequiredObject(_Definition, "processInput");
+                const auto _Geometry = GetRequiredObject(_Input, "geometry");
+                const auto _Ready = _Geometry.find("ready");
+                if ((_Ready != _Geometry.end() && (!_Ready->second.Is<bool>() || !_Ready->second.To<bool>()))
+                    || GetString(_Geometry, "status") == "await-external")
+                    _HasPendingPreparation = true;
+            }
         if (UpdatedParameters_)
         {
             _Prepared.ProductParameters = std::move(_UpdatedProductParameters);
             _Prepared.UpdatesProductParameters = true;
         }
         _Prepared.Parts.reserve(_Output.ItemKeys.size());
+        std::set<std::string> _ValidatedManufacturingKeys;
+        std::map<std::string, TopoDS_Shape> _FinalManufacturingShapes;
         std::vector<iCAX::OpenCascade::SBRepConversionInput> _Conversions;
         _Conversions.reserve(_Output.ItemKeys.size());
         std::vector<std::size_t> _ConversionPartIndices;
@@ -8990,6 +9029,9 @@ namespace
                 throw std::runtime_error("neutral model item has no manufacturing representation: " + _Item.Key);
             ++_Index;
             auto _ItemProperties = _Item.Properties;
+            // Readiness evidence is issued by this host after executing and
+            // checking the final shape, never accepted from a Python template.
+            _ItemProperties.erase("tubeDesigner.manufacturingValidation");
             if (!_Bindings.empty())
             {
                 const auto _ExistingPlan = _ItemProperties.find("tubeDesigner.assemblyPlanning");
@@ -9000,6 +9042,14 @@ namespace
                 _ItemProperties["tubeDesigner.assemblyPlanning"] = std::move(_AssemblyPlan);
             }
             const auto _PartKind = ManufacturingPartKind(_ItemProperties);
+            const auto _Planning = _ItemProperties.find("tubeDesigner.assemblyPlanning");
+            bool _PreparedStock = _Planning == _ItemProperties.end();
+            if (_Planning != _ItemProperties.end() && _Planning->second.Is<ObjectMap>())
+            {
+                const auto& _Plan = std::get<ObjectMap>(_Planning->second.m_Value);
+                const auto _Ready = _Plan.find("ready");
+                _PreparedStock = _Ready != _Plan.end() && _Ready->second.Is<bool>() && _Ready->second.To<bool>();
+            }
             if (const auto _StartAtMinX = ManufacturingSourceStartAtMinX(_ItemProperties))
                 _ItemProperties["manufacturing.sourceStartAtMinX"] = *_StartAtMinX;
             _ItemProperties.erase("tubeDesigner.manufacturingStartToEnd");
@@ -9088,10 +9138,25 @@ namespace
                         return Candidate_.Accessory == (_PartKind == "accessory")
                             && _SameRotation(Candidate_.Source, _SourceShape);
                     }) : _NormalizedPrototypes.end();
+            const auto _NormalizeStock = [&]() {
+                if (_PartKind == "tube")
+                    if (const auto _Sources = _ItemProperties.find("manufacturing.sourceMembers");
+                        _Sources != _ItemProperties.end() && _Sources->second.Is<VariantArray>())
+                    {
+                        const auto _Values = _Sources->second.To<VariantArray>();
+                        if (_Values.size() == 1) {
+                            const auto _Spans = _Values.front().To<ObjectMap>().at("spans").To<VariantArray>();
+                            if (_Spans.size() == 1)
+                                return _SourceShape.Moved(TopLoc_Location(
+                                    ProductProcessSpanPlacement(_Spans.front().To<ObjectMap>())));
+                        }
+                    }
+                return NormalizeManufacturingShape(_SourceShape, _ItemProperties);
+            };
             auto _ManufacturingShape = _ProcessGeometry.Shapes.contains(_Item.Key) ? _SourceShape
                 : _Prototype != _NormalizedPrototypes.end()
                 ? _Prototype->Normalized
-                : NormalizeManufacturingShape(_SourceShape, _ItemProperties);
+                : _NormalizeStock();
             _ItemProperties.erase("tubeDesigner.manufacturingAxis");
             if (_Prototype != _NormalizedPrototypes.end()) ++_NormalizedReuseCount;
             else if (!_HasSideSketch)
@@ -9100,8 +9165,8 @@ namespace
             if (const auto _Sketch = _ItemProperties.find("tubeDesigner.sideSketch");
                 _Sketch != _ItemProperties.end() && _Sketch->second.Is<ObjectMap>())
             {
-                const auto _Applied = ApplyTubeSideSketch(
-                    _ManufacturingShape, _Sketch->second.To<ObjectMap>());
+                const auto _Applied = ApplySceneTubeSideSketch(
+                    _ManufacturingShape, _Sketch->second.To<ObjectMap>(), Scene_);
                 if (!_Applied.bOK || _Applied.Shape.IsNull())
                     throw std::runtime_error(_Applied.Diagnostic.empty()
                         ? "产品侧面草图没有生成有效的切除结果" : _Applied.Diagnostic);
@@ -9140,6 +9205,38 @@ namespace
                 _ItemProperties["length"] = GetDouble(_MaterialBounds, "width", 0);
             }
             if (_PartKind == "accessory") _ItemProperties["manufacturing.modelBounds"] = ShapeBounds(_ManufacturingShape);
+            if (_Bindings.empty() && !_HasPendingPreparation && (_ProcessGeometry.Shapes.contains(_Item.Key)
+                || (_PreparedStock
+                    && GetUInt64(_Model.Extensions, "tubeDesigner.manufacturingInputVersion", 0)
+                        == iCAX::TemplateRuntime::kManufacturingModelSchemaVersion
+                    && GetString(_Prepared.ManufacturingDefinition, "schema") == "icax.manufacturing-model")))
+            {
+                if (_ManufacturingShape.IsNull())
+                    throw std::runtime_error("零件 " + _PartNumber + " 没有最终加工形状，不能导出");
+                std::size_t _Solids = 0;
+                for (TopExp_Explorer _It(_ManufacturingShape, TopAbs_SOLID); _It.More(); _It.Next()) ++_Solids;
+                GProp_GProps _Properties;
+                BRepGProp::VolumeProperties(_ManufacturingShape, _Properties);
+                if (_Solids != 1
+                    || !BRepCheck_Analyzer(_ManufacturingShape).IsValid()
+                    || !std::isfinite(_Properties.Mass()) || _Properties.Mass() <= 1.0e-6)
+                    throw std::runtime_error("零件 " + _PartNumber + " 的最终加工形状无效，不能导出");
+                // Executed template geometry can already contain cope cuts,
+                // without a frozen native process resource. Its list length
+                // must use the same final axial envelope as that resource path.
+                if (_PartKind == "tube" && !_ProcessGeometry.Shapes.contains(_Item.Key))
+                {
+                    const auto _Bounds = ShapeBounds(_ManufacturingShape);
+                    const auto _StockLength = GetDouble(_Item.Properties, "tubeDesigner.assemblyProcessStockLength",
+                        GetDouble(_Item.Properties, "length", 0));
+                    _ItemProperties["manufacturing.rawStockLength"] = _StockLength;
+                    _ItemProperties["manufacturing.materialDatum"] = ObjectMap{
+                        {"schema", std::string("icax.manufacturing-material-datum")}, {"schemaVersion", 1ull},
+                        {"axis", std::string("+X")}, {"rawStockLength", _StockLength}, {"finishedBounds", _Bounds}};
+                    _ItemProperties["length"] = GetDouble(_Bounds, "width", 0);
+                }
+                _ValidatedManufacturingKeys.insert(_Item.Key);
+            }
             // The frozen process BRep is already in the manufacturing frame.
             // Rebuilding and converting it again can adjust vertex tolerances
             // when restoring a runtime alias after project open.
@@ -9150,6 +9247,7 @@ namespace
                 _Conversions.push_back({ _ManufacturingShape, _PartNumber + " manufacturing",
                     Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing") });
             }
+            _FinalManufacturingShapes.emplace(_Item.Key, _ManufacturingShape);
             _Prepared.Parts.push_back({
                 _Index,
                 _Item.Key,
@@ -9168,12 +9266,31 @@ namespace
         }
         if (_Prepared.Parts.size() != static_cast<std::size_t>(_ExpectedPartCount))
             throw std::runtime_error("stored neutral model export count does not match its generation run");
-        const auto _MergedIndices = MergeIdenticalManufacturingParts(_Prepared, _ProcessGeometry);
+        if (!_HasPendingPreparation && _Bindings.empty()
+            && _ValidatedManufacturingKeys.size() == _Prepared.Parts.size()
+            && GetUInt64(_Model.Extensions, "tubeDesigner.manufacturingInputVersion", 0)
+                == iCAX::TemplateRuntime::kManufacturingModelSchemaVersion)
+            std::get<ObjectMap>(_Prepared.ManufacturingModel.at("extensions").m_Value)
+                ["tubeDesigner.identicalManufacturingPartsVersion"] = 1ull;
+        const auto _MergedIndices = MergeIdenticalManufacturingParts(_Prepared, _ProcessGeometry, _FinalManufacturingShapes);
         std::map<std::size_t, std::shared_ptr<iCAX::GeometryData::BRepModel>> _MergedResources;
         for (const auto& [_PartIndex, _Resource] : _SharedProcessResources)
             _MergedResources.try_emplace(_MergedIndices.at(_PartIndex), _Resource);
         _SharedProcessResources = std::move(_MergedResources);
-        for (auto& _PartIndex : _ConversionPartIndices) _PartIndex = _MergedIndices.at(_PartIndex);
+        std::vector<iCAX::OpenCascade::SBRepConversionInput> _CanonicalConversions;
+        std::vector<std::size_t> _CanonicalConversionIndices;
+        std::set<std::size_t> _ScheduledCanonicalParts;
+        for (std::size_t _Index = 0; _Index < _Conversions.size(); ++_Index) {
+            const auto _Target = _MergedIndices.at(_ConversionPartIndices[_Index]);
+            // The group owns its FIRST representative's actual geometry and
+            // resource URL. Later rotated equivalents only add quantities and
+            // source placements; they must never overwrite that representative.
+            if (_SharedProcessResources.contains(_Target) || !_ScheduledCanonicalParts.insert(_Target).second) continue;
+            _CanonicalConversions.push_back(std::move(_Conversions[_Index]));
+            _CanonicalConversionIndices.push_back(_Target);
+        }
+        _Conversions = std::move(_CanonicalConversions);
+        _ConversionPartIndices = std::move(_CanonicalConversionIndices);
         const auto _GroupedModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Prepared.ManufacturingModel);
         ValidateProductStockSourceMappings(_GroupedModel, _PreviewModel);
         if (DeclaredManufacturingPartCount(_GroupedModel) != _Prepared.Parts.size())
@@ -9207,6 +9324,13 @@ namespace
             }
             _Part.ThumbnailResource = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_.Resources(), _Part.ManufacturingResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+            if (_ValidatedManufacturingKeys.contains(_Part.StableKey))
+                _Part.ItemProperties["tubeDesigner.manufacturingValidation"] = ObjectMap{
+                    {"schema", std::string("icax.manufacturing-geometry-validation")}, {"schemaVersion", 1ull},
+                    {"scope", std::string("executed-product-parts")}, {"status", std::string("verified")},
+                    {"resourceId", _Part.ManufacturingResource.URL},
+                    {"resourceVersion", _Part.ManufacturingResource.nVersion},
+                    {"assemblyFitCertified", false}};
         }
         _Mark("store-and-mesh");
         if (Progress_) Progress_->Set("mesh", _Prepared.Parts.size(), _Prepared.Parts.size(), "零件保存完成");
@@ -9347,7 +9471,13 @@ namespace
                         GetUInt64(job, "resourceVersion", 0));
                 }
         for (const auto& [entity, part] : Collect<CManufacturingPartComponent>(db)) {
-            bool persist = IsIndependentNestingPart(*part);
+            const auto _Properties = part->GetItemProperties();
+            const auto _Validation = _Properties.find("tubeDesigner.manufacturingValidation");
+            const bool _VerifiedGeometry = _Validation != _Properties.end() && _Validation->second.Is<ObjectMap>()
+                && GetString(_Validation->second.To<ObjectMap>(), "status") == "verified"
+                && GetString(_Validation->second.To<ObjectMap>(), "resourceId") == part->GetManufacturingGeometryResourceID()
+                && GetUInt64(_Validation->second.To<ObjectMap>(), "resourceVersion", 0) == part->GetManufacturingGeometryResourceVersion();
+            bool persist = IsIndependentNestingPart(*part) || _VerifiedGeometry;
             if (!persist) {
                 const auto run = GetComponent<CGenerationRunComponent>(db.GetEntity(part->GetGenerationRunID()));
                 if (run && run->GetProductID() == part->GetProductID()) {
@@ -9363,32 +9493,8 @@ namespace
             if (persist) {
                 addReference(part->GetManufacturingGeometryResourceID(),
                     part->GetManufacturingGeometryResourceVersion());
-                // A side-sketch edit is always rebuilt from this immutable
-                // pre-sketch BRep.  Persist the base together with the final
-                // part, otherwise reopening the project would make the next
-                // edit either compound the cut or lose the edit base.
-                addReference(GetString(
-                    part->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"),
-                    GetUInt64(part->GetItemProperties(),
-                        "tubeDesigner.sideSketchBaseResourceVersion", 0));
-                const auto addConfigResources = [&addReference](const ObjectMap& value) {
-                    addReference(GetString(value, "baseResourceId"),
-                        GetUInt64(value, "baseResourceVersion", 0));
-                    const auto addCut=[&](const ObjectMap& data) {
-                        const auto cut=data.find("frozenCut");
-                        if(cut!=data.end() && cut->second.Is<ObjectMap>()) {
-                            const auto frozen = cut->second.To<ObjectMap>();
-                            addReference(GetString(frozen, "url"),
-                                GetUInt64(frozen, "version", 0));
-                        }
-                    };
-                    for(const auto& feature:ReadPunchFeatures(value,"features"))addCut(feature.TemplateData);
-                    const auto ends=ReadPunchEnds(value);addCut(ends.Start.TemplateData);addCut(ends.End.TemplateData);
-                };
-                if (const auto _Drawing = GetComponent<CPartDrawingComponent>(entity))
-                    if (!_Drawing->GetDefinition().empty()) addConfigResources(_Drawing->GetDefinition());
-                if (const auto _Punch = GetComponent<CPunchWizardComponent>(entity))
-                    if (!_Punch->GetDefinition().empty()) addConfigResources(_Punch->GetDefinition());
+                if (const auto cad = GetComponent<CTubePartCadComponent>(entity))
+                    addReference(cad->GetDocumentResourceID(), cad->GetDocumentResourceVersion());
             }
         }
         for (const auto& [entity, member] : Collect<CAssemblyMemberComponent>(db))
@@ -9432,7 +9538,8 @@ namespace
         // {URL, version}; no geometry copy is required for that ownership split.
         for (auto info : resources.GetInfos()) {
             const auto source = info.Metadata.find("source");
-            if (info.ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
+            if ((info.ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
+                    && info.ResourceTypeID != iCAX::GeometryData::Tube::CTubeCadDocument::kResourceTypeName)
                 || source == info.Metadata.end() || source->second != "tube-designer") continue;
             const auto mode = referenced.contains({info.Key.Source, info.nVersion})
                 ? iCAX::Resource::EResourcePersistenceMode::Embedded : iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
@@ -9450,9 +9557,10 @@ namespace
         for (const auto& reference : referenced)
         {
             const auto info = resources.GetInfo(reference.URL, reference.nVersion);
-            if (!info || info->ResourceTypeID
-                != iCAX::GeometryData::BRepModel::kResourceTypeName)
-                throw std::runtime_error("Referenced nesting BRep version is unavailable");
+            if (!info || (info->ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
+                && info->ResourceTypeID != iCAX::GeometryData::Tube::CTubeCadDocument::kResourceTypeName))
+                throw std::runtime_error("Referenced nesting CAD resource version is unavailable: "
+                    + reference.URL + " @" + std::to_string(reference.nVersion));
             if (resources.GetVersion(reference.URL) == reference.nVersion)
                 continue;
             if (!info->IsPersistent())
@@ -9524,19 +9632,6 @@ namespace
             const iCAX::Resource::CResourceReference reference{url, version};
             if (reference.IsValid()) references.insert(reference);
         };
-        const auto addConfig = [&add](const ObjectMap& value) {
-            add(GetString(value, "baseResourceId"), GetUInt64(value, "baseResourceVersion", 0));
-            const auto addCut = [&add](const ObjectMap& data) {
-                const auto cut = data.find("frozenCut");
-                if (cut == data.end() || !cut->second.Is<ObjectMap>()) return;
-                const auto frozen = cut->second.To<ObjectMap>();
-                add(GetString(frozen, "url"), GetUInt64(frozen, "version", 0));
-            };
-            for (const auto& feature : ReadPunchFeatures(value, "features")) addCut(feature.TemplateData);
-            const auto ends = ReadPunchEnds(value);
-            addCut(ends.Start.TemplateData);
-            addCut(ends.End.TemplateData);
-        };
         for (const auto& value : stagedIDs)
         {
             const auto entity = db.GetEntity(ParseRequiredUuid(value.To<std::string>(), "partEntityId"));
@@ -9545,20 +9640,16 @@ namespace
                 throw std::runtime_error("Staged nesting part is missing");
             add(part->GetManufacturingGeometryResourceID(),
                 part->GetManufacturingGeometryResourceVersion());
-            const auto properties = part->GetItemProperties();
-            add(GetString(properties, "tubeDesigner.sideSketchBaseResourceId"),
-                GetUInt64(properties, "tubeDesigner.sideSketchBaseResourceVersion", 0));
-            if (const auto drawing = GetComponent<CPartDrawingComponent>(entity))
-                if (!drawing->GetDefinition().empty()) addConfig(drawing->GetDefinition());
-            if (const auto punch = GetComponent<CPunchWizardComponent>(entity))
-                if (!punch->GetDefinition().empty()) addConfig(punch->GetDefinition());
+            if (const auto cad = GetComponent<CTubePartCadComponent>(entity))
+                add(cad->GetDocumentResourceID(),cad->GetDocumentResourceVersion());
         }
         bool hasHistoricalVersion = false;
         for (const auto& reference : references)
         {
             auto info = resources.GetInfo(reference.URL, reference.nVersion);
-            if (!info || info->ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName)
-                throw std::runtime_error("Referenced nesting BRep version is unavailable");
+            if (!info || (info->ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
+                && info->ResourceTypeID != iCAX::GeometryData::Tube::CTubeCadDocument::kResourceTypeName))
+                throw std::runtime_error("Referenced nesting geometry or CAD document version is unavailable");
             if (resources.GetVersion(reference.URL) != reference.nVersion)
             {
                 if (!info->IsPersistent())
@@ -9669,7 +9760,7 @@ namespace
                         if (const auto sketch = FindProductSideSketch(
                             *product, entity->GetID(), member->GetStableKey()))
                         {
-                            const auto applied = ApplyTubeSideSketch(restoredShape, *sketch);
+                            const auto applied = ApplySceneTubeSideSketch(restoredShape, *sketch, scene);
                             if (!applied.bOK || applied.Shape.IsNull())
                                 throw std::runtime_error(applied.Diagnostic.empty()
                                     ? "无法恢复产品侧面草图" : applied.Diagnostic);
@@ -9872,8 +9963,6 @@ namespace
             double Length = 0.0;
             ObjectMap ItemProperties;
             ObjectMap TubeProfile;
-            ObjectMap PartDrawingDefinition;
-            ObjectMap PunchWizardDefinition;
             std::string FileName;
             std::string ManufacturingResourceID;
             std::uint64_t ManufacturingResourceVersion = 0;
@@ -9883,7 +9972,7 @@ namespace
         std::map<iCAX::Data::uuid, iCAX::Data::uuid> _Batches;
         std::vector<std::pair<iCAX::Data::uuid, PropertySet>> _Copies;
         _Copies.reserve(SourceIDs_.size());
-        std::map<iCAX::Data::uuid, std::pair<std::string, ObjectMap>> _CopyDomainComponents;
+        std::map<iCAX::Data::uuid, PropertySet> _CopyCadComponents;
         std::map<iCAX::Data::uuid, PropertySet> _CopyProfileComponents;
         std::map<iCAX::Data::uuid, PropertySet> _CopySourceComponents;
         VariantArray _References, _CreatedIDs;
@@ -9933,12 +10022,6 @@ namespace
                 _Source.ItemProperties = _Part->GetItemProperties();
                 if (const auto _TubeProfile = GetComponent<CTubeProfileComponent>(_Part->GetEntity()))
                     _Source.TubeProfile = ProfileSnapshot(*_TubeProfile);
-                if (const auto _Drawing = GetComponent<CPartDrawingComponent>(_Part->GetEntity());
-                    _Drawing && !_Drawing->GetDefinition().empty())
-                    _Source.PartDrawingDefinition = _Drawing->GetDefinition();
-                if (const auto _Punch = GetComponent<CPunchWizardComponent>(_Part->GetEntity());
-                    _Punch && !_Punch->GetDefinition().empty())
-                    _Source.PunchWizardDefinition = _Punch->GetDefinition();
                 _Source.FileName = _Part->GetFileName();
                 _Source.ManufacturingResourceID = _Part->GetManufacturingGeometryResourceID();
                 _Source.ManufacturingResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
@@ -10069,12 +10152,20 @@ namespace
             if (!_Source.TubeProfile.empty())
                 _CopyProfileComponents.emplace(
                     _ID, TubeProfileComponentPropertiesFromSnapshot(_Source.TubeProfile));
-            if (!_Source.PartDrawingDefinition.empty())
-                _CopyDomainComponents[_ID] = std::make_pair(
-                    CPartDrawingComponent::S_ClassName, std::move(_Source.PartDrawingDefinition));
-            else if (!_Source.PunchWizardDefinition.empty())
-                _CopyDomainComponents[_ID] = std::make_pair(
-                    CPunchWizardComponent::S_ClassName, std::move(_Source.PunchWizardDefinition));
+            if (IsTubeCadMaterialPart(_Copies.back().second.at(
+                    CManufacturingPartComponent::PropertyName_ItemProperties).To<ObjectMap>())) {
+                const auto _Geometry = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
+                    _Resource.URL, _Resource.nVersion);
+                const auto _Service = Scene_.Services().Resolve<iCAX::CAD::ITubeCadDocumentService>();
+                if (!_Geometry || !_Service) throw std::runtime_error("下料管材 CAD 创建资源不可用");
+                auto _Document = _Service->Import(*_Geometry).Document;
+                _Document.Metadata["authoringAuthority"] = "neutral-cad-document";
+                const auto _Cad = StoreTubeCadDocument(Scene_,
+                    "tube-designer/nesting/cad/" + UuidToString(_ID), _Source.Name, _Document);
+                _CopyCadComponents.emplace(_ID, PropertySet{
+                    {CTubePartCadComponent::PropertyName_DocumentResourceID, PropertyValue(_Cad.URL)},
+                    {CTubePartCadComponent::PropertyName_DocumentResourceVersion, PropertyValue(_Cad.nVersion)}});
+            }
             if (!_Source.ProductID.is_nil())
                 _CopySourceComponents.emplace(_ID, PropertySet{
                     {CNestingSourceComponent::PropertyName_SourceProductID, PropertyValue(_Source.ProductID)},
@@ -10125,17 +10216,9 @@ namespace
                     _Profile != _CopyProfileComponents.end())
                     components.push_back(_InitialComponent(CTubeProfileComponent::S_ClassName,
                         std::move(_Profile->second)));
-                if (auto _Domain = _CopyDomainComponents.find(_ID);
-                    _Domain != _CopyDomainComponents.end())
-                {
-                    PropertySet domainProperties;
-                    const auto& definitionName = _Domain->second.first == CPartDrawingComponent::S_ClassName
-                        ? CPartDrawingComponent::PropertyName_Definition
-                        : CPunchWizardComponent::PropertyName_Definition;
-                    domainProperties[definitionName].m_Value = std::move(_Domain->second.second);
-                    components.push_back(_InitialComponent(_Domain->second.first,
-                        std::move(domainProperties)));
-                }
+                if (auto _Cad = _CopyCadComponents.find(_ID); _Cad != _CopyCadComponents.end())
+                    components.push_back(_InitialComponent(CTubePartCadComponent::S_ClassName,
+                        std::move(_Cad->second)));
                 if (auto _Source = _CopySourceComponents.find(_ID);
                     _Source != _CopySourceComponents.end())
                     components.push_back(_InitialComponent(CNestingSourceComponent::S_ClassName,
@@ -10449,7 +10532,18 @@ namespace
         const auto _Modified = std::filesystem::last_write_time(_Path);
         const auto _Start = std::chrono::steady_clock::now();
         SManufacturingPartReadTiming _ReadTiming;
-        const auto _Shape = ReadManufacturingPartPreviewFile(_Path, &_ReadTiming);
+        const auto _Importer = Scene_->Services().Resolve<iCAX::CAD::ICadBRepImportService>();
+        if (!_Importer) throw std::runtime_error("CAD 实体导入服务不可用");
+        iCAX::CAD::SCadBRepImportRequest _ImportRequest;
+        _ImportRequest.SourcePath = _Path;
+        _ImportRequest.MaximumSourceBytes = 32ull * 1024 * 1024;
+        _ImportRequest.IncludeDisplayMesh = false;
+        const auto _Imported = _Importer->Load(_ImportRequest);
+        const auto _Restored = iCAX::OpenCascade::ReconstructOpenCascadeShape(_Imported.Geometry);
+        if (!_Restored.bOK || _Restored.Shape.IsNull()) throw std::runtime_error("文件预览几何无法恢复");
+        const auto& _Shape = _Restored.Shape;
+        _ReadTiming.ReadMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - _Start).count();
         iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
         Bnd_Box _Box;
         BRepBndLib::Add(_Shape, _Box, false);
@@ -10484,7 +10578,7 @@ namespace
             return MakeResponse(ObjectMap{{"sourceFileName", PathToUTF8(_Path.filename())},
                 {"sourcePath", PathToUTF8(_Path)}, {"sizeBytes", static_cast<unsigned long long>(_Size)},
                 {"lastModifiedNs", std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(_Modified.time_since_epoch()).count())},
-                {"wireframe", ObjectMap{{"polylines", std::move(_Polylines)},
+                {"wireframe", ObjectMap{{"polylinesJson", iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(_Polylines)},
                     {"edgeCount", static_cast<unsigned long long>(_Edges.size())},
                     {"pointCount", static_cast<unsigned long long>(_PointCount)}}},
                 {"bounds", ObjectMap{{"min", VariantArray{_X0, _Y0, _Z0}}, {"max", VariantArray{_X1, _Y1, _Z1}}}},
@@ -10556,18 +10650,80 @@ namespace
     {
         if (!Scene_ || Request_.Payload.size() > 1024 * 1024)
             throw std::invalid_argument("导入下料零件请求无效");
+        const auto _ImportStarted = std::chrono::steady_clock::now();
+        auto _ImportPrevious = _ImportStarted;
+        ObjectMap _ImportPerformance;
+        const auto _ImportTraceID = UuidToString(iCAX::Data::GenerateNewUUID());
+        std::string _ImportSourceName;
+        const auto _SaveImportTiming = [&](const char* stage) noexcept {
+            try {
+                const auto directory = Utf8Path(ApplicationContext_.GetPaths().LogDirectory);
+                if (directory.empty()) return;
+                const auto line = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(ObjectMap{
+                    {"importId", _ImportTraceID}, {"sourceFileName", _ImportSourceName},
+                    {"stage", std::string(stage)}, {"performance", _ImportPerformance}});
+                static std::mutex logMutex;
+                std::lock_guard lock(logMutex);
+                std::filesystem::create_directories(directory);
+                std::ofstream log(directory / "TubeDesignerImportPerformance.jsonl", std::ios::app | std::ios::binary);
+                log << line << '\n';
+            } catch (...) { /* Observational timing must never change import success. */ }
+        };
+        const auto _MarkImportStage = [&](const char* stage) {
+            const auto now = std::chrono::steady_clock::now();
+            _ImportPerformance[stage] = std::chrono::duration<double, std::milli>(now - _ImportPrevious).count();
+            _ImportPrevious = now;
+            _SaveImportTiming(stage);
+        };
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _SourcePath = Utf8Path(GetRequiredText(_Payload, "sourcePath", 32767));
-        const auto _Snapshot = ImportManufacturingPartFile(_SourcePath);
-        auto _Shape = ComponentModelShape(_Snapshot);
-        const auto _ImportedBRep = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
-            _Shape, GetString(_Snapshot, "name", "导入管材"),
-            GetString(_Snapshot, "geometryDigest"), 0.001);
+        _ImportSourceName = PathToUTF8(_SourcePath.filename());
+        _SaveImportTiming("started");
+        const auto _Importer = Scene_->Services().Resolve<iCAX::CAD::ICadBRepImportService>();
+        if (!_Importer) throw std::runtime_error("CAD 实体导入服务不可用");
+        iCAX::CAD::SCadBRepImportRequest _ImportRequest;
+        _ImportRequest.SourcePath = _SourcePath;
+        _ImportRequest.MaximumSourceBytes = 32ull * 1024 * 1024;
+        _ImportRequest.IncludeDisplayMesh = false;
+        auto _Imported = _Importer->Load(_ImportRequest);
+        _ImportPerformance["sourceFaces"] = static_cast<unsigned long long>(_Imported.Geometry.Faces.size());
+        _MarkImportStage("readMs");
+        // The import service already returns validated neutral geometry. Keep
+        // it in memory instead of serializing/re-reading OCC text and choosing
+        // a second independent orientation before the real recognition stage.
+        const auto _SourceGeometryBytes = iCAX::GeometryData::Persistence::Serialize(_Imported.Geometry);
+        const ObjectMap _Snapshot{
+            {"name", PathToUTF8(_SourcePath.stem())},
+            {"sourceFileName", PathToUTF8(_SourcePath.filename())},
+            {"sourceFormat", _Imported.FormatId == "cad.iges" ? std::string("iges") : std::string("step")},
+            {"geometryDigest", ContentDigest("icax.brep", std::string(
+                reinterpret_cast<const char*>(_SourceGeometryBytes.data()), _SourceGeometryBytes.size()))}
+        };
+        _MarkImportStage("neutralDigestMs");
+        iCAX::CAD::SCadBRepHealOptions _HealOptions;
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 2
+        _HealOptions.MaximumConcurrency = 1;
+#endif
+        const auto _Healed = iCAX::ExtrusionRecognition::HealWork{}.Run(_Imported.Geometry, _HealOptions);
+        if (!_Healed.Success) throw std::runtime_error("导入零件的曲面规范化未通过几何校验");
+        _ImportPerformance["healedFaces"] = static_cast<unsigned long long>(_Healed.Geometry.Faces.size());
+        _MarkImportStage("healMs");
         const auto _Fitters = iCAX::ExtrusionRecognition::DiscoverPythonSectionFitters(
             PathToUTF8(ResolveSystemProfileRoot(ApplicationContext_)));
+        _MarkImportStage("fitterDiscoveryMs");
         iCAX::ExtrusionRecognition::CExtrusionRecognitionService _RecognitionService;
+        iCAX::ExtrusionRecognition::SPythonSectionFitterOptions _FitterOptions;
+        _FitterOptions.PythonRuntimeLibraryPath = PathToUTF8(ResolveEmbeddedPythonRuntimeLibrary(ApplicationContext_));
+        _FitterOptions.WorkerScriptPath = PathToUTF8(ResolveRuntimeFile(ApplicationContext_, {
+            "runtime/template-python/icax_template_worker.py"
+        }, "iCAX Python fitter worker"));
         const auto _Recognition = _RecognitionService.RecognizePythonFitters(
-            _ImportedBRep, _Fitters);
+            _Healed.Geometry, _Fitters, _FitterOptions);
+        _ImportPerformance["recognitionStatus"] = static_cast<unsigned int>(_Recognition.Status);
+        VariantArray _RecognitionDiagnostics;
+        for (const auto& _Diagnostic : _Recognition.Diagnostics) _RecognitionDiagnostics.emplace_back(_Diagnostic);
+        _ImportPerformance["recognitionDiagnostics"] = std::move(_RecognitionDiagnostics);
+        _MarkImportStage("recognitionMs");
         if (_Recognition.Status != iCAX::ExtrusionRecognition::ERecognitionStatus::Success
             && _Recognition.Status != iCAX::ExtrusionRecognition::ERecognitionStatus::SectionTypeNotMatched)
         {
@@ -10594,11 +10750,38 @@ namespace
 
         const auto _SourceFormat = GetString(_Snapshot, "sourceFormat", "step");
         const auto _Profile = ProfileSnapshot(_Recognition, "geometry-import:" + _SourceFormat);
-        const auto _Normalized = iCAX::OpenCascade::BuildOpenCascadeShape(
-            _Recognition.NormalizedGeometry);
-        if (!_Normalized.bOK || _Normalized.Shape.IsNull())
-            throw std::runtime_error("无法生成管型识别后的标准化实体");
-        _Shape = _Normalized.Shape;
+        iCAX::OpenCascade::COpenCascadeCancellationScope _Cancellation(
+            [Scene_] { return Scene_->IsStopRequested(); });
+        const auto _CadService = Scene_->Services().Resolve<iCAX::CAD::ITubeCadDocumentService>();
+        if (!_CadService) throw std::runtime_error("管材 CAD 文档服务不可用");
+        iCAX::CAD::STubeCadEditResult _Cad;
+        if (_Recognition.NormalizedGeometry.Solids.empty()) {
+            // Surface-only IGES is valid nesting input. Preserve every exact
+            // face as an explicit boundary document; never invent closed
+            // material, sew gaps or claim inferred editable solid features.
+            namespace Tube = iCAX::GeometryData::Tube;
+            Tube::CTubeNeutralGeometry _BoundaryDocument;
+            _BoundaryDocument.BaseNodeID = _BoundaryDocument.RootNodeID = "source-boundary";
+            _BoundaryDocument.SolidNodes.push_back({"source-boundary", "原始曲面边界（未反解实体特征）",
+                Tube::SResidualBRepNode{"source-boundary"}});
+            _BoundaryDocument.RecognitionStatus = Tube::ERecognitionStatus::Partial;
+            _BoundaryDocument.Metadata["representation"] = "exact-surface-boundary";
+            _BoundaryDocument.Diagnostics.push_back({"open-boundary-source",
+                "保留全部原始曲面；输入未声明闭合实体，未反解可编辑实体特征。", 0.0});
+            _Cad = _CadService->Create(_BoundaryDocument,
+                {{"source-boundary", _Recognition.NormalizedGeometry}});
+            _ImportPerformance["cadRepresentation"] = std::string("exact-surface-boundary");
+        } else {
+            _Cad = _CadService->Import(_Recognition.NormalizedGeometry,
+                [&](const std::string& stage, double elapsed) {
+                    const auto key = "cad." + stage + "Ms";
+                    _ImportPerformance[key] = elapsed;
+                    _SaveImportTiming(key.c_str());
+                });
+            _ImportPerformance["cadRepresentation"] = std::string("recognized-solid-features");
+        }
+        _ImportPerformance["finalFaces"] = static_cast<unsigned long long>(_Cad.Evaluation.Shape.Faces.size());
+        _MarkImportStage("cadDocumentMs");
         auto _Name = TrimText(GetString(_Payload, "name"));
         if (_Name.empty())
             _Name = MakePartNameFromFileName(GetString(_Snapshot, "sourceFileName"), "导入零件");
@@ -10621,17 +10804,25 @@ namespace
                 && _Part->GetPartIndex() < (std::numeric_limits<std::uint64_t>::max)())
                 _NextIndex = _Part->GetPartIndex() + 1;
 
-        const auto _Resource = StoreBRep(*Scene_,
-            "tube-designer/nesting/import/" + UuidToString(_PartID), _Name, _Shape);
+        // CAD evaluation already validated the persisted geometry. Import only
+        // needs its axial envelope; detailed dimensions are requested separately.
+        const auto _Evaluated = iCAX::OpenCascade::ReconstructOpenCascadeShape(_Cad.Evaluation.Shape);
+        if (!_Evaluated.bOK || _Evaluated.Shape.IsNull()) throw std::runtime_error("管材 CAD 结果无法恢复");
+        const auto& _Shape = _Evaluated.Shape;
+        const auto _Resource = StorePreparedBRep(*Scene_, Scene_->Resources().MakeNamedResourceURL(
+            "tube-designer/nesting/import/" + UuidToString(_PartID)), _Name, std::move(_Cad.Evaluation.Shape));
+        const auto _CadResource = StoreTubeCadDocument(*Scene_,
+            "tube-designer/nesting/cad/" + UuidToString(_PartID), _Name, _Cad.Document);
+        _MarkImportStage("resourceStoreMs");
         const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
-        const auto _Bounds = ShapeBounds(_Shape);
+        _MarkImportStage("displayMeshMs");
+        const auto _Bounds = ShapeBounds(_Shape, true);
         const auto _EnvelopeLength = GetDouble(_Bounds, "width", 0.0);
         if (!std::isfinite(_EnvelopeLength) || _EnvelopeLength <= 0.02)
             throw std::invalid_argument("导入零件的轴向包络长度无效");
-        auto _Measurement = MeasureFinalPartGeometry(_Shape, _Resource.URL, _Resource.nVersion);
-        _Measurement["nestingEnvelopeLength"] = _EnvelopeLength;
-        _Measurement["normalizedAxis"] = std::string("+X");
+        _ImportPerformance["measurementDeferred"] = true;
+        _MarkImportStage("boundsMs");
 
         ObjectMap _ItemProperties{
             { "manufacturing.partKind", std::string("tube") },
@@ -10645,7 +10836,7 @@ namespace
             { "manufacturing.import.sourceFileName", GetString(_Snapshot, "sourceFileName") },
             { "manufacturing.import.sourceFormat", _SourceFormat },
             { "manufacturing.import.geometryDigest", GetString(_Snapshot, "geometryDigest") },
-            { "manufacturing.geometryMeasurement", _Measurement },
+            { "manufacturing.normalizedAxis", std::string("+X") },
             { "nesting.snapshot", ObjectMap{
                 { "name", _Name },
                 { "quantity", 1ull },
@@ -10694,6 +10885,9 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(_PartID, CTubePartCadComponent::S_ClassName, {
+                {CTubePartCadComponent::PropertyName_DocumentResourceID, PropertyValue(_CadResource.URL)},
+                {CTubePartCadComponent::PropertyName_DocumentResourceVersion, PropertyValue(_CadResource.nVersion)}});
             _Transaction.AttachComponent(
                 _PartID,
                 CTubeProfileComponent::S_ClassName,
@@ -10714,202 +10908,21 @@ namespace
         }
         _Undo->End();
         SyncNestingPersistence(*Scene_);
+        _MarkImportStage("commitMs");
         auto _Response = BuildSnapshot(*Scene_, ApplicationContext_, false);
+        _MarkImportStage("sceneSnapshotMs");
         _Response["partEntityId"] = UuidToString(_PartID);
         _Response["profile"] = _Profile;
-        _Response["recognition"] = _Measurement;
         _Response["sourceFileName"] = GetString(_Snapshot, "sourceFileName");
+        _ImportPerformance["totalMs"] = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - _ImportStarted).count();
+        _SaveImportTiming("completed");
+        _Response["importPerformance"] = std::move(_ImportPerformance);
         return MakeResponse(_Response);
     }
 
-    iCAX::Interaction::CInvocationResult HandleRecoverImportedPartDrawing(
-        const iCAX::Interaction::CInvocation& Request_,
-        const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
-        iCAX::Project::ISceneContext* Scene_)
-    {
-        if (!Scene_ || Request_.Payload.size() > 1024 * 1024)
-            throw std::invalid_argument("三维编辑识别请求无效");
-        iCAX::OpenCascade::COpenCascadeCancellationScope _Cancellation(
-            [Scene_] { return Scene_->IsStopRequested(); });
-        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-        const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _PartID = ParseRequiredUuid(GetRequiredText(_Payload, "partEntityId", 80), "partEntityId");
-        auto& _DB = Scene_->Database();
-        const auto _Entity = _DB.GetEntity(_PartID);
-        const auto _Part = GetComponent<CManufacturingPartComponent>(_Entity);
-        if (!_Part || !IsIndependentNestingPart(*_Part)
-            || !IsTubeManufacturingPart(_Part->GetItemProperties())
-            || !_Part->GetItemProperties().contains("manufacturing.imported"))
-            throw std::invalid_argument("只能识别独立导入的管材零件");
-        if (GetUInt64(_Payload,"resourceVersion",_Part->GetManufacturingGeometryResourceVersion())
-            != _Part->GetManufacturingGeometryResourceVersion())
-            throw std::invalid_argument("零件几何已改变，请刷新后重新识别");
-        if (GetComponent<CPartDrawingComponent>(_Entity)) {
-            return MakeResponse(ObjectMap{{"partEntityId",UuidToString(_PartID)},
-                {"resourceVersion",_Part->GetManufacturingGeometryResourceVersion()},
-                {"ready",true}});
-        }
-        const auto _ProfileComponent = GetComponent<CTubeProfileComponent>(_Entity);
-        if (!_ProfileComponent)
-            throw std::invalid_argument("导入零件缺少已识别截面，不能还原主管");
-        const auto _SourceBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
-            _Part->GetManufacturingGeometryResourceID(),
-            _Part->GetManufacturingGeometryResourceVersion());
-        if (!_SourceBRep)
-            throw std::runtime_error("导入零件原始实体资源缺失");
-        const auto _SourceBuild = iCAX::OpenCascade::BuildOpenCascadeShape(*_SourceBRep);
-        if (!_SourceBuild.bOK || _SourceBuild.Shape.IsNull())
-            throw std::runtime_error("导入零件原始实体无法恢复");
-        const auto& _SourceShape = _SourceBuild.Shape;
-        const auto _Bounds = ShapeBounds(_SourceShape);
-        const double _Length = GetDouble(_Bounds, "width", 0.0);
-        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
-            throw std::invalid_argument("导入零件轴向长度超出三维编辑范围");
-        const auto _Min = _Bounds.at("min").To<VariantArray>();
-        const auto _Max = _Bounds.at("max").To<VariantArray>();
-        const VariantArray _BlankOrigin{
-            ToDouble(_Min[0],"x"),
-            (ToDouble(_Min[1],"y")+ToDouble(_Max[1],"y"))/2,
-            (ToDouble(_Min[2],"z")+ToDouble(_Max[2],"z"))/2};
-        gp_Trsf _ToEditor;
-        _ToEditor.SetTranslation(gp_Vec(-ToDouble(_BlankOrigin[0],"x"),
-            -ToDouble(_BlankOrigin[1],"y"),-ToDouble(_BlankOrigin[2],"z")));
-        const auto _EditorSource = BRepBuilderAPI_Transform(_SourceShape,_ToEditor,true).Shape();
-
-        // Recognition's stored point loops are useful for display, but they
-        // are not an exact editable section (a round tube becomes a polygon).
-        // Recreate the known section from the directly fitted parameters and
-        // accept it only if the resulting BRep passes the replay comparison.
-        if (_ProfileComponent->GetTypeID().empty()
-            || _ProfileComponent->GetTypeID() == "irregular")
-            throw std::invalid_argument("当前异型截面尚无可精确重建的管型定义，原始零件未改变");
-        ReportExportProgress(Request_,"profile",0,1,"正在重建已识别的精确截面");
-        auto _Profile = EvaluateSystemProfile(ApplicationContext_,
-            _ProfileComponent->GetTypeID(),_ProfileComponent->GetParameters());
-        ReportExportProgress(Request_,"base",0,1,"正在生成干净主管并比较原件");
-        const auto _Blank = BuildPunchBlank(_Profile, _Length);
-        if (_Blank.IsNull() || !BRepCheck_Analyzer(_Blank).IsValid())
-            throw std::runtime_error("已识别截面不能生成有效的可编辑主管");
-
-        std::vector<SPunchFeature> _Features;
-        SPunchEnds _Ends;
-        double _ReplayError = DrawingReplayError(_EditorSource, _Blank);
-        if (_ReplayError > 1.0e-8) {
-            ReportExportProgress(Request_,"recognize",0,1,"正在识别孔和端部切除");
-            iCAX::OpenCascade::STubeCSGConversionOptions _Options;
-            _Options.SourceBRepResourceID = _Part->GetManufacturingGeometryResourceID();
-            _Options.RemovalBRepResourceID = "recovered-removal/" + UuidToString(_PartID);
-            _Options.AdditionBRepResourceID = "recovered-addition/" + UuidToString(_PartID);
-            const auto _CSG = iCAX::OpenCascade::ConvertBRepToTubeCSGFromExtrudedBlank(
-                _EditorSource, _Blank, _Length, _Options);
-            if (!_CSG.ReplayValidation.bEquivalent
-                || _CSG.Geometry.RelativeUnparameterizedVolume > 1.0e-6
-                || ShapeMaterialVolume(_CSG.AdditionShape) >
-                    std::max(ShapeMaterialVolume(_EditorSource),1.0) * 1.0e-6)
-            {
-                std::fprintf(stderr, "ImportedPartRecovery/rejected profile=%s replay=%d error=%.17g residual=%.17g addition=%.17g\n",
-                    _ProfileComponent->GetTypeID().c_str(), _CSG.ReplayValidation.bEquivalent,
-                    _CSG.ReplayValidation.RelativeVolumeError,
-                    _CSG.Geometry.RelativeUnparameterizedVolume, ShapeMaterialVolume(_CSG.AdditionShape));
-                for (const auto& _Diagnostic : _CSG.Geometry.Diagnostics)
-                    std::fprintf(stderr, "ImportedPartRecovery/%s: %s\n",
-                        _Diagnostic.Code.c_str(), _Diagnostic.Message.c_str());
-                if (_CSG.ReplayValidation.bEquivalent
-                    && _CSG.Geometry.RelativeUnparameterizedVolume > 1.0e-6)
-                    throw std::invalid_argument("原实体仍有尚不能精确还原为编辑特征的局部几何，未建立三维编辑定义；原始零件未改变");
-                throw std::invalid_argument("原实体的特征不能完整、独立地回放，未建立三维编辑定义；原始零件未改变");
-            }
-            const auto _Mapped = MapNeutralTubeFeatures(_CSG.Geometry,_Length);
-            if (!_Mapped.Complete)
-                throw std::invalid_argument("原实体含当前三维编辑器尚不能表达的切除特征（"
-                    + (_Mapped.UnsupportedNodeIDs.empty()?std::string("unknown"):_Mapped.UnsupportedNodeIDs.front())
-                    + "），未建立编辑定义；原始零件未改变");
-            _Features = ReadPunchFeatureArray(_Mapped.Features,"features");
-            _Ends = ReadPunchEnds(ObjectMap{{"ends",_Mapped.Ends}});
-            ReportExportProgress(Request_,"replay",0,1,"正在回放特征并核对原实体");
-            const auto _Replayed = EvaluatePunch(_Blank,_Profile,_Features,_Ends,Request_,
-                ApplicationContext_,*Scene_);
-            _ReplayError = DrawingReplayError(_EditorSource,_Replayed);
-            if (_ReplayError > 1.0e-8)
-                throw std::invalid_argument("识别出的切除特征在三维编辑器中回放后与原实体不一致，原始零件未改变");
-        }
-        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-        const auto _PlacedBlank = PlaceDrawingBlank(_Blank,ObjectMap{{"blankOrigin",_BlankOrigin}});
-        const auto _BaseResource = StorePunchBRep(*Scene_,
-            "tube-designer/nesting/drawing-base/" + UuidToString(_PartID),
-            _Part->GetName() + " 三维编辑主管", _PlacedBlank, Request_);
-        const ObjectMap _Drawing{{"schemaVersion",1ull},{"length",_Length},
-            {"section",ObjectMap{{"source",std::string("imported")},
-                {"name",_ProfileComponent->GetDisplayName()}, {"profile",_Profile}}}};
-        VariantArray _SavedFeatures;
-        for (const auto& _Feature : _Features)
-            _SavedFeatures.emplace_back(PunchFeatureSnapshot(_Feature));
-        ReportExportProgress(Request_,"save",0,1,"正在保存可编辑定义");
-        iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-        const ObjectMap _Config{
-            {"schema",std::string("icax.tube-designer.part-drawing")},
-            {"schemaVersion",4ull},
-            {"baseResourceId",_BaseResource.URL},
-            {"baseResourceVersion",_BaseResource.nVersion},
-            {"baseLength",_Length},
-            {"baseBounds",ShapeBounds(_PlacedBlank)},
-            {"blankOrigin",_BlankOrigin},
-            {"baseEndProcess",ObjectMap{{"startCut",std::string("square")},
-                {"endCut",std::string("square")}}},
-            {"operations",PunchOperationChain(_Features,_Ends)},
-            {"ends",PunchEndsSnapshot(_Ends)},
-            {"features",std::move(_SavedFeatures)},
-            {"drawing",_Drawing},
-            {"recovery",ObjectMap{{"source",std::string("brep")},
-                {"relativeSymmetricDifference",_ReplayError}}}
-        };
-        auto _Undo = _DB.BeginUndoCommand("Recover imported tube part drawing");
-        auto& _Transaction = _DB.BeginTransaction("Recover imported tube part drawing");
-        bool _Committing = false;
-        try {
-            _Transaction.AttachComponent(_PartID,CPartDrawingComponent::S_ClassName,
-                {{CPartDrawingComponent::PropertyName_Definition,PropertyValue(_Config)}});
-            std::string _Error;
-            iCAX::OpenCascade::COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            _Committing = true;
-            if (!_DB.CommitTransaction(_Transaction,_Error))
-                throw std::runtime_error(_Error.empty()?"保存恢复后的三维编辑定义失败":_Error);
-        } catch(...) {
-            if (!_Committing) { try { _DB.CancelTransaction(_Transaction); } catch(...) {} }
-            throw;
-        }
-        _Undo->End();
-        SyncNestingPersistence(*Scene_);
-        return MakeResponse(ObjectMap{{"partEntityId",UuidToString(_PartID)},
-            {"resourceVersion",_Part->GetManufacturingGeometryResourceVersion()},
-            {"ready",true},{"relativeSymmetricDifference",_ReplayError}});
-    }
-
-    iCAX::Interaction::CInvocationResult HandleGetPartDrawing(
-        const iCAX::Interaction::CInvocation& Request_,
-        const iCAX::Application::IApplicationContext&,
-        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
-        iCAX::Project::ISceneContext* Scene_)
-    {
-        if (!Scene_ || Request_.Payload.size() > 1024 * 1024)
-            throw std::invalid_argument("三维编辑读取请求无效");
-        const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _PartID = ParseRequiredUuid(GetRequiredText(_Payload,"partEntityId",80),"partEntityId");
-        const auto _Entity = Scene_->Database().GetEntity(_PartID);
-        const auto _Part = GetComponent<CManufacturingPartComponent>(_Entity);
-        if (!_Part || !IsIndependentNestingPart(*_Part))
-            throw std::invalid_argument("只能读取独立下料零件的三维编辑定义");
-        if (GetUInt64(_Payload,"resourceVersion",_Part->GetManufacturingGeometryResourceVersion())
-            != _Part->GetManufacturingGeometryResourceVersion())
-            throw std::invalid_argument("零件几何已改变，请刷新后重新读取");
-        const auto _Drawing = GetComponent<CPartDrawingComponent>(_Entity);
-        if (!_Drawing || _Drawing->GetDefinition().empty())
-            throw std::invalid_argument("该零件尚无三维编辑定义");
-        return MakeResponse(ObjectMap{{"partEntityId",UuidToString(_PartID)},
-            {"resourceVersion",_Part->GetManufacturingGeometryResourceVersion()},
-            {"definition",_Drawing->GetDefinition()}});
-    }
+    #include "PartDrawingBevelSDO.inc"
+    #include "TubeCadDocumentSDO.inc"
 
     iCAX::Interaction::CInvocationResult HandleDeleteNestingParts(
         const iCAX::Interaction::CInvocation& Request_, const iCAX::Application::IApplicationContext& Application_,
@@ -11010,7 +11023,7 @@ namespace
         if (const auto _Sketch = _Properties.find("tubeDesigner.sideSketch");
             _Sketch != _Properties.end() && _Sketch->second.Is<ObjectMap>())
         {
-            const auto _Applied = ApplyTubeSideSketch(_Shape, _Sketch->second.To<ObjectMap>());
+            const auto _Applied = ApplySceneTubeSideSketch(_Shape, _Sketch->second.To<ObjectMap>(), Scene_);
             if (!_Applied.bOK || _Applied.Shape.IsNull()) throw std::runtime_error("无法恢复零件侧面草图");
             _Shape = _Applied.Shape;
         }
@@ -11158,12 +11171,37 @@ namespace
             || std::any_of(_PreparedProducts.begin(), _PreparedProducts.end(),
                 [](const auto& product) {
                     if (!product.AssemblyBindings.empty()) return true;
+                    if (std::any_of(product.Parts.begin(), product.Parts.end(), [](const auto& part) {
+                        return part.ItemProperties.contains("tubeDesigner.manufacturingValidation");
+                    })) return true;
                     const auto extensions = product.ManufacturingModel.find("extensions");
                     return extensions != product.ManufacturingModel.end()
                         && extensions->second.Is<ObjectMap>()
                         && std::get<ObjectMap>(extensions->second.m_Value)
                             .contains("tubeDesigner.assemblyGeometryProcesses");
                 });
+
+        if (_NeedsNestingPersistence)
+        {
+            // Commit observers may autosave synchronously. First anchor the
+            // currently committed historical versions, then embed the new
+            // exact versions BEFORE publishing their references in the DB.
+            // Either side of the transaction is thus a complete project.
+            SyncNestingPersistence(*Scene_);
+            auto& _Resources = Scene_->Resources();
+            for (const auto& _Product : _PreparedProducts)
+                for (const auto& _Part : _Product.Parts)
+                {
+                    if (!_Part.ItemProperties.contains("tubeDesigner.manufacturingValidation")) continue;
+                    auto _Info = _Resources.GetInfo(_Part.ManufacturingResource.URL, _Part.ManufacturingResource.nVersion);
+                    if (!_Info) throw std::runtime_error("最终加工资源缺失，不能保存拆单结果：" + _Part.PartNumber);
+                    if (_Info->IsPersistent()) continue;
+                    _Info->Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+                    _Info->nSchemaVersion = 1;
+                    if (!_Resources.UpdateInfo(_Part.ManufacturingResource.URL, *_Info))
+                        throw std::runtime_error("最终加工资源无法保存：" + _Part.PartNumber);
+                }
+        }
 
         auto _CommitProfileLast = std::chrono::steady_clock::now();
         const auto _CommitMark = [&](const char* Phase_) {
@@ -11493,7 +11531,8 @@ namespace
         {
             _Measurement = _Kind == "plate" || _Kind == "glass"
                 ? MeasureFinalPlateGeometry(_FinalShape, _ResourceID, _ResourceVersion)
-                : MeasureFinalPartGeometry(_FinalShape, _ResourceID, _ResourceVersion);
+                : MeasureFinalPartGeometry(_FinalShape, _ResourceID, _ResourceVersion,
+                    GetString(_Properties, "manufacturing.normalizedAxis") == "+X");
             if (_Kind == "glass") _Measurement["partKind"] = _Kind;
         }
         _Measurement["partEntityId"] = UuidToString(_PartID);
@@ -11837,27 +11876,6 @@ namespace
         return HandleGetPunchTools(Request_, ApplicationContext_, ProductContext_, nullptr, nullptr);
     }
 
-    ObjectMap ReadEditableDrawingConfig(const CManufacturingPartComponent& Part_, bool PartDrawing_)
-    {
-        const auto _Entity = Part_.GetEntity();
-        if (_Entity)
-        {
-            if (PartDrawing_)
-            {
-                if (const auto _Component = GetComponent<CPartDrawingComponent>(_Entity);
-                    _Component && !_Component->GetDefinition().empty())
-                    return _Component->GetDefinition();
-            }
-            else
-            {
-                if (const auto _Component = GetComponent<CPunchWizardComponent>(_Entity);
-                    _Component && !_Component->GetDefinition().empty())
-                    return _Component->GetDefinition();
-            }
-        }
-        return {};
-    }
-
     ObjectMap ReadPartDrawing(const ObjectMap& Payload_)
     {
         const auto _Drawing = GetRequiredObject(Payload_,"drawing");
@@ -11866,14 +11884,15 @@ namespace
         ValidateImportedProfileDefinition(_Profile);
         const auto _Length=GetDouble(_Drawing,"length",0);
         if(!std::isfinite(_Length)||_Length<1||_Length>100000)throw std::invalid_argument("主管长度须为 1 至 100000 mm");
-        return ObjectMap{{"schemaVersion",1ull},{"length",_Length},{"section",_Section}};
-    }
-
-    bool PartDrawingRebased(const ObjectMap& Existing_, const ObjectMap& Drawing_)
-    {
-        if(Drawing_.empty())return false;
-        if(!Existing_.contains("drawing"))throw std::invalid_argument("此零件没有可编辑的主管定义");
-        return PartDrawingGeometrySignature(GetRequiredObject(Existing_,"drawing"))!=PartDrawingGeometrySignature(Drawing_);
+        auto _Normalized = _Drawing;
+        _Normalized["schemaVersion"] = 1ull;
+        _Normalized["length"] = _Length;
+        _Normalized["section"] = _Section;
+        const auto _BaseType = GetString(_Drawing, "baseType", "parametric");
+        if (_BaseType != "parametric" && _BaseType != "imported")
+            throw std::invalid_argument("三维编辑基体类型无效");
+        _Normalized["baseType"] = _BaseType;
+        return _Normalized;
     }
 
     ObjectMap ResolvePunchBlankProfile(const ObjectMap& Payload_,
@@ -12044,6 +12063,8 @@ namespace
     #include "ProductAssemblyProcessPlan.inc"
     #include "ProductGeneratedAssemblyProcess.inc"
 
+    TopoDS_Shape SelectTubePartResult(const TopoDS_Shape&, const ObjectMap&);
+
     iCAX::Interaction::CInvocationResult PreviewEditableDrawingTools(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -12052,10 +12073,10 @@ namespace
     {
         if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024) throw std::invalid_argument("预览请求无效");
         const auto _Payload = DecodeObjectPayload(Request_);
-        // UI preview is always placement-only. The explicit diagnostic flag is
-        // reserved for native regression probes, never emitted by product UI.
+        // CAD drawing previews show the actual final BRep. The separate punch
+        // wizard keeps its inexpensive placement-only preview contract.
         const auto _DiagnosticFlag=_Payload.find("diagnosticBooleanPreview");
-        const bool _ToolsOnly=PartDrawing_||_DiagnosticFlag==_Payload.end()||!_DiagnosticFlag->second.Is<bool>()||!_DiagnosticFlag->second.To<bool>();
+        const bool _ToolsOnly=!PartDrawing_&&(_DiagnosticFlag==_Payload.end()||!_DiagnosticFlag->second.Is<bool>()||!_DiagnosticFlag->second.To<bool>());
         const auto _IndividualFlag = _Payload.find("individualToolPreviews");
         if (_IndividualFlag != _Payload.end() && !_IndividualFlag->second.Is<bool>())
             throw std::invalid_argument("独立刀具预览标记无效");
@@ -12070,16 +12091,21 @@ namespace
         const auto _Milliseconds = [](const auto& Start_) {
             return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start_).count();
         };
-        if (_Incremental) {
+        if (_Incremental || PartDrawing_) {
             // Value-only, bounded scopes retain no Scene/ResourceLibrary pointer
             // and require no new service from existing invocation callers.
             static CPunchToolsPreviewCache _Caches;
-            _SceneCache = _Caches.Scene(*Scene_);
+            _SceneCache = PartDrawing_
+                ? PartDrawingPreviewCaches().Scene(*Scene_, PartDrawingPreviewKey(_Payload))
+                : _Caches.Scene(*Scene_);
             _CacheLock = std::unique_lock<std::mutex>(_SceneCache->Mutex);
         }
         std::string _PreviewPrefix=PartDrawing_?"tube-designer/part-drawing-preview":"tube-designer/punch-preview";
-        if(const auto _Key=_Payload.find("previewResourceKey");_Key!=_Payload.end()) {
-            if(PartDrawing_ || !_Key->second.Is<std::string>())
+        const auto _PreviewOwner = PartDrawing_ ? PartDrawingPreviewKey(_Payload) : std::string();
+        if (PartDrawing_)
+            _PreviewPrefix += "/editor/" + _PreviewOwner;
+        else if(const auto _Key=_Payload.find("previewResourceKey");_Key!=_Payload.end()) {
+            if(!_Key->second.Is<std::string>())
                 throw std::invalid_argument("装配预览资源标识无效");
             const auto& _Value=_Key->second.To<std::string>();
             const auto _Safe=[](unsigned char value) {
@@ -12093,63 +12119,24 @@ namespace
         TopoDS_Shape _Base;
         ObjectMap _TargetSection;
         ObjectMap _Original;
-        const auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload):ObjectMap();
+        auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload):ObjectMap();
         bool _Rebased=false;
-        const auto _PartText = GetString(_Payload, "partEntityId");
-        if (!_PartText.empty()) {
-            const auto _Part = GetComponent<CManufacturingPartComponent>(Scene_->Database().GetEntity(ParseRequiredUuid(_PartText, "partEntityId")));
-            if (!_Part || !IsIndependentNestingPart(*_Part) || !IsTubeManufacturingPart(_Part->GetItemProperties()))
-                throw std::invalid_argument("预览只支持独立下料管材");
-            if (GetUInt64(_Payload, "resourceVersion", _Part->GetManufacturingGeometryResourceVersion()) != _Part->GetManufacturingGeometryResourceVersion()
-                || GetString(_Payload,"resourceId",_Part->GetManufacturingGeometryResourceID()) != _Part->GetManufacturingGeometryResourceID())
-                throw std::invalid_argument("零件已改变，请重新打开向导");
-            const auto _Properties = _Part->GetItemProperties();
-            const auto _Config=ReadEditableDrawingConfig(*_Part,PartDrawing_);
-            _Original = _Config;
-            const auto _BRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
-                GetString(_Config, "baseResourceId", _Part->GetManufacturingGeometryResourceID()),
-                GetUInt64(_Config, "baseResourceVersion", _Part->GetManufacturingGeometryResourceVersion()));
-            if (!_BRep) throw std::invalid_argument("原始编辑基准缺失，无法可靠预览；请重新导入原始零件");
-            _Rebased=PartDrawingRebased(_Original,_Drawing);
-            if(!_Drawing.empty())
-                _TargetSection=GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile");
-            else {
-                const auto _Profile=GetComponent<CTubeProfileComponent>(_Part->GetEntity());
-                if(!_Profile)throw std::invalid_argument("下料零件缺少通用截面轮廓，无法冲孔");
-                _TargetSection=ProfileSnapshot(*_Profile);
-            }
-            if (_SceneCache) _PreviewCache = _SceneCache->Blank(ObjectMap{
-                {"partEntityId", _PartText}, {"targetSection", _TargetSection}, {"original", _Original},
-                {"baseResourceId", GetString(_Config, "baseResourceId", _Part->GetManufacturingGeometryResourceID())},
-                {"baseResourceVersion", GetUInt64(_Config, "baseResourceVersion", _Part->GetManufacturingGeometryResourceVersion())},
-                {"rebased", _Rebased}, {"length", GetDouble(_Drawing, "length", 0)}});
-            if (_PreviewCache && _PreviewCache->InputBase && _PreviewCache->InputBase != _BRep) {
-                const auto _LastUse = _PreviewCache->LastUse;
-                *_PreviewCache = {};
-                _PreviewCache->LastUse = _LastUse;
-            }
-            if (_PreviewCache && !_PreviewCache->Base.IsNull()) { _Base = _PreviewCache->Base; _Reuse.Base = true; }
-            else {
-                const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BRep);
-                if (!_Rebuilt.bOK) throw std::runtime_error("无法恢复基准实体");
-                _Base = _Rebased ? PlaceDrawingBlank(BuildPunchBlank(_TargetSection, GetDouble(_Drawing, "length", 0)), _Config) : _Rebuilt.Shape;
-                if (_PreviewCache) { _PreviewCache->Base = _Base; _PreviewCache->InputBase = _BRep; }
-            }
-        } else {
-            const double _Length = GetDouble(_Drawing.empty()?_Payload:_Drawing, "length", 0);
-            if (!std::isfinite(_Length) || _Length < 1 || _Length > 100000) throw std::invalid_argument("长度须为 1 至 100000 mm");
-            ObjectMap _Parameters;
-            if (const auto _It = _Payload.find("parameters"); _It != _Payload.end()) {
-                if (!_It->second.Is<ObjectMap>()) throw std::invalid_argument("管型参数无效");
-                _Parameters = _It->second.To<ObjectMap>();
-            }
-            _TargetSection = ResolvePunchBlankProfile(_Payload,ApplicationContext_,ProductContext_);
-            if (_SceneCache) _PreviewCache = _SceneCache->Blank(ObjectMap{{"targetSection", _TargetSection}, {"length", _Length}});
-            if (_PreviewCache && !_PreviewCache->Base.IsNull()) { _Base = _PreviewCache->Base; _Reuse.Base = true; }
-            else {
-                _Base = BuildPunchBlank(_TargetSection, _Length);
-                if (_PreviewCache) _PreviewCache->Base = _Base;
-            }
+        const double _Length = GetDouble(_Drawing.empty()?_Payload:_Drawing, "length", 0);
+        if (!std::isfinite(_Length) || _Length < 1 || _Length > 100000) throw std::invalid_argument("长度须为 1 至 100000 mm");
+        _TargetSection = ResolvePunchBlankProfile(_Payload,ApplicationContext_,ProductContext_);
+        if (_SceneCache) _PreviewCache = _SceneCache->Blank(ObjectMap{{"targetSection", _TargetSection}, {"length", _Length}});
+        if (_PreviewCache && !_PreviewCache->Base.IsNull()) { _Base = _PreviewCache->Base; _Reuse.Base = true; }
+        else {
+            _Base = BuildPunchBlank(_TargetSection, _Length);
+            if (PartDrawing_) _Base = MakePersistablePartDrawingBlank(_Base);
+            if (_PreviewCache) _PreviewCache->Base = _Base;
+        }
+        if (PartDrawing_ || !_Drawing.empty()) {
+            // The editor cache is an immutable CAD prototype. Even a zero-cut
+            // result aliases its input, and BRep export/meshing may update that
+            // TShape's flags and tolerances. Own the complete geometry for this
+            // request before analysis, Boolean work or display publication.
+            _Base = OwnPartDrawingBlank(_Base);
         }
         if (_Incremental) _PerformanceMs["blank"] = _Milliseconds(_Started);
         auto _Features = ReadPunchFeatures(_Payload, "features");
@@ -12157,7 +12144,7 @@ namespace
         // Assembly design members (and unprocessed blanks) have no tool
         // resolution to perform.  Keep the normal geometry validation, but
         // avoid analysing the section and invoking the Python tool runtime.
-        const bool _PlainAssemblyBlank = _Payload.contains("previewResourceKey")
+        const bool _PlainAssemblyBlank = !PartDrawing_ && _Payload.contains("previewResourceKey")
             && _Features.empty() && _Ends.Start.Type == "keep" && _Ends.End.Type == "keep"
             && _Ends.Start.TemplateData.empty() && _Ends.End.TemplateData.empty()
             && _Original.empty() && !_Rebased;
@@ -12168,6 +12155,8 @@ namespace
         const double _NominalWall=_Drawing.empty()?0:GetDouble(GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile"),"wallThickness",0);
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         TopoDS_Shape _Shape;
+        std::optional<iCAX::CAD::SCadTopologyResult> _CadTopology;
+        std::string _CadTopologyRevision;
         std::string _ResultError;
         try {
             if (_PlainAssemblyBlank && !_ToolsOnly)
@@ -12178,7 +12167,18 @@ namespace
             } else
                 _Shape = EvaluatePunch(_Base, _TargetSection, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
                     _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools,
-                    EPunchEvaluationPurpose::EditableDrawing, _Incremental ? &_PerformanceMs : nullptr, nullptr, _PreviewCache.get(), &_Reuse);
+                    EPunchEvaluationPurpose::EditableDrawing, _Incremental ? &_PerformanceMs : nullptr, nullptr,
+                    _Incremental ? _PreviewCache.get() : nullptr, &_Reuse);
+            if ((PartDrawing_ || !_Drawing.empty()) && _Diagnostics.ResultComputed && _Diagnostics.SolidCount > 0 && !_Shape.IsNull()) {
+                const auto _BevelService = Scene_->Services().Resolve<iCAX::CAD::ICadBevelService>();
+                _Shape = EvaluateTubePartSurfaceRegions(_Shape, _Drawing, _Diagnostics, *Scene_);
+                _CadTopology = InspectPartDrawingTopology(_Shape, *_BevelService);
+                _CadTopologyRevision = PartDrawingTopologyRevision(_Shape);
+                const auto _EffectiveDrawing = !_Drawing.empty() ? _Drawing
+                    : (_Original.contains("drawing") ? GetRequiredObject(_Original, "drawing") : ObjectMap());
+                _Shape = ApplyPartDrawingBevels(_Shape, _EffectiveDrawing, *_BevelService, &*_CadTopology, &_Diagnostics.ModelResult);
+                _Shape = SelectTubePartResult(_Shape, _Drawing);
+            }
         } catch(const std::exception& _Error) {
             // A failed boolean result is not a successful part. Preview alone
             // publishes its current blank/tools so the user can see what failed;
@@ -12186,7 +12186,7 @@ namespace
             _ResultError=_Error.what();
         }
         const bool _PreviewComputed=_ResultError.empty()&&_Diagnostics.ResultComputed;
-        const bool _ResultValid=_PreviewComputed&&_Diagnostics.SolidCount==1;
+        const bool _ResultValid=_PreviewComputed&&_Diagnostics.SolidCount>0&&(PartDrawing_||_Diagnostics.SolidCount==1);
         const bool _HasResultGeometry=_PreviewComputed&&_Diagnostics.SolidCount>0&&!_Shape.IsNull();
         ReportExportProgress(Request_, "mesh", 0, 1, "正在生成三维预览");
         const auto _DisplayStarted = std::chrono::steady_clock::now();
@@ -12194,7 +12194,7 @@ namespace
         if (_PreviewCache) {
             if (PunchPreviewDisplayCurrent(Scene_->Resources(), _PreviewCache->BaseDisplay)) ++_Reuse.DisplayHits;
             else {
-                _PreviewCache->BaseDisplay = StorePunchPreviewDisplay(*Scene_, _PreviewPrefix + "/base", "主管预览（未保存）", _Base, Request_);
+                _PreviewCache->BaseDisplay = StorePunchPreviewDisplay(*Scene_, _PreviewPrefix + "/base", "主管预览（未保存）", _Base, Request_, _PreviewOwner);
                 ++_Reuse.DisplayMisses;
             }
             _BaseMesh = _PreviewCache->BaseDisplay.Mesh;
@@ -12210,6 +12210,32 @@ namespace
             {"bounds",ShapeBounds(_HasResultGeometry?_Shape:_Base)},{"baseBounds",ShapeBounds(_Base)},
             {"length",GetDouble(ShapeBounds(_HasResultGeometry?_Shape:_Base),"width",0)}};
         _Response["targetSection"]=_TargetSection;
+        if (PartDrawing_) {
+            const auto _Material = EnsureDesignerMaterial(*Scene_);
+            const auto _TopologyMaterial = EnsurePartDrawingTopologyMaterial(*Scene_);
+            _Response["material"] = ObjectMap{{"url", _Material.URL}, {"version", _Material.nVersion}};
+            _Response["edgeMaterial"] = _Response.at("material");
+            _Response["topologyMaterial"] = ObjectMap{{"url", _TopologyMaterial.URL}, {"version", _TopologyMaterial.nVersion}};
+            // Selection refers to the exact cut boundary before beveling. Keep
+            // it available after stale recipes fail so the user can reselect.
+            if (_CadTopology) {
+                _Response["topology"] = PartDrawingTopologySnapshot(*_CadTopology, _CadTopologyRevision,
+                    *Scene_, _PreviewPrefix + "/topology", _PreviewOwner, &_Diagnostics.ModelResult);
+                _Response["selectionTarget"] = std::string("cut-boundary");
+                if (!_ResultError.empty() && !_Shape.IsNull()) {
+                    const auto _Boundary = StorePunchBRep(*Scene_, _PreviewPrefix + "/cut-boundary",
+                        "CAD 切除边界预览（未保存）", _Shape, Request_, true);
+                    MarkPartDrawingPreviewGeometry(*Scene_, _PreviewOwner, _Boundary.URL);
+                    const auto _BoundaryMesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                        Scene_->Resources(), _Boundary.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+                    _Response["cutBoundaryGeometry"] = ObjectMap{
+                        {"url", _BoundaryMesh.URL}, {"version", _BoundaryMesh.nVersion}};
+                    _Response["cutBoundaryMaterial"] = _Response.at("material");
+                    _Response["bounds"] = ShapeBounds(_Shape);
+                    _Response["length"] = GetDouble(ShapeBounds(_Shape), "width", 0);
+                }
+            }
+        }
         VariantArray _SectionAnalyses;
         for(size_t _Index=0;_Index<_Features.size();++_Index) {
             const auto& _Data=_Features[_Index].TemplateData;
@@ -12230,7 +12256,8 @@ namespace
             if (_PlainAssemblyBlank)
                 _Response["geometry"] = _Response.at("baseGeometry");
             else {
-                const auto _Resource=StorePunchBRep(*Scene_,_PreviewPrefix,"加工预览（未保存）",_Shape,Request_,true);
+                const auto _Resource=StorePunchBRep(*Scene_,_PreviewPrefix,PartDrawing_?"CAD 成品预览（未保存）":"加工预览（未保存）",_Shape,Request_,true);
+                if (PartDrawing_) MarkPartDrawingPreviewGeometry(*Scene_, _PreviewOwner, _Resource.URL);
                 const auto _Mesh=iCAX::RenderInteraction::EnsureFrontendGeometryResource(Scene_->Resources(),_Resource.URL,iCAX::Render::ERenderGeometryKind::Mesh);
                 _Response["geometry"]=ObjectMap{{"url",_Mesh.URL},{"version",_Mesh.nVersion}};
             }
@@ -12251,11 +12278,25 @@ namespace
         VariantArray _DisplaySignatures;
         BRep_Builder _DisplayBuilder;TopoDS_Compound _CutterGroup;_DisplayBuilder.MakeCompound(_CutterGroup);
         const auto _ToolMaterial=EnsureComponentCSGOperandMaterial(*Scene_);
+        if (PartDrawing_ && _PreviewCache) {
+            std::set<std::string> _Active;
+            for (const auto& _Cut : _PreviewCuts) _Active.insert(_Cut.Target + ":" + _Cut.Key);
+            std::erase_if(_PreviewCache->Cuts, [&](const auto& _Entry) { return !_Active.contains(_Entry.first); });
+        }
         for(const auto& _Cut:_PreviewCuts) {
             SPunchPreviewCutCache* _CachedCut = nullptr;
             if (_PreviewCache && _ResultError.empty() && _Diagnostics.ToolsComplete) {
-                const auto _It = _PreviewCache->Cuts.find(_Cut.Target + ":" + _Cut.Key);
-                if (_It != _PreviewCache->Cuts.end()) _CachedCut = &_It->second;
+                const auto _Key = _Cut.Target + ":" + _Cut.Key;
+                if (PartDrawing_) {
+                    const auto _Signature = PartDrawingTopologyRevision(_Cut.Shape);
+                    auto& _Entry = _PreviewCache->Cuts[_Key];
+                    if (_Entry.Signature != _Signature) { _Entry = {}; _Entry.Signature = _Signature; }
+                    _Entry.LastUse = ++_PreviewCache->Clock;
+                    _CachedCut = &_Entry;
+                } else {
+                    const auto _It = _PreviewCache->Cuts.find(_Key);
+                    if (_It != _PreviewCache->Cuts.end()) _CachedCut = &_It->second;
+                }
             }
             SPunchPreviewDisplay _Display;
             if (_CachedCut && PunchPreviewDisplayCurrent(Scene_->Resources(), _CachedCut->Display)) {
@@ -12273,8 +12314,8 @@ namespace
                     iCAX::OpenCascade::detail::GeometryTaskScheduler()).Result();
                 if(!TopExp_Explorer(_Clipped,TopAbs_FACE).More())continue;
                 const auto _Key = _PreviewPrefix + "/tool/" + _Cut.Target + "/" + _Cut.Key;
-                if (_Incremental) {
-                    _Display = StorePunchPreviewDisplay(*Scene_, _Key, "当前刀具局部预览（未保存）", _Clipped, Request_);
+                if (_Incremental || PartDrawing_) {
+                    _Display = StorePunchPreviewDisplay(*Scene_, _Key, "当前刀具局部预览（未保存）", _Clipped, Request_, _PreviewOwner);
                     if (_CachedCut) _CachedCut->Display = _Display;
                     ++_Reuse.DisplayMisses;
                 } else {
@@ -12303,7 +12344,7 @@ namespace
                     _Reuse.Aggregate = true; ++_Reuse.DisplayHits;
                 } else {
                     _PreviewCache->AggregateDisplay = StorePunchPreviewDisplay(*Scene_, _PreviewPrefix + "/tools",
-                        "冲孔刀具拉伸体（未保存）", _CutterGroup, Request_);
+                        "冲孔刀具拉伸体（未保存）", _CutterGroup, Request_, _PreviewOwner);
                     _PreviewCache->AggregateSignature = _Signature;
                     ++_Reuse.DisplayMisses;
                 }
@@ -12334,6 +12375,7 @@ namespace
             _Response["previewReuse"] = _Reuse.Snapshot();
             _Response["performanceMs"] = std::move(_PerformanceMs);
         }
+        if (PartDrawing_) MarkPartDrawingPreviewResources(*Scene_, PartDrawingPreviewKey(_Payload), _Response);
         return MakeResponse(std::move(_Response));
     }
 
@@ -12424,34 +12466,6 @@ namespace
         return _Key;
     }
 
-    SNestingStandardBlank ExistingNestingSideSketchBlank(
-        ObjectMap& Payload_, iCAX::Project::ISceneContext& Scene_)
-    {
-        const auto _ID = ParseRequiredUuid(GetRequiredText(Payload_, "partEntityId", 80), "partEntityId");
-        const auto _Entity = Scene_.Database().GetEntity(_ID);
-        const auto _Part = GetComponent<CManufacturingPartComponent>(_Entity);
-        if (!_Part || !IsIndependentNestingPart(*_Part))
-            throw std::invalid_argument("请选择独立二维绘制零件");
-        if (GetUInt64(Payload_, "resourceVersion", 0) != _Part->GetManufacturingGeometryResourceVersion())
-            throw std::invalid_argument("零件几何已经变化，请重新打开二维绘制");
-        const auto _Properties = _Part->GetItemProperties();
-        const auto _Recipe = GetRequiredObject(_Properties, "tubeDesigner.sideSketchRecipe");
-        const auto _Profile = GetComponent<CTubeProfileComponent>(_Entity);
-        if (!_Profile) throw std::invalid_argument("二维绘制零件缺少冻结管型截面");
-        RestoreNestingResources(Scene_);
-        const auto _BRep = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
-            GetRequiredText(_Properties, "tubeDesigner.sideSketchBaseResourceId", 4096),
-            GetUInt64(_Properties, "tubeDesigner.sideSketchBaseResourceVersion", 0));
-        if (!_BRep) throw std::invalid_argument("二维绘制冻结基坯缺失");
-        const auto _Build = iCAX::OpenCascade::BuildOpenCascadeShape(*_BRep);
-        if (!_Build.bOK || _Build.Shape.IsNull()) throw std::invalid_argument("二维绘制冻结基坯无法恢复");
-        if (!Payload_.contains("sketch") && _Properties.contains("tubeDesigner.sideSketch"))
-            Payload_["sketch"] = _Properties.at("tubeDesigner.sideSketch");
-        const auto _Parameters = _Recipe.contains("parameters") ? GetRequiredObject(_Recipe, "parameters") : ObjectMap();
-        const auto _Reference = _Recipe.contains("profileRef") ? GetRequiredObject(_Recipe, "profileRef") : ObjectMap();
-        return {GetDouble(_Recipe, "length", 0.0), _Parameters, ProfileSnapshot(*_Profile), _Reference, _Build.Shape};
-    }
-
     void DiscardNestingSideSketchPreview(iCAX::Project::ISceneContext& Scene_, const std::string& Key_)
     {
         auto& _Resources = Scene_.Resources();
@@ -12476,25 +12490,34 @@ namespace
         return MakeResponse(ObjectMap{{ "released", true }});
     }
 
+    TopoDS_Shape SelectTubePartResult(const TopoDS_Shape& Shape_, const ObjectMap& Drawing_)
+    {
+        if (!Drawing_.contains("resultSelection")) return Shape_;
+        const auto _Selection=GetRequiredObject(Drawing_,"resultSelection");
+        const auto _Pieces=NestingCadPieces(Shape_,GetRequiredObject(Drawing_,"sketch"));
+        const auto _Index=GetUInt64(_Selection,"index",0);
+        if (_Pieces.size()!=GetUInt64(_Selection,"count",0) || _Index>=_Pieces.size())
+            throw std::invalid_argument("编辑改变了分件数量，请重新选择结果实体");
+        return _Pieces[_Index].Shape;
+    }
+
     iCAX::Interaction::CInvocationResult HandlePreviewNestingSideSketchPart(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* ProductContext_,
-        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext* Scene_)
+        iCAX::Project::IProjectContext* ProjectContext_, iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
             throw std::invalid_argument("二维绘制预览请求无效");
         auto _Payload = DecodeObjectPayload(Request_);
         const auto _Key = NestingSideSketchPreviewKey(_Payload);
-        const auto _Blank = _Payload.contains("partEntityId")
-            ? ExistingNestingSideSketchBlank(_Payload, *Scene_)
-            : PrepareNestingStandardBlank(_Payload, ApplicationContext_, ProductContext_);
+        const auto _Blank = PrepareNestingStandardBlank(_Payload, ApplicationContext_, ProductContext_);
         const auto _Unfolding = NestingSideSketchUnfolding(_Blank.Shape);
         auto _Shape = _Blank.Shape;
         if (_Payload.contains("sketch"))
         {
             const auto _Sketch = ValidateNestingSideSketch(GetRequiredObject(_Payload, "sketch"), _Blank, _Unfolding);
-            const auto _Applied = ApplyTubeSideSketch(_Shape, _Sketch);
+            const auto _Applied = ApplySceneTubeSideSketch(_Shape, _Sketch, *Scene_);
             if (!_Applied.bOK) throw std::invalid_argument(_Applied.Diagnostic);
             _Shape = _Applied.Shape;
         }
@@ -12528,12 +12551,13 @@ namespace
         if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
             throw std::invalid_argument("添加下料零件请求无效");
         const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _Blank = PrepareNestingStandardBlank(_Payload, ApplicationContext_, ProductContext_);
+        auto _Blank = PrepareNestingStandardBlank(_Payload, ApplicationContext_, ProductContext_);
+        _Blank.Shape = MakePersistablePartDrawingBlank(_Blank.Shape);
         const auto _Length = _Blank.Length;
         const auto& _Profile = _Blank.Profile;
         const auto& _ProfileReference = _Blank.ProfileReference;
         const auto& _Parameters = _Blank.Parameters;
-        auto _Shape = _Blank.Shape;
+        auto _Shape = OwnPartDrawingBlank(_Blank.Shape);
         ObjectMap _Sketch;
         STubeSideSketchResult _Applied;
         if (SideSketch_)
@@ -12542,7 +12566,7 @@ namespace
                 _Blank, NestingSideSketchUnfolding(_Blank.Shape));
             if (_Sketch.at("entities").To<VariantArray>().empty() && !_Sketch.contains("endCuts"))
                 throw std::invalid_argument("请先绘制二维轮廓或开放切缝");
-            _Applied = ApplyTubeSideSketch(_Shape, _Sketch);
+            _Applied = ApplySceneTubeSideSketch(_Shape, _Sketch, *Scene_);
             if (!_Applied.bOK || (!_Applied.Changed && _Applied.ClosedLoopCount == 0 && _Applied.OpenTrajectoryCount == 0))
                 throw std::invalid_argument(_Applied.Diagnostic.empty() ? "二维绘制没有切除管壁" : _Applied.Diagnostic);
             _Shape = _Applied.Shape;
@@ -12581,6 +12605,37 @@ namespace
 
         const auto _Pieces = NestingCadPieces(_Shape, _Sketch);
         _Shape = _Pieces.front().Shape;
+        std::vector<iCAX::Resource::CResourceReference> _CadResources;
+        for (std::size_t _Index = 0; _Index < _Pieces.size(); ++_Index) {
+            iCAX::GeometryData::Tube::CTubeCadDocument _Cad;
+            if(SideSketch_) {
+                const auto _Service=Scene_->Services().Resolve<iCAX::CAD::ITubeCadDocumentService>();
+                const auto _Stock=CompileTubePartCadDocument(*Scene_,_Blank.Shape,_Blank.Shape);
+                auto _Draft=TubeCadWorkspace::EditSide(_Stock,ObjectMap{{"sketch",_Sketch},{"bindings",VariantArray{}}},*Scene_,0);
+                // Source UV stations stay in the original drawing domain.
+                // Translate the authored world frames as one rigid graph;
+                // each piece independently reevaluates all source operations.
+                for(auto& _Node:_Draft.Construction.SolidNodes)std::visit([&](auto& _Data) {
+                    using D=std::decay_t<decltype(_Data)>;
+                    if constexpr(std::is_same_v<D,iCAX::GeometryData::Tube::SExtrudedRegionNode>)_Data.Frame.Location.X-=_Pieces[_Index].AxialStart;
+                    else if constexpr(std::is_same_v<D,iCAX::GeometryData::Tube::SHalfSpaceNode>)_Data.Boundary.Location.X-=_Pieces[_Index].AxialStart;
+                },_Node.Data);
+                if(_Pieces.size()>1) {
+                    const auto _Anchor=_Service->FindInteriorAnchor(TubeCadWorkspace::BRep(_Pieces[_Index].Shape));
+                    const auto _SelectionID="cad-piece/"+UuidToString(iCAX::Data::GenerateNewUUID());
+                    _Draft.Construction.SolidNodes.push_back({_SelectionID,"锚定材料连通体",
+                        iCAX::GeometryData::Tube::SConnectedComponentNode{_Draft.Construction.RootNodeID,_Anchor}});
+                    _Draft.Construction.RootNodeID=_SelectionID;
+                }
+                auto _Created=_Service->Create(_Draft.Construction,_Draft.Bodies);
+                const auto _Replay=iCAX::OpenCascade::BuildOpenCascadeShape(_Created.Evaluation.Shape);
+                if(!_Replay.bOK||!iCAX::OpenCascade::ValidateTubeCSGShapeReplay(_Pieces[_Index].Shape,_Replay.Shape).bEquivalent)
+                    throw std::invalid_argument("二维创建的精确展开区域未通过独立几何等价验证");
+                _Cad=std::move(_Created.Document);_Cad.Metadata["authoringAuthority"]="neutral-cad-document";
+            } else _Cad=CompileTubePartCadDocument(*Scene_,_Blank.Shape,_Pieces[_Index].Shape);
+            _CadResources.push_back(StoreTubeCadDocument(*Scene_,
+                "tube-designer/nesting/cad/" + UuidToString(iCAX::Data::GenerateNewUUID()),_Name,_Cad));
+        }
         const auto _BaseName = _Name;
         if (_Pieces.size() > 1) _Name += " (1/" + std::to_string(_Pieces.size()) + ")";
         const auto _Resource = StoreBRep(*Scene_,
@@ -12591,15 +12646,7 @@ namespace
         auto _Measurement = MeasureFinalPartGeometry(_Shape, _Resource.URL, _Resource.nVersion);
         _Measurement["nestingEnvelopeLength"] = _EnvelopeLength;
         _Measurement["normalizedAxis"] = std::string("+X");
-        ObjectMap _StandardPart{
-            { "schemaVersion", 1ull }, { "profile", _Profile },
-            { "profileRef", _ProfileReference }, { "parameters", _Parameters }, { "length", _Length },
-            { "source", std::string(_ProfileReference.empty() ? "local-dxf" : "profile-library") }
-        };
         ObjectMap _ItemProperties{
-            { "tubeDesigner.standardPart", std::move(_StandardPart) },
-            { "tubeDesigner.endProcess", ObjectMap{
-                { "startCut", std::string("square") }, { "endCut", std::string("square") } } },
             { "manufacturing.partKind", std::string("tube") },
             { "manufacturing.materialCategory", std::string("tube") },
             { "manufacturing.sourcing", std::string("made") },
@@ -12611,28 +12658,6 @@ namespace
                 { "name", _Name }, { "quantity", _Quantity }, { "source", _Source },
                 { "profileRef", _ProfileReference }, { "length", _EnvelopeLength } } }
         };
-        if (SideSketch_)
-        {
-            const auto _Base = StoreBRep(*Scene_,
-                "tube-designer/nesting/side-sketch-base/" + UuidToString(_PartID),
-                _Name + " 基准", _Blank.Shape);
-            _Sketch["targetPartId"] = UuidToString(_PartID);
-            _ItemProperties["tubeDesigner.sideSketch"] = _Sketch;
-            ObjectMap _Recipe{{ "length", _Length }, { "quantity", _Quantity }};
-            if (_ProfileReference.empty()) _Recipe["profile"] = _Profile;
-            else
-            {
-                _Recipe["profileRef"] = _ProfileReference;
-                _Recipe["parameters"] = _Parameters;
-            }
-            _ItemProperties["tubeDesigner.sideSketchRecipe"] = std::move(_Recipe);
-            _ItemProperties["tubeDesigner.sideSketchBaseResourceId"] = _Base.URL;
-            _ItemProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _Base.nVersion;
-            _ItemProperties["tubeDesigner.sideSketchApplyMethod"] = _Applied.Method;
-            _ItemProperties["tubeDesigner.sideSketchDiagnostic"] = _Applied.Diagnostic;
-            _ItemProperties["tubeDesigner.sideSketchClosedLoopCount"] = static_cast<unsigned long long>(_Applied.ClosedLoopCount);
-            _ItemProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] = static_cast<unsigned long long>(_Applied.OpenTrajectoryCount);
-        }
         if (SideSketch_)
             _ItemProperties["tubeDesigner.sideSketchSplit"] = ObjectMap{
                 {"groupId", UuidToString(_BatchID)}, {"index", 1ull},
@@ -12671,8 +12696,7 @@ namespace
             const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_->Resources(), _Geometry.URL, iCAX::Render::ERenderGeometryKind::Mesh);
             auto _PieceProperties = _ItemProperties;
-            auto _PieceSketch = _Sketch; _PieceSketch["targetPartId"] = UuidToString(_ID);
-            _PieceProperties["tubeDesigner.sideSketch"] = _PieceSketch;
+
             _PieceProperties["tubeDesigner.sideSketchSplit"] = ObjectMap{
                 {"groupId", UuidToString(_BatchID)}, {"index", static_cast<unsigned long long>(_Index + 1)},
                 {"count", static_cast<unsigned long long>(_Pieces.size())}, {"sourceName", _BaseName},
@@ -12729,14 +12753,22 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(_PartID,CTubePartCadComponent::S_ClassName,{
+                {CTubePartCadComponent::PropertyName_DocumentResourceID,PropertyValue(_CadResources.front().URL)},
+                {CTubePartCadComponent::PropertyName_DocumentResourceVersion,PropertyValue(_CadResources.front().nVersion)}});
             _Transaction.AttachComponent(
                 _PartID,
                 CTubeProfileComponent::S_ClassName,
                 TubeProfileComponentProperties(_Profile, _Source));
+            std::size_t _PieceIndex=1;
             for (const auto& [_ID, _Fields] : _Additional)
             {
                 _Transaction.CreateEntity(_ID);
                 _Transaction.AttachComponent(_ID, CManufacturingPartComponent::S_ClassName, _Fields);
+                _Transaction.AttachComponent(_ID,CTubePartCadComponent::S_ClassName,{
+                    {CTubePartCadComponent::PropertyName_DocumentResourceID,PropertyValue(_CadResources[_PieceIndex].URL)},
+                    {CTubePartCadComponent::PropertyName_DocumentResourceVersion,PropertyValue(_CadResources[_PieceIndex].nVersion)}});
+                ++_PieceIndex;
                 _Transaction.AttachComponent(_ID, CTubeProfileComponent::S_ClassName, TubeProfileComponentProperties(_Profile, _Source));
             }
             QueueUpsertComponent(_Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
@@ -12857,7 +12889,9 @@ namespace
         if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
             throw std::invalid_argument("添加冲孔件请求无效");
         const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload):ObjectMap();
+        auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload):ObjectMap();
+        if (!_Drawing.empty() && GetString(_Drawing, "baseType", "parametric") == "imported")
+            throw std::invalid_argument("导入实体编辑必须修改现存下料零件");
         const auto _ProfileReference = _Drawing.empty()?ProfileReferencePayload(ParseProfileReference(_Payload)):ObjectMap();
         const auto _Length = GetDouble(_Drawing.empty()?_Payload:_Drawing, "length", 0.0);
         if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
@@ -12874,13 +12908,23 @@ namespace
         auto _Ends = ReadPunchEnds(_Payload);
 
         auto _Profile = ResolvePunchBlankProfile(_Payload,ApplicationContext_,ProductContext_);
-        const auto _BaseShape = BuildPunchBlank(_Profile, _Length);
+        if (_Drawing.empty()) _Drawing = ObjectMap{{"schemaVersion",1ull},{"baseType",std::string("parametric")},
+            {"length",_Length},{"section",ObjectMap{{"source",std::string("fixed")},{"profile",_Profile}}}};
+        auto _BaseShape = BuildPunchBlank(_Profile, _Length);
+        _BaseShape = MakePersistablePartDrawingBlank(_BaseShape);
+        _BaseShape = OwnPartDrawingBlank(_BaseShape);
         if (_BaseShape.IsNull() || !BRepCheck_Analyzer(_BaseShape).IsValid())
             throw std::runtime_error("无法从所选管型生成有效的直管实体");
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _Profile, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
+        auto _Shape = EvaluatePunch(_BaseShape, _Profile, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,&_ResultState,false,0,_UserTools);
         if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法创建；请调整刀具");
+        {
+            const auto _BevelService = Scene_->Services().Resolve<iCAX::CAD::ICadBevelService>();
+            _Shape = EvaluateTubePartSurfaceRegions(_Shape, _Drawing, _ResultState, *Scene_);
+            _Shape = ApplyPartDrawingBevels(_Shape, _Drawing, *_BevelService, nullptr, &_ResultState.ModelResult);
+            _Shape = SelectTubePartResult(_Shape, _Drawing);
+        }
 
         auto _Name = TrimText(GetString(_Payload, "name"));
         if (_Name.empty()) _Name = GetString(_Profile, "name", "管型") + (PartDrawing_?"三维零件":"冲孔件");
@@ -12903,9 +12947,9 @@ namespace
                 && _Part->GetPartIndex() < (std::numeric_limits<std::uint64_t>::max)())
                 _NextIndex = _Part->GetPartIndex() + 1;
 
-        const auto _BaseResource = StorePunchBRep(*Scene_,
-            "tube-designer/nesting/punch-base/" + UuidToString(_PartID),
-            _Name + " 冲孔基准", _BaseShape, Request_);
+        auto _Cad = CompileTubePartCadDocument(*Scene_,_BaseShape,_Shape,&_ResultState.ModelResult,&_IncomingFeatures);
+        const auto _CadResource = StoreTubeCadDocument(*Scene_,
+            "tube-designer/nesting/cad/" + UuidToString(_PartID),_Name,_Cad);
         const auto _Resource = StorePunchBRep(*Scene_,
             "tube-designer/nesting/punch/" + UuidToString(_PartID), _Name, _Shape, Request_);
         ReportExportProgress(Request_,"mesh",0,1,"正在生成显示网格");
@@ -12919,23 +12963,6 @@ namespace
         _Measurement["nestingEnvelopeLength"] = _EnvelopeLength;
         _Measurement["normalizedAxis"] = std::string("+X");
 
-        VariantArray _SavedFeatures;
-        _SavedFeatures.reserve(_IncomingFeatures.size());
-        for (const auto& _Feature : _IncomingFeatures)
-            _SavedFeatures.emplace_back(PunchFeatureSnapshot(_Feature));
-        ObjectMap _PunchConfig{
-            { "schema", std::string(PartDrawing_?"icax.tube-designer.part-drawing":"icax.tube-designer.punch-wizard") },
-            { "schemaVersion", 4ull },
-            { "baseResourceId", _BaseResource.URL },
-            { "baseResourceVersion", _BaseResource.nVersion },
-            { "baseLength", _Length },
-            { "baseBounds", ShapeBounds(_BaseShape) },
-            { "baseEndProcess", ObjectMap{{"startCut",std::string("square")},{"endCut",std::string("square")}} },
-            { "operations", PunchOperationChain(_IncomingFeatures, _Ends) },
-            { "ends", PunchEndsSnapshot(_Ends) },
-            { "features", std::move(_SavedFeatures) },
-        };
-        if(!_Drawing.empty())_PunchConfig["drawing"]=_Drawing;
         ObjectMap _ItemProperties{
             { "manufacturing.partKind", std::string("tube") },
             { "manufacturing.materialCategory", std::string("tube") },
@@ -12994,16 +13021,13 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(_PartID,CTubePartCadComponent::S_ClassName,{
+                {CTubePartCadComponent::PropertyName_DocumentResourceID,PropertyValue(_CadResource.URL)},
+                {CTubePartCadComponent::PropertyName_DocumentResourceVersion,PropertyValue(_CadResource.nVersion)}});
             _Transaction.AttachComponent(
                 _PartID,
                 CTubeProfileComponent::S_ClassName,
                 TubeProfileComponentProperties(_Profile, PartDrawing_ ? "part-drawing" : "punch-wizard"));
-            _Transaction.AttachComponent(
-                _PartID,
-                PartDrawing_ ? CPartDrawingComponent::S_ClassName : CPunchWizardComponent::S_ClassName,
-                {{ PartDrawing_ ? CPartDrawingComponent::PropertyName_Definition
-                    : CPunchWizardComponent::PropertyName_Definition,
-                    PropertyValue(_PunchConfig) }});
             const auto _Meta = _DB.GetMetaEntity();
             if (!_Meta) throw std::runtime_error("Missing project root");
             QueueUpsertComponent(_Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
@@ -13028,218 +13052,6 @@ namespace
         return MakeResponse(_Response);
     }
 
-    iCAX::Interaction::CInvocationResult ApplyEditableDrawingPart(
-        const iCAX::Interaction::CInvocation& Request_,
-        const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext* ProductContext_,
-        iCAX::Project::IProjectContext*,
-        iCAX::Project::ISceneContext* Scene_,bool PartDrawing_)
-    {
-        if (!Scene_ || Request_.Payload.size() > 16 * 1024 * 1024)
-            throw std::invalid_argument("Invalid punch wizard request");
-        const auto _Payload = DecodeObjectPayload(Request_);
-        const auto _PartID = ParseRequiredUuid(
-            GetString(_Payload, "partEntityId"), "partEntityId");
-        auto& _DB = Scene_->Database();
-        const auto _Part = GetComponent<CManufacturingPartComponent>(_DB.GetEntity(_PartID));
-        if (!_Part || !IsIndependentNestingPart(*_Part))
-            throw std::invalid_argument("冲孔向导只能修改下料区的独立零件，请先加入下料");
-        if (!IsTubeManufacturingPart(_Part->GetItemProperties()))
-            throw std::invalid_argument("冲孔向导只支持管材零件");
-
-        RestoreNestingResources(*Scene_);
-        const auto _ResourceID = _Part->GetManufacturingGeometryResourceID();
-        const auto _ResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
-        const auto _ExpectedVersion = GetUInt64(
-            _Payload, "resourceVersion", _ResourceVersion);
-        if (_ResourceID.empty() || _ResourceVersion == 0)
-            throw std::runtime_error("零件没有可用的最终 BRep 几何");
-        if (_ExpectedVersion != _ResourceVersion || GetString(_Payload,"resourceId",_ResourceID) != _ResourceID)
-            throw std::runtime_error("零件几何已变化，请关闭向导后重新打开");
-
-        auto _IncomingFeatures = ReadPunchFeatures(_Payload, "features");
-        const auto _Properties = _Part->GetItemProperties();
-        const auto _ExistingConfig=ReadEditableDrawingConfig(*_Part,PartDrawing_);
-        const bool _HasExistingConfig=!_ExistingConfig.empty();
-        const auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload)
-            :(_ExistingConfig.contains("drawing")?GetRequiredObject(_ExistingConfig,"drawing"):ObjectMap());
-        const bool _Rebased=PartDrawingRebased(_ExistingConfig,_Drawing);
-        ObjectMap _BaseEndProcess;
-        if (const auto _It = _ExistingConfig.find("baseEndProcess"); _It != _ExistingConfig.end() && _It->second.Is<ObjectMap>())
-            _BaseEndProcess = _It->second.To<ObjectMap>();
-
-        auto _BaseResourceID = GetString(_ExistingConfig, "baseResourceId", _ResourceID);
-        auto _BaseResourceVersion = GetUInt64(_ExistingConfig, "baseResourceVersion", 0);
-        if (_BaseResourceID.empty() || _BaseResourceVersion == 0)
-        {
-            if (_HasExistingConfig && !_ExistingConfig.empty())
-                throw std::runtime_error("旧冲孔记录缺少原始基准，无法可靠修改或移除刀具；请重新导入原始零件");
-            _BaseResourceID = _ResourceID;
-            _BaseResourceVersion = _ResourceVersion;
-        }
-        auto _Ends = ReadPunchEnds(_Payload);
-
-        const auto _BaseBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
-            _BaseResourceID, _BaseResourceVersion);
-        if (!_BaseBRep)
-            throw std::runtime_error("冲孔基准几何版本不可用，请重新加入下料");
-        const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BaseBRep);
-        if (!_Rebuilt.bOK || _Rebuilt.Shape.IsNull())
-            throw std::runtime_error("无法读取冲孔基准几何");
-        ObjectMap _TargetSection;
-        if(!_Drawing.empty())
-            _TargetSection=GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile");
-        else {
-            const auto _Profile=GetComponent<CTubeProfileComponent>(_Part->GetEntity());
-            if(!_Profile)throw std::invalid_argument("下料零件缺少通用截面轮廓，无法冲孔");
-            _TargetSection=ProfileSnapshot(*_Profile);
-        }
-        const auto _BaseShape=_Rebased?PlaceDrawingBlank(
-            BuildPunchBlank(_TargetSection,GetDouble(_Drawing,"length",0)),_ExistingConfig):_Rebuilt.Shape;
-        const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
-        SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _TargetSection, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_, _ExistingConfig,_Rebased,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
-        if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法保存；请调整刀具");
-        if(_Rebased) {
-            const auto _Base=StorePunchBRep(*Scene_,"tube-designer/nesting/drawing-base/"+UuidToString(iCAX::Data::GenerateNewUUID()),"三维绘制主管",_BaseShape,Request_);
-            _BaseResourceID=_Base.URL;_BaseResourceVersion=_Base.nVersion;
-        }
-
-        // Freeze legacy/current-version references into a separately addressable base.
-        // The finished part itself keeps its logical resource ID; each Apply publishes
-        // a new immutable version on that ID so consumers (including annotations and
-        // derived display meshes) can observe a normal version transition.
-        if (_BaseResourceID == _ResourceID) {
-            const auto _Base = StorePreparedBRep(*Scene_, Scene_->Resources().MakeNamedResourceURL(
-                "tube-designer/nesting/punch-base/" + UuidToString(_PartID)),
-                "冲孔编辑基准", iCAX::GeometryData::BRepModel(*_BaseBRep));
-            _BaseResourceID = _Base.URL;
-            _BaseResourceVersion = _Base.nVersion;
-        }
-
-        const auto _PresentationName = _Part->GetName().empty()
-            ? _Part->GetPartNumber() : _Part->GetName();
-        const auto _TargetResourceID = EditableNestingGeometryResourceID(
-            *Scene_, _PartID, *_Part);
-        const auto _NewResource = StorePunchBRep(*Scene_,
-            _TargetResourceID, _PresentationName, _Shape, Request_);
-        ReportExportProgress(Request_,"mesh",0,1,"正在生成显示网格");
-        const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-            Scene_->Resources(), _NewResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
-        VariantArray _SavedFeatures;
-        _SavedFeatures.reserve(_IncomingFeatures.size());
-        for (const auto& _Feature : _IncomingFeatures)
-            _SavedFeatures.emplace_back(PunchFeatureSnapshot(_Feature));
-        ObjectMap _PunchConfig{
-            { "schema", std::string(PartDrawing_?"icax.tube-designer.part-drawing":"icax.tube-designer.punch-wizard") },
-            { "schemaVersion", 4ull },
-            { "baseResourceId", _BaseResourceID },
-            { "baseResourceVersion", _BaseResourceVersion },
-            { "baseLength", GetDouble(ShapeBounds(_BaseShape), "width", _Part->GetLength()) },
-            { "baseBounds", ShapeBounds(_BaseShape) },
-            { "baseEndProcess", _BaseEndProcess },
-            { "operations", PunchOperationChain(_IncomingFeatures, _Ends) },
-            { "ends", PunchEndsSnapshot(_Ends) },
-            { "features", std::move(_SavedFeatures) },
-        };
-        if (const auto _Origin = _ExistingConfig.find("blankOrigin"); _Origin != _ExistingConfig.end())
-            _PunchConfig["blankOrigin"] = _Origin->second;
-        // Keep the plan's recorded geometry identity unchanged when a user
-        // edits this part directly.  A later plan update can then detect the
-        // independent edit instead of silently overwriting it.
-        if (const auto _Plan = _ExistingConfig.find("assemblyProcessPlan"); _Plan != _ExistingConfig.end())
-            _PunchConfig["assemblyProcessPlan"] = _Plan->second;
-        auto _UpdatedProperties = _Properties;
-        iCAX::Data::PropertySet _TubeProfileChanges;
-        if(!_Drawing.empty()) {
-            _PunchConfig["drawing"]=_Drawing;
-            _TubeProfileChanges = TubeProfileComponentProperties(
-                GetRequiredObject(GetRequiredObject(_Drawing, "section"), "profile"),
-                PartDrawing_ ? "part-drawing" : "punch-wizard");
-        }
-        // Recipe data belongs to the domain component, not the generic
-        // manufacturing-part property bag.  Keep only manufacturing-wide
-        // metadata here (profile/material/kind/measurement).
-        _UpdatedProperties.erase("tubeDesigner.partDrawing");
-        _UpdatedProperties.erase("tubeDesigner.punchWizard");
-        _UpdatedProperties.erase("tubeDesigner.endProcess");
-        auto _Measurement = MeasureFinalPartGeometry(_Shape, _NewResource.URL, _NewResource.nVersion);
-        const auto _EnvelopeLength = GetDouble(ShapeBounds(_Shape), "width", 0);
-        _Measurement["nestingEnvelopeLength"] = _EnvelopeLength;
-        _Measurement["normalizedAxis"] = std::string("+X");
-        _UpdatedProperties["manufacturing.geometryMeasurement"] = _Measurement;
-
-        auto _Undo = _DB.BeginUndoCommand("Apply tube punch wizard");
-        auto& _Transaction = _DB.BeginTransaction("Apply tube punch wizard");
-        bool _Committing = false;
-        try
-        {
-            _Transaction.ModifyComponent(
-                _PartID, CManufacturingPartComponent::S_ClassName, {
-                    { CManufacturingPartComponent::PropertyName_Length, PropertyValue(_EnvelopeLength) },
-                    { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceID, PropertyValue(_NewResource.URL) },
-                    { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceVersion,
-                        PropertyValue(_NewResource.nVersion) },
-                    { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID,
-                        PropertyValue(_Thumbnail.URL) },
-                    { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion,
-                        PropertyValue(_Thumbnail.nVersion) },
-                    { CManufacturingPartComponent::PropertyName_ItemProperties,
-                        PropertyValue(_UpdatedProperties) },
-                    { CManufacturingPartComponent::PropertyName_Status,
-                        PropertyValue(std::string("Ready")) },
-                });
-            if (!_TubeProfileChanges.empty())
-                _Transaction.ModifyComponent(
-                    _PartID, CTubeProfileComponent::S_ClassName, _TubeProfileChanges);
-            const auto _ComponentClass = PartDrawing_
-                ? CPartDrawingComponent::S_ClassName : CPunchWizardComponent::S_ClassName;
-            const auto _DefinitionProperty = PartDrawing_
-                ? CPartDrawingComponent::PropertyName_Definition : CPunchWizardComponent::PropertyName_Definition;
-            const bool _HasDomainComponent = PartDrawing_
-                ? static_cast<bool>(GetComponent<CPartDrawingComponent>(_Part->GetEntity()))
-                : static_cast<bool>(GetComponent<CPunchWizardComponent>(_Part->GetEntity()));
-            if (_HasDomainComponent)
-            {
-                _Transaction.ModifyComponent(_PartID, _ComponentClass,
-                    {{ _DefinitionProperty, PropertyValue(_PunchConfig) }});
-            }
-            else
-            {
-                _Transaction.AttachComponent(_PartID, _ComponentClass,
-                    {{ _DefinitionProperty, PropertyValue(_PunchConfig) }});
-            }
-            const auto _Meta = _DB.GetMetaEntity();
-            const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
-            if (_Root)
-            {
-                auto _Task = _Root->GetNestingTask();
-                _Task["request"] = ObjectMap();
-                _Task["result"] = ObjectMap();
-                _Task["revision"] = UuidToString(iCAX::Data::GenerateNewUUID());
-                _Transaction.ModifyComponent(
-                    _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
-                    {{ CTubeDesignerRootComponent::PropertyName_NestingTask,
-                        PropertyValue(_Task) }});
-            }
-            std::string _Error;
-            _Committing = true;
-            if (!_DB.CommitTransaction(_Transaction, _Error))
-                throw std::runtime_error(_Error.empty() ? "保存冲孔结果失败" : _Error);
-        }
-        catch (...)
-        {
-            if (!_Committing)
-            {
-                try { _DB.CancelTransaction(_Transaction); }
-                catch (...) {}
-            }
-            throw;
-        }
-        _Undo->End();
-        return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
-    }
-
     #include "ProductAssemblyProcessCommit.inc"
 
     iCAX::Interaction::CInvocationResult HandlePreviewPunchWizard(const iCAX::Interaction::CInvocation& r,
@@ -13255,13 +13067,6 @@ namespace
     iCAX::Interaction::CInvocationResult HandleAddPartDrawing(const iCAX::Interaction::CInvocation& r,
         const iCAX::Application::IApplicationContext& a,iCAX::Product::IProductContext* p,iCAX::Project::IProjectContext* j,iCAX::Project::ISceneContext* s)
     { return CreateEditableDrawingPart(r,a,p,j,s,true); }
-    iCAX::Interaction::CInvocationResult HandleApplyPunchWizard(const iCAX::Interaction::CInvocation& r,
-        const iCAX::Application::IApplicationContext& a,iCAX::Product::IProductContext* p,iCAX::Project::IProjectContext* j,iCAX::Project::ISceneContext* s)
-    { return ApplyEditableDrawingPart(r,a,p,j,s,false); }
-    iCAX::Interaction::CInvocationResult HandleApplyPartDrawing(const iCAX::Interaction::CInvocation& r,
-        const iCAX::Application::IApplicationContext& a,iCAX::Product::IProductContext* p,iCAX::Project::IProjectContext* j,iCAX::Project::ISceneContext* s)
-    { return ApplyEditableDrawingPart(r,a,p,j,s,true); }
-
     struct SExportedProductPartCopy final
     {
         std::string FileName;
@@ -13288,70 +13093,35 @@ namespace
         const std::uint64_t PartIndex_,
         const std::string& ResourceID_,
         const std::uint64_t ResourceVersion_,
-        const std::uint64_t UnitQuantity_,
         const std::uint64_t TotalPartCount_,
         std::uint64_t& CompletedPartCount_,
         std::set<std::string>& GroupFileNames_,
         VariantArray& Files_,
         VariantArray& GroupFiles_)
     {
-        // One STEP represents each physical part in a single product. The
-        // production quantity affects Excel quantities and the folder suffix,
-        // never the number of STEP copies.
-        const auto _Count = ProductionQuantity(UnitQuantity_, 1);
+        // A manufacturing type owns one STEP. Its multiplicity belongs in the
+        // workbook, so downstream CAM does not receive duplicate programs.
         const auto _BaseName = Utf8Path(FileName_);
         const auto _Stem = Utf8PathText(_BaseName.stem());
         const auto _Extension = Utf8PathText(_BaseName.extension());
-        const auto _OrdinalWidth = std::max<std::size_t>(2, std::to_string(_Count).size());
-        std::vector<SExportedProductPartCopy> _Copies;
-        _Copies.reserve(static_cast<std::size_t>(_Count));
-        std::filesystem::path _FirstPath;
-        for (std::uint64_t _Index = 0; _Index < _Count; ++_Index)
+        auto _FileName = FileName_;
+        for (std::uint64_t _Collision = 0;; ++_Collision)
         {
-            auto _FileName = FileName_;
-            if (_Count > 1)
-            {
-                std::ostringstream _Name;
-                _Name << _Stem << "-件" << std::setw(static_cast<int>(_OrdinalWidth))
-                    << std::setfill('0') << _Index + 1 << _Extension;
-                _FileName = _Name.str();
-            }
-            const auto _OrdinalSuffix = _Count > 1
-                ? _FileName.substr(_Stem.size(), _FileName.size() - _Stem.size() - _Extension.size()) : "";
-            for (std::uint64_t _Collision = 0;; ++_Collision)
-            {
-                if (GroupFileNames_.insert(FoldProductExportName(_FileName)).second) break;
-                // Names may share a truncated instance prefix. Preserve that
-                // prefix while retaining the distinct part type and copy.
-                _FileName = _Stem + "-类型" + std::to_string(PartIndex_)
-                    + (_Collision == 0 ? "" : "-" + std::to_string(_Collision + 1))
-                    + _OrdinalSuffix + _Extension;
-            }
-            const auto _Path = Directory_ / Utf8Path(_FileName);
-            const auto _PathText = Utf8PathText(_Path);
-            if (_Index == 0)
-            {
-                const auto _Result = Scene_.Resources().Export<iCAX::GeometryData::BRepModel>(
-                    ResourceID_, _PathText,
-                    {{"resourceVersion", std::to_string(ResourceVersion_)}}, "cad.step");
-                if (!_Result.IsOK())
-                    throw std::runtime_error(_Result.Error.empty() ? "TubeDesigner STEP export failed" : _Result.Error);
-                _FirstPath = _Path;
-            }
-            else
-            {
-                // Aggregated parts have identical finished geometry. Reuse the
-                // completed STEP bytes instead of evaluating that shape again.
-                std::filesystem::copy_file(_FirstPath, _Path, std::filesystem::copy_options::overwrite_existing);
-            }
-            Files_.emplace_back(_PathText);
-            GroupFiles_.emplace_back(_PathText);
-            _Copies.push_back({_FileName});
-            ++CompletedPartCount_;
-            ReportExportProgress(Request_, "exporting", CompletedPartCount_, TotalPartCount_,
-                "已导出 " + _FileName);
+            if (GroupFileNames_.insert(FoldProductExportName(_FileName)).second) break;
+            _FileName = _Stem + "-类型" + std::to_string(PartIndex_)
+                + (_Collision == 0 ? "" : "-" + std::to_string(_Collision + 1)) + _Extension;
         }
-        return _Copies;
+        const auto _Path = Directory_ / Utf8Path(_FileName);
+        const auto _PathText = Utf8PathText(_Path);
+        const auto _Result = Scene_.Resources().Export<iCAX::GeometryData::BRepModel>(
+            ResourceID_, _PathText, {{"resourceVersion", std::to_string(ResourceVersion_)}}, "cad.step");
+        if (!_Result.IsOK())
+            throw std::runtime_error(_Result.Error.empty() ? "TubeDesigner STEP export failed" : _Result.Error);
+        Files_.emplace_back(_PathText);
+        GroupFiles_.emplace_back(_PathText);
+        ++CompletedPartCount_;
+        ReportExportProgress(Request_, "exporting", CompletedPartCount_, TotalPartCount_, "已导出 " + _FileName);
+        return {{_FileName}};
     }
 
     std::pair<std::string, std::string> ProductPartCopyFileList(
@@ -13369,6 +13139,7 @@ namespace
 
     iCAX::Interaction::CInvocationResult ExportTransientDisassembly(
         const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Project::ISceneContext& Scene_,
         const std::vector<SPreparedProductDisassembly>& PreparedProducts_,
         const std::set<std::string>& SelectedPartIDs_)
@@ -13382,6 +13153,14 @@ namespace
                 _Repository.GetEntity(_Prepared.ProductID));
             if (!_Product || _Product->GetActiveGenerationRunID() != _Prepared.GenerationRunID)
                 continue;
+            if (!SelectedPartIDs_.empty() && std::none_of(_Prepared.Parts.begin(), _Prepared.Parts.end(),
+                [&](const auto& Part_) { return SelectedPartIDs_.contains(UuidToString(Part_.PartID)); }))
+                continue;
+            const auto _Run = GetComponent<CGenerationRunComponent>(
+                _Repository.GetEntity(_Prepared.GenerationRunID));
+            const auto _State = ProductRuntimeParameterState(ApplicationContext_, *_Product, _Run.get());
+            if (_State.ModelOutdated || _State.PartsOutdated)
+                throw std::invalid_argument("产品 " + _Product->GetName() + " 已修改，请重新生成并拆单后导出");
             for (const auto& _Part : _Prepared.Parts)
             {
                 const auto _ID = UuidToString(_Part.PartID);
@@ -13399,7 +13178,7 @@ namespace
         for (const auto& [_Prepared, _Product] : _Groups)
             for (const auto& _Part : _Prepared->Parts)
                 if (SelectedPartIDs_.empty() || SelectedPartIDs_.contains(UuidToString(_Part.PartID)))
-                    _TotalPartCount += ProductionQuantity(_Part.Quantity, 1);
+                    ++_TotalPartCount;
         ReportExportProgress(Request_, "preparing", 0, _TotalPartCount, "正在准备 STEP 导出");
 
         const auto _Payload = DecodeObjectPayload(Request_);
@@ -13433,7 +13212,7 @@ namespace
                     continue;
                 const auto _Copies = ExportProductPartCopies(Request_, Scene_, _ProductDirectory,
                     _Part.FileName, _Part.Index, _Part.ManufacturingResource.URL, _Part.ManufacturingResource.nVersion,
-                    _Part.Quantity, _TotalPartCount, _CompletedPartCount, _GroupFileNames, _Files, _GroupFiles);
+                    _TotalPartCount, _CompletedPartCount, _GroupFileNames, _Files, _GroupFiles);
                 _GroupCount += _Copies.size();
 
                 const auto _Properties = _Part.ItemProperties;
@@ -13683,13 +13462,14 @@ namespace
             for (const auto& _Prepared : _TransientDisassembly)
                 for (const auto& _Part : _Prepared.Parts)
                     if ((!_HasSelection || _SelectedPartIDs.contains(UuidToString(_Part.PartID)))
-                        && AssemblyPartAwaitingValidation(_Part.ItemProperties))
+                        && AssemblyPartBlocksManufacturingExport(_Part.ItemProperties,
+                            _Part.ManufacturingResource.URL, _Part.ManufacturingResource.nVersion))
                         _DraftOnly = true;
             if (_DraftOnly && !_AllowDraft)
                 throw std::invalid_argument(
                     "装配工艺尚未完成整件配合验证，不能作为生产下料导出");
             const auto _Result = ExportTransientDisassembly(
-                Request_, *Scene_, _TransientDisassembly, _SelectedPartIDs);
+                Request_, ApplicationContext_, *Scene_, _TransientDisassembly, _SelectedPartIDs);
             // The direct-export session has fulfilled its only purpose.
             // Release all export-only geometry immediately; parts linked into
             // nesting remain resident regardless of the export selection.
@@ -13718,7 +13498,8 @@ namespace
                     if (_SelectedPartIDs.contains(_ID))
                     {
                         _IndependentSelection.insert(_ID);
-                        if (AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                        if (AssemblyPartBlocksManufacturingExport(_Part->GetItemProperties(),
+                            _Part->GetManufacturingGeometryResourceID(), _Part->GetManufacturingGeometryResourceVersion()))
                             _DraftOnly = true;
                     }
                 }
@@ -13772,6 +13553,10 @@ namespace
                     }),
                 _Parts.end());
             if (_Parts.empty()) continue;
+            const auto _Run = GetComponent<CGenerationRunComponent>(_Repository.GetEntity(_GenerationRunID));
+            const auto _State = ProductRuntimeParameterState(ApplicationContext_, *_Product, _Run.get());
+            if (_State.ModelOutdated || _State.PartsOutdated)
+                throw std::invalid_argument("产品 " + _Product->GetName() + " 已修改，请重新生成并拆单后导出");
             std::sort(
                 _Parts.begin(),
                 _Parts.end(),
@@ -13781,7 +13566,8 @@ namespace
             for (const auto& [_PartEntity, _Part] : _Parts)
             {
                 _MatchedPartIDs.insert(UuidToString(_PartEntity->GetID()));
-                if (AssemblyPartAwaitingValidation(_Part->GetItemProperties()))
+                if (AssemblyPartBlocksManufacturingExport(_Part->GetItemProperties(),
+                    _Part->GetManufacturingGeometryResourceID(), _Part->GetManufacturingGeometryResourceVersion()))
                     _DraftOnly = true;
             }
             _Groups.emplace_back(_ProductEntity, _Product, std::move(_Parts));
@@ -13801,10 +13587,7 @@ namespace
         const auto _TotalPartCount = static_cast<std::uint64_t>(std::accumulate(
             _Groups.begin(), _Groups.end(), std::uint64_t{ 0 },
             [](const std::uint64_t Count_, const auto& Group_) {
-                return std::accumulate(std::get<2>(Group_).begin(), std::get<2>(Group_).end(), Count_,
-                    [](const std::uint64_t Total_, const auto& Part_) {
-                        return Total_ + ProductionQuantity(Part_.second->GetQuantity(), 1);
-                    });
+                return Count_ + std::get<2>(Group_).size();
             }));
         ReportExportProgress(Request_, "preparing", 0, _TotalPartCount, "正在准备 STEP 导出");
 
@@ -13834,10 +13617,9 @@ namespace
             std::set<std::string> _GroupFileNames;
             for (const auto& [_PartEntity, _Part] : _Parts)
             {
-                const auto _UnitQuantity = _Part->GetQuantity();
                 const auto _Copies = ExportProductPartCopies(Request_, *Scene_, _ProductDirectory,
                     _Part->GetFileName(), _Part->GetPartIndex(), _Part->GetManufacturingGeometryResourceID(),
-                    _Part->GetManufacturingGeometryResourceVersion(), _UnitQuantity,
+                    _Part->GetManufacturingGeometryResourceVersion(),
                     _TotalPartCount, _CompletedPartCount, _GroupFileNames, _Files, _GroupFiles);
 
                 const auto _Presentation = ResolvePartPresentation(_Repository, *_Part);
@@ -15469,7 +15251,6 @@ namespace
             ExposeMethod("UpdateManufacturingPart", tube::license::ProtectMethod<10046, tube::license::Feature::NestingEdit>(&HandleUpdateManufacturingPart));
             ExposeMethod("DeleteManufacturingPart", tube::license::ProtectMethod<10047, tube::license::Feature::NestingEdit>(&HandleDeleteManufacturingPart));
             ExposeMethod("SaveSketch", tube::license::ProtectMethod<10048, tube::license::Feature::ProductDesign>(&HandleSaveSketch));
-            ExposeMethod("SavePartSketch", tube::license::ProtectMethod<10049, tube::license::Feature::NestingEdit>(&HandleSavePartSketch));
             ExposeMethod("ExportSketchDxf", tube::license::ProtectMethod<10210, tube::license::Feature::NestingEdit>(&HandleExportSketchDxf));
             ExposeMethod("ReadSketchCad", tube::license::ProtectMethod<10212, tube::license::Feature::NestingEdit>(&HandleReadSketchCad));
             ExposeMethod("GenerateSketchTextOutline", tube::license::ProtectMethod<10211, tube::license::Feature::NestingEdit>(&HandleGenerateSketchTextOutline));
@@ -15487,7 +15268,6 @@ namespace
             ExposeMethod("AddNestingSideSketchPart", tube::license::ProtectMethod<10098, tube::license::Feature::NestingEdit>(&HandleAddNestingSideSketchPart));
             ExposeMethod("ReleaseNestingSideSketchPreview", &HandleReleaseNestingSideSketchPreview);
             ExposeMethod("AddNestingPunchPart", tube::license::ProtectMethod<10059, tube::license::Feature::NestingEdit>(&HandleAddNestingPunchPart));
-            ExposeMethod("ApplyPunchWizard", tube::license::ProtectMethod<10060, tube::license::Feature::NestingEdit>(&HandleApplyPunchWizard));
             ExposeMethod("PreviewPunchWizard", tube::license::ProtectMethod<10061, tube::license::Feature::NestingEdit>(&HandlePreviewPunchWizard));
             ExposeMethod("CheckPunchToolApplicability", tube::license::ProtectAnyMethod<10062, tube::license::Feature::ProductDesign, tube::license::Feature::NestingEdit>(&HandleCheckPunchToolApplicability));
             ExposeMethod("GetPunchToolProfileRecommendation", tube::license::ProtectAnyMethod<10063, tube::license::Feature::ProductDesign, tube::license::Feature::NestingEdit>(&HandleGetPunchToolProfileRecommendation));
@@ -15511,8 +15291,8 @@ namespace
             ExposeMethod("ImportPunchToolPackage", tube::license::ProtectAnyMethod<10081, tube::license::Feature::ProductDesign, tube::license::Feature::NestingEdit>(&HandleImportPunchToolPackage));
             ExposeMethod("GetPartDrawingTools", &HandleGetPartDrawingTools);
             ExposeMethod("PreviewPartDrawing", tube::license::ProtectMethod<10083, tube::license::Feature::NestingEdit>(&HandlePreviewPartDrawing));
+            ExposeMethod("ReleasePartDrawingPreview", &HandleReleasePartDrawingPreview);
             ExposeMethod("AddPartDrawing", tube::license::ProtectMethod<10084, tube::license::Feature::NestingEdit>(&HandleAddPartDrawing));
-            ExposeMethod("ApplyPartDrawing", tube::license::ProtectMethod<10085, tube::license::Feature::NestingEdit>(&HandleApplyPartDrawing));
             ExposeMethod("Nest", tube::license::ProtectMethod<10086, tube::license::Feature::NestingCalculate>(&HandleNest));
             ExposeMethod("ReadNestingResult", &HandleReadNestingResult);
             ExposeMethod("StageNestingParts", tube::license::ProtectMethod<10088, tube::license::Feature::NestingEdit>(&HandleStageNestingParts));
@@ -15520,8 +15300,10 @@ namespace
             ExposeMethod("PreviewNestingPartFile", tube::license::ProtectMethod<10090, tube::license::Feature::PageNesting>(&HandlePreviewNestingPartFile));
             ExposeMethod("ReleaseNestingPartFilePreview", &HandleReleaseNestingPartFilePreview);
             ExposeMethod("ImportNestingPart", tube::license::ProtectMethod<10091, tube::license::Feature::NestingEdit>(&HandleImportNestingPart));
-            ExposeMethod("RecoverImportedPartDrawing", tube::license::ProtectMethod<10092, tube::license::Feature::NestingEdit>(&HandleRecoverImportedPartDrawing));
-            ExposeMethod("GetPartDrawing", &HandleGetPartDrawing);
+            ExposeMethod("GetTubeCadDocument", &HandleGetTubeCadDocument);
+            ExposeMethod("PreviewTubeCadDocument", &HandlePreviewTubeCadDocument);
+            ExposeMethod("ReleaseTubeCadDocumentPreview", &HandleReleaseTubeCadDocumentPreview);
+            ExposeMethod("ApplyTubeCadDocument", tube::license::ProtectMethod<10093, tube::license::Feature::NestingEdit>(&HandleApplyTubeCadDocument));
             ExposeMethod("DeleteNestingParts", tube::license::ProtectMethod<10094, tube::license::Feature::NestingEdit>(&HandleDeleteNestingParts));
             ExposeMethod("SaveNestingSettings", tube::license::ProtectMethod<10095, tube::license::Feature::NestingEdit>(&HandleSaveNestingSettings));
             ExposeMethod("ExportNesting", tube::license::ProtectMethod<10096, tube::license::Feature::NestingExport>(&HandleExportNesting));

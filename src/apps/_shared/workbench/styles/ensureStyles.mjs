@@ -8,6 +8,6 @@ export function ensureStyles() {
   const link = document.createElement("link");
   link.id = STYLE_ID;
   link.rel = "stylesheet";
-  link.href = new URL("./laser3dcam.css", import.meta.url).href;
+  link.href = new URL("./workbench.css", import.meta.url).href;
   document.head.appendChild(link);
 }

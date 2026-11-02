@@ -8,9 +8,11 @@
 #include <Database/IRepository.h>
 #include <Database/OperationLog.h>
 #include <Database/ChangeSetKeys.h>
+#include <Database/DerivedComponentBase.h>
 #include <Database/RepositoryUndoRedoHistory.h>
 #include <DatabaseLanguage/EntityLanguage.h>
 #include <Data/uuid.h>
+#include <Windows.h>
 
 
 namespace
@@ -51,6 +53,16 @@ namespace
         return Lhs_ == Rhs_;
     }
 
+    class CPublicationTestComponent final : public CDerivedComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CPublicationTestComponent, CDerivedComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CPublicationTestComponent)
+        DECLARED_ICAX_FIELD(CPublicationTestComponent, uuid, Owner, uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
+        DECLARED_ICAX_FIELD(CPublicationTestComponent, int, Value, 0, IntEqual, ToIntVariant, FromIntVariant)
+    public:
+        uuid GetDerivedOwnerID() const override { return GetOwner(); }
+    };
+
     PropertyValue ToObjectVariant(const ObjectMap& Value_) { return PropertyValue(Value_); }
     ObjectMap FromObjectVariant(const PropertyValue& Value_) { return Value_.To<ObjectMap>(); }
     bool ObjectEqual(const ObjectMap& Lhs_, const ObjectMap& Rhs_) { return Lhs_ == Rhs_; }
@@ -65,6 +77,31 @@ namespace
             ObjectEqual, ToObjectVariant, FromObjectVariant)
         DECLARED_ICAX_OBSERVABLE_FIELD(CStructuredPropertyComponent, ObjectMap, RuntimeRecipe,
             ObjectMap(), ObjectEqual, ToObjectVariant, FromObjectVariant)
+    };
+
+    class CCommandObservableComponent final : public CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CCommandObservableComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CCommandObservableComponent)
+        DECLARED_ICAX_FIELD(CCommandObservableComponent, int, Input, 0, IntEqual, ToIntVariant, FromIntVariant)
+    public:
+        int Output = 0;
+        int OtherOutput = 0;
+    private:
+        struct RegisterOutputs
+        {
+            RegisterOutputs() { CMetaRegistrationCatalog::Register([](IMetaRegistry& meta) {
+                meta.RegistPropertyByName(CCommandObservableComponent::S_ClassName, "Output",
+                    [](const void* p) { return PropertyValue(static_cast<const CCommandObservableComponent*>(p)->Output); },
+                    [](void* p, const PropertyValue& value) { static_cast<CCommandObservableComponent*>(p)->Output = value.To<int>(); },
+                    EPropertyPersistence::Persistent, EPropertyChangePolicy::Observable);
+                meta.RegistPropertyByName(CCommandObservableComponent::S_ClassName, "OtherOutput",
+                    [](const void* p) { return PropertyValue(static_cast<const CCommandObservableComponent*>(p)->OtherOutput); },
+                    [](void* p, const PropertyValue& value) { static_cast<CCommandObservableComponent*>(p)->OtherOutput = value.To<int>(); },
+                    EPropertyPersistence::Persistent, EPropertyChangePolicy::Observable);
+            }, this); }
+        };
+        inline static RegisterOutputs s_RegisterOutputs{};
     };
 
     class CSumComponent final : public CComponentBase
@@ -2636,7 +2673,7 @@ TEST(DatabaseRepositoryTest, PublicUndoBatchSnapshotIsIndependentAndMetadataProj
 {
     auto meta = CreateMetaRegistry();
     CRepositoryUndoRedoHistory history(meta);
-    auto undo = history.BeginCommand("Delayed metadata projection");
+    auto undo = history.BeginCommand("Delayed metadata projection", {});
     COperationBatch batch;
     CRepositoryOperation operation;
     operation.Type = RepositoryEventArgs::kModifyComponent;
@@ -2664,7 +2701,7 @@ TEST(DatabaseRepositoryTest, PublicUndoBatchSnapshotIsIndependentAndMetadataProj
     EXPECT_EQ(1, saved.Operations.front().NewProperties.at("Recipe")
         .To<ObjectMap>().at("revision").To<int>());
     EXPECT_FALSE(saved.Operations.front().NewProperties.contains("RuntimeRecipe"));
-    auto canceled = history.BeginCommand("Clear pending facts");
+    auto canceled = history.BeginCommand("Clear pending facts", {});
     history.HandleCommittedOperationBatch(batch);
     history.Clear();
     canceled->End();
@@ -3128,6 +3165,16 @@ TEST(DatabaseRepositoryTest, TransactionInsideUndoCommandCreatesUndoStep)
     EXPECT_EQ(12, _Component->GetA());
 }
 
+TEST(DatabaseRepositoryTest, BaselineCommandKeepsCommittedFactsAndExistingUndoRedoSteps)
+{
+    auto repository=GenerateTestRepository();repository->BeginLoadBaseline();auto entity=GetRepositorySpace(repository)->CreateEntity(GenerateNewUUID());auto component=entity->AddComponent<CSumComponent>();repository->EndLoadBaseline();
+    auto first=repository->BeginUndoCommand("User A");component->SetA(5);first->End();
+    auto second=repository->BeginUndoCommand("User B");component->SetB(8);second->End();ASSERT_TRUE(repository->Undo());const auto undo=repository->GetUndoArray(),redo=repository->GetRedoArray();
+    auto baseline=repository->BeginUndoCommand("Initialize independent entity");auto& tx=repository->BeginTransaction("Baseline");const auto created=GenerateNewUUID();tx.CreateEntity(created);tx.AttachComponent(created,CSumComponent::S_ClassName,{{"A",11}});ASSERT_TRUE(repository->CommitTransaction(tx));baseline->EndWithoutHistory();
+    EXPECT_EQ(undo,repository->GetUndoArray());EXPECT_EQ(redo,repository->GetRedoArray());EXPECT_TRUE(repository->GetEntity(created));ASSERT_TRUE(repository->Redo());EXPECT_EQ(8,component->GetB());ASSERT_TRUE(repository->Undo());EXPECT_EQ(0,component->GetB());ASSERT_TRUE(repository->Undo());EXPECT_EQ(0,component->GetA());EXPECT_TRUE(repository->GetEntity(created));
+    auto failed=repository->BeginUndoCommand("Cancelled initialization");auto& attempt=repository->BeginTransaction("Attempt");attempt.ModifyComponent(created,CSumComponent::S_ClassName,{{"A",99}});ASSERT_TRUE(repository->CommitTransaction(attempt));failed->Cancel();const auto saved=std::dynamic_pointer_cast<CSumComponent>(repository->GetEntity(created)->GetComponent(CSumComponent::S_ClassName));EXPECT_EQ(11,saved->GetA());
+}
+
 TEST(DatabaseRepositoryTest, BatchInsideUndoCommandCreatesUndoStep)
 {
     auto _Repository = GenerateTestRepository();
@@ -3274,6 +3321,208 @@ TEST(DatabaseRepositoryTest, RepositoryUndoUsesSingleLinearHistory)
 
     EXPECT_TRUE(_Repository->Redo());
     EXPECT_EQ(30, _ComponentB->GetA());
+}
+
+TEST(DatabaseRepositoryTest, DerivedPublicationNotificationsRejectReentrantWritesAndKeepHistory)
+{
+    struct Observer final : IRepositoryEventListener
+    {
+        std::shared_ptr<IRepository> Repository;
+        std::shared_ptr<CSumComponent> Definition;
+        uuid Owner, UnexpectedEntity = GenerateNewUUID();
+        int Notifications = 0;
+        void Attempt(const RepositoryEventArgs& args)
+        {
+            if (!args.pBatch || args.pBatch->pOperationBatch->Kind != EOperationBatchKind::DerivedPublish) return;
+            ++Notifications;
+            EXPECT_TRUE(Repository->IsWriteInProgress());
+            EXPECT_THROW(static_cast<void>(Definition->SetA(99)), std::runtime_error);
+            EXPECT_THROW(Repository->DeleteEntity(Owner), std::runtime_error);
+            EXPECT_THROW(Repository->CreateEntity(UnexpectedEntity), std::runtime_error);
+            EXPECT_THROW(Repository->BeginTransaction("Reentrant transaction"), std::runtime_error);
+            EXPECT_THROW(Repository->BeginUndoCommand("Reentrant undo"), std::runtime_error);
+            EXPECT_THROW(Repository->BeginLoadBaseline(), std::runtime_error);
+            EXPECT_FALSE(Repository->Undo());
+            EXPECT_FALSE(Repository->Redo());
+        }
+        void OnRepositoryChanging(void*, const RepositoryEventArgs& args) override { Attempt(args); }
+        void OnRepositoryChanged(void*, const RepositoryEventArgs& args) override { Attempt(args); }
+    };
+    const auto journal = MakeTempOperationLogPath();
+    auto repository = GenerateTestRepository();
+    repository->OpenOperationLog(journal, true, S_TestOperationLogMagic, S_TestOperationLogVersion);
+    const auto owner = GenerateNewUUID(), resultID = GenerateNewUUID();
+    auto definition = repository->CreateEntity(owner)->AddComponent<CSumComponent>();
+    auto result = repository->CreateEntity(resultID)->AddComponent<CPublicationTestComponent>();
+    ASSERT_TRUE(result->SetOwner(owner));
+    { auto command = repository->BeginUndoCommand("First"); ASSERT_TRUE(definition->SetA(10)); command->End(); }
+    { auto command = repository->BeginUndoCommand("Second"); ASSERT_TRUE(definition->SetB(20)); command->End(); }
+    ASSERT_TRUE(repository->Undo());
+    const auto undoBefore = repository->GetUndoArray(), redoBefore = repository->GetRedoArray();
+    auto observer = std::make_shared<Observer>();
+    observer->Repository = repository; observer->Definition = definition; observer->Owner = owner;
+    auto collector = std::make_shared<CRepositoryEventCollector>();
+    repository->AddObserver(observer); repository->AddObserver(collector);
+    auto& transaction = repository->BeginDerivedTransaction(owner, "Publish result");
+    transaction.ModifyComponent(resultID, CPublicationTestComponent::S_ClassName, {{"Value", 7}});
+    std::string error;
+    ASSERT_TRUE(repository->CommitTransaction(transaction, error)) << error;
+    EXPECT_EQ(2, observer->Notifications);
+    EXPECT_EQ(7, result->GetValue()); EXPECT_EQ(10, definition->GetA()); EXPECT_EQ(0, definition->GetB());
+    EXPECT_FALSE(repository->HasEntity(observer->UnexpectedEntity));
+    EXPECT_EQ(undoBefore, repository->GetUndoArray()); EXPECT_EQ(redoBefore, repository->GetRedoArray());
+    ASSERT_EQ(1u, collector->ChangingEvents.size()); ASSERT_EQ(1u, collector->ChangedEvents.size());
+    EXPECT_FALSE(repository->IsWriteInProgress());
+    ASSERT_TRUE(repository->Redo()); EXPECT_EQ(20, definition->GetB());
+    repository->CloseOperationLog();
+    auto recovered = GenerateTestRepository();
+    recovered->ReplayOperationLog(journal, S_TestOperationLogMagic, S_TestOperationLogVersion);
+    EXPECT_EQ(7, recovered->GetEntity(resultID)->GetComponent<CPublicationTestComponent>()->GetValue());
+    EXPECT_EQ(10, recovered->GetEntity(owner)->GetComponent<CSumComponent>()->GetA());
+    EXPECT_EQ(20, recovered->GetEntity(owner)->GetComponent<CSumComponent>()->GetB());
+    std::filesystem::remove(journal);
+}
+
+TEST(DatabaseRepositoryTest, DerivedComponentAndEntityNotificationsCannotMutateDefinitionsDuringApplyOrRollback)
+{
+    struct ComponentObserver final : IComponentEventListener
+    {
+        std::shared_ptr<CSumComponent> Definition;
+        int Notifications = 0;
+        void Attempt() { ++Notifications; EXPECT_THROW(static_cast<void>(Definition->SetA(99)), std::runtime_error); }
+        void OnComponentChanging(void*, const ComponentEventArgs&) override { Attempt(); }
+        void OnComponentChanged(void*, const ComponentEventArgs&) override { Attempt(); }
+    };
+    struct EntityObserver final : IEntityEventListener
+    {
+        std::shared_ptr<CSumComponent> Definition;
+        int Notifications = 0;
+        void Attempt() { ++Notifications; EXPECT_THROW(static_cast<void>(Definition->SetB(99)), std::runtime_error); }
+        void OnEntityChanging(void*, const EntityEventArgs&) override { Attempt(); }
+        void OnEntityChanged(void*, const EntityEventArgs&) override { Attempt(); }
+    };
+    auto repository = GenerateTestRepository();
+    repository->BeginLoadBaseline();
+    const auto owner = GenerateNewUUID(), resultID = GenerateNewUUID();
+    auto definition = repository->CreateEntity(owner)->AddComponent<CSumComponent>();
+    auto entity = repository->CreateEntity(resultID);
+    auto result = entity->AddComponent<CPublicationTestComponent>();
+    ASSERT_TRUE(result->SetOwner(owner));
+    repository->EndLoadBaseline();
+    { auto command = repository->BeginUndoCommand("User edit"); ASSERT_TRUE(definition->SetA(10)); command->End(); }
+    const auto undoBefore = repository->GetUndoArray();
+    auto componentObserver = std::make_shared<ComponentObserver>(); componentObserver->Definition = definition;
+    auto entityObserver = std::make_shared<EntityObserver>(); entityObserver->Definition = definition;
+    result->AddObserver(componentObserver); entity->AddObserver(entityObserver);
+    auto& transaction = repository->BeginDerivedTransaction(owner, "Publish result");
+    transaction.ModifyComponent(resultID, CPublicationTestComponent::S_ClassName, {{"Value", 7}});
+    std::string error;
+    ASSERT_TRUE(repository->CommitTransaction(transaction, error)) << error;
+    EXPECT_GE(componentObserver->Notifications, 2); EXPECT_GE(entityObserver->Notifications, 2);
+    EXPECT_EQ(7, result->GetValue()); EXPECT_EQ(10, definition->GetA()); EXPECT_EQ(0, definition->GetB());
+    // Changing ownership is forbidden after applying it, forcing the derived
+    // transaction through its real silent rollback rather than prevalidation.
+    auto& invalid = repository->BeginDerivedTransaction(owner, "Invalid owner");
+    invalid.ModifyComponent(resultID, CPublicationTestComponent::S_ClassName, {{"Owner", GenerateNewUUID()}, {"Value", 8}});
+    EXPECT_FALSE(repository->CommitTransaction(invalid, error));
+    EXPECT_EQ(owner, result->GetOwner()); EXPECT_EQ(7, result->GetValue());
+    EXPECT_EQ(10, definition->GetA()); EXPECT_EQ(0, definition->GetB());
+    EXPECT_EQ(undoBefore, repository->GetUndoArray()); EXPECT_FALSE(repository->IsWriteInProgress());
+    ASSERT_TRUE(repository->Undo()); EXPECT_EQ(0, definition->GetA());
+}
+
+TEST(DatabaseRepositoryTest, CancelCommandPreservesExistingUndoAndRedoAndCommittedValues)
+{
+    auto repository = GenerateTestRepository();
+    repository->BeginLoadBaseline();
+    auto component = repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    repository->EndLoadBaseline();
+    auto first = repository->BeginUndoCommand("First");
+    ASSERT_TRUE(component->SetA(10)); first->End();
+    auto second = repository->BeginUndoCommand("Second");
+    ASSERT_TRUE(component->SetB(20)); second->End();
+    ASSERT_TRUE(repository->Undo());
+    const auto undoBefore = repository->GetUndoArray(), redoBefore = repository->GetRedoArray();
+    auto drag = repository->BeginUndoCommand("Cancelled drag");
+    ASSERT_TRUE(component->SetA(11));
+    auto& tx = repository->BeginTransaction("Drag update");
+    QueueModifyComponentProperties(tx, component->GetEntity()->GetID(), CSumComponent::S_ClassName, {{"A", 12}, {"B", 15}});
+    ASSERT_TRUE(repository->CommitTransaction(tx));
+    drag->Cancel(); drag->Cancel(); drag->End();
+    EXPECT_TRUE(drag->IsCompleted());
+    EXPECT_EQ(10, component->GetA()); EXPECT_EQ(0, component->GetB());
+    EXPECT_EQ(undoBefore, repository->GetUndoArray()); EXPECT_EQ(redoBefore, repository->GetRedoArray());
+    ASSERT_TRUE(repository->Redo()); EXPECT_EQ(20, component->GetB());
+}
+
+TEST(DatabaseRepositoryTest, CancelCommandCanRetryAfterActiveTransactionAndReentrantEnd)
+{
+    struct Observer final : IRepositoryEventListener {
+        IRepositoryUndoScope* Scope = nullptr;
+        void OnRepositoryChanging(void*, const RepositoryEventArgs&) override {}
+        void OnRepositoryChanged(void*, const RepositoryEventArgs&) override { if (Scope) Scope->End(); }
+    };
+    auto repository = GenerateTestRepository();
+    repository->BeginLoadBaseline();
+    auto component = repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    repository->EndLoadBaseline();
+    auto scope = repository->BeginUndoCommand("Cancelled creation");
+    auto created = repository->CreateEntity(GenerateNewUUID());
+    const auto createdID = created->GetID();
+    ASSERT_TRUE(component->SetA(9));
+    auto& tx = repository->BeginTransaction("Active tx");
+    EXPECT_THROW(scope->Cancel(), std::runtime_error);
+    EXPECT_FALSE(scope->IsCompleted());
+    repository->CancelTransaction(tx);
+    auto observer = std::make_shared<Observer>(); observer->Scope = scope.get(); repository->AddObserver(observer);
+    scope->Cancel();
+    EXPECT_EQ(0, component->GetA()); EXPECT_EQ(nullptr, repository->GetEntity(createdID));
+    EXPECT_TRUE(repository->GetUndoArray().empty()); EXPECT_TRUE(repository->GetRedoArray().empty());
+}
+
+TEST(DatabaseRepositoryTest, CancelCommandJournalReplaysRestoredValues)
+{
+    const auto path = MakeTempOperationLogPath(), id = to_string(GenerateNewUUID());
+    auto repository = GenerateTestRepository();
+    repository->OpenOperationLog(path, true, S_TestOperationLogMagic, S_TestOperationLogVersion);
+    const auto entityID = GenerateNewUUID();
+    auto component = repository->CreateEntity(entityID)->AddComponent<CSumComponent>();
+    ASSERT_TRUE(component->SetA(3));
+    auto scope = repository->BeginUndoCommand("Cancelled journal drag");
+    ASSERT_TRUE(component->SetA(10)); ASSERT_TRUE(component->SetB(20)); scope->Cancel();
+    repository->CloseOperationLog();
+    auto recovered = GenerateTestRepository(); recovered->ReplayOperationLog(path, S_TestOperationLogMagic, S_TestOperationLogVersion);
+    auto value = recovered->GetEntity(entityID)->GetComponent<CSumComponent>();
+    EXPECT_EQ(3, value->GetA()); EXPECT_EQ(0, value->GetB());
+    std::filesystem::remove(path);
+}
+
+TEST(DatabaseRepositoryTest, CommandIncludesOnlySelectedPersistentObservableFacts)
+{
+    auto repository = GenerateTestRepository();
+    repository->BeginLoadBaseline();
+    auto entity = repository->CreateEntity(GenerateNewUUID()); auto component = entity->AddComponent<CCommandObservableComponent>();
+    auto otherEntity = repository->CreateEntity(GenerateNewUUID()); auto other = otherEntity->AddComponent<CCommandObservableComponent>();
+    repository->EndLoadBaseline();
+    auto scope = repository->BeginUndoCommand("Input and generated output");
+    scope->IncludeObservableProperty(entity->GetID(), CCommandObservableComponent::S_ClassName, "Output");
+    EXPECT_THROW(scope->IncludeObservableProperty(entity->GetID(), CCommandObservableComponent::S_ClassName, "Input"), std::invalid_argument);
+    EXPECT_THROW(scope->IncludeObservableProperty(entity->GetID(), CCommandObservableComponent::S_ClassName, "Missing"), std::invalid_argument);
+    EXPECT_THROW(scope->IncludeObservableProperty(entity->GetID(), CPolicyComponent::S_ClassName, "RuntimeValue"), std::invalid_argument);
+    EXPECT_THROW(scope->IncludeObservableProperty(entity->GetID(), CPolicyComponent::S_ClassName, "DerivedValue"), std::invalid_argument);
+    auto& tx = repository->BeginTransaction("Atomic input and outputs");
+    QueueModifyComponentProperties(tx, entity->GetID(), CCommandObservableComponent::S_ClassName, {{"Input", 10}, {"Output", 20}, {"OtherOutput", 30}});
+    QueueModifyComponentProperties(tx, otherEntity->GetID(), CCommandObservableComponent::S_ClassName, {{"Output", 40}});
+    ASSERT_TRUE(repository->CommitTransaction(tx)); scope->End();
+    ASSERT_EQ(1u, repository->GetUndoArray().size()); ASSERT_TRUE(repository->Undo());
+    EXPECT_EQ(0, component->GetInput()); EXPECT_EQ(0, component->Output); EXPECT_EQ(30, component->OtherOutput); EXPECT_EQ(40, other->Output);
+    ASSERT_TRUE(repository->Redo()); EXPECT_EQ(10, component->GetInput()); EXPECT_EQ(20, component->Output);
+    const auto prior = repository->GetUndoArray();
+    ASSERT_TRUE(component->SetProperty("Output", 50)); EXPECT_EQ(prior, repository->GetUndoArray());
+    auto cancel = repository->BeginUndoCommand("Cancel with output");
+    cancel->IncludeObservableProperty(entity->GetID(), CCommandObservableComponent::S_ClassName, "Output");
+    ASSERT_TRUE(component->SetInput(11)); ASSERT_TRUE(component->SetProperty("Output", 60)); cancel->Cancel();
+    EXPECT_EQ(10, component->GetInput()); EXPECT_EQ(50, component->Output); EXPECT_EQ(prior, repository->GetUndoArray());
 }
 
 TEST(DatabaseRepositoryTest, UndoCommandRecordsOnlyTransactionalFields)
@@ -4377,3 +4626,4 @@ TEST(DatabaseMetaRegistryTest, FieldPolicyProviderFallsBackToGlobalWhenSpecificD
     EXPECT_EQ(1, _Specific->CallCount);
     EXPECT_EQ(1, _Global->CallCount);
 }
+#include "AutoSaveJournalTests.inc"

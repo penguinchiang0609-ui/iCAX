@@ -111,9 +111,7 @@ TEST(NestingSideSketchSDO, ClosedRegionRemovesItsInteriorAndCreationHasOneUndo) 
     // Blank wall area is 40*20-36*16=224; a 30*10 window
     // cuts the complete 2 mm wall, not merely its perimeter.
     EXPECT_NEAR(200.0*224.0-600.0,volume(result),1.0);
-    const auto properties=saved->GetItemProperties();
-    EXPECT_TRUE(properties.contains("tubeDesigner.sideSketchBaseResourceId"));
-    EXPECT_EQ(1.0,properties.at("tubeDesigner.sideSketch").To<ObjectMap>().at("trajectoryWidth").To<double>());
+    EXPECT_FALSE(cadDocument(scene,id).at("nodes").To<VariantArray>().empty());
     EXPECT_EQ(undoCount+1,scene.Database().GetUndoArray().size());
     ASSERT_TRUE(scene.Database().Undo());
     EXPECT_EQ(ids,scene.Database().GetEntityIDs());
@@ -140,12 +138,16 @@ TEST(NestingSideSketchSDO, RejectsEmptyInvalidWidthOrMismatchedBoundsWithoutCrea
     EXPECT_EQ(undo,scene.Database().GetUndoArray());
 }
 
-TEST(NestingSideSketchSDO, SaveReopenAndReplaceAlwaysUseFrozenBlankAndPersistKerfWidth) {
+TEST(NestingSideSketchSDO, KerfCreationVariantsAndCadDocumentSurviveReopen) {
     Scene scene;
     auto payload=side_sketch_acceptance::request();payload["sketch"]=side_sketch_acceptance::sketch(1.0,true);
+    const auto originalId=invoke(scene,"AddNestingSideSketchPart",payload).at("partEntityId").To<std::string>();
+    EXPECT_NEAR(200.0*224.0-80.0,volume(shape(scene,part(scene,originalId))),1.0);
+    payload["sketch"]=side_sketch_acceptance::sketch(2.0,true);
     const auto id=invoke(scene,"AddNestingSideSketchPart",payload).at("partEntityId").To<std::string>();
-    const auto initialVolume=volume(shape(scene,part(scene,id)));
-    EXPECT_NEAR(200.0*224.0-80.0,initialVolume,1.0);
+    EXPECT_NEAR(200.0*224.0-160.0,volume(shape(scene,part(scene,id))),1.0);
+    const auto document=cadDocument(scene,id);
+    const auto bytes=persistedShapeBytes(scene,part(scene,id));
     const auto directory=std::filesystem::current_path()/"tmp/side-sketch-persistence";
     std::filesystem::create_directories(directory);
     const auto path=directory/"side-sketch.ictd";
@@ -153,25 +155,14 @@ TEST(NestingSideSketchSDO, SaveReopenAndReplaceAlwaysUseFrozenBlankAndPersistKer
     iCAX::ProjectFile::CProjectDocumentInfo info;info.ProjectID=scene.project;info.MainSceneID=scene.GetSceneID();info.ProjectName="二维绘制验收";
     file.Save(path,info,scene.Database(),scene.Resources());
     Scene reopened(scene.project,scene.GetSceneID(),false);file.Open(path,reopened.Database(),reopened.Resources());
-    EXPECT_NEAR(initialVolume,volume(shape(reopened,part(reopened,id))),0.001);
-    auto draft=side_sketch_acceptance::sketch(2.0,true);
-    for(int repeat=0;repeat<2;++repeat) {
-        const auto current=part(reopened,id);
-        invoke(reopened,"SavePartSketch",{{"partEntityId",id},
-            {"resourceVersion",current->GetManufacturingGeometryResourceVersion()},{"sketch",draft}});
-        EXPECT_NEAR(200.0*224.0-160.0,volume(shape(reopened,part(reopened,id))),1.0);
-    }
-    EXPECT_EQ(2.0,part(reopened,id)->GetItemProperties().at("tubeDesigner.sideSketch")
-        .To<ObjectMap>().at("trajectoryWidth").To<double>());
-    file.Save(path,info,reopened.Database(),reopened.Resources());
-    Scene finalScene(scene.project,scene.GetSceneID(),false);file.Open(path,finalScene.Database(),finalScene.Resources());
-    EXPECT_NEAR(200.0*224.0-160.0,volume(shape(finalScene,part(finalScene,id))),1.0);
-    draft["entities"]=VariantArray{};
-    invoke(finalScene,"SavePartSketch",{{"partEntityId",id},{"sketch",draft}});
-    EXPECT_NEAR(200.0*224.0,volume(shape(finalScene,part(finalScene,id))),0.001);
+    EXPECT_EQ(document,cadDocument(reopened,id));
+    EXPECT_EQ(bytes,persistedShapeBytes(reopened,part(reopened,id)));
+    invoke(reopened,"ApplyTubeCadDocument",cadPayload(reopened,id));
+    EXPECT_EQ(document.at("nodes"),cadDocument(reopened,id).at("nodes"));
+    EXPECT_NEAR(200.0*224.0-160.0,volume(shape(reopened,part(reopened,id))),1.0);
 }
 
-TEST(NestingSideSketchSDO, PeriodicHorizontalCoordinatesCropAxialOverflowAndReopenTheOriginalBlank) {
+TEST(NestingSideSketchSDO, PeriodicHorizontalCoordinatesCropAxialOverflowIntoEditableCad) {
     Scene scene;
     auto payload=side_sketch_acceptance::request();
     const auto preview=invoke(scene,"PreviewNestingSideSketchPart",payload);
@@ -186,23 +177,10 @@ TEST(NestingSideSketchSDO, PeriodicHorizontalCoordinatesCropAxialOverflowAndReop
     auto saved=part(scene,id);
     EXPECT_NEAR(170.0,saved->GetLength(),0.001);
     EXPECT_NEAR(170.0 * 224.0,volume(shape(scene,saved)),0.001);
-    const auto version=saved->GetManufacturingGeometryResourceVersion();
-    // No product context/profile library is available to this invocation.
-    const auto existing=invoke(scene,"PreviewNestingSideSketchPart",{
-        {"partEntityId",id},{"resourceVersion",version},{"previewResourceKey",std::string("frozen-existing")},
-        {"profileRef",ObjectMap{{"scope",std::string("user")},{"id",std::string("deleted-profile")}}}});
-    EXPECT_NEAR(200.0,existing.at("length").To<double>(),0.001);
-    EXPECT_NEAR(200.0,existing.at("unfolding").To<ObjectMap>().at("length").To<double>(),0.001);
-    EXPECT_THROW(invoke(scene,"PreviewNestingSideSketchPart",{{"partEntityId",id},
-        {"resourceVersion",version + 1},{"previewResourceKey",std::string("stale")}}),std::exception);
-    auto entities=draft.at("entities").To<VariantArray>();auto entity=entities.front().To<ObjectMap>();
-    entity["height"]=45.0;entities.front()=entity;draft["entities"]=entities;
-    invoke(scene,"SavePartSketch",{{"partEntityId",id},{"resourceVersion",version},{"sketch",draft}});
-    EXPECT_NEAR(165.0,part(scene,id)->GetLength(),0.001);
-    draft["entities"]=VariantArray{};
-    invoke(scene,"SavePartSketch",{{"partEntityId",id},{"sketch",draft}});
-    EXPECT_NEAR(200.0,part(scene,id)->GetLength(),0.001);
-    EXPECT_NEAR(200.0 * 224.0,volume(shape(scene,part(scene,id))),0.001);
+    const auto document=cadDocument(scene,id);
+    invoke(scene,"ApplyTubeCadDocument",cadPayload(scene,id));
+    EXPECT_EQ(document.at("nodes"),cadDocument(scene,id).at("nodes"));
+    EXPECT_NEAR(170.0 * 224.0,volume(shape(scene,part(scene,id))),0.001);
 }
 
 TEST(NestingSideSketchSDO, PreservesActualMouseFractionalCoordinatesOnRoundTube) {
@@ -232,8 +210,7 @@ TEST(NestingSideSketchSDO, PreservesActualMouseFractionalCoordinatesOnRoundTube)
     const auto id=invoke(scene,"AddNestingSideSketchPart",payload).at("partEntityId").To<std::string>();
     const auto saved=part(scene,id);
     EXPECT_TRUE(BRepCheck_Analyzer(shape(scene,saved)).IsValid());
-    const auto entities=saved->GetItemProperties().at("tubeDesigner.sideSketch").To<ObjectMap>().at("entities").To<VariantArray>();
-    EXPECT_DOUBLE_EQ(620.3145896374909,entities.front().To<ObjectMap>().at("x").To<double>());
+    EXPECT_FALSE(cadDocument(scene,id).at("nodes").To<VariantArray>().empty());
 }
 
 TEST(NestingSideSketchSDO, FullyOutsideAxialDraftCreatesAndSavesTheUncutBlank) {
@@ -249,14 +226,13 @@ TEST(NestingSideSketchSDO, FullyOutsideAxialDraftCreatesAndSavesTheUncutBlank) {
     EXPECT_NEAR(200.0*224.0,volume(shape(scene,part(scene,id))),0.001);
     EXPECT_NEAR(200.0,part(scene,id)->GetLength(),0.001);
     auto entities=draft.at("entities").To<VariantArray>();auto entity=entities.front().To<ObjectMap>();
-    entity["y"]=230.0;entities.front()=entity;draft["entities"]=entities;
-    invoke(scene,"SavePartSketch",{{"partEntityId",id},{"sketch",draft}});
-    EXPECT_NEAR(200.0*224.0,volume(shape(scene,part(scene,id))),0.001);
-    const auto saved=part(scene,id)->GetItemProperties().at("tubeDesigner.sideSketch").To<ObjectMap>();
-    EXPECT_DOUBLE_EQ(230.0,saved.at("entities").To<VariantArray>().front().To<ObjectMap>().at("y").To<double>());
+    entity["y"]=230.0;entities.front()=entity;draft["entities"]=entities;payload["sketch"]=draft;
+    const auto secondId=invoke(scene,"AddNestingSideSketchPart",payload).at("partEntityId").To<std::string>();
+    EXPECT_NEAR(200.0*224.0,volume(shape(scene,part(scene,secondId))),0.001);
+    EXPECT_FALSE(cadDocument(scene,secondId).at("nodes").To<VariantArray>().empty());
 }
 
-TEST(NestingSideSketchSDO, CurveCircleRemainsAnalyticAfterSaveReopenAndReplacement) {
+TEST(NestingSideSketchSDO, CurveCircleRemainsAnalyticAfterSaveReopenAndCadRadiusEdit) {
     Scene scene;
     auto payload=side_sketch_acceptance::request();
     auto draft=side_sketch_acceptance::sketch();
@@ -279,32 +255,35 @@ TEST(NestingSideSketchSDO, CurveCircleRemainsAnalyticAfterSaveReopenAndReplaceme
     Scene reopened(scene.project,scene.GetSceneID(),false);
     file.Open(path,reopened.Database(),reopened.Resources());
     EXPECT_GE(side_sketch_acceptance::curveEdges(shape(reopened,part(reopened,id)),GeomAbs_Circle),2u);
-    auto entities=draft.at("entities").To<VariantArray>();
-    auto circle=entities.front().To<ObjectMap>();circle["cy"]=100.0;circle["radius"]=5.0;
-    entities.front()=circle;draft["entities"]=entities;
-    for(int repeat=0;repeat<2;++repeat) {
-        invoke(reopened,"SavePartSketch",{{"partEntityId",id},
-            {"resourceVersion",part(reopened,id)->GetManufacturingGeometryResourceVersion()},{"sketch",draft}});
-        const auto edited=shape(reopened,part(reopened,id));
-        EXPECT_TRUE(BRepCheck_Analyzer(edited).IsValid());
-        EXPECT_GE(side_sketch_acceptance::curveEdges(edited,GeomAbs_Circle),2u);
-        EXPECT_NEAR(200.0*224.0-std::acos(-1.0)*25.0*2.0,volume(edited),0.005)
-            << "replacing the circle must restore the old hole from the frozen blank";
+    namespace G=iCAX::GeometryData;namespace T=G::Tube;
+    const auto current=cadDocument(reopened,id);
+    auto geometry=iCAX::CAD::TubeCadJson::Decode<T::CTubeNeutralGeometry>(current.at("geometry"));
+    bool changed=false;
+    const auto resize=[&](T::CPlanarRegion2& region) {
+        for(auto& boundary:region.Boundaries)for(auto& curve:boundary.Curves)
+            if(auto* circle=std::get_if<G::Circle2>(&curve.Segment.Curve)) {
+                EXPECT_NEAR(circle->Radius,4.0,1e-7);circle->Radius=5.0;changed=true;
+            }
+    };
+    for(auto& node:geometry.SolidNodes) {
+        if(node.ID==geometry.BaseNodeID)continue;
+        if(auto* extrusion=std::get_if<T::SExtrudedRegionNode>(&node.Data))resize(extrusion->Section);
+        if(auto* wrapped=std::get_if<T::SWrappedVolumeNode>(&node.Data))resize(wrapped->UVRegion);
     }
+    ASSERT_TRUE(changed)<<"analytic circle construction must remain editable";
+    invoke(reopened,"ApplyTubeCadDocument",{{"partEntityId",id},{"resourceVersion",current.at("resourceVersion")},
+        {"revision",current.at("revision")},{"geometry",iCAX::CAD::TubeCadJson::Encode(geometry)}});
+    const auto edited=shape(reopened,part(reopened,id));
+    EXPECT_TRUE(BRepCheck_Analyzer(edited).IsValid());
+    EXPECT_GE(side_sketch_acceptance::curveEdges(edited,GeomAbs_Circle),2u);
+    EXPECT_NEAR(200.0*224.0-std::acos(-1.0)*25.0*2.0,volume(edited),0.005);
+    const auto savedDocument=cadDocument(reopened,id);
     file.Save(path,info,reopened.Database(),reopened.Resources());
-    Scene finalScene(scene.project,scene.GetSceneID(),false);
-    file.Open(path,finalScene.Database(),finalScene.Resources());
+    Scene finalScene(scene.project,scene.GetSceneID(),false);file.Open(path,finalScene.Database(),finalScene.Resources());
+    EXPECT_EQ(savedDocument,cadDocument(finalScene,id));
     const auto finalShape=shape(finalScene,part(finalScene,id));
     EXPECT_GE(side_sketch_acceptance::curveEdges(finalShape,GeomAbs_Circle),2u);
-    const auto saved=part(finalScene,id)->GetItemProperties().at("tubeDesigner.sideSketch").To<ObjectMap>()
-        .at("entities").To<VariantArray>().front().To<ObjectMap>();
-    EXPECT_EQ(saved.at("kind").To<std::string>(),"circle");
-    EXPECT_DOUBLE_EQ(saved.at("radius").To<double>(),5.0);
-    payload["sketch"]=draft;
-    const auto freshId=invoke(finalScene,"AddNestingSideSketchPart",payload).at("partEntityId").To<std::string>();
-    const auto freshShape=shape(finalScene,part(finalScene,freshId));
-    EXPECT_NEAR(volume(finalShape),volume(freshShape),0.001);
-    EXPECT_NEAR(volume(finalShape),volume(BRepAlgoAPI_Common(finalShape,freshShape).Shape()),0.001);
+    EXPECT_NEAR(200.0*224.0-std::acos(-1.0)*25.0*2.0,volume(finalShape),0.005);
 }
 
 TEST(NestingSideSketchSDO, CurvePreviewCreationAndReleaseRejectTheProductChannel) {
@@ -388,6 +367,7 @@ TEST(NestingSideSketchSDO, EllipseArcKerfAndBezierPersistWithoutPolylineFallback
         EXPECT_TRUE(BRepCheck_Analyzer(restored).IsValid()) << stage;
     };
     inspect(scene,"created");
+    const auto originalDocument=cadDocument(scene,id);
     const auto before=shape(scene,part(scene,id));
     GProp_GProps initialProperties;
     BRepGProp::VolumeProperties(before,initialProperties,1.0e-9);
@@ -407,14 +387,10 @@ TEST(NestingSideSketchSDO, EllipseArcKerfAndBezierPersistWithoutPolylineFallback
     GProp_GProps reopenedProperties;
     BRepGProp::VolumeProperties(after,reopenedProperties,1.0e-9);
     EXPECT_NEAR(initialProperties.Mass(),reopenedProperties.Mass(),0.001);
-    const auto savedDraft=part(reopened,id)->GetItemProperties().at("tubeDesigner.sideSketch").To<ObjectMap>();
-    const auto entities=savedDraft.at("entities").To<VariantArray>();
-    ASSERT_EQ(entities.size(),2u);
-    EXPECT_EQ(entities[0].To<ObjectMap>().at("kind").To<std::string>(),"path");
-    EXPECT_EQ(entities[1].To<ObjectMap>().at("kind").To<std::string>(),"ellipseArc");
+    EXPECT_EQ(originalDocument,cadDocument(reopened,id));
 }
 
-TEST(NestingSideSketchSDO, ProfileJunctionGuidesKeepTheFrozenBlankAcrossHoleAndProjectReopen) {
+TEST(NestingSideSketchSDO, ProfileJunctionGuidesAndCreatedCadSurviveProjectReopen) {
     Scene scene;
     auto payload=side_sketch_acceptance::request();
     const auto inspect=[](const ObjectMap& result) {
@@ -449,16 +425,10 @@ TEST(NestingSideSketchSDO, ProfileJunctionGuidesKeepTheFrozenBlankAcrossHoleAndP
     payload["sketch"]=draft;
     const auto added=invoke(scene,"AddNestingSideSketchPart",payload);
     const auto id=added.at("partEntityId").To<std::string>();
+    const auto originalDocument=cadDocument(scene,id);
     const auto checkPersisted=[&](Scene& state) {
-        const auto saved=part(state,id);
-        inspect(invoke(state,"PreviewNestingSideSketchPart",{{"partEntityId",id},
-            {"resourceVersion",saved->GetManufacturingGeometryResourceVersion()},
-            {"previewResourceKey",std::string("junction-guide-reopen")}}));
-        const auto stored=saved->GetItemProperties().at("tubeDesigner.sideSketch").To<ObjectMap>();
-        const auto entities=stored.at("entities").To<VariantArray>();
-        ASSERT_EQ(entities.size(),1u);
-        EXPECT_EQ(entities.front().To<ObjectMap>().at("id").To<std::string>(),"corner-hole");
-        EXPECT_TRUE(BRepCheck_Analyzer(shape(state,saved)).IsValid());
+        EXPECT_EQ(originalDocument,cadDocument(state,id));
+        EXPECT_TRUE(BRepCheck_Analyzer(shape(state,part(state,id))).IsValid());
     };
     checkPersisted(scene);
     const auto directory=std::filesystem::current_path()/"tmp/side-sketch-junction-persistence";

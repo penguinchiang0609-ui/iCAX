@@ -1,4 +1,5 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
+import { tubeDesignerViewportNavigation } from "./viewportNavigation.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "../../_shared/workbench/viewport/viewCube.mjs";
 import { attachPartInspectionWindow, disposePartInspectionWindow } from "./partInspectionWindow.mjs";
 import { partDimensionCategories as dimensionCategories, annotatedPartElementIds as annotatedElementIds,
@@ -182,6 +183,7 @@ async function hydrateInspection(context, part) {
     viewport: null,
   };
   controller.viewport = createThreeViewport({
+    ...tubeDesignerViewportNavigation,
     backgroundColor: 0x13252d,
     continuousRender: false,
     constrainOrbit: false,

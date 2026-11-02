@@ -17,6 +17,7 @@ export const ProductSDO = Object.freeze({
 
 export const ProjectSDO = Object.freeze({
   save: "Project.Save",
+  autosave: "Project.AutoSave",
   getState: "Project.GetState",
   undo: "Project.Undo",
   redo: "Project.Redo",

@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import {writeFileSync,mkdirSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {chromium} from './node_modules/playwright/index.mjs';
+const out=resolve('output/tests/machine-definition-manager-20261029/native');mkdirSync(out,{recursive:true});
+const browser=await chromium.connectOverCDP(process.env.MACHINE_CDP||'http://127.0.0.1:9586');
+const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().endsWith('/SDK/AppShell/index.html'));
+const idle=()=>page.waitForFunction(()=>!mv.pending&&!mv.fiveMachine?.busy&&!__icaxAppShell.getState().pendingCount);
+let importedId,pickerPatched=false;
+try{
+ await page.setViewportSize({width:1600,height:1000});
+ await page.waitForFunction(()=>__icaxAppShell?.getState().startupPhase==='ready');
+ await page.evaluate(path=>__icaxAppShell.createProject({productId:'icax.five-axis-cam',projectName:'机床定义管理验收',projectPath:path}),resolve(out,'机床定义管理验收-'+Date.now()+'.i5cam'));
+ await page.waitForFunction(async()=>{const{findProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.mv=findProjectView(__icaxAppShell.getState().activeProjectId);return !!mv?.scene&&!mv.pending;});
+ await page.locator('[data-tab-id="simulation"]').click();await idle();
+ assert.equal(await page.locator('.cam-context-pane [aria-label="机床定义"]').count(),0);
+ const group=page.locator('.ribbon-group').filter({has:page.locator('.ribbon-group-title',{hasText:'机床定义'})});
+ assert.deepEqual(await group.locator('[data-command-id]').evaluateAll(nodes=>nodes.map(n=>n.dataset.commandId)),['five.tool.machine-definitions']);
+ await page.locator('[data-command-id="five.tool.machine-definitions"]').click();
+ const dialog=page.getByRole('dialog',{name:'机床定义管理'});await dialog.waitFor();await idle();
+ await page.waitForFunction(()=>{const images=[...document.querySelectorAll('.five-machine-thumbnail')].filter(i=>i.tagName==='IMG');return images.length>0&&images.every(i=>i.complete&&i.naturalWidth>0);});
+ const initialDefinitions=await page.evaluate(()=>mv.scene.machineDefinitions);
+ assert.ok(initialDefinitions.length>0);await page.screenshot({path:resolve(out,'机床定义管理-独立程序.png')});
+ await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
+ await page.locator('[data-command-id="five.machine-panel.instantiate"]').click();await dialog.waitFor();
+ // Supply a known file to the OS picker, then exercise the normal UI and native import.
+ await page.evaluate(path=>{const bridge=globalThis.icax??globalThis.icaxNativeBridge;window.managerOriginalPicker=bridge.openFileDialog;bridge.openFileDialog=async()=>path;},resolve('src/apps/five-axis-cam/resources/machines/industrial-ac/LC-3015.urdf'));pickerPatched=true;
+ await dialog.getByRole('button',{name:'新增 / 导入',exact:true}).click();await idle();
+ await page.evaluate(()=>{const bridge=globalThis.icax??globalThis.icaxNativeBridge;bridge.openFileDialog=window.managerOriginalPicker;});pickerPatched=false;
+ assert.equal(await page.evaluate(()=>mv.fiveMachine.error),'');
+ importedId=await page.evaluate(ids=>mv.scene.machineDefinitions.find(d=>!ids.includes(d.id))?.id,initialDefinitions.map(d=>d.id));assert.ok(importedId);
+ assert.equal(await dialog.locator(`[data-five-command="five.machine.definition-select:${importedId}"]`).getAttribute('aria-pressed'),'true');
+ await dialog.getByRole('button',{name:'禁用',exact:true}).click();await idle();
+ assert.equal(await dialog.getByRole('button',{name:'创建实例',exact:true}).isDisabled(),true);
+ assert.equal(await page.evaluate(id=>mv.scene.machineDefinitions.find(d=>d.id===id).enabled,importedId),false);
+ await dialog.getByRole('button',{name:'启用',exact:true}).click();await idle();
+ const count=await page.evaluate(()=>mv.scene.machines.length);
+ await dialog.getByRole('button',{name:'创建实例',exact:true}).click();await idle();assert.equal(await dialog.count(),0);
+ assert.equal(await page.evaluate(()=>mv.scene.machines.length),count+1);assert.equal(await page.evaluate(()=>mv.fiveMachine.error),'');
+ await page.locator('[data-command-id="five.tool.machine-definitions"]').click();await dialog.waitFor();
+ await dialog.getByRole('button',{name:'删除',exact:true}).click();await idle();
+ assert.equal(await page.evaluate(id=>mv.scene.machineDefinitions.some(d=>d.id===id),importedId),false);
+ assert.equal(await page.evaluate(()=>mv.scene.machines.length),count+1);importedId=null;
+ await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+ await page.screenshot({path:resolve(out,'实例页面-定义已移出左栏.png')});
+ const result={passed:true,standaloneCef:true,nativeProductCatalog:true,onlyPickerSubstituted:true,managementOnlyRibbon:true,definitionListRemovedFromSidebar:true,bundledThumbnails:initialDefinitions.length,escapeCloses:true,createEntryOpensManager:true,nativeImportEnableDisableInstantiateDelete:true,existingInstancesRetainedAfterDefinitionDelete:true,initialDefinitions:initialDefinitions.map(d=>({id:d.id,name:d.name,enabled:d.enabled}))};
+ writeFileSync(resolve(out,'report.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}finally{
+ if(pickerPatched)await page.evaluate(()=>{const bridge=globalThis.icax??globalThis.icaxNativeBridge;bridge.openFileDialog=window.managerOriginalPicker;}).catch(()=>{});
+ if(importedId)await page.evaluate(async id=>{const shell=window.__icaxAppShell;await shell.executeRibbonCommand('five.machine.definition-delete:'+id);},importedId).catch(()=>{});
+ await browser.close();
+}

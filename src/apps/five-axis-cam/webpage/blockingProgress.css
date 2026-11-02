@@ -1,0 +1,33 @@
+.five-workspace > .cam-progress-backdrop { display:none; }
+.five-blocking-progress {
+  position:fixed; inset:0; margin:0; padding:24px; box-sizing:border-box;
+  width:100vw; height:100vh; max-width:none; max-height:none; border:0;
+  background:rgba(13,26,34,.20); color:#203944; cursor:wait;
+  overscroll-behavior:contain; -webkit-app-region:no-drag;
+}
+.five-blocking-progress[open] { display:grid; place-items:center; }
+.five-blocking-progress::backdrop { background:transparent; }
+.five-blocking-progress-card {
+  box-sizing:border-box; width:min(360px,100%); padding:16px 18px;
+  background:#fff; border:1px solid #d6e3e8; border-radius:8px;
+  box-shadow:0 10px 36px #17313b2b; font-family:"Microsoft YaHei",sans-serif;
+}
+.five-blocking-progress-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.five-blocking-progress h2{margin:0;font-size:14px;line-height:1.6;font-weight:600}
+.five-blocking-progress p{margin:7px 0 0;font-size:11px;color:#7a909b;line-height:1.6;overflow-wrap:anywhere}
+.five-blocking-progress-track{height:3px;margin:14px 0 0;background:#e5eff2;border-radius:2px;overflow:hidden}
+.five-blocking-progress-track i { display:block; height:100%; width:38%; border-radius:inherit; background:linear-gradient(90deg,#2b8fa3,#55c6bb); animation:five-blocking-progress-move 1.8s ease-in-out infinite; }
+.five-blocking-progress-track.is-determinate i { animation:none; transition:width .2s ease; }
+.five-blocking-progress footer{margin-top:9px;color:#8a9ca4;font-size:11px;line-height:1.5}
+.five-blocking-progress button{display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:3px;border:0;border-radius:4px;background:transparent;color:#7d949f;cursor:pointer}
+.five-blocking-progress button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.five-blocking-progress [hidden]{display:none!important}
+.five-blocking-progress button:hover { background:#edf6f7; }
+.five-blocking-progress button:focus-visible { outline:3px solid #53afbe; outline-offset:3px; }
+.five-blocking-progress button:disabled { opacity:.6; cursor:wait; }
+.five-blocking-progress button[hidden] { display:none; }
+/* The foreground task owns feedback until its progress dialog closes. */
+body:has(dialog.five-blocking-progress[open]) .five-blocking-operation { display:none; }
+@keyframes five-blocking-progress-move { from { transform:translateX(-110%); } to { transform:translateX(275%); } }
+@media(max-width:420px){.five-blocking-progress{padding:16px}.five-blocking-progress-card{padding:14px 16px}}
+@media(prefers-reduced-motion:reduce) { .five-blocking-progress-track i {animation-duration:4s} }

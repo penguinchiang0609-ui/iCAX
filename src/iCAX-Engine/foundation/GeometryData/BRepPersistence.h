@@ -1,7 +1,10 @@
 #pragma once
 #include "GeometryData.h"
+#include "CurveOffset3D.h"
 #include <bit>
 #include <limits>
+#include <map>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <tuple>
@@ -9,7 +12,7 @@
 
 namespace iCAX::GeometryData::Persistence
 {
-// Version 1: explicit field order, little-endian integers and IEEE-754 doubles.
+// Version 3: exact revolution and extrusion supports, preserving native UV parameters.
 // Never persist compiler padding, pointers or an OCC re-numbering of topology.
 // Changing these member lists or variant alternatives requires a new version.
 inline auto Members(Point2*) { return std::tuple{&Point2::X, &Point2::Y}; }
@@ -63,6 +66,11 @@ inline auto Members(CurveSegment2*) { return std::tuple{&CurveSegment2::Curve, &
 inline auto Members(CurveSegment3*) { return std::tuple{&CurveSegment3::Curve, &CurveSegment3::Range}; }
 inline auto Members(CompositeCurve2*) { return std::tuple{&CompositeCurve2::Segments, &CompositeCurve2::Closed}; }
 inline auto Members(CompositeCurve3*) { return std::tuple{&CompositeCurve3::Segments, &CompositeCurve3::Closed}; }
+inline auto Members(ParametricVectorField3*) { return std::tuple{&ParametricVectorField3::Coefficients}; }
+inline auto Members(SurfaceNormalField3*) { return std::tuple{&SurfaceNormalField3::Surface, &SurfaceNormalField3::Parameters, &SurfaceNormalField3::Orientation}; }
+inline auto Members(DirectionalCurveOffset3*) { return std::tuple{&DirectionalCurveOffset3::Source, &DirectionalCurveOffset3::ReferenceDirection, &DirectionalCurveOffset3::SignedDistance}; }
+inline auto Members(OffsetCurvePiece3*) { return std::tuple{&OffsetCurvePiece3::Geometry, &OffsetCurvePiece3::SourceSegment}; }
+inline auto Members(CompositeOffsetCurve3*) { return std::tuple{&CompositeOffsetCurve3::Segments, &CompositeOffsetCurve3::Closed}; }
 inline auto Members(Loop2*) { return std::tuple{&Loop2::Segments}; }
 inline auto Members(Region2*) { return std::tuple{&Region2::OuterLoops, &Region2::InnerLoops}; }
 inline auto Members(Rect2*) { return std::tuple{&Rect2::Placement, &Rect2::Width, &Rect2::Height}; }
@@ -73,6 +81,8 @@ inline auto Members(ConicalSurface3*) { return std::tuple{&ConicalSurface3::Plac
 inline auto Members(SphericalSurface3*) { return std::tuple{&SphericalSurface3::Placement, &SphericalSurface3::Radius}; }
 inline auto Members(ToroidalSurface3*) { return std::tuple{&ToroidalSurface3::Placement, &ToroidalSurface3::MajorRadius, &ToroidalSurface3::MinorRadius}; }
 inline auto Members(BSplineSurface3*) { return std::tuple{&BSplineSurface3::UDegree, &BSplineSurface3::VDegree, &BSplineSurface3::UCount, &BSplineSurface3::VCount, &BSplineSurface3::Poles, &BSplineSurface3::Weights, &BSplineSurface3::UKnots, &BSplineSurface3::VKnots, &BSplineSurface3::UMultiplicities, &BSplineSurface3::VMultiplicities, &BSplineSurface3::UPeriodic, &BSplineSurface3::VPeriodic}; }
+inline auto Members(RevolutionSurface3*) { return std::tuple{&RevolutionSurface3::Basis, &RevolutionSurface3::Axis}; }
+inline auto Members(ExtrusionSurface3*) { return std::tuple{&ExtrusionSurface3::Basis, &ExtrusionSurface3::Direction}; }
 inline auto Members(Triangulation3*) { return std::tuple{&Triangulation3::Vertices, &Triangulation3::Normals, &Triangulation3::TextureCoordinates, &Triangulation3::Triangles, &Triangulation3::TriangleFaceIds}; }
 inline auto Members(EntityMetadata*) { return std::tuple{&EntityMetadata::Name, &EntityMetadata::SourceId, &EntityMetadata::Tags}; }
 inline auto Members(Curve2Record*) { return std::tuple{&Curve2Record::Id, &Curve2Record::Geometry, &Curve2Record::Metadata}; }
@@ -83,9 +93,9 @@ inline auto Members(CTriangleMeshResource*) { return std::tuple{&CTriangleMeshRe
 inline auto Members(BRepShapeRef*) { return std::tuple{&BRepShapeRef::Kind, &BRepShapeRef::Id, &BRepShapeRef::Orientation, &BRepShapeRef::Location}; }
 inline auto Members(BRepVertex*) { return std::tuple{&BRepVertex::Id, &BRepVertex::Position, &BRepVertex::Tolerance, &BRepVertex::Metadata}; }
 inline auto Members(BRepEdge*) { return std::tuple{&BRepEdge::Id, &BRepEdge::Curve3Id, &BRepEdge::StartVertexId, &BRepEdge::EndVertexId, &BRepEdge::Range, &BRepEdge::Tolerance, &BRepEdge::SameParameter, &BRepEdge::SameRange, &BRepEdge::Degenerated, &BRepEdge::Closed, &BRepEdge::Metadata}; }
-inline auto Members(BRepCoedge*) { return std::tuple{&BRepCoedge::EdgeId, &BRepCoedge::Curve2Id, &BRepCoedge::StartVertexId, &BRepCoedge::EndVertexId, &BRepCoedge::Range, &BRepCoedge::Orientation}; }
+inline auto Members(BRepCoedge*) { return std::tuple{&BRepCoedge::EdgeId, &BRepCoedge::Curve2Id, &BRepCoedge::StartVertexId, &BRepCoedge::EndVertexId, &BRepCoedge::Range, &BRepCoedge::Orientation, &BRepCoedge::PCurveStored}; }
 inline auto Members(BRepWire*) { return std::tuple{&BRepWire::Id, &BRepWire::Coedges, &BRepWire::Closed, &BRepWire::Metadata}; }
-inline auto Members(BRepFace*) { return std::tuple{&BRepFace::Id, &BRepFace::Surface3Id, &BRepFace::Triangulation3Id, &BRepFace::WireIds, &BRepFace::WireOrientations, &BRepFace::Domain, &BRepFace::Orientation, &BRepFace::Tolerance, &BRepFace::NaturalRestriction, &BRepFace::Metadata}; }
+inline auto Members(BRepFace*) { return std::tuple{&BRepFace::Id, &BRepFace::Surface3Id, &BRepFace::Triangulation3Id, &BRepFace::WireIds, &BRepFace::WireOrientations, &BRepFace::Domain, &BRepFace::Orientation, &BRepFace::Tolerance, &BRepFace::NaturalRestriction, &BRepFace::SurfaceTrimmed, &BRepFace::Metadata}; }
 inline auto Members(BRepShell*) { return std::tuple{&BRepShell::Id, &BRepShell::FaceIds, &BRepShell::FaceOrientations, &BRepShell::Closed, &BRepShell::Metadata}; }
 inline auto Members(BRepSolid*) { return std::tuple{&BRepSolid::Id, &BRepSolid::ShellIds, &BRepSolid::ShellOrientations, &BRepSolid::Metadata}; }
 inline auto Members(BRepCompSolid*) { return std::tuple{&BRepCompSolid::Id, &BRepCompSolid::SolidIds, &BRepCompSolid::Metadata}; }
@@ -93,7 +103,7 @@ inline auto Members(BRepCompound*) { return std::tuple{&BRepCompound::Id, &BRepC
 inline auto Members(BRepModel*) { return std::tuple{&BRepModel::Curves2, &BRepModel::Curves3, &BRepModel::Surfaces3, &BRepModel::Triangulations3, &BRepModel::Vertices, &BRepModel::Edges, &BRepModel::Wires, &BRepModel::Faces, &BRepModel::Shells, &BRepModel::Solids, &BRepModel::CompSolids, &BRepModel::Compounds, &BRepModel::RootShapes, &BRepModel::RootFaceIds, &BRepModel::RootShellIds, &BRepModel::RootSolidIds, &BRepModel::Metadata}; }
 
 inline constexpr std::size_t MaxBytes = 256u * 1024u * 1024u;
-inline constexpr std::array<std::uint8_t, 8> Magic{'I','C','B','R','E','P','0','1'};
+inline constexpr std::array<std::uint8_t, 8> Magic{'I','C','B','R','E','P','0','3'};
 inline void Check(bool valid) { if (!valid) throw std::runtime_error("Invalid or oversized BRep persistence payload"); }
 
 class Writer
@@ -116,6 +126,10 @@ public:
     void Count(std::size_t size) { Check(size <= MaxBytes); Write(static_cast<std::uint32_t>(size)); }
     void Write(const std::string& value) { Count(value.size()); for (unsigned char c : value) Byte(c); }
     template<class T> void Write(const std::vector<T>& value) { Count(value.size()); for (const auto& item : value) Write(item); }
+    template<class T> void Write(const std::optional<T>& value) { Write(value.has_value()); if(value) Write(*value); }
+    template<class K, class V> void Write(const std::map<K,V>& value) {
+        Count(value.size()); for(const auto& [key,item]:value) { Write(key); Write(item); }
+    }
     template<class T, std::size_t N> void Write(const std::array<T,N>& value) { for (const auto& item : value) Write(item); }
     template<class... T> void Write(const std::variant<T...>& value) {
         Check(!value.valueless_by_exception());
@@ -159,6 +173,7 @@ public:
         else if constexpr (std::is_same_v<T, EBRepShapeKind>) Check(raw <= 7);
         else if constexpr (std::is_same_v<T, ECurveKind>) Check(raw <= 11);
         else if constexpr (std::is_same_v<T, ESurfaceKind>) Check(raw <= 5);
+        if constexpr (requires { ValidPersistenceValue(static_cast<T>(raw)); }) Check(ValidPersistenceValue(static_cast<T>(raw)));
         value = static_cast<T>(raw);
     }
     std::uint32_t Count() { std::uint32_t count; Read(count); Check(count <= Bytes.size() - Position); return count; }
@@ -169,6 +184,14 @@ public:
     template<class T> void Read(std::vector<T>& value) {
         const auto count = Count(); Allocate(count, sizeof(T));
         value.resize(count); for (auto& item : value) Read(item);
+    }
+    template<class T> void Read(std::optional<T>& value) {
+        bool present; Read(present); if(present) { value.emplace(); Read(*value); } else value.reset();
+    }
+    template<class K, class V> void Read(std::map<K,V>& value) {
+        const auto count=Count(); Allocate(count,sizeof(std::pair<const K,V>)+3*sizeof(void*));
+        value.clear();
+        for(std::uint32_t i=0;i<count;++i) { K key; V item; Read(key); Read(item); Check(value.emplace(std::move(key),std::move(item)).second); }
     }
     template<class T, std::size_t N> void Read(std::array<T,N>& value) { for (auto& item : value) Read(item); }
     template<std::size_t I = 0, class... T> void Alternative(std::uint32_t index, std::variant<T...>& value) {

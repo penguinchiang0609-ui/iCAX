@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{D0C74E36-04FC-4A81-96BB-47F528620730}</ProjectGuid><RootNamespace>MachineKinematicsServices</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <ICAXMachineKinematicsDependencies Condition="'$(ICAXMachineKinematicsDependencies)'==''">$(MSBuildProjectDirectory)\..\..\..\..\output\work\machine-kinematics\install\</ICAXMachineKinematicsDependencies>
+    <ICAXMachineKinematicsBuildRoot Condition="'$(ICAXMachineKinematicsBuildRoot)'==''">$(MSBuildProjectDirectory)\..\..\..\..\output\work\machine-kinematics\msbuild\</ICAXMachineKinematicsBuildRoot>
+    <IntDir>$(ICAXMachineKinematicsBuildRoot)$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><PrecompiledHeader>NotUsing</PrecompiledHeader><RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary><ExceptionHandling>Sync</ExceptionHandling><RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <AdditionalOptions>/utf-8 /bigobj /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>NOMINMAX;BOOST_ALL_NO_LIB;_ENABLE_EXTENDED_ALIGNED_STORAGE;BOOST_MPL_LIMIT_LIST_SIZE=30;BOOST_MPL_LIMIT_VECTOR_SIZE=30;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\..\iCAX-Engine\framework;$(ProjectDir)..\..\..\iCAX-Engine\foundation;$(ICAXMachineKinematicsDependencies)include;$(ICAXMachineKinematicsDependencies)include\eigen3;$(ICAXMachineKinematicsDependencies)include\boost-1_87;$(ICAXMachineKinematicsDependencies)include\ceres\internal\miniglog;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link><AdditionalLibraryDirectories>$(ICAXMachineKinematicsDependencies)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>ceres-debug.lib;pinocchio.lib;libboost_filesystem-vc143-mt-gd-x64-1_87.lib;libboost_system-vc143-mt-gd-x64-1_87.lib;libboost_serialization-vc143-mt-gd-x64-1_87.lib;libboost_atomic-vc143-mt-gd-x64-1_87.lib;%(AdditionalDependencies)</AdditionalDependencies><GenerateDebugInformation>true</GenerateDebugInformation><ProgramDatabaseFile>$(IntDir)$(TargetName).pdb</ProgramDatabaseFile></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="PinocchioModel.cpp"/><ClCompile Include="CeresInverse.cpp"/><ClCompile Include="MachineKinematicsService.cpp"/><ClInclude Include="KinematicsInternal.h"/><ClInclude Include="SerialThreePTwoR.inc"/></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"><Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj"><Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="RequireMachineKinematicsDependencies" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(ICAXMachineKinematicsDependencies)lib\ceres-debug.lib') Or !Exists('$(ICAXMachineKinematicsDependencies)lib\pinocchio.lib') Or !Exists('$(ICAXMachineKinematicsDependencies)include\pinocchio\config.hpp')" Text="Build pinned Pinocchio+Ceres x64 Debug dependencies first: src/tools/build/build_machine_kinematics_services.ps1 (defaults to output/work/machine-kinematics on the workspace drive). Set ICAXMachineKinematicsDependencies to that install prefix." />
+  </Target>
+  <Target Name="CopyMachineKinematicsNotices" AfterTargets="Build">
+    <ItemGroup><MachineKinematicsNotice Include="$(ICAXMachineKinematicsDependencies)licenses\MachineKinematicsServices\*" /></ItemGroup>
+    <Copy SourceFiles="@(MachineKinematicsNotice)" DestinationFolder="$(OutDir)Licenses\MachineKinematicsServices" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

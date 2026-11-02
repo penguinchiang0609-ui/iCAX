@@ -2,6 +2,7 @@
 #include "OpenCascadeCancellation.h"
 #include "Task/TaskStatus.h"
 #include <BRepBuilderAPI_MakeShape.hxx>
+#include <BOPAlgo_Algo.hxx>
 #include <Message_ProgressIndicator.hxx>
 #include <utility>
 
@@ -64,6 +65,27 @@ namespace iCAX::OpenCascade
         }
         // Cancellation must not become an incomplete successful shape, nor a
         // recognition failure that allows later candidates/commits to proceed.
+        ThrowIfCancellationRequested();
+    }
+
+    void COpenCascadeCancellationScope::Perform(BOPAlgo_Algo& Algorithm_)
+    {
+        ThrowIfCancellationRequested();
+        const auto _Check = Capture();
+        try
+        {
+            if (_Check)
+            {
+                occ::handle<Message_ProgressIndicator> _Progress = new CShutdownProgress(_Check);
+                Algorithm_.Perform(_Progress->Start());
+            }
+            else Algorithm_.Perform();
+        }
+        catch (...)
+        {
+            ThrowIfCancellationRequested();
+            throw;
+        }
         ThrowIfCancellationRequested();
     }
 }

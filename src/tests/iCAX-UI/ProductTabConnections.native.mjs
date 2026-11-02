@@ -250,8 +250,8 @@ try {
       item.thumbnailPath = artifact(`${label}-thumbnail.json`, thumbnail);
       item.thumbnailVertices = thumbnail.positions.length / 3;
       item.thumbnailTriangles = thumbnail.indices.length / 3;
-      try { item.drawing = await native.invoke('GetPartDrawing', { partEntityId: part.entityId }); }
-      catch (error) { item.drawingAvailability = String(error.message); }
+      try { item.cadDocument = await native.invoke('GetTubeCadDocument', { partEntityId: part.entityId }); }
+      catch (error) { item.cadDocumentAvailability = String(error.message); }
       save();
     }
     const post = outer.find(part => /^outer_frame\.(left|right)\./.test(part.stableKey));

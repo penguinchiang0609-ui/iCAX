@@ -288,7 +288,7 @@ ObjectMap VerifiedAssemblySectionFrame(const TopoDS_Shape& Source_,
         _X.Z(),_Y.Z(),_Z.Z(),_StockOrigin.Z());
     const auto _Replayed = BRepBuilderAPI_Transform(
         BuildProfileExtrusion(Profile_,_StockLength),_Placement,true).Shape();
-    if (DrawingReplayError(Source_,_Replayed)>1.0e-6)
+    if (iCAX::OpenCascade::ValidateTubeCSGShapeReplay(Source_,_Replayed).RelativeVolumeError>1.0e-6)
         throw std::invalid_argument("截面基准无法复现已提交的真实物理原管");
     const auto _Contours = AssemblyGeometryArray(Profile_,"contours");
     if (_Contours.empty() || _Contours.size()>64)
@@ -760,7 +760,7 @@ ObjectMap AssemblySourceToPartMapping(const TopoDS_Shape& Source_,
         const gp_Trsf _SourceToPart = _Translation.Multiplied(_Rotation);
         const auto _Candidate = BRepBuilderAPI_Transform(Source_,_SourceToPart,true).Shape();
         const auto _Normalized = NormalizeManufacturingShape(Source_,ManufacturingProperties_);
-        if (DrawingReplayError(_Normalized,_Candidate) > 1.0e-6)
+        if (iCAX::OpenCascade::ValidateTubeCSGShapeReplay(_Normalized,_Candidate).RelativeVolumeError > 1.0e-6)
             return _Unsupported("声明轴向无法复现真实下料坐标系");
         const auto _Bounds = ShapeBounds(_Normalized);
         const auto _Low = _Bounds.at("min").To<VariantArray>();

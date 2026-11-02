@@ -1,0 +1,3 @@
+# Offline deterministic asset generation only; shipped URDF/SDF/STL need no Python.
+manifold3d==3.5.4
+numpy>=1.26,<3

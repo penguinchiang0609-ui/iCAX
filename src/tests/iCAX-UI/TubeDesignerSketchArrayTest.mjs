@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { arrayTransformMatrix, buildArrayTransforms, transformArrayEntity, validateArraySpec } from "../../apps/tube-designer/webpage/sketchArray.mjs";
-import { curvePoint, editableSegments } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint, editableSegments } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 
 const near = (actual, expected, tolerance = 1e-9) => {
   assert.equal(actual.length, expected.length);

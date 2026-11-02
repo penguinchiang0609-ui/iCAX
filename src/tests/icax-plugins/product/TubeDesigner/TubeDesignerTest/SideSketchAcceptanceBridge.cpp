@@ -4,7 +4,10 @@
 #include "OpenCascadeResourceImport/CadDocumentImportService.h"
 #include "Services/ServiceRegistrationCatalog.h"
 #include "Services/ServiceProvider.h"
+#include "Product/ProductManifest.h"
+#include <BRepAlgoAPI_Cut.hxx>
 #include <crtdbg.h>
+#pragma comment(lib, "Product.lib")
 
 namespace {
 using namespace punch_persistence_acceptance;
@@ -12,9 +15,28 @@ using iCAX::Data::Variant;
 class Product final : public iCAX::Product::IProductContext {
 public:
     Product() {
-        definition.ProductID = "icax.tube-designer";
+        definition = iCAX::Product::LoadProductManifest((std::filesystem::current_path()
+            / "src/apps/tube-designer/product.manifest.json").string()).Definition;
+        std::vector<iCAX::Application::CUserDataFeatureDescriptor> descriptors;
+        for (const auto& sourceFeature : definition.UserDataFeatures) {
+            iCAX::Application::CUserDataFeatureDescriptor feature;
+            feature.FeatureID = sourceFeature.FeatureID;
+            for (const auto& sourceType : sourceFeature.RecordTypes) {
+                iCAX::Application::CUserDataRecordTypeDescriptor type;
+                type.RecordType = sourceType.RecordType;
+                type.SubjectTypes = sourceType.SubjectTypes;
+                type.SchemaVersion = sourceType.SchemaVersion;
+                type.AllowMultiple = sourceType.AllowMultiple;
+                for (const auto& relation : sourceType.Relations)
+                    type.Relations.push_back({relation.RelationType, relation.TargetKind,
+                        relation.TargetFeatureID, relation.TargetType});
+                feature.RecordTypes.emplace_back(std::move(type));
+            }
+            descriptors.emplace_back(std::move(feature));
+        }
         store = std::make_shared<iCAX::Application::CProductUserDataStore>(
-            std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"), definition.ProductID);
+            std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"), definition.ProductID,
+            std::move(descriptors));
         iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services);
     }
     const iCAX::Product::CProductDefinition& GetDefinition() const override { return definition; }
@@ -132,6 +154,13 @@ int main() {
                     const auto bytes = scene->Resources().Get<iCAX::Resource::CFlatBufferResource>(url, v);
                     if (!bytes) throw std::runtime_error("Real resource not present in test scene");
                     result = {{"base64", base64(bytes->Bytes())}, {"bytes", static_cast<unsigned long long>(bytes->Size())}, {"url", url}, {"version", v}};
+                    if (const auto info = scene->Resources().GetInfo(url)) {
+                        result["runtimeOnly"] = info->IsRuntimeOnly();
+                        const auto owner = info->Metadata.find("cad-preview-owner");
+                        if (owner != info->Metadata.end()) result["previewOwner"] = owner->second;
+                        const auto tubeOwner = info->Metadata.find("tube-cad-preview-owner");
+                        if (tubeOwner != info->Metadata.end()) result["previewOwner"] = tubeOwner->second;
+                    }
                 } else if (action == "geometry") {
                     const auto component = part(*scene, text(payload, "partEntityId"));
                     const auto brep = shape(*scene, component);
@@ -142,6 +171,36 @@ int main() {
                     BRepGProp::VolumeProperties(brep, properties, 1.0e-9);
                     result = {{"volume", properties.Mass()}, {"valid", BRepCheck_Analyzer(brep).IsValid()},
                         {"resourceId", component->GetManufacturingGeometryResourceID()}, {"version", component->GetManufacturingGeometryResourceVersion()}};
+                } else if (action == "cad-document-geometry") {
+                    const auto component = part(*scene, text(payload, "partEntityId"));
+                    const auto cad = std::dynamic_pointer_cast<iCAX::TubeDesigner::CTubePartCadComponent>(
+                        component->GetEntity()->GetComponent(iCAX::TubeDesigner::CTubePartCadComponent::S_ClassName));
+                    if (!cad) throw std::runtime_error("No authoritative CAD document on test part");
+                    const auto document = scene->Resources().Get<iCAX::GeometryData::Tube::CTubeCadDocument>(
+                        cad->GetDocumentResourceID(), cad->GetDocumentResourceVersion());
+                    const auto service = scene->Services().Resolve<iCAX::CAD::ITubeCadDocumentService>();
+                    if (!document || !service) throw std::runtime_error("CAD document or registered service unavailable");
+                    const auto evaluated = service->Evaluate(*document);
+                    const auto rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(evaluated.Shape);
+                    if (!rebuilt.bOK || rebuilt.Shape.IsNull()) throw std::runtime_error("Neutral document cannot rebuild");
+                    const auto published = shape(*scene, component);
+                    const auto differenceVolume = [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
+                        BRepAlgoAPI_Cut cut;
+                        NCollection_List<TopoDS_Shape> arguments, tools;
+                        arguments.Append(BRepBuilderAPI_Copy(a, true, false).Shape());
+                        tools.Append(BRepBuilderAPI_Copy(b, true, false).Shape());
+                        cut.SetArguments(arguments); cut.SetTools(tools); cut.SetNonDestructive(true);
+                        cut.SetToFillHistory(false); cut.Build();
+                        if (!cut.IsDone() || cut.Shape().IsNull() || !BRepCheck_Analyzer(cut.Shape()).IsValid())
+                            throw std::runtime_error("Independent CAD/document geometry comparison failed");
+                        GProp_GProps properties; BRepGProp::VolumeProperties(cut.Shape(), properties, 1.0e-9);
+                        return std::abs(properties.Mass());
+                    };
+                    GProp_GProps properties; BRepGProp::VolumeProperties(rebuilt.Shape, properties, 1.0e-9);
+                    result = {{"volume", properties.Mass()}, {"valid", BRepCheck_Analyzer(rebuilt.Shape).IsValid()},
+                        {"directedDifferenceVolume", differenceVolume(rebuilt.Shape, published) + differenceVolume(published, rebuilt.Shape)},
+                        {"documentResourceId", cad->GetDocumentResourceID()},
+                        {"documentResourceVersion", cad->GetDocumentResourceVersion()}, {"revision", std::to_string(document->Revision)}};
                 } else if (action == "compare-geometry") {
                     const auto a = shape(*scene, part(*scene, text(payload, "firstPartEntityId")));
                     const auto b = shape(*scene, part(*scene, text(payload, "secondPartEntityId")));

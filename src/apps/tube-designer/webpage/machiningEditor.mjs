@@ -161,12 +161,18 @@ export async function handleMachiningPathAction(context, view, job, action, targ
   return true;
 }
 
+const sideEditorBindings = new WeakMap();
 export function attachMachiningSideEditor(context, view, job, ops) {
   const canvas = context.mount?.querySelector?.("[data-machining-side-canvas]");
   const editor = pathEditor(view, job);
-  if (!canvas || !editor || canvas.dataset.attached) return;
-  canvas.dataset.attached = "true";
+  if (!canvas || !editor) return;
+  const attached = sideEditorBindings.has(canvas);
+  sideEditorBindings.set(canvas, { context, view, job, ops });
+  if (attached) return;
   canvas.addEventListener("click", event => {
+    const { context, view, job, ops } = sideEditorBindings.get(canvas);
+    const editor = pathEditor(view, job);
+    if (!editor) return;
     if (view.pending) return;
     const rect = canvas.getBoundingClientRect();
     const scale = Math.min(rect.width / 1000, rect.height / 600);

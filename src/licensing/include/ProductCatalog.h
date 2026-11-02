@@ -16,6 +16,8 @@ struct ProductDescriptor final {
     std::string_view issuerId;
     std::span<const unsigned char> publicKey;
     std::wstring_view settingsDirectory, signingRoot;
+    // Permissions offered for new grants by the desktop issuer.
+    std::uint32_t issuerSelectableFeatures;
 };
 
 inline constexpr ProductDescriptor TubeDesignerProduct{
@@ -23,7 +25,11 @@ inline constexpr ProductDescriptor TubeDesignerProduct{
     CertificateFormat, "TDREQ002", "TDREQ003",
     "TubeDesigner.AttestationPrimary.v1", FeatureCatalog,
     trust::Issuer, trust::PublicKey,
-    L"TubeDesigner", L"D:\\TubeDesigner-Signing"
+    L"TubeDesigner", L"D:\\TubeDesigner-Signing",
+    static_cast<std::uint32_t>(Feature::PageProduct)
+        | static_cast<std::uint32_t>(Feature::ProductDesign)
+        | static_cast<std::uint32_t>(Feature::ProductBreakdown)
+        | static_cast<std::uint32_t>(Feature::ProductExport)
 };
 inline constexpr std::array<ProductDescriptor, 1> ProductCatalog{{TubeDesignerProduct}};
 
@@ -63,4 +69,5 @@ inline constexpr bool IsValidFeatureSet(const ProductDescriptor& product, std::u
 }
 static_assert(KnownProductFeatures(TubeDesignerProduct) == KnownFeatures);
 static_assert(IsValidFeatureSet(TubeDesignerProduct, KnownFeatures));
+static_assert(IsValidFeatureSet(TubeDesignerProduct, TubeDesignerProduct.issuerSelectableFeatures));
 }

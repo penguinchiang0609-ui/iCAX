@@ -30,7 +30,7 @@ try {
       .tube-machining-field-grid,.tube-sketch-property-grid{display:grid;grid-template-columns:repeat(3,1fr)}
       .tube-machining-path-list{display:flex;gap:8px}.tube-machining-path-row{display:flex}button{padding:6px}
       details>summary{cursor:pointer}h4{margin:12px 0 4px}</style><div id="mount"><div class="cam-workbench"></div></div>`;
-    const f = window.scopeFixture = { errors: [], calls: [], renders: 0, memory, sketch, machining, paths };
+    const f = window.scopeFixture = { errors: [], calls: [], renders: 0, memory, sketch, machining, paths, products: new Map() };
     f.context = { mount: document.querySelector('#mount'), project: { projectId: 'scope-project' }, actions: {
       async refreshActiveSceneState() {}, refreshProjectHistoryControls() {},
     }, productProxy: { async invoke(method, payload) {
@@ -47,6 +47,7 @@ try {
         if (method !== 'TubeDesigner.UpdateProductParameters') throw Error(`Unexpected scene transport: ${method}`);
         const designer = structuredClone(f.view.scene.tubeDesigner);
         designer.product.parameters = structuredClone(payload.parameters);
+        f.products.set(designer.product.entityId, structuredClone(designer.product));
         return { tubeDesigner: designer };
       },
     } };
@@ -120,6 +121,7 @@ try {
       view.scene.tubeDesigner.product = { entityId, templateId: template.id, name: '产品', quantity: 1,
         parameters: { frameProfileType: 'round', frameWidth: 40,
           tubeDesignerProfileOverrides: { frame: { ...profile('A').previewProfile, profileScope: 'system', profileDefinitionId: 'A' } } } };
+      if (f.products.has(entityId)) view.scene.tubeDesigner.product = structuredClone(f.products.get(entityId));
       f.open(view);
     };
     f.openSketch = options => {
@@ -178,15 +180,14 @@ try {
     check(await page.locator(selectedProfile).getAttribute('data-tube-designer-profile-current-selection'), `system:${id}`,
       `production rerender updates transient current-selection to ${id}`);
   }
-  const productFields = await page.evaluate(() => scopeFixture.storage().windows.find(row => JSON.parse(row.key)[0] === 'area/view/right').fields);
+  const productFields = await page.evaluate(() => scopeFixture.storage()?.windows?.find(row => JSON.parse(row.key)[0] === 'area/view/right')?.fields ?? {});
   const profileKeys = Object.keys(productFields).filter(key => key.includes('profile-selection-change'));
-  check(profileKeys.length, 1, 'A to B to C creates one stable profile-selection field identity');
+  check(profileKeys.length, 0, 'existing product resources use persisted product data rather than window defaults');
   check(profileKeys.some(key => key.includes('profile-current-selection')), false, 'transient selected value is excluded from field identity');
-  check(productFields[profileKeys[0]], 'system:C', 'latest C replaces B in persistent memory');
   await open('openProduct');
-  check(await page.locator(selectedProfile).inputValue(), 'system:C', 'reopening actual product selector restores latest C');
+  check(await page.locator(selectedProfile).inputValue(), 'system:C', 'reopening actual product selector reads persisted C');
   check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.tubeDesignerProfileOverrides.frame.profileDefinitionId),
-    'C', 'restoration reaches the actual product handler and scene-update payload');
+    'C', 'reopened native product retains its current resource snapshot');
   await open('openProduct', 'product-two');
   check(await page.locator(selectedProfile).inputValue(), 'system:A', 'another product retains its own default resource');
 
@@ -206,14 +207,17 @@ try {
   check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.frameWidth), 72,
     'B remembered dimensions update the real product model');
   await selectProfile('A');
-  check(await page.locator(profileWidth).inputValue(), '61', 'switching back to A restores its remembered dimensions immediately');
-  check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.frameWidth), 61,
-    'switching back to A synchronizes the restored DOM value into the product model');
+  check(await page.locator(profileWidth).inputValue(), '40', 'explicitly choosing A uses its library dimensions');
+  check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.frameWidth), 40,
+    'old per-window A dimensions cannot overwrite the new resource choice');
+  await page.evaluate(() => { const product=scopeFixture.products.get('product-two');product.parameters.frameWidth=73;product.parameters.tubeDesignerProfileOverrides.frame.width=73;product.parameters.tubeDesignerProfileOverrides.frame.parameters.width=73; });
+  const updatesBeforeReopen=await page.evaluate(()=>scopeFixture.calls.filter(c=>c.method==='TubeDesigner.UpdateProductParameters').length);
   await open('openProduct', 'product-two');
   check(await page.locator(selectedProfile).inputValue(), 'system:A', 'returning to A remembers the resource switch');
-  check(await page.locator(profileWidth).inputValue(), '61', 'returning and reopening restores A own width independently from B');
-  check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.frameWidth), 61,
-    'A remembered dimensions update the real product model');
+  check(await page.locator(profileWidth).inputValue(), '73', 'reopening uses updated stored dimensions rather than old window values');
+  check(await page.evaluate(() => scopeFixture.view.scene.tubeDesigner.product.parameters.frameWidth), 73,
+    'persisted instance dimensions remain authoritative');
+  check(await page.evaluate(()=>scopeFixture.calls.filter(c=>c.method==='TubeDesigner.UpdateProductParameters').length),updatesBeforeReopen,'opening an existing instance cannot issue memory-driven model edits');
 
   const name = '[data-cam-change-action="tube-designer-sketch-section-name"]', width = '[data-sketch-field="width"]';
   for (const [options, title, size] of [

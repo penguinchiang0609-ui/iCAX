@@ -700,9 +700,12 @@ function mountRenderViewport(context, view) {
 
   if (!view.viewport) {
     view.viewport = createThreeViewport({
+      ...(context.viewportOptions ?? {}),
       backgroundColor: 0x182128,
       showGrid: context.showViewportGrid !== false,
       onPick: (userData, hit, event, hits) => handleViewportPick(context, view, userData, hit, event, hits),
+      getRectangleSelectionKey: () => context.getAreaViewportRectangleSelectionKey?.(context, view),
+      onRectangleSelect: (rectangle, event) => context.handleAreaViewportRectangleSelect?.(context, view, rectangle, event, getProjectOps()),
       onHover: typeof context.handleAreaViewportHover === "function"
         ? (userData, hit, event, hits, state) => context.handleAreaViewportHover(context, view, userData, hit, event, hits, state)
         : undefined,
@@ -877,6 +880,9 @@ async function refreshSceneState(context, view) {
   if (!sceneProxy) {
     return false;
   }
+  const refreshRequest = view.sceneRefreshRequest = (view.sceneRefreshRequest ?? 0) + 1;
+  const isCurrentRefresh = () => !view.disposed && context.isCurrentProject?.() !== false && view.sceneRefreshRequest === refreshRequest;
+  view.sceneRefreshPending = true;
 
   view.pending = true;
   view.error = "";
@@ -884,27 +890,30 @@ async function refreshSceneState(context, view) {
   try {
     const scene = {};
     for (const sdoMethod of features.sceneMethods ?? []) {
-      mergeScenePayload(scene, await sceneProxy.invoke(sdoMethod, {}, { timeoutMs: 30000 }));
-      if (view.disposed) return false;
+      let payload=await sceneProxy.invoke(sdoMethod, {}, { timeoutMs: features.sceneRequestTimeoutMs ?? 30000 });
+      if(features.hydrateScenePayload)payload=await features.hydrateScenePayload(payload,sceneProxy);
+      if (!isCurrentRefresh()) return false;
+      mergeScenePayload(scene,payload);
     }
     scene.readiness = buildReadiness(scene);
     view.scene = scene;
     syncViewportSelection(view, scene);
     await refreshSelectedMachineElement(context, view, scene);
+    if (!isCurrentRefresh()) return false;
     await ensureAreaViewContent(context, view, view.activeAreaId || normalizeAreaId(context, context.activeRibbonTabId), {
       force: true,
       render: false,
     });
+    if (!isCurrentRefresh()) return false;
     syncViewportSelection(view, scene);
     return true;
   } catch (error) {
-    if (view.disposed) return false;
+    if (!isCurrentRefresh()) return false;
     view.error = error?.message ?? String(error);
     appendProjectLog(context, "error", `刷新项目状态失败：${view.error}`);
     return false;
   } finally {
-    view.pending = false;
-    renderProject(context, view);
+    if (view.sceneRefreshRequest === refreshRequest) { view.sceneRefreshPending = false; view.pending = !!features.isSceneOperationPending?.(view); if (isCurrentRefresh()) renderProject(context, view); }
   }
 }
 
@@ -952,6 +961,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   area.viewDefinitionKey = definitionKey;
   const request = sceneProxy.views
     .start(definition, {
+      timeoutMs: features.viewRequestTimeoutMs,
       pollIntervalMs: 100,
       onChange: (snapshot) => {
         if (view.disposed) return;
@@ -960,7 +970,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
           view,
           areaId,
           snapshot,
-          view.activeAreaId === areaId,
+          view.activeAreaId === areaId && features.shouldRenderViewSnapshot?.(context,view,areaId,snapshot)!==false,
         ).catch((error) => {
           if (view.disposed) return;
           appendProjectLog(context, "error", `应用 View revision 失败：${error?.message ?? error}`);
@@ -1013,7 +1023,12 @@ function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
   const viewportRevision = String(view.viewport?.getAppliedViewState?.().revision ?? "0");
   if (area.appliedViewRevision === revision
       && area.viewContent?.snapshot?.viewId === snapshot?.viewId
-      && (view.activeAreaId !== areaId || viewportRevision === revision)) {
+      && (view.activeAreaId !== areaId || (viewportRevision === revision && view.appliedViewportSnapshotKey === snapshotKey))) {
+    // An area without content temporarily hides the shared viewport. Returning
+    // to cached geometry must restore its visibility even when no new revision arrives.
+    if (view.activeAreaId === areaId) {
+      view.viewport?.setVisibleEntityIds((snapshot.rows ?? []).map(row => row.entityId));
+    }
     return Promise.resolve(area.viewContent);
   }
 
@@ -1042,7 +1057,7 @@ async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
   let viewportReceipt = null;
   try {
     viewportReceipt = await view.viewport?.applyViewSnapshot(
-      snapshot,
+      features.mapAreaViewSnapshot?.(context, view, areaId, snapshot) ?? snapshot,
       resolveSceneProxy(context, view)?.resources,
     );
   } catch (error) {
@@ -1059,6 +1074,10 @@ async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
   const content = setProjectAreaViewContent(view, areaId, snapshot);
   content.viewportReceipt = viewportReceipt;
   area.appliedViewRevision = revision;
+  features.onAreaViewSnapshotApplied?.(context, view, areaId, snapshot, viewportReceipt);
+  // Independent native Views may have the same revision number. The shared
+  // viewport must restore the actual View when returning from another area.
+  view.appliedViewportSnapshotKey = `${String(snapshot?.viewId ?? '')}:${revision}`;
   syncViewportSelection(view, view.scene);
   if (render) {
     renderProject(context, view);
@@ -1243,6 +1262,9 @@ function mergeScenePayload(scene, payload) {
   if (!scene || !payload || typeof payload !== "object") {
     return scene;
   }
+  if (typeof features.mergeScenePayload === "function") {
+    return features.mergeScenePayload(scene, payload);
+  }
   for (const key of [
     "job",
     "jobs",
@@ -1408,6 +1430,8 @@ function syncSelectedMachineInstanceFromSelection(view, scene = {}, selection = 
 }
 
 function getSelectedSceneObjectIds(view, scene = {}) {
+  const resolved=features.resolveSelectedSceneObjectIds?.(view,scene);
+  if(Array.isArray(resolved))return resolved;
   const selectedId = String(view.selectedSceneObjectId ?? "").trim();
   if (!selectedId) {
     return [];
@@ -1420,7 +1444,7 @@ function getSelectedSceneObjectIds(view, scene = {}) {
 function syncViewportHighlightedObjects(view, scene = {}) {
   const selectedIds = getSelectedSceneObjectIds(view, scene);
   if (typeof view.viewport?.setSelectedObjectIds === "function") {
-    view.viewport.setSelectedObjectIds(selectedIds, view.selectedSceneObjectId || "");
+    view.viewport.setSelectedObjectIds(selectedIds, selectedIds.includes(view.selectedSceneObjectId)?view.selectedSceneObjectId:selectedIds[0]||"");
     return;
   }
   view.viewport?.setSelectedObjectId?.(view.selectedSceneObjectId || "");

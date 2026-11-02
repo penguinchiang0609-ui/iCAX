@@ -624,7 +624,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
 TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunchFeature>& features,const SPunchEnds& ends,const PunchProgress& progress,std::vector<SPunchCut>* applied,SPunchGeometryStatistics* statistics,SPunchPreviewDiagnostics* diagnostic)
 {
     const bool preview=diagnostic&&diagnostic->AllowDisconnectedResults;
-    if(diagnostic){*diagnostic={};diagnostic->AllowDisconnectedResults=preview;}
+    if(diagnostic){const auto service=diagnostic->ModelService;*diagnostic={};diagnostic->AllowDisconnectedResults=preview;diagnostic->ModelService=service;}
     const auto phase=[&](const std::string& stage,const std::string& target="result",const std::string& key="",std::int64_t index=-1) {
         if(diagnostic){diagnostic->FailureStage=stage;diagnostic->FailureTarget=target;diagnostic->FailureKey=key;diagnostic->FailureIndex=index;}
     };
@@ -858,7 +858,13 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
     phase("result");
     if(progress) progress(total+1,total+3,"正在批量计算实体开孔");
     const double before=volume(shape);
-    shape=cut(shape,tools,preview);
+    if(diagnostic&&diagnostic->ModelService) {
+        if(!applied)throw std::logic_error("CAD model evaluation requires feature identities");
+        std::vector<iCAX::CAD::SCadNamedShape> operands;
+        for(const auto& tool:*applied)operands.push_back({tool.Target+":"+tool.Key,tool.Shape});
+        diagnostic->ModelResult=diagnostic->ModelService->DifferenceNative({"base",base},operands);
+        shape=diagnostic->ModelResult.Shape;
+    } else shape=cut(shape,tools,preview);
     if(!tools.IsEmpty()&&before-volume(shape)<=Tol) throw std::invalid_argument("孔没有移除任何材料，请检查参数");
     if(progress) progress(total+2,total+3,"正在检查加工结果");
     requireSolid(shape,preview);

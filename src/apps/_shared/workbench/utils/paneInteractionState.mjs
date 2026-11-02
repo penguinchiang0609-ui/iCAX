@@ -11,6 +11,9 @@ function locate(root, saved) {
   const matches = [...root.querySelectorAll("*")].filter(n=>identity(n)===saved.key);
   return matches.length === 1 ? matches[0] : null;
 }
+function interactionScope(node) {
+  return node.closest?.('[data-pane-interaction-scope]')?.getAttribute('data-pane-interaction-scope') ?? null;
+}
 export function capturePaneInteraction(mount, selectors = panes) {
   const active = mount.ownerDocument?.activeElement;
   const snapshots = selectors.map(selector => {
@@ -18,8 +21,8 @@ export function capturePaneInteraction(mount, selectors = panes) {
     if (!root) return null;
     const scrolls=[root,...root.querySelectorAll("*")].filter(n=>n.scrollTop || n.scrollLeft)
       .map(node=>({node,key:identity(node),classes:node.className,top:node.scrollTop,left:node.scrollLeft}));
-    const focused=root.contains(active) ? {node:active,key:identity(active),
-      value:active.value,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection} : null;
+    const focused=root.contains(active) ? {node:active,key:identity(active),scope:interactionScope(active),
+      value:active.value,defaultValue:active.defaultValue,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection} : null;
     return {selector,scrolls,focused};
   });
   return () => {
@@ -27,10 +30,14 @@ export function capturePaneInteraction(mount, selectors = panes) {
       const root=saved && mount.querySelector(saved.selector);
       if(!root)continue;
       const focus=saved.focused && locate(root,saved.focused);
-      if(focus && !focus.disabled) {
-        // Keep in-progress text, but don't revert checkbox/select model changes.
-        if(focus.tagName==="TEXTAREA" || focus.tagName==="INPUT" &&
-          !["checkbox","radio","button","submit","range","file"].includes(focus.type)) {
+      if(focus && !focus.disabled && interactionScope(focus)===saved.focused.scope) {
+        // Keep newer unsubmitted typing even when an earlier edit is acknowledged.
+        // A clean field must instead adopt an authoritative model/preset change;
+        // restoring its previous text would silently undo that model change.
+        const keepText=focus.defaultValue===saved.focused.defaultValue
+          || saved.focused.value!==saved.focused.defaultValue;
+        if(keepText && focus.getAttribute('data-model-value-authoritative')!== 'true' && (focus.tagName==="TEXTAREA" || focus.tagName==="INPUT" &&
+          !["checkbox","radio","button","submit","range","file"].includes(focus.type))) {
           focus.value=saved.focused.value;
         }
         focus.focus({preventScroll:true});

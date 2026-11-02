@@ -10,6 +10,8 @@
 
 产品级设置是与某个产品业务相关、但不跟随某一个项目文件保存的数据。它跟随产品和用户环境走。不同产品可以写入不同字段，统一通过 `CProductData::Settings` 承载，并通过 `IProductContext::GetSettings/ReplaceSettings` 访问。
 
+产品级库的可撤销编辑使用 `UpdateSettingsWithHistory(scope, fields, commandName)`。每个 scope 拥有固定且互不重叠的设置键，ProductRuntime 用独立 Database Repository 的事务与 `BeginUndoCommand` 记录修改；不另建历史栈。`Product.GetSettingsHistory / UndoSettings / RedoSettings` 只允许产品通道调用，payload 指定 `scope`。历史在本次产品运行期间有效，编辑和撤销重做结果立即保存到 Product.Data；切换项目不丢失库历史，也不消费场景历史。普通 ReplaceSettings 修改同一组字段会使该 scope 的历史失效，修改无关偏好不受影响。
+
 典型产品级应用参数：
 
 - 最近打开项目列表。

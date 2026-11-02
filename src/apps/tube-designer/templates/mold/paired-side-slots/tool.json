@@ -2,9 +2,9 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "paired-side-slots",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "displayName": "成对插舌侧壁母槽",
-  "description": "依据短管实际壁厚和端口壁面位置，在长管指定平直侧面开相对两边或四边对应的圆头母槽；母槽只穿透进入侧壁。",
+  "description": "按管材真实截面，在两个相对方位或四个相隔90°的方位生成公母插接，支持周向转角。",
   "kind": "programmatic",
   "target": "part",
   "requiresSection": true,
@@ -27,8 +27,15 @@
       "id": "rect"
     },
     "section": {
-      "profileRef": { "scope": "system", "id": "rect" },
-      "parameters": { "width": 30, "depth": 20, "wallThickness": 2 }
+      "profileRef": {
+        "scope": "system",
+        "id": "rect"
+      },
+      "parameters": {
+        "width": 30,
+        "depth": 20,
+        "wallThickness": 2
+      }
     }
   },
   "illustration": {
@@ -48,11 +55,11 @@
       "options": [
         {
           "value": 2,
-          "label": "2 个（对应短管对边）"
+          "label": "2 个（两个相对方位）"
         },
         {
           "value": 4,
-          "label": "4 个（对应短管四边）"
+          "label": "4 个（每隔 90°）"
         }
       ]
     },
@@ -103,18 +110,14 @@
       "level": "advanced"
     },
     {
-      "key": "allowEndOpening",
-      "displayName": "允许端部开口母槽",
-      "valueType": "boolean",
-      "defaultValue": false,
-      "level": "advanced"
-    },
-    {
-      "key": "allowSideOpening",
-      "displayName": "承接侧缘加工许可",
-      "valueType": "boolean",
-      "defaultValue": false,
-      "presentation": { "visible": false }
+      "key": "tabAngle",
+      "displayName": "插舌周向角（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 1,
+      "level": "basic"
     }
   ],
   "parameterDiagram": {
@@ -205,16 +208,6 @@
           70
         ],
         "description": "支管双插舌对边横跨承接面或沿主管轴向；实际方向以截面位置校验"
-      },
-      {
-        "parameter": "allowEndOpening",
-        "kind": "leader",
-        "side": "left",
-        "point": [
-          20,
-          70
-        ],
-        "description": "开启后母槽允许连通长管端部；关闭时母槽必须保持在端口以内"
       }
     ]
   }

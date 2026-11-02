@@ -226,10 +226,10 @@ public:
     ~StoreLock(){if(held_)ReleaseMutex(value_);if(value_)CloseHandle(value_);}
     StoreLock(const StoreLock&)=delete;
 };
-Bytes CertificateBody(const Configuration& config,const Request& request,const Policy& policy,const std::string& id){
+Bytes CertificateBody(const Configuration& config,const Request& request,const Policy& policy,const std::string& id,std::string_view customerId={}){
     const auto now=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();Require(now>0,"Invalid signing computer date");
     const auto issued=static_cast<std::uint64_t>(now);Bytes body(config.product->certificateFormat.begin(),config.product->certificateFormat.end());
-    AppendText(body,config.issuerId);AppendText(body,id);AppendText(body,request.info.digest);AppendText(body,NewId());AppendText(body,config.product->id);
+    AppendText(body,config.issuerId);AppendText(body,id);AppendText(body,request.info.digest);AppendText(body,customerId.empty()?NewId():std::string(customerId));AppendText(body,config.product->id);
     Append32(body,static_cast<std::uint32_t>(Strategy::Tpm2));Append32(body,static_cast<std::uint32_t>(policy.kind));
     Append32(body,policy.features);Append32(body,policy.minMajor);Append32(body,policy.maxMajor);Append64(body,issued);
     Append64(body,policy.kind==Kind::Trial?issued:0);Append64(body,policy.kind==Kind::Trial?issued+static_cast<std::uint64_t>(policy.days)*86400:0);
@@ -311,13 +311,13 @@ UpgradeRecord DecodeUpgradeRecord(std::span<const unsigned char> raw,const Confi
     record.policy.maxMajor=r.U32();record.policy.days=r.U32();record.package=r.Field(MaxActivationBytes);
     Require(r.End(),"Trailing native upgrade record");ValidatePolicy(*config.product,record.policy);
     record.base=VerifyCertificateForProduct(record.baseCertificate,*config.product,config.issuerId,config.publicKey);
-    const auto upgrade=VerifyUpgradePackage(record.package,config.issuerId,config.publicKey,*config.product);
+    const auto upgrade=VerifyAuthorizationTransition(record.package,config.issuerId,config.publicKey,*config.product);
     Require(record.base.bodyDigest==upgrade.baseDigest,"Recorded upgrade base differs from signed package");
-    record.certificate=upgrade.certificate;record.next=upgrade.parsed;RequireAuthorizationUpgrade(record.base,record.next);
+    record.certificate=upgrade.certificate;record.next=upgrade.parsed;RequireAuthorizationTransition(record.base,upgrade);
     Require(record.next.kind==record.policy.kind
         &&record.next.features==record.policy.features&&record.next.minMajor==record.policy.minMajor
         &&record.next.maxMajor==record.policy.maxMajor,"Native upgrade policy and certificate differ");
-    Require(record.next.kind!=record.base.kind||record.next.features!=record.base.features||record.next.minMajor!=record.base.minMajor
+    Require(upgrade.reissue||record.next.kind!=record.base.kind||record.next.features!=record.base.features||record.next.minMajor!=record.base.minMajor
         ||record.next.maxMajor!=record.base.maxMajor,"Upgrade must add permissions or extend the version range");
     if(record.next.kind==Kind::Trial)Require(record.next.expiresAt-record.next.notBefore
         ==static_cast<std::uint64_t>(record.policy.days)*86400,"Recorded upgrade trial duration differs");
@@ -342,7 +342,7 @@ std::vector<UpgradeRecord> ReadUpgrades(const Configuration& config,const std::v
             const auto index=children.at(digest);Require(!visited[index],"Repeated or cyclic native upgrade lineage");
             const auto& next=upgrades[index];Require(next.baseCertificate==certificate,"Native upgrade does not match its recorded predecessor");
             Require(next.policy.customer==policy.customer
-                &&(next.policy.kind==Kind::Permanent||next.policy.days==policy.days),
+                &&(IsReissuePackage(next.package)||next.policy.kind==Kind::Permanent||next.policy.days==policy.days),
                 "Native upgrade changed the customer or trial duration");
             visited[index]=true;++count;certificate=next.certificate;policy=next.policy;digest=Hex(next.next.bodyDigest);
         }
@@ -357,8 +357,8 @@ struct ResolvedAuthorization final {
 ResolvedAuthorization ResolveAuthorizationBytes(std::span<const unsigned char> raw,const Configuration& config,
     const std::vector<Record>& initial,const std::vector<UpgradeRecord>& upgrades){
     Require(raw.size()>0&&raw.size()<=MaxActivationBytes,"Invalid authorization size");Bytes certificate;
-    if(IsUpgradePackage(raw)){
-        certificate=VerifyUpgradePackage(raw,config.issuerId,config.publicKey,*config.product).certificate;
+    if((IsUpgradePackage(raw)||IsReissuePackage(raw))){
+        certificate=VerifyAuthorizationTransition(raw,config.issuerId,config.publicKey,*config.product).certificate;
         Require(std::any_of(upgrades.begin(),upgrades.end(),[&](const auto& record){return EqualBytes(record.package,raw);}),
             "Upgrade package is not recorded in this trusted native issuer store");
     }
@@ -370,12 +370,15 @@ ResolvedAuthorization ResolveAuthorizationBytes(std::span<const unsigned char> r
     }else{VerifyCertificateForProduct(raw,*config.product,config.issuerId,config.publicKey);certificate.assign(raw.begin(),raw.end());}
     ResolvedAuthorization result;result.certificate=certificate;result.parsed=VerifyCertificateForProduct(certificate,*config.product,config.issuerId,config.publicKey);
     const Record* root{};const Policy* policy{};
-    for(const auto& record:initial)if(record.certificate==certificate){root=&record;policy=&record.policy;break;}
-    if(!root)for(const auto& record:upgrades)if(record.certificate==certificate){
-        if(IsUpgradePackage(raw))Require(EqualBytes(record.package,raw),"Upgrade package is not the recorded signed file");
-        policy=&record.policy;
-        for(const auto& original:initial){const auto c=VerifyCertificateForProduct(original.certificate,*config.product,config.issuerId,config.publicKey);
-            if(c.licenseId==result.parsed.licenseId&&c.customerId==result.parsed.customerId&&c.requestId==result.parsed.requestId){root=&original;break;}}
+    auto ancestor=certificate;
+    for(std::size_t depth=0;depth<=upgrades.size();++depth) {
+        const auto incoming=std::find_if(upgrades.begin(),upgrades.end(),[&](const auto& record){return record.certificate==ancestor;});
+        if(incoming!=upgrades.end()) {
+            if(!policy)policy=&incoming->policy;
+            ancestor=incoming->baseCertificate;
+            continue;
+        }
+        for(const auto& original:initial)if(original.certificate==ancestor){root=&original;if(!policy)policy=&original.policy;break;}
         break;
     }
     Require(root&&policy,"Authorization is not recorded in this trusted native issuer store");
@@ -417,20 +420,19 @@ void ExportPackage(const std::filesystem::path& path,const Bytes& package){
         Require(WriteFile(output.value,package.data(),static_cast<DWORD>(package.size()),&written,nullptr)&&written==package.size()&&FlushFileBuffers(output.value),"Cannot export activation file");
     }catch(...){if(created)DeleteFileW(path.c_str());throw;}
 }
-std::vector<Bytes> AuthorizationChain(const ResolvedAuthorization& authorization,const Configuration& config,
+std::vector<Bytes> AuthorizationChain(const ResolvedAuthorization& authorization,const Configuration&,
     const std::vector<Record>& initial,const std::vector<UpgradeRecord>& upgrades){
-    for(const auto& root:initial){
-        auto certificate=VerifyCertificateForProduct(root.certificate,*config.product,config.issuerId,config.publicKey);
-        if(certificate.licenseId!=authorization.parsed.licenseId||certificate.requestId!=authorization.parsed.requestId
-            ||certificate.customerId!=authorization.parsed.customerId)continue;
-        std::vector<Bytes> chain{root.package};
-        for(std::size_t depth=0;depth<=upgrades.size();++depth){
-            if(certificate.bodyDigest==authorization.parsed.bodyDigest)return chain;
-            const auto next=std::find_if(upgrades.begin(),upgrades.end(),[&](const auto& record){return record.base.bodyDigest==certificate.bodyDigest;});
-            Require(next!=upgrades.end(),"Authorization chain is missing a signed predecessor");
-            chain.push_back(next->package);certificate=next->next;
+    std::vector<Bytes> suffix;auto certificate=authorization.certificate;
+    for(std::size_t depth=0;depth<=upgrades.size();++depth) {
+        const auto incoming=std::find_if(upgrades.begin(),upgrades.end(),[&](const auto& record){return record.certificate==certificate;});
+        if(incoming!=upgrades.end()){suffix.push_back(incoming->package);certificate=incoming->baseCertificate;continue;}
+        for(const auto& root:initial)if(root.certificate==certificate) {
+            std::vector<Bytes> chain{root.package};
+            chain.insert(chain.end(),suffix.rbegin(),suffix.rend());return chain;
         }
+        break;
     }
+
     throw std::runtime_error("Authorization has no original activation chain");
 }
 std::string CustomerReference(std::string_view customer){return Hex(Hash({reinterpret_cast<const unsigned char*>(customer.data()),customer.size()}));}
@@ -451,11 +453,13 @@ struct LockedBundleStores final {
         for(auto& config:configurations)config=ReadConfiguration(*config.product,config.folder);
     }
 };
+#include "IssuerExportHistory.inc"
 struct BundleState final {
     Configuration config;std::vector<Record> initial;std::vector<UpgradeRecord> upgrades;
     std::unique_ptr<crypto::SigningKey> key;std::optional<Record> issuance;std::optional<UpgradeRecord> upgrade;
     std::optional<Request> request;std::optional<ResolvedAuthorization> authorization;std::vector<Bytes> chain;
     std::string deviceHash,requestId;
+    std::filesystem::path sourcePath;
     explicit BundleState(Configuration selected):config(std::move(selected)),initial(ReadLedger(config)),upgrades(ReadUpgrades(config,initial)){}
 };
 ResolvedAuthorization ResolveBundleSlot(const BundleSlot& slot,const AuthorizationBundle& bundle,BundleState& state){
@@ -467,16 +471,50 @@ ResolvedAuthorization ResolveBundleSlot(const BundleSlot& slot,const Authorizati
     Require(CustomerReference(authorization.info.policy.customer)==bundle.customerReference,"Bundle customer differs from signed issuance history");
     return authorization;
 }
-void PrepareBundleIssue(BundleState& state,const Policy& policy){
+void PrepareBundleIssue(BundleState& state,const Policy& policy,bool allowReissue){
     const auto& request=*state.request;
     for(const auto& record:state.initial)if(record.digest==request.info.digest){
+        Require(!allowReissue,"再次授权需要客户重新导出申请文件；不能使用已签发过的旧申请重新起算。");
         Require(SamePolicy(record.policy,policy),"This request was already issued with a different policy");
         Require(record.deviceHash==request.info.deviceHash&&record.ekCertificateHash==request.info.ekCertificateHash,"Recorded request device differs");
-        const auto certificate=VerifyCertificateForProduct(record.certificate,*state.config.product,state.config.issuerId,state.config.publicKey);
-        Require(certificate.devicePublicKey==request.devicePublic,"Recorded certificate device differs");state.chain={record.package};return;
+        const auto authorization=ResolveAuthorizationBytes(record.certificate,state.config,state.initial,state.upgrades);
+        state.chain=AuthorizationChain(authorization,state.config,state.initial,state.upgrades);return;
     }
-    if(policy.kind==Kind::Trial)for(const auto& record:state.initial)
-        Require(record.policy.kind!=Kind::Trial||record.deviceHash!=request.info.deviceHash,"A trial was already issued for this TPM device");
+    for(const auto& record:state.upgrades)if(record.next.requestId==request.info.digest&&IsReissuePackage(record.package)) {
+        Require(SamePolicy(record.policy,policy),"该申请已经重新签发；请保持原设置重新导出，或让客户导出新申请。");
+        Require(record.next.devicePublicKey==request.devicePublic,"Recorded request device differs");
+        state.chain=AuthorizationChain(ResolveAuthorizationBytes(record.package,state.config,state.initial,state.upgrades),state.config,state.initial,state.upgrades);return;
+    }
+    const auto* prior=LatestDeviceRecord(state.config,state.initial,request.info.deviceHash,state.upgrades);
+    if(prior) {
+        auto certificate=prior->certificate;
+        for(std::size_t depth=0;depth<=state.upgrades.size();++depth) {
+            const auto parent=VerifyCertificateForProduct(certificate,*state.config.product,state.config.issuerId,state.config.publicKey);
+            const auto next=std::find_if(state.upgrades.begin(),state.upgrades.end(),[&](const auto& record){return record.base.bodyDigest==parent.bodyDigest;});
+            if(next==state.upgrades.end())break;certificate=next->certificate;
+        }
+        if(!allowReissue)throw DuplicateTrialError(PreviousIssuance(state.config,*prior,state.sourcePath,certificate));
+        const auto base=ResolveAuthorizationBytes(certificate,state.config,state.initial,state.upgrades);
+        Require(policy.customer==base.info.policy.customer,"再次授权须保留原客户名称，请读取原授权核对客户。");
+        if(policy.kind==Kind::Trial) {
+            for(const auto& original:state.initial) {
+                if(original.deviceHash!=request.info.deviceHash)continue;
+                const auto old=VerifyCertificateForProduct(original.certificate,*state.config.product,state.config.issuerId,state.config.publicKey);
+                Require(old.kind!=Kind::Trial||old.trialNvPublic!=request.nvArea,"此试用计数已用于授权；请客户重新导出试用申请。");
+            }
+            for(const auto& old:state.upgrades)Require(old.next.kind!=Kind::Trial||old.next.devicePublicKey!=request.devicePublic||old.next.trialNvPublic!=request.nvArea,
+                "此试用计数已用于授权；请客户重新导出试用申请。");
+        }
+        UpgradeRecord renewed;renewed.baseCertificate=certificate;renewed.base=base.parsed;renewed.policy=policy;
+        renewed.certificate=CertificateBody(state.config,request,policy,NewId(),base.parsed.customerId);
+        const auto signature=state.key->Sign(renewed.certificate);renewed.certificate.insert(renewed.certificate.end(),signature.begin(),signature.end());
+        renewed.next=VerifyCertificateForProduct(renewed.certificate,*state.config.product,state.config.issuerId,state.config.publicKey);
+        renewed.package=ReissueBody(base.parsed,renewed.certificate,state.config.issuerId,state.config.publicKey,*state.config.product);
+        const auto packageSignature=state.key->Sign(renewed.package);renewed.package.insert(renewed.package.end(),packageSignature.begin(),packageSignature.end());
+        DecodeUpgradeRecord(EncodeUpgradeRecord(renewed,state.config,*state.key),state.config);
+        state.chain=AuthorizationChain(base,state.config,state.initial,state.upgrades);state.chain.push_back(renewed.package);
+        state.upgrade=std::move(renewed);return;
+    }
     Record record;record.digest=request.info.digest;record.deviceHash=request.info.deviceHash;record.ekCertificateHash=request.info.ekCertificateHash;
     record.policy=policy;record.licenseId=NewId();record.certificate=CertificateBody(state.config,request,policy,record.licenseId);
     const auto signature=state.key->Sign(record.certificate);record.certificate.insert(record.certificate.end(),signature.begin(),signature.end());
@@ -508,8 +546,24 @@ void PrepareBundleUpgrade(BundleState& state,const Policy& policy){
     DecodeUpgradeRecord(EncodeUpgradeRecord(record,state.config,*state.key),state.config);state.chain.push_back(record.package);state.upgrade=std::move(record);
 }
 }
+DuplicateTrialError::DuplicateTrialError(IssuanceHistory history)
+    : std::runtime_error("该设备已有签发记录。" + (history.outputPath.empty()?std::string("旧记录未保存导出文件名。"):std::string("上次文件：")+PathText(history.outputPath))),
+      history_(std::move(history)) {}
 StoreInfo InspectStore(const ProductDescriptor& product,const std::filesystem::path& store){const auto config=ReadConfiguration(product,store);return{config.issuerId,Hex(Hash(config.publicKey))};}
-RequestInfo InspectRequest(const ProductDescriptor& product,const std::filesystem::path& request,const std::filesystem::path& store){const auto config=ReadConfiguration(product,store);return ValidatedRequest(request,config).info;}
+RequestInfo InspectRequest(const ProductDescriptor& product,const std::filesystem::path& request,const std::filesystem::path& store){
+    const auto config=ReadConfiguration(product,store);auto info=ValidatedRequest(request,config).info;
+    StoreLock lock(config.folder);const auto initial=ReadLedger(config);const auto upgrades=ReadUpgrades(config,initial);
+    if(const auto prior=LatestDeviceRecord(config,initial,info.deviceHash,upgrades)) {
+        auto certificate=prior->certificate;
+        for(std::size_t depth=0;depth<=upgrades.size();++depth) {
+            const auto parsed=VerifyCertificateForProduct(certificate,*config.product,config.issuerId,config.publicKey);
+            const auto next=std::find_if(upgrades.begin(),upgrades.end(),[&](const auto& record){return record.base.bodyDigest==parsed.bodyDigest;});
+            if(next==upgrades.end())break;certificate=next->certificate;
+        }
+        info.previousIssuance=PreviousIssuance(config,*prior,request,certificate);
+    }
+    return info;
+}
 AuthorizationInfo InspectAuthorization(const ProductDescriptor& product,const std::filesystem::path& authorization,const std::filesystem::path& store){
     const auto config=ReadConfiguration(product,store);StoreLock lock(config.folder);const auto initial=ReadLedger(config);
     const auto upgrades=ReadUpgrades(config,initial);return ResolveAuthorization(authorization,config,initial,upgrades).info;
@@ -524,14 +578,14 @@ GenerateResult Generate(const ProductDescriptor& product,const std::filesystem::
         Require(SamePolicy(record.policy,policy),"This request was already issued with a different policy; use matching settings to re-export or create a new device request");
         Require(record.deviceHash==request.info.deviceHash&&record.ekCertificateHash==request.info.ekCertificateHash,"Recorded request device metadata differs");
         const auto certificate=VerifyCertificateForProduct(record.certificate,*config.product,config.issuerId,config.publicKey);Require(certificate.devicePublicKey==request.devicePublic,"Recorded certificate device differs");
-        ExportPackage(output,record.package);return{output,record.licenseId,true};
+        ExportPackage(output,record.package);return{output,record.licenseId,true,RememberExport(config,signingKey,record.digest,output,record.package)};
     }
-    if(policy.kind==Kind::Trial)for(const auto& record:records)Require(record.policy.kind!=Kind::Trial||record.deviceHash!=request.info.deviceHash,"A trial was already issued for this TPM device");
+    if(policy.kind==Kind::Trial)for(const auto& record:records)if(record.policy.kind==Kind::Trial&&record.deviceHash==request.info.deviceHash)throw DuplicateTrialError(PreviousIssuance(config,record,path));
     Record record;record.digest=request.info.digest;record.deviceHash=request.info.deviceHash;record.ekCertificateHash=request.info.ekCertificateHash;record.policy=policy;record.licenseId=NewId();
     record.certificate=CertificateBody(config,request,policy,record.licenseId);const auto signature=signingKey.Sign(record.certificate);record.certificate.insert(record.certificate.end(),signature.begin(),signature.end());
     VerifyCertificateForProduct(record.certificate,*config.product,config.issuerId,config.publicKey);record.package=crypto::ActivationPackage(signingKey,request.ekArea,request.akArea,request.digest,record.certificate);
     const auto encoded=EncodeRecord(record,config,signingKey);DecodeRecord(encoded,config);
-    CommitRecord(config,record,signingKey);ExportPackage(output,record.package);return{output,record.licenseId,false};
+    CommitRecord(config,record,signingKey);ExportPackage(output,record.package);return{output,record.licenseId,false,RememberExport(config,signingKey,record.digest,output,record.package)};
 }
 GenerateResult GenerateUpgrade(const ProductDescriptor& product,const std::filesystem::path& store,const std::filesystem::path& authorization,
     std::string_view passwordUtf8,const Policy& policy,const std::filesystem::path& output){
@@ -546,7 +600,7 @@ GenerateResult GenerateUpgrade(const ProductDescriptor& product,const std::files
         Require(SamePolicy(record.policy,policy),"This authorization was already upgraded; select the latest authorization file for further changes");
         // Re-export still verifies the supplied password and matching private key.
         crypto::SigningKey signingKey(config.folder/L"issuer-private.pem",passwordUtf8,config.publicKey);
-        ExportPackage(output,record.package);return{output,record.next.licenseId,true};
+        ExportPackage(output,record.package);return{output,record.next.licenseId,true,RememberExport(config,signingKey,record.next.requestId,output,record.package)};
     }
     UpgradeRecord record;record.baseCertificate=base.certificate;record.base=base.parsed;record.policy=policy;
     auto candidate=base.parsed;candidate.kind=policy.kind;candidate.features=policy.features;candidate.minMajor=policy.minMajor;candidate.maxMajor=policy.maxMajor;
@@ -561,7 +615,7 @@ GenerateResult GenerateUpgrade(const ProductDescriptor& product,const std::files
     record.package=UpgradeBody(base.parsed,record.certificate,config.issuerId,config.publicKey,product);
     const auto packageSignature=signingKey.Sign(record.package);record.package.insert(record.package.end(),packageSignature.begin(),packageSignature.end());
     DecodeUpgradeRecord(EncodeUpgradeRecord(record,config,signingKey),config);
-    CommitUpgradeRecord(config,record,signingKey);ExportPackage(output,record.package);return{output,record.next.licenseId,false};
+    CommitUpgradeRecord(config,record,signingKey);ExportPackage(output,record.package);return{output,record.next.licenseId,false,RememberExport(config,signingKey,record.next.requestId,output,record.package)};
 }
 BundleInfo InspectBundle(std::span<const unsigned char> bytes,std::span<const BundleStoreRef> stores){
     const auto bundle=ParseAuthorizationBundle(bytes);LockedBundleStores locked(stores);
@@ -592,9 +646,9 @@ GenerateResult GenerateBundle(std::span<const BundleInput> inputs,const std::opt
     for(std::size_t index=0;index<inputs.size();++index){
         const auto& input=inputs[index];ValidatePolicy(*input.product,input.policy);
         if(index==0)customer=input.policy.customer;Require(customer==input.policy.customer,"Bundle products must have the same customer");
-        states.emplace_back(locked.configurations[index]);auto& state=states.back();
+        states.emplace_back(locked.configurations[index]);auto& state=states.back();state.sourcePath=input.sourcePath;
         const auto existing=base?std::find_if(base->slots.begin(),base->slots.end(),[&](const auto& slot){return slot.productId==input.product->id;}):std::vector<BundleSlot>::const_iterator{};
-        if(base&&existing!=base->slots.end()){
+        if(base&&existing!=base->slots.end()&&!input.allowReissue){
             VerifyAuthorizationBundleForProduct(baseBytes,*input.product,state.config.issuerId,state.config.publicKey);
             state.authorization=ResolveBundleSlot(*existing,*base,state);
         }else{
@@ -623,7 +677,7 @@ GenerateResult GenerateBundle(std::span<const BundleInput> inputs,const std::opt
     Bytes identity;AppendText(identity,deviceHash);AppendText(identity,bundle.customerReference);
     std::vector<std::size_t> order;for(std::size_t i=0;i<inputs.size();++i)order.push_back(i);
     std::sort(order.begin(),order.end(),[&](auto left,auto right){return inputs[left].product->id<inputs[right].product->id;});
-    for(const auto i:order){auto& state=states[i];if(state.request)PrepareBundleIssue(state,inputs[i].policy);else PrepareBundleUpgrade(state,inputs[i].policy);
+    for(const auto i:order){auto& state=states[i];if(state.request)PrepareBundleIssue(state,inputs[i].policy,inputs[i].allowReissue);else PrepareBundleUpgrade(state,inputs[i].policy);
         AppendText(identity,inputs[i].product->id);AppendText(identity,state.requestId);
         bundle.slots.push_back({std::string(inputs[i].product->id),state.config.issuerId,state.chain,{}});}
     bundle.bundleId=Hex(Hash(identity));const auto manifest=BundleManifest(bundle);const auto manifestDigest=Hex(Hash(manifest));
@@ -634,7 +688,9 @@ GenerateResult GenerateBundle(std::span<const BundleInput> inputs,const std::opt
         const auto saved=ReadFileBounded(cache,static_cast<DWORD>(MaxAuthorizationFileBytes));const auto parsed=ParseAuthorizationBundle(saved);
         Require(BundleManifest(parsed)==manifest,"Signed bundle cache has different contents");
         for(const auto& state:states)VerifyAuthorizationBundleForProduct(saved,*state.config.product,state.config.issuerId,state.config.publicKey);
-        ExportPackage(output,saved);return{output,bundle.bundleId,true};
+        ExportPackage(output,saved);std::string warning;
+        for(const auto& state:states){auto note=RememberExport(state.config,*state.key,state.requestId,output,saved);if(!note.empty())warning=note;}
+        return{output,bundle.bundleId,true,warning};
     }
     for(std::size_t i=0;i<order.size();++i)bundle.slots[i].signature=states[order[i]].key->Sign(manifest);
     const auto encoded=EncodeAuthorizationBundle(bundle);
@@ -646,6 +702,8 @@ GenerateResult GenerateBundle(std::span<const BundleInput> inputs,const std::opt
     std::filesystem::create_directory(cacheFolder);const auto suffix=NewId();const auto temporary=cacheFolder/(std::wstring(suffix.begin(),suffix.end())+L".pending");
     try{ExportPackage(temporary,encoded);Require(MoveFileExW(temporary.c_str(),cache.c_str(),MOVEFILE_WRITE_THROUGH),"Cannot commit signed authorization bundle cache");}
     catch(...){DeleteFileW(temporary.c_str());throw;}
-    ExportPackage(output,encoded);return{output,bundle.bundleId,false};
+    ExportPackage(output,encoded);std::string warning;
+    for(const auto& state:states){auto note=RememberExport(state.config,*state.key,state.requestId,output,encoded);if(!note.empty())warning=note;}
+    return{output,bundle.bundleId,false,warning};
 }
 }

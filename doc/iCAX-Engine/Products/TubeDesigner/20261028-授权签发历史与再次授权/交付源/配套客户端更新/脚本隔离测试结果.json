@@ -1,0 +1,27 @@
+{
+  "testedAt": "2026-10-28T15:43:36.1445196+08:00",
+  "testRoot": "D:\\penguinchinage0609\\iCAX\\Temp\\client-update-script-tests-20261028-84a6f024dfd74fa79de62f12ba6a2903",
+  "isolation": "Temporary test directories; real baseline DLL plus non-executable entry placeholder; no application launched",
+  "successUpdate": "passed",
+  "backupOriginalHash": "passed",
+  "idempotentNoNewBackup": "passed",
+  "unexpectedVersionRejected": "passed",
+  "unrelatedSettingsUntouched": "passed",
+  "baselineSha256": "B492E44220610247809575692FB5A7733D89F0250D8373957406415BC67E098C",
+  "updatedSha256": "138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9",
+  "successOutput": [
+    "更新完成。旧文件备份：D:\\penguinchinage0609\\iCAX\\Temp\\client-update-script-tests-20261028-84a6f024dfd74fa79de62f12ba6a2903\\成功更新\\授权支持更新备份\\20261028-154334-712-aa35d87f0b294c26a4a49141f24d13e2\\TubeDesigner.dll",
+    "新 DLL SHA256：138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9"
+  ],
+  "idempotentOutput": [
+    "已具备本次授权支持，无需重复更新。"
+  ],
+  "rejection": "当前版本与本次更新不匹配，未修改任何程序文件。当前 DLL SHA256：1315DD2C592534906E505CE32234EE1D9A0741DD9D87A094CE315D5AC6B92541",
+  "realInstallationUpdated": false,
+  "realTpmActivationTested": false,
+  "windowsPowerShell51Update": "passed",
+  "windowsPowerShell51Output": [
+    "更新完成。旧文件备份：D:\\penguinchinage0609\\iCAX\\Temp\\client-update-script-tests-20261028-84a6f024dfd74fa79de62f12ba6a2903\\WindowsPowerShell51\\授权支持更新备份\\20261028-154359-293-c8ef8aefc716400596c74964c9d4d11c\\TubeDesigner.dll",
+    "新 DLL SHA256：138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9"
+  ]
+}

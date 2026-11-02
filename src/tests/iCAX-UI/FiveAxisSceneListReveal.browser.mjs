@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {chromium} from 'playwright';
+import {serveBrowserAsset,browserAssetPath,browserReportDirectory} from './browserPackageRuntime.mjs';
+
+const output=browserReportDirectory('scene-list-reveal-20261101'),report={passed:false,standaloneCef:false,transport:'Controlled domain fixtures; production pick handlers, lists and WebGL canvas',cases:[],errors:[]};
+const browser=await chromium.launch({channel:'msedge',headless:true}),page=await browser.newPage({viewport:{width:1450,height:900}});
+try{
+ page.on('pageerror',e=>report.errors.push(e.message));
+ await page.route('http://localhost:17769/**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><main class="five-workspace"><aside class="cam-context-pane"><input id="draft" value="draft-text"><div id="left"></div><div style="height:1400px"></div></aside><div id="viewport"></div><aside class="cam-info-pane"><div id="right"></div><div style="height:1400px"></div></aside></main>'});
+  if(path.endsWith('.css'))return route.fulfill({contentType:'text/css',body:readFileSync(browserAssetPath(path.slice(5)))});
+  return serveBrowserAsset(route);
+ });
+ await page.goto('http://localhost:17769/');await page.addStyleTag({url:'http://localhost:17769/src/apps/five-axis-cam/webpage/workspace.css'});
+ await page.addStyleTag({content:'body{margin:0}main{display:grid;grid-template-columns:280px 850px 320px;height:900px}.cam-context-pane,.cam-info-pane{height:890px;overflow:auto}#viewport{width:850px;height:850px}.test-list{height:180px;overflow:auto}.test-list button{min-height:32px}.five-workpiece-list{max-height:180px}.five-support-face-list{max-height:150px}'});
+ await page.evaluate(async()=>{
+  const root='/src/apps/five-axis-cam/webpage/',T=await import('/src/iCAX-UI/SDK/ThirdParty/three/three.module.js');
+  const {createThreeViewport}=await import('/src/iCAX-UI/SDK/Viewport/threeViewport.mjs');
+  const [cuts,cutPick,rapid,order,workpieces,fixtures,design,faces,machines,machinePick,prep,dom,model]=await Promise.all(['cutTree','cutSelection','rapidPlanning','toolpathOrdering','workpieceSelection','fixtureViews','fixtureDesign','faceSelectionPresentation','machineTree','machineSelection','preparationTree','workspaceDom','workspaceModel'].map(n=>import(root+n+'.mjs')));
+  const s=window.revealTest={T,cuts,cutPick,rapid,order,workpieces,fixtures,design,faces,machines,machinePick,prep,dom,model,mode:'cuts',current:true};
+  const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],domain={expected:{epoch:'test',mutationSequence:'1'},activeSetupId:'setup',setups:[{id:'setup',name:'装夹',cutGroups:[],definitionOrder:[]}],placements:[{id:'placement',workpieceId:'stock',setupId:'setup',transform:identity}],workpieces:[{id:'stock',name:'工件'}],fixtureUnits:[],fixtures:[],intentToolpaths:[]};
+  const v=s.view={fiveAxisArea:'toolpath',fiveCamPage:'cutting',scene:{activePlacementId:'placement',model:{isLoaded:true,geometryRef:{id:'geometry',revision:'1'}},intentToolpaths:[],domain,machines:[]}};
+  v.scene.intentToolpaths=domain.intentToolpaths=Array.from({length:50},(_,i)=>({id:'cut-'+i,number:String(i+1),name:'刀路 '+i,setupId:'setup',placementId:'placement',enabled:true,locked:false,startPoint:[-50,i===49?0:1500+i*20,20],previewPoints:[[-50,i===49?0:1500+i*20,20],[50,i===49?0:1500+i*20,20]],boundaryRole:'Opening',machiningKind:'Cut'}));
+  domain.setups[0].definitionOrder=v.scene.intentToolpaths.map(c=>c.id);model.workspaceState(v).tools.toolpath='side';
+  s.context={mount:document.querySelector('main'),isCurrentProject:()=>s.current,sceneProxy:{invoke:async method=>{throw Error('Unexpected native request '+method);}}};
+  s.ops={appendProjectLog(){},renderProject(){
+   let left='',right='';
+   if(s.mode==='cuts'||s.mode==='order')left='<div class="test-list five-path-list" data-five-key="path-list-cutting">'+cuts.renderCutTree(v,v.scene.intentToolpaths,c=>c.name)+'</div>';
+   if(s.mode==='rapid')left='<div class="test-list five-path-list" data-five-key="path-list-rapid">'+rapid.renderRapidTree(v,{heading:false})+'</div>';
+   if(s.mode==='workpieces')left=workpieces.renderWorkpieces(v);
+   if(s.mode==='preparation'||s.mode==='fixture')left='<div class="test-list">'+prep.renderPreparationTree(v)+'</div>';
+   if(s.mode==='fixture')right='<div class="test-list">'+Array.from({length:40},(_,i)=>'<div data-five-key="fixture-part-part-'+i+'" style="height:32px">板件 '+i+'</div>').join('')+'</div>';
+   if(s.mode==='support')right=faces.faceSelectionList({ids:v.fixtureDesignDraft.supportFaces,selectedId:v.fixtureDesignSelectedFace,key:'support-face-list',label:'承托面列表',selectCommand:id=>'select:'+id,removeCommand:id=>'remove:'+id});
+   if(s.mode==='machine')left='<div class="test-list">'+machines.renderMachineTree(v,v.scene.machines[0])+'</div>';
+   dom.patchWorkspacePanels(s.context.mount,[['#left',left],['#right',right]]);
+  }};
+  const vp=v.viewport=createThreeViewport({showGrid:false,continuousRender:true,onPick:(...args)=>{s.lastPick={args:args.map((a,i)=>i===2?{x:a?.clientX,y:a?.clientY,button:a?.button}:null),nearest:cutPick.nearestCutLine(v,args[2])};
+   if(s.mode==='cuts')cutPick.handleCutLinePick(s.context,v,...args,s.ops);
+   else if(s.mode==='order')order.handleOrderPick(s.context,v,...args,s.ops);
+   else if(s.mode==='rapid')rapid.handleRapidPick(s.context,v,...args,s.ops);
+   else if(s.mode==='support')design.designPick(s.context,v,...args,s.ops);
+   else if(s.mode==='machine')machinePick.handleMachinePartPick(s.context,v,args[0],args[1],s.ops);
+   else if(s.mode==='fixture')s.fixtureActions.fixturePicked(s.context,v,...args,s.ops);
+   else workpieces.handleWorkpiecePick(s.context,v,...args,s.ops);
+  }});vp.mount(document.querySelector('#viewport'));vp.setCameraState({target:{x:0,y:0,z:0},radius:500,theta:0,phi:0});
+  s.mesh=new T.Mesh(new T.PlaneGeometry(150,150),new T.MeshBasicMaterial({color:0x64aaa5,side:T.DoubleSide}));s.mesh.position.z=20;s.mesh.userData.objectId='placement';vp.content.add(s.mesh);vp.sceneObjects.set('placement',s.mesh);s.ops.renderProject();
+  s.baseline=()=>{const input=document.querySelector('#draft');input.focus({preventScroll:true});input.setSelectionRange(1,4);s.input=input;s.canvas=vp.renderer.domElement;s.left=document.querySelector('.cam-context-pane');s.right=document.querySelector('.cam-info-pane');s.left.scrollTop=0;s.right.scrollTop=60;s.before=[s.left.scrollTop,s.right.scrollTop];};
+  s.check=key=>{let row=document.querySelector(`[data-five-key="${CSS.escape(key)}"]`);if(key.startsWith('prep-workpiece-'))row=row?.querySelector('.five-preparation-root');if(!row)return {missing:key};let container=row.parentElement;while(container&&!(container.scrollHeight>container.clientHeight&&/(auto|scroll)/.test(getComputedStyle(container).overflowY)))container=container.parentElement;const r=row.getBoundingClientRect(),p=container.getBoundingClientRect();return {visible:r.top>=p.top+container.clientTop-.5&&r.bottom<=p.top+container.clientTop+container.clientHeight+.5,scroll:container.scrollTop,selected:s.view.fiveAxisUI.selectedIntentId,picked:s.lastPick,right:s.right.scrollTop,beforeRight:s.before[1],input:s.input===document.querySelector('#draft'),canvas:s.canvas===vp.renderer.domElement,selection:[s.input.selectionStart,s.input.selectionEnd],focusStolen:!!document.activeElement.closest('.test-list,.five-support-face-list')};};
+ });
+ const click=async()=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const pixel=await page.evaluate(()=>{const s=revealTest,vp=s.view.viewport;vp.camera.updateMatrixWorld(true);const q=new s.T.Vector3(10,0,20).project(vp.camera),b=vp.renderer.domElement.getBoundingClientRect();return {x:b.x+(q.x+1)*b.width/2,y:b.y+(1-q.y)*b.height/2};});await page.mouse.click(pixel.x,pixel.y);await page.waitForFunction(()=>!revealTest.view.pending);};
+ const verify=async(kind,key,{rightUnchanged=true}={})=>{const result=await page.evaluate(key=>revealTest.check(key),key);assert.equal(result.visible,true,kind+JSON.stringify(result));assert.ok(result.scroll>0,kind+' scroll');assert.ok(result.input&&result.canvas,kind+' DOM identity');assert.deepEqual(result.selection,[1,4]);assert.equal(result.focusStolen,false);if(rightUnchanged)assert.equal(result.right,result.beforeRight);report.cases.push({kind,...result});};
+ await page.evaluate(()=>revealTest.baseline());await click();await verify('cutting paths','select-c:cut-49');
+ await page.evaluate(()=>{const s=revealTest;s.view.scene.intentToolpaths[49].groupId='inner';s.view.scene.domain.setups[0].cutGroups=[{id:'outer',name:'外组'},{id:'inner',parentId:'outer',name:'内组'}];s.view.fiveAxisUI.collapsedCutGroups=['outer','inner'];s.ops.renderProject();document.querySelector('.test-list').scrollTop=0;s.baseline();});
+ await click();await verify('nested cutting groups','select-c:cut-49');assert.deepEqual(await page.evaluate(()=>revealTest.view.fiveAxisUI.collapsedCutGroups),[]);
+ await page.evaluate(()=>{const s=revealTest;s.mode='order';delete s.view.scene.intentToolpaths[49].groupId;s.view.scene.domain.setups[0].cutGroups=[];s.view.fiveAxisUI.tools.toolpath='manual-order';s.view.fiveCamPage='order';s.order.openOrdering(s.view);s.ops.renderProject();s.baseline();});
+ await click();await verify('manual machining order','select-c:cut-49');
+ await page.evaluate(()=>{const s=revealTest,v=s.view;s.mode='rapid';v.fiveAxisUI.tools.toolpath='rapid';v.fiveCamPage='rapid';const setup=v.scene.domain.setups[0];setup.generatedGeometry={status:'Current',revision:'1',operations:v.scene.intentToolpaths.map(c=>({intentId:c.id,placementId:'placement',parts:[{role:'Cut',points:c.previewPoints}]})),transitions:Array.from({length:49},(_,i)=>({from:'cut-'+i,to:'cut-'+(i+1),points:[[-50,i===48?0:1800+i*20,20],[50,i===48?0:1800+i*20,20]],directions:[[0,0,1],[0,0,1]],geometryStatus:'Generated',validation:'Clear',frame:'Setup',policy:{strategy:'Quick'}}))};s.rapid.openRapid(v);s.ops.renderProject();s.baseline();});
+ await click();await verify('rapid connections','rapid-cut-48/cut-49');
+ await page.evaluate(()=>{const s=revealTest,r=s.view.fiveRapid;s.rapid.rapidPick(s.view,'cut-0/cut-1');r.saveBinding={context:s.context,ops:s.ops};r.fileSaving=new Promise(resolve=>s.releaseSave=()=>{r.fileSaving=null;resolve();});s.ops.renderProject();document.querySelector('.test-list').scrollTop=0;s.baseline();});
+ await click();assert.equal(await page.evaluate(()=>revealTest.view.fiveRapid.id),'cut-0/cut-1');
+ await page.evaluate(()=>{const s=revealTest;s.input.focus({preventScroll:true});s.input.setSelectionRange(1,4);s.right.scrollTop=85;s.before[1]=85;s.releaseSave();});await page.waitForFunction(()=>revealTest.view.fiveRapid.id==='cut-48/cut-49');
+ await verify('rapid selection after asynchronous save','rapid-cut-48/cut-49');assert.equal(await page.evaluate(()=>document.activeElement===revealTest.input),true);
+ await page.evaluate(()=>{const s=revealTest,r=s.view.fiveRapid;s.rapid.rapidPick(s.view,'cut-0/cut-1');r.fileSaving=new Promise(resolve=>s.releaseSave=()=>{r.fileSaving=null;resolve();});s.ops.renderProject();document.querySelector('.test-list').scrollTop=0;});
+ await click();await page.evaluate(()=>{const s=revealTest;s.current=false;s.releaseSave();});await page.waitForFunction(()=>revealTest.view.fiveRapid.switchingPath==null);
+ assert.equal(await page.evaluate(()=>revealTest.view.fiveRapid.id==='cut-0/cut-1'&&document.querySelector('.test-list').scrollTop===0),true);await page.evaluate(()=>revealTest.current=true);
+ await page.evaluate(()=>{const s=revealTest,v=s.view;s.mode='support';v.fiveAxisArea='workpiece';v.fiveAxisUI.tools.workpiece='fixture';v.fiveFixtureDesignOpen=true;v.fixtureDesignPlacement='placement';v.fixtureDesignPicking=false;v.fixtureDesignDraft={setupId:'setup',dirty:true,supportFaces:Array.from({length:40},(_,i)=>'face-'+i)};v.fixtureDesignFaces=[{faceId:'face-39',first:0,count:2}];v.fixtureDesignSelectedFace='face-0';s.ops.renderProject();s.baseline();});
+ await click();await verify('fixture support faces','support-face-list-face-39',{rightUnchanged:false});
+ await page.evaluate(()=>{const s=revealTest,v=s.view;s.mode='workpieces';v.fiveFixtureDesignOpen=false;v.fiveAxisUI.tools.workpiece='translate';const d=v.scene.domain;d.workpieces=Array.from({length:40},(_,i)=>({id:'stock-'+i,name:'工件 '+i}));d.placements=d.workpieces.map((w,i)=>({id:i===39?'placement':'place-'+i,workpieceId:w.id,setupId:'setup',transform:new s.T.Matrix4().elements}));s.ops.renderProject();s.baseline();});
+ await click();await verify('workpiece list','workpiece-placement');
+ await page.evaluate(()=>{const s=revealTest;s.mode='preparation';s.view.fivePreparationCollapsed=new Set(['workpiece:stock-39']);s.ops.renderProject();s.baseline();});
+ await click();await verify('workpiece preparation tree','prep-workpiece-stock-39');
+ await page.evaluate(()=>{const s=revealTest;s.view.fivePreparationKind='setup';s.view.fivePreparationCollapsed=new Set(['workpiece:stock-39']);s.ops.renderProject();s.baseline();});
+ await click();assert.equal(await page.evaluate(()=>{const row=document.querySelector('[data-five-key="prep-setup-placement"] > .five-preparation-node'),list=row.closest('.test-list'),r=row.getBoundingClientRect(),b=list.getBoundingClientRect();return r.top>=b.top&&r.bottom<=b.bottom;}),true);report.cases.push({kind:'active setup in preparation tree',visible:true});
+ await page.evaluate(async()=>{const s=revealTest,v=s.view;s.fixtureActions=await import('/src/apps/five-axis-cam/webpage/fixtureActions.mjs');s.mode='fixture';v.fixtureDesignPicking=false;v.scene.domain.fixtureUnits=Array.from({length:40},(_,i)=>({id:'unit-'+i,name:'夹具 '+i,setupId:'setup',kind:'Imported',partIds:['part-'+i]}));v.fivePreparationCollapsed=new Set(['workpiece:stock-39','setup:placement']);v.fiveAxisFixtures={selected:'unit-0',drafts:{}};s.mesh.userData.objectId='part-39';s.ops.renderProject();s.baseline();});
+ await click();await verify('fixture units in preparation tree','fixture-unit-39',{rightUnchanged:false});
+ assert.equal(await page.evaluate(()=>revealTest.check('fixture-part-part-39').visible),true);
+ await page.evaluate(()=>{const s=revealTest,v=s.view;s.mode='machine';v.fiveAxisArea='simulation';v.fiveAxisUI.tools.simulation='machine-instances';v.fiveMachine={machineId:'machine'};v.scene.machines=[{entityId:'machine',elements:[{entityId:'machine',kind:'machine',name:'机床'},...Array.from({length:40},(_,i)=>({entityId:'part-'+i,name:'部件 '+i,kind:'link',parentEntityId:'machine'}))],joints:[]}];v.fiveMachineTree=new Map([['machine',new Set(['machine'])]]);s.ops.renderProject();s.baseline();});
+ await click();await verify('machine component hierarchy','machine-node-part-39');
+ await page.evaluate(()=>{const s=revealTest;s.input.focus({preventScroll:true});s.input.setSelectionRange(1,4);const list=document.querySelector('.test-list');list.scrollTop=0;s.manualScroll=list.scrollTop;s.ops.renderProject();});
+ assert.equal(await page.evaluate(()=>document.activeElement===revealTest.input&&document.querySelector('.test-list').scrollTop===revealTest.manualScroll),true);
+ await page.screenshot({path:resolve(output,'machine-row-revealed.png')});
+ assert.deepEqual(report.errors,[]);report.passed=true;
+}catch(error){report.failure=error.stack;await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});throw error;}
+finally{writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));await browser.close();}

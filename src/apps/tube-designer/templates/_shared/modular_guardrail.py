@@ -829,11 +829,12 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         return process_runtime.invoke(model,target,function_id,
             {"schema":"icax.assembly-process-input","schemaVersion":1,
              "parts":{"stock":stock},"geometry":geometry},values or {},key,stock_id)
-    # As with security windows, the assembly view places shared stock members.
-    # Exact copes, mitres and holes belong to the manufacturing graph only.
+    # The product view owns the finished contact envelope. Manufacturing still
+    # declares its separate end/tool operations; it does not supply render data.
     manufacturing_requested = purpose != "display"
-    needed_tools = ({key for part in built.tubes for key in part.clips + part.hole_tools}
-                    if manufacturing_requested else set())
+    needed_tools = {key for part in built.tubes for key in part.clips}
+    if manufacturing_requested:
+        needed_tools.update(key for part in built.tubes for key in part.hole_tools)
     if manufacturing_requested:
         needed_tools.update(key for plate in built.plates for key in plate.support_clips)
     declared_joints: set[tuple[str, str]] = set()
@@ -859,6 +860,20 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     def cutting_shape(key):
         return envelopes[key] if key in envelopes else {"intrinsicGeometryKey":component_shapes[key]}
 
+    display_envelopes = {}
+    def contact_envelope(key):
+        if key not in display_envelopes:
+            envelope = envelopes[key]
+            # A receiving tube's OUTER solid is the contact boundary, including
+            # its cavity. Subtracting just its wall leaves a spurious inner tip.
+            contours = envelope["contours"]
+            if envelope["clearance"]:
+                contours = [_catalog._offset_outer_contour(contours[0], envelope["clearance"])]
+            display_envelopes[key] = shared.emit_tube(key + ".contact-envelope",
+                profile_arguments={"placement": envelope["placement"], "contours": contours},
+                extrude_arguments={"vector": envelope["vector"]})
+        return display_envelopes[key]
+
     def add_item(key: str, name: str, display_representation: str,
                  manufacturing_representation: str, properties: dict[str, Any]):
         number = f"{parameters['productCode']}-{len(item_keys) + 1:03d}"
@@ -874,6 +889,11 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
 
     for part in built.tubes:
         display_representation = originals[part.key]
+        if purpose == "display" and part.clips:
+            tools = [contact_envelope(key) for key in dict.fromkeys(part.clips)]
+            display_representation = model.geometry(part.key + ".contact", "boolean",
+                inputs=[display_representation, *tools],
+                arguments={"operation": "subtract", "target": display_representation, "tools": tools})
         manufacturing_representation = display_representation
         start_cut, end_cut = ("miter", "miter") if part.diagonal else ("square", "square")
         stock = {"length":part.length,"section":part.profile.properties(),
@@ -1013,7 +1033,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         {"key": "length", "displayName": "长度", "valueType": "number", "unit": "mm"}], rows=rows)
     model.diagnostic("info", "guardrail.design-review", "模板提供尺寸及加工几何，不代替项目规范、结构承载与锚固设计校核。")
     if purpose != "manufacturing":
-        model.diagnostic("info", "guardrail.stock-preview", "装配显示采用原管近似，接头处可能重叠；相贯、拼角及孔槽以拆单加工模型为准。")
+        model.diagnostic("info", "guardrail.stock-preview", "圆管接头按承接管外包络显示贴合形状；拼角、孔槽及展开以拆单加工模型为准。")
     if parameters.get("pathMode", "level") != "level":
         model.diagnostic("warning", "guardrail.elevation-installation", "高程模式扶手分跨接入立柱，不是连续弯管。底板采用水平支座，不贴合斜面；请核对安装标高、连接强度及首尾收口。")
         if parameters.get("pathMode") == "stepped":

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
@@ -30,6 +30,8 @@
     <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
   </ImportGroup>
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
+  <Import Project="..\..\..\third_party\coal\Coal.props" />
+  <Import Project="..\..\..\third_party\fixture-geometry\FixtureGeometry.props" />
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
@@ -41,31 +43,110 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CadBRepImportService.h" />
+    <ClInclude Include="CadBRepScaleService.h" />
+    <ClInclude Include="CadBRepHealService.h" />
+    <ClInclude Include="OpenCascadeTopologyPreparation.h" />
+    <ClInclude Include="OpenCascadeFaceIntegration.h" />
+    <ClInclude Include="CadBRepTransformService.h" />
+    <ClInclude Include="OpenCascadeIgesSession.h" />
+    <ClInclude Include="OpenCascadeVisibleImport.h" />
+    <ClInclude Include="RigidRegistrationService.h" />
+    <ClInclude Include="CadReferenceService.h" />
+    <ClInclude Include="CadSnapFeatureService.h" />
+    <ClInclude Include="CurveEditingService.h" />
+    <ClInclude Include="BoundaryJunctions.h" />
+    <ClInclude Include="CadClearanceService.h" />
+    <ClInclude Include="GeometryFeatureAnalysisService.h" />
+    <ClInclude Include="SurfaceRegionService.h" />
+    <ClInclude Include="GeometryBoundarySweep.h" />
     <ClInclude Include="CadDocumentImportService.h" />
+    <ClInclude Include="CadBevelService.h" />
+    <ClInclude Include="CadFeatureModelService.h" />
+    <ClInclude Include="TubeCadDocumentService.h" />
+    <ClInclude Include="TubeBoundaryGeometry.h" />
+    <ClInclude Include="OpenCascadeTubeWrapped.h" />
+    <ClInclude Include="TubeCadConstraints.h" />
+    <ClInclude Include="TubeCadJson.h" />
+    <ClInclude Include="TubeCadFieldNames.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="OpenCascadeBRepReader.h" />
     <ClInclude Include="OpenCascadeBRepBuilder.h" />
+    <ClInclude Include="OpenCascadeBooleanPreparation.h" />
     <ClInclude Include="OpenCascadeNeutralModelEvaluator.h" />
     <ClInclude Include="OpenCascadeTaskExecution.h" />
+    <ClInclude Include="OpenCascadeShapeBounds.h" />
     <ClInclude Include="OpenCascadeResourceImportExport.h" />
     <ClInclude Include="OpenCascadeTubeCSGConverter.h" />
     <ClInclude Include="OpenCascadeCancellation.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CadBRepImportService.cpp" />
+    <ClCompile Include="OpenCascadeVisibleImport.cpp" />
+    <ClCompile Include="OpenCascadeAssemblyImport.cpp" />
+    <ClInclude Include="OpenCascadeAssemblyImport.h" />
+    <ClCompile Include="CadBRepScaleService.cpp" />
+    <ClCompile Include="CadBRepHealService.cpp" />
+    <ClCompile Include="CadBRepTransformService.cpp" />
+    <ClCompile Include="RigidRegistrationService.cpp" />
+    <ClCompile Include="CadReferenceService.cpp" />
+    <ClCompile Include="CadSnapFeatureService.cpp" />
+    <ClCompile Include="BoundaryLeadService.cpp" />
+    <ClCompile Include="BRepDisplayService.cpp" />
+    <ClCompile Include="CurveEditingService.cpp" />
+    <ClCompile Include="CadClearanceService.cpp" />
+    <ClCompile Include="SectionPlateService.cpp">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="SurfaceTravelService.cpp">
+      <!-- Numeric clearance bounds are also used by the interactive debug
+           product. Optimize the loops without changing its CRT or assertions. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+    </ClCompile>
+    <ClCompile Include="RapidPathGeometryService.cpp" />
+    <ClCompile Include="RigidMotionCollisionService.cpp" />
+    <ClCompile Include="SectionPlateEditingService.cpp" />
+    <ClCompile Include="GeometryFeatureAnalysisService.cpp" />
+    <ClCompile Include="SurfaceRegionService.cpp" />
+    <ClCompile Include="GeometryBoundarySweep.cpp" />
     <ClCompile Include="CadDocumentImportService.cpp" />
+    <ClCompile Include="CadBevelService.cpp" />
+    <ClCompile Include="CadFeatureModelService.cpp" />
+    <ClCompile Include="TubeCadDocumentService.cpp" />
+    <ClCompile Include="TubeBoundaryGeometry.cpp" />
+    <ClCompile Include="OpenCascadeTubeWrapped.cpp" />
+    <ClCompile Include="TubeCadConstraints.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="OpenCascadeResourceImporter.cpp" />
     <ClCompile Include="OpenCascadeBRepBuilder.cpp" />
+    <ClCompile Include="OpenCascadeBooleanPreparation.cpp" />
     <ClCompile Include="OpenCascadeNeutralModelEvaluator.cpp" />
-    <ClCompile Include="OpenCascadeTubeCSGConverter.cpp" />
+    <ClCompile Include="OpenCascadeTubeCSGConverter.cpp">
+      <!-- Geometry recognition contains large numeric/evidence loops. Keep
+           Debug assertions and symbols while optimizing this translation unit. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+    </ClCompile>
     <ClCompile Include="OpenCascadeCancellation.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -93,6 +174,17 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
       <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="CadBRepImportService.cpp;CadBRepHealService.cpp;OpenCascadeBRepBuilder.cpp;OpenCascadeResourceImporter.cpp;TubeCadDocumentService.cpp;BoundaryLeadService.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <FloatingPointModel>Precise</FloatingPointModel>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />

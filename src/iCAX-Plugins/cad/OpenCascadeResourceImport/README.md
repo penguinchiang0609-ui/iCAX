@@ -178,6 +178,22 @@ TubeDesignerTest.exe --gtest_filter=TemplateRuntimeTest.DISABLED_FiveFaceBRepCon
 
 ## 目录结构
 
+管材 CAD 文档的形状权威为 `CTubeCadDocument.Geometry`：精确二维材料截面
+`Section` 与全部非皮真实边界 `MachiningFaces`。局部轴固定为 +X，截面坐标为
+Y/Z；`Placement` 独立保存局部到文档坐标的变换。槽底、任意曲面和内部空腔壁
+均属于显式边界，不按激光加工能力过滤。`Construction/Bodies` 仅为可选编辑定义。
+
+`CreateGeometry` 直接接收核心几何；`Evaluate` 只从核心恢复完整实体，清空或损坏
+构造图不影响求值。`Create/EditWithBodies` 用构造定义完成编辑后编译新核心；
+`EditGeometry` 提交三维边界替换并清除失效的构造定义。二维 `ReadSketch("section")`
+引用同一个核心截面；需要联动修改时由明确的构造规则重建加工面，不猜测设计意图。
+`EvaluateConstruction` 是显式编辑预览接口，不是已提交形状的恢复来源。
+
+`TubeBoundaryGeometry.cpp` 由截面和加工面推导有限轴向范围及名义皮，通过分割、
+定向材料侧选择和逐面覆盖检查恢复有效实体。导入编译另检查与源模型的双向材料
+差及面积。完整实体、皮面裁剪域、网格均为派生数据，不把原完整 BRep 藏作恢复兜底。
+文档格式为 `ICTCAD05`，核心独立格式为 `ICTBND01`；不读取旧格式回退。
+
 - `OpenCascadeResourceImporter.cpp`：OCCT 资源导入器实现。
 - `OpenCascadeNeutralModelEvaluator.cpp`：中性几何图、二维路径、拉伸和布尔运算适配器。
 - `OpenCascadeResourceImport.vcxproj`：插件 DLL 工程。

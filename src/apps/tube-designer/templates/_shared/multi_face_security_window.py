@@ -338,31 +338,29 @@ def _door_construction_parameters(
     parameters: dict[str, Any], surface: DoorSurface | None,
     points: list[Point], names: list[str], frame: Profile,
 ) -> dict[str, Any]:
-    """Convert outside-edge UI offsets to the local frame-center coordinates.
-
-    Only this private copy uses centerline coordinates. The input parameters and
-    saved model retain the dimensions and offsets that the user actually entered.
-    """
+    """Resolve the selected face's clear margins on a private construction copy."""
     result = dict(parameters)
     if surface is None:
         return result
-    faces = [Face(index + 1, names[index], points[index], points[index + 1])
-             for index in range(len(names))]
-    fixed_half = _profile(parameters, "doorFrame").width / 2
-    if surface.face_index <= len(faces):
-        face = faces[surface.face_index - 1]
-        axis = _vertex_profile_axis(faces, surface.face_index - 1)
-        normal = (-axis[1], axis[0], 0.0)
-        start_pad = abs(_dot(axis, face.direction)) * frame.depth / 2 + abs(_dot(normal, face.direction)) * frame.width / 2
-        result["doorUOffset"] = _number(parameters, "doorUOffset") - start_pad + fixed_half
-        result["doorVOffset"] = _number(parameters, "doorVOffset") + fixed_half
-    else:
-        # Cap coordinates begin at the front-left post center, whereas the UI
-        # measures from the finished frame's left/front outside edges.
-        left_pad = _number(parameters, "frontWidth") / 2 + points[1][0]
-        front_pad = -points[1][1]
-        result["doorUOffset"] = _number(parameters, "doorUOffset") - left_pad + fixed_half
-        result["doorVOffset"] = _number(parameters, "doorVOffset") - front_pad + fixed_half
+    fixed=_profile(parameters,'doorFrame');leaf=_profile(parameters,'doorLeafFrame')
+    inner_values=_door_surface_clear_bounds(surface,points,frame)
+    inner=dict(zip(('left','bottom','right','top'),inner_values))
+    spec=importlib.util.spec_from_file_location('icax_face_opening',Path(__file__).with_name('security_window_opening_layout.py'))
+    positioning=importlib.util.module_from_spec(spec);spec.loader.exec_module(positioning)
+    # The reference face is explicit so side and underside offsets remain local.
+    opening=positioning.position_clear(parameters,inner=inner,
+        side_widths={'left':inner['left']*2,'right':(surface.u_length-inner['right'])*2,
+                     'bottom':frame.width if surface.face_index<=len(points)-1 else inner['bottom']*2,
+                     'top':frame.width if surface.face_index<=len(points)-1 else (surface.v_length-inner['top'])*2},
+        available_sides={k:True for k in inner},
+        fixed=fixed,leaf=leaf,clear_size=(float(parameters['doorClearWidth'])+leaf.depth,float(parameters['doorClearHeight'])))
+    opening.update(layout=parameters.get('infillPattern','grid'),surface={
+        'faceIndex':surface.face_index,'faceName':surface.face_name,'origin':list(surface.origin),
+        'uAxis':list(surface.u_axis),'vAxis':list(surface.v_axis),'normal':list(surface.normal)})
+    clear=opening['clearBounds']
+    result.update(_escapeGridLayout=opening,
+        doorUOffset=clear['left']-fixed.width/2,doorVOffset=clear['bottom']-fixed.width/2,
+        doorWidth=opening['fixedClearWidth']+fixed.width,doorHeight=opening['fixedClearHeight']+fixed.width)
     return result
 
 
@@ -468,6 +466,21 @@ def _append_access_door(
         u_min - fixed_profile.width / 2, v_min - fixed_profile.width / 2,
         u_max + fixed_profile.width / 2, v_max + fixed_profile.width / 2,
     )
+    opening=parameters['_escapeGridLayout'];shared=opening['sharedOuterSides'];clear=opening['clearBounds']
+    # An open fixed frame ends at the actual shared outer material face.
+    for side,part in list(fixed.items()):
+        if shared[side]:
+            parts.remove(part);del fixed[side]
+        else:
+            axes=opening['boundaryAxes']
+            if side in ('left','right'):
+                start=_surface_point(surface,axes[side],axes['bottom'])
+                end=_surface_point(surface,axes[side],axes['top'])
+            else:
+                start=_surface_point(surface,axes['left'],axes[side])
+                end=_surface_point(surface,axes['right'],axes[side])
+            changed=replace(part,start=start,end=end)
+            parts[parts.index(part)]=changed;fixed[side]=changed
     inset = fixed_profile.width / 2 + _number(parameters, "doorGap") + leaf_profile.width / 2
     leaf_u_min, leaf_v_min = u_min + inset, v_min + inset
     leaf_u_max, leaf_v_max = u_max - inset, v_max - inset
@@ -674,7 +687,8 @@ def _build_parts(
         pattern = str(parameters.get("infillPattern", "grid"))
         horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
             parameters, 0.0, height,
-            start_offset_key="lastHorizontalBottomOffset",
+            boundary_inset=_profile(parameters, "frame").width,
+        start_offset_key="lastHorizontalBottomOffset",
             end_offset_key="firstHorizontalTopOffset",
             maximum_spacing_key=("horizontalMaximumCenterSpacing" if is_front
                                  else "sideHorizontalMaximumCenterSpacing"),
@@ -746,6 +760,7 @@ def _build_parts(
                     ("end", "末端段", door_u_max + fixed_half, face.length-end_extent+horizontal_reserve if parameters.get("_assemblyDesignOnly",False) else face.length),
                 )
                 for side, label, u_start, u_end in segments:
+                    if u_end-u_start<=1.e-7:continue
                     horizontal_part = _append_part(
                         parts, counters, f"main_grid.horizontal.{side}",
                         f"{face.name}主横杆 {index} {label}",
@@ -806,6 +821,7 @@ def _build_parts(
                     height-frame.width+vertical_reserve if parameters.get("_assemblyDesignOnly",False) else height-frame.width/2, tuple(frame_rails),
                 ),)
             for segment, label, z_start, z_end, boundary_rails in vertical_specs:
+                if z_end-z_start<=1.e-7:continue
                 role = "main_grid.vertical" if segment == "full" else f"main_grid.vertical.{segment}"
                 name = f"{face.name}主竖杆 {index}" + (f" {label}" if label else "")
                 vertical_part = _append_part(
@@ -837,7 +853,7 @@ def _build_parts(
                 end=_frame_geometry._machining.allocate_joint(post,top,'end','butt',0.,clearance,_profile_arguments),
                 start_joint=bottom.key,end_joint=top.key)
             parts[parts.index(post)]=allocated
-    if horizontal is not None:
+    if horizontal is not None and not parameters.get('_assemblyDesignOnly', False):
         branches = [{'key': part.key, 'start': part.start, 'end': part.end,
                      'section': _profile_arguments(part)} for part in parts
                     if part.category_key=='main_grid.horizontal']
@@ -971,6 +987,7 @@ def _append_five_face_caps(
             else:
                 specs = (("full", "", rail_start_distance, rail_end_distance, None),)
             for segment, label, u_start, u_end, boundary in specs:
+                if u_end-u_start<=1.e-7:continue
                 role = "cap_grid.horizontal" if segment == "full" else f"cap_grid.horizontal.{segment}"
                 name = f"{face_name}横杆 {index}" + (f" {label}" if label else "")
                 crossbar = _append_part(
@@ -999,6 +1016,7 @@ def _append_five_face_caps(
             else:
                 rod_specs = (("full", "", rod_start_distance, rod_end_distance, (perimeter[2], back_frame)),)
             for segment, label, v_start, v_end, boundary_frames in rod_specs:
+                if v_end-v_start<=1.e-7:continue
                 role = "cap_grid.vertical" if segment == "full" else f"cap_grid.vertical.{segment}"
                 name = f"{face_name}纵杆 {index}" + (f" {label}" if label else "")
                 rod = _append_part(
@@ -1041,11 +1059,11 @@ def _validate(
         raise ValueError("上下框45°斜拼目前仅支持宽深相等的矩形方管外框")
     if height <= frame.width * 2:
         raise ValueError("产品高度必须大于外框宽度的两倍")
-    if (any(member.width >= frame.width or member.depth >= frame.depth
+    if (any(member.width > frame.width + 1.e-7 or member.depth > frame.depth + 1.e-7
             for member in (horizontal, vertical) if member is not None)
             or horizontal is not None and vertical is not None and not (
-                horizontal.width > vertical.width and horizontal.depth > vertical.depth)):
-        raise ValueError("杆件宽深必须满足：外框 > 横杆 > 竖杆")
+                horizontal.width + 1.e-7 >= vertical.width and horizontal.depth + 1.e-7 >= vertical.depth)):
+        raise ValueError("杆件宽深须满足：外框不小于横杆，横杆不小于竖杆；接头另按所选工艺校验")
     clearance = _number(parameters, "assemblyClearance")
     if clearance < 0:
         raise ValueError("装配间隙不能为负数")
@@ -1066,9 +1084,9 @@ def _validate(
     fixed_profile = _profile(parameters, "doorFrame")
     fixed_half = fixed_profile.width / 2
     clear_u_min, clear_v_min, clear_u_max, clear_v_max = _door_surface_clear_bounds(door_surface, points, frame)
-    if door_u_min - fixed_half <= clear_u_min or door_u_max + fixed_half >= clear_u_max:
+    if '_escapeGridLayout' not in parameters and (door_u_min - fixed_half <= clear_u_min or door_u_max + fixed_half >= clear_u_max):
         raise ValueError("逃生窗横向范围必须保持在所选面的外框以内")
-    if door_v_min - fixed_half <= clear_v_min or door_v_max + fixed_half >= clear_v_max:
+    if '_escapeGridLayout' not in parameters and (door_v_min - fixed_half <= clear_v_min or door_v_max + fixed_half >= clear_v_max):
         raise ValueError("逃生窗纵向范围必须保持在所选面的外框以内")
     leaf_profile = _profile(parameters, "doorLeafFrame")
     gap = _number(parameters, "doorGap")
@@ -1270,6 +1288,10 @@ def _generate_multi_face_geometry(
                 ("access_door.fixed_frame", "access_door.leaf.frame"),
                 ("固定窗框", "活动窗扇框"), ("access_door.fixed_frame", "access_door.leaf"),
                 ("doorFrameGroove", "doorLeafFrameGroove")):
+            if group=='access_door.fixed_frame':
+                # Keep the open frame's actual members; the product contract
+                # assigns their end joints against the shared outer members.
+                continue
             left = local_point(reference["left"].start)[0] - profile.width / 2
             right = local_point(reference["right"].start)[0] + profile.width / 2
             bottom = local_point(reference["left"].start)[2]
@@ -1331,6 +1353,7 @@ def _generate_multi_face_geometry(
             "tubeDesigner.faceIndex": part.face_index,
             "tubeDesigner.faceName": part.face_name,
             "tubeDesigner.designSegment": {"start":list(part.start), "end":list(part.end),
+                "logicalCenterline":part.key.startswith('access_door.fixed_frame.'),
                 "profileCoordinateMap": [[0.,1.],[1.,0.]],
                 **_profile_arguments(part)},
             "tubeDesigner.endProcess": _end_process(part),
@@ -1401,11 +1424,23 @@ def _generate_multi_face_geometry(
         hinge_u = _door_bounds(construction)[0 if hinge_side == "left" else 2]
         _, door_v_min, _, door_v_max = _door_bounds(construction)
         hinge_count = DOOR_HINGE_COUNT
+        if hinge_side in fixed:
+            fixed_hinge=frame_receivers.get(fixed[hinge_side].key,fixed[hinge_side].key)
+        else:
+            origin=_surface_point(door_surface,hinge_u,(door_v_min+door_v_max)/2)
+            candidates=[p for p in parts if p.key.startswith('outer_frame.')
+                        and abs(_dot(_normalize(_subtract(p.end,p.start)),door_surface.v_axis))>1.-1.e-7]
+            def distance(part):
+                axis=_normalize(_subtract(part.end,part.start))
+                t=max(0.,min(part.length,_dot(_subtract(origin,part.start),axis)))
+                return math.dist(origin,_add(part.start,_scale(axis,t)))
+            receiver=min(candidates,key=distance)
+            fixed_hinge=frame_receivers.get(receiver.key,receiver.key)
         for index in range(hinge_count):
             hinge_v = door_v_min + (door_v_max - door_v_min) * (index + 1) / (hinge_count + 1)
             model.relationship(
                 f"access_door.hinge.{index + 1:04d}", "hinge",
-                [frame_receivers[fixed[hinge_side].key], frame_receivers[leaf[hinge_side].key]],
+                [fixed_hinge, frame_receivers[leaf[hinge_side].key]],
                 properties={
                     "participantRoles": ["fixed", "moving"],
                     "origin": list(_surface_point(door_surface, hinge_u, hinge_v)),
@@ -1427,6 +1462,8 @@ def _generate_multi_face_geometry(
         rows=rows,
     )
     document = finish_geometry_request(model, context)
+    if '_escapeGridLayout' in construction:
+        document.setdefault('extensions',{})['tubeDesigner.escapeWindowLayout']=construction['_escapeGridLayout']
     annotations: list[dict[str, Any]] = []
 
     def annotate(parameter: str, start: Point, end: Point, offset: Vector,
@@ -1447,6 +1484,8 @@ def _generate_multi_face_geometry(
     faces = [Face(index + 1, face_names[index], points[index], points[index + 1])
              for index in range(len(face_names))]
     front_face = next(face for face in faces if face.name == "正面")
+    annotate("barDistribution", front_face.start, front_face.end,
+             (0.0, 0.0, _number(parameters, "height") + 180.0), kind="parameter")
     height = _number(parameters, "height")
     # Multi-face windows use the same explicit annotation-lane strategy as the
     # single-face variant.  Geometry scripts own these distances because they
@@ -1467,6 +1506,7 @@ def _generate_multi_face_geometry(
     pattern = str(parameters.get("infillPattern", "grid"))
     front_horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
         parameters, 0.0, height,
+        boundary_inset=_profile(parameters, "frame").width,
         start_offset_key="lastHorizontalBottomOffset",
         end_offset_key="firstHorizontalTopOffset",
         maximum_spacing_key="horizontalMaximumCenterSpacing", label="正面主横杆",
@@ -1525,7 +1565,8 @@ def _generate_multi_face_geometry(
         side = side_faces[0]
         side_horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
             parameters, 0.0, height,
-            start_offset_key="lastHorizontalBottomOffset",
+            boundary_inset=_profile(parameters, "frame").width,
+        start_offset_key="lastHorizontalBottomOffset",
             end_offset_key="firstHorizontalTopOffset",
             maximum_spacing_key="sideHorizontalMaximumCenterSpacing", label="侧面主横杆",
         )
@@ -1631,12 +1672,21 @@ def _generate_multi_face_geometry(
         annotate("doorClearHeight", _surface_point(door_surface, clear_u_min, clear_v_min),
                  _surface_point(door_surface, clear_u_min, clear_v_max), normal_offset,
                  face=face_key)
-        annotate("doorUOffset", door_surface.origin,
-                 _surface_point(door_surface, u_min - fixed_width / 2, 0.0), normal_offset,
-                 face=face_key)
-        annotate("doorVOffset", _surface_point(door_surface, u_min, 0.0),
-                 _surface_point(door_surface, u_min, v_min - fixed_width / 2), normal_offset,
-                 face=face_key)
+        opening=construction['_escapeGridLayout'];clear=opening['clearBounds'];positioning=opening['positioning']
+        inner=positioning['innerBounds'];xp,zp=positioning['horizontalParameter'],positioning['verticalParameter']
+        xref=inner['left'] if xp=='doorLeftMargin' else inner['right'] if xp=='doorRightMargin' else (inner['left']+inner['right'])/2
+        zref=inner['bottom'] if zp=='doorBottomMargin' else inner['top'] if zp=='doorTopMargin' else (inner['bottom']+inner['top'])/2
+        xvalue=clear['left'] if xp=='doorLeftMargin' else clear['right'] if xp=='doorRightMargin' else (clear['left']+clear['right'])/2
+        zvalue=clear['bottom'] if zp=='doorBottomMargin' else clear['top'] if zp=='doorTopMargin' else (clear['bottom']+clear['top'])/2
+        annotate(xp,_surface_point(door_surface,xref,clear['bottom']),_surface_point(door_surface,xvalue,clear['bottom']),
+                 _scale(door_surface.normal,door_count_lane*3.2),face=face_key,
+                 kind='parameter' if abs(xref-xvalue)<1.e-7 else 'linear')
+        annotate(zp,_surface_point(door_surface,clear['left'],zref),_surface_point(door_surface,clear['left'],zvalue),
+                 _scale(door_surface.normal,door_count_lane*4),face=face_key,
+                 kind='parameter' if abs(zref-zvalue)<1.e-7 else 'linear')
+        annotate('doorGap',_surface_point(door_surface,clear['left'],clear['bottom']),
+                 _surface_point(door_surface,opening['leafBounds']['left'],clear['bottom']),
+                 _scale(door_surface.normal,door_count_lane*4.8),face=face_key)
         leaf_profile = _profile(parameters, "doorLeafFrame")
         inset = fixed_width / 2 + _number(parameters, "doorGap") + leaf_profile.width
         inner_u_min, inner_u_max = u_min + inset, u_max - inset

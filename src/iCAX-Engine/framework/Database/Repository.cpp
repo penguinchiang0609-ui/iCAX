@@ -4,6 +4,7 @@
 #include "MetaRegistry.h"
 #include "RepositoryUndoRedoHistory.h"
 #include "ChangeSetKeys.h"
+#include "DerivedComponentBase.h"
 #include <chrono>
 #include <cstdio>
 #include <iterator>
@@ -460,11 +461,26 @@ namespace iCAX
                 return m_Operations;
             }
 
+            iCAX::Data::uuid DerivedOwner;
+
         private:
             std::string m_strName;
             // Transaction intents may contain full immutable manufacturing
             // recipes. Queue growth must not recopy every previous intent.
             std::deque<CRepositoryOperation> m_Operations;
+        };
+
+        class CRepositoryDerivedPublicationScope final
+        {
+        public:
+            CRepositoryDerivedPublicationScope(CRepository& Repository_, bool Active_)
+                : m_Repository(Repository_), m_Active(Active_)
+            { if (m_Active) ++m_Repository.m_nDerivedPublicationDepth; }
+            ~CRepositoryDerivedPublicationScope()
+            { if (m_Active) --m_Repository.m_nDerivedPublicationDepth; }
+        private:
+            CRepository& m_Repository;
+            bool m_Active;
         };
 
         class CRepositoryEventSuppressor final
@@ -587,6 +603,7 @@ void iCAX::Database::CRepository::CancelLoadBaseline()
 
 iCAX::Database::ITransaction& iCAX::Database::CRepository::BeginTransaction(IN const std::string& strName_)
 {
+    RequireWritableNotificationContext();
     if (IsOperationBatchActive())
     {
         throw std::runtime_error("Repository transaction cannot begin inside an active repository batch scope");
@@ -598,6 +615,16 @@ iCAX::Database::ITransaction& iCAX::Database::CRepository::BeginTransaction(IN c
 
     m_pCurrentTransaction = std::make_unique<CRepositoryTransaction>(strName_);
     return *m_pCurrentTransaction;
+}
+
+iCAX::Database::ITransaction& iCAX::Database::CRepository::BeginDerivedTransaction(
+    const iCAX::Data::uuid& OwnerID_, const std::string& Name_)
+{
+    if (OwnerID_.is_nil() || !GetEntity(OwnerID_))
+        throw std::invalid_argument("Derived publication requires an existing owner");
+    auto& transaction = BeginTransaction(Name_);
+    m_pCurrentTransaction->DerivedOwner = OwnerID_;
+    return transaction;
 }
 
 bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction_, OUT std::string& strError_)
@@ -619,6 +646,8 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
         return true;
     }
 
+    CRepositoryDerivedPublicationScope _DerivedScope(*this, !_pTransaction->DerivedOwner.is_nil());
+
     try
     {
         const bool _ProfileStage = _pTransaction->GetName() == "Add independent nesting parts"
@@ -631,7 +660,33 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
         double _ApplyEntitySeconds = 0.0;
         double _ApplyComponentSeconds = 0.0;
         std::map<std::string, double> _ComponentSeconds;
-        BeginOperationBatchCore(EOperationBatchKind::Transaction, _pTransaction->GetName());
+        const auto _DerivedOwner = _pTransaction->DerivedOwner;
+        if (!_DerivedOwner.is_nil())
+        {
+            std::unordered_set<iCAX::Data::uuid> created;
+            for (const auto& operation : _Operations)
+            {
+                if (operation.Type == RepositoryEventArgs::kAddEntity)
+                {
+                    if (GetEntity(operation.EntityID))
+                        throw std::runtime_error("Derived entity already exists");
+                    created.insert(operation.EntityID);
+                }
+                else if (!created.contains(operation.EntityID))
+                {
+                    const auto entity = GetEntity(operation.EntityID);
+                    if (!entity) throw std::runtime_error("Derived target is missing");
+                    if (operation.Type != RepositoryEventArgs::kModifyComponent)
+                        throw std::runtime_error("Derived publication cannot restructure an existing entity");
+                    const auto component = std::dynamic_pointer_cast<CDerivedComponentBase>(
+                        entity->GetComponent(operation.ComponentClass));
+                    if (!component || component->GetDerivedOwnerID() != _DerivedOwner)
+                        throw std::runtime_error("Derived target is outside the publication owner");
+                }
+            }
+        }
+        BeginOperationBatchCore(_DerivedOwner.is_nil() ? EOperationBatchKind::Transaction
+            : EOperationBatchKind::DerivedPublish, _pTransaction->GetName());
         m_pOperationBatchBuilder->ReserveOperations(_Operations.size());
         m_OperationBatchEventRecords.reserve(_Operations.size() * 3);
         for (auto& _Operation : _Operations)
@@ -649,6 +704,28 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
             }
         }
         const auto _EndStart = std::chrono::steady_clock::now();
+        if (!_DerivedOwner.is_nil())
+        {
+            // Validate the complete fact batch, including observer writes. Any
+            // forbidden change throws while rollback is still possible.
+            for (const auto& fact : m_pOperationBatchBuilder->Build().Operations)
+            {
+                const auto entity = GetEntity(fact.EntityID);
+                if (!entity || (fact.Type != RepositoryEventArgs::kAddEntity
+                    && fact.Type != RepositoryEventArgs::kAddComponent
+                    && fact.Type != RepositoryEventArgs::kModifyComponent))
+                    throw std::runtime_error("Derived publication cannot delete or change component state");
+                const auto classes = fact.Type == RepositoryEventArgs::kAddEntity
+                    ? entity->GetComponentClasses() : std::vector<std::string>{fact.ComponentClass};
+                if (classes.empty()) throw std::runtime_error("Derived entity must contain owned derived data");
+                for (const auto& type : classes)
+                {
+                    const auto component = std::dynamic_pointer_cast<CDerivedComponentBase>(entity->GetComponent(type));
+                    if (!component || component->GetDerivedOwnerID() != _DerivedOwner)
+                        throw std::runtime_error("Derived publication cannot modify user definitions or another owner");
+                }
+            }
+        }
         EndOperationBatch();
         if (_ProfileStage)
         {
@@ -729,6 +806,7 @@ void iCAX::Database::CRepository::CancelTransaction(IN ITransaction& Transaction
 
 std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepository::BeginUndoCommand(IN const std::string& strName_)
 {
+    RequireWritableNotificationContext();
     if (strName_.empty())
     {
         throw std::invalid_argument("Undo command name cannot be empty");
@@ -738,7 +816,16 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
         throw std::runtime_error("Undo scope cannot begin inside an active repository operation batch or transaction");
     }
 
-    return m_pHistory->BeginCommand(strName_);
+    return m_pHistory->BeginCommand(strName_, [this](const COperationBatch& batch) {
+        if (IsOperationBatchActive() || m_pCurrentTransaction || m_nHistoryReplayDepth > 0)
+            throw std::runtime_error("Undo cancellation cannot run during another repository write");
+        const auto inverse = MakeInverseOperationBatch(batch, "Cancel " + batch.Name);
+        ++m_nHistoryReplayDepth;
+        try { ApplyOperationBatchWithReplayEvent(inverse); }
+        catch (...) { --m_nHistoryReplayDepth; throw; }
+        --m_nHistoryReplayDepth;
+        AppendOperationLog(inverse);
+    });
 }
 
 bool iCAX::Database::CRepository::IsUndoCommandRecording() const
@@ -746,9 +833,25 @@ bool iCAX::Database::CRepository::IsUndoCommandRecording() const
     return m_pHistory->IsRecording();
 }
 
+void iCAX::Database::CRepository::RetainDerivedEntityForUndo(
+    const iCAX::Data::uuid& EntityID_, const iCAX::Data::uuid& OwnerID_)
+{
+    const auto entity = GetEntity(EntityID_);
+    if (!entity || OwnerID_.is_nil() || !GetEntity(OwnerID_)
+        || entity->GetComponentClasses().empty())
+        throw std::invalid_argument("Derived receipt owner or entity is missing");
+    for (const auto& type : entity->GetComponentClasses())
+    {
+        const auto component = std::dynamic_pointer_cast<CDerivedComponentBase>(entity->GetComponent(type));
+        if (!component || component->GetDerivedOwnerID() != OwnerID_)
+            throw std::invalid_argument("Only owned derived entities can survive command undo");
+    }
+    m_pHistory->RetainDerivedEntity(EntityID_);
+}
+
 bool iCAX::Database::CRepository::CanUndo() const
 {
-    if (IsOperationBatchActive() || m_pCurrentTransaction || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
+    if (m_bDerivedPublicationNotification || IsOperationBatchActive() || m_pCurrentTransaction || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
     {
         return false;
     }
@@ -757,7 +860,7 @@ bool iCAX::Database::CRepository::CanUndo() const
 
 bool iCAX::Database::CRepository::CanRedo() const
 {
-    if (IsOperationBatchActive() || m_pCurrentTransaction || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
+    if (m_bDerivedPublicationNotification || IsOperationBatchActive() || m_pCurrentTransaction || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
     {
         return false;
     }
@@ -829,6 +932,7 @@ bool iCAX::Database::CRepository::Redo()
 
 void iCAX::Database::CRepository::BeginOperationBatchCore(IN EOperationBatchKind Kind_, IN const std::string& strName_)
 {
+    RequireWritableNotificationContext();
     if (IsOperationBatchActive())
     {
         throw std::runtime_error("Nested repository operation batches are not supported");
@@ -868,6 +972,16 @@ void iCAX::Database::CRepository::CloseOperationLog()
 bool iCAX::Database::CRepository::HasOperationLog() const
 {
     return m_pOperationLog && m_pOperationLog->IsOpen();
+}
+
+bool iCAX::Database::CRepository::IsWriteInProgress() const
+{
+    return m_bDerivedPublicationNotification || IsOperationBatchActive() || m_pCurrentTransaction || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0;
+}
+
+bool iCAX::Database::CRepository::FlushOperationLog()
+{
+    return m_pOperationLog && m_pOperationLog->Flush();
 }
 
 void iCAX::Database::CRepository::ReplayOperationLog(
@@ -959,6 +1073,7 @@ bool iCAX::Database::CRepository::HasEntity(IN const iCAX::Data::uuid& ID_) cons
 
 bool iCAX::Database::CRepository::DeleteEntity(IN const iCAX::Data::uuid& ID_, OUT std::string& strError_)
 {
+    RequireWritableNotificationContext();
     strError_.clear();
     if (ID_ == m_UID)
     {
@@ -1463,6 +1578,7 @@ std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetMetaEnt
 
 void iCAX::Database::CRepository::CleanUp(IN const bool& bForced_)
 {
+    RequireWritableNotificationContext();
     auto _vecIDs = GetEntityIDs();
     for (auto _Ite = _vecIDs.begin(); _Ite != _vecIDs.end(); ++_Ite)
     {
@@ -1630,6 +1746,8 @@ void iCAX::Database::CRepository::RemoveObserver(IN std::shared_ptr<IRepositoryE
 
 void iCAX::Database::CRepository::TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const RepositoryEventBatch> pBatch_)
 {
+    if (nType_ != RepositoryEventArgs::kBatchChanged)
+        RequireWritableNotificationContext();
     if (IsRepositoryEventSuppressed())
     {
         return;
@@ -1803,8 +1921,19 @@ void iCAX::Database::CRepository::EndOperationBatch()
     _pBatch->pOperationBatch = std::move(_pCommittedBatch);
     _pBatch->Records = std::move(_EventRecords);
 
-    TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
-    TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
+    const auto _PreviousNotificationState = m_bDerivedPublicationNotification;
+    m_bDerivedPublicationNotification = _PreviousNotificationState || _nKind == EOperationBatchKind::DerivedPublish;
+    try
+    {
+        TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
+        TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
+    }
+    catch (...)
+    {
+        m_bDerivedPublicationNotification = _PreviousNotificationState;
+        throw;
+    }
+    m_bDerivedPublicationNotification = _PreviousNotificationState;
     _StageMark("notified");
 }
 
@@ -2136,7 +2265,7 @@ void iCAX::Database::CRepository::ApplyOperationForward(IN const CRepositoryOper
                     RequireRepositoryWrite(_pCreatedEntity->AddComponent(componentClass, component, _strError),
                         _strError, "Replay attach component failed");
                     if (!properties.empty())
-                        RequireRepositoryWrite(component->SetProperties(properties, _strError),
+                        RequireRepositoryWrite(component->SetPropertiesOwned(PropertySet(properties), _strError),
                             _strError, "Replay initialize component failed");
                     if (const auto enabled = input.find("enabled"); enabled != input.end())
                         ApplyComponentEnabledState(*component, enabled->second.To<bool>());
@@ -2175,7 +2304,7 @@ void iCAX::Database::CRepository::ApplyOperationForward(IN const CRepositoryOper
         if (_pComponent && !Operation_.NewProperties.empty())
         {
             std::string _strError;
-            RequireRepositoryWrite(_pComponent->SetProperties(Operation_.NewProperties, _strError), _strError, "Replay initialize component failed");
+            RequireRepositoryWrite(_pComponent->SetPropertiesOwned(PropertySet(Operation_.NewProperties), _strError), _strError, "Replay initialize component failed");
         }
         if (_pComponent && Operation_.NewEnabled.has_value())
         {
@@ -2217,7 +2346,7 @@ void iCAX::Database::CRepository::ApplyOperationForward(IN const CRepositoryOper
         if (!Operation_.NewProperties.empty())
         {
             std::string _strError;
-            RequireRepositoryWrite(_pComponent->SetProperties(Operation_.NewProperties, _strError), _strError, "Replay modify component failed");
+            RequireRepositoryWrite(_pComponent->SetPropertiesOwned(PropertySet(Operation_.NewProperties), _strError), _strError, "Replay modify component failed");
         }
         break;
     }
@@ -2269,6 +2398,12 @@ void iCAX::Database::CRepository::ApplyOperationBatchWithReplayEvent(IN const CO
     BeginOperationBatchCore(EOperationBatchKind::Replay, Batch_.Name);
     try
     {
+        // Structural facts also emit component initialization events. Reserve
+        // before inserting large recipes so vector growth does not repeatedly
+        // copy complete earlier snapshots during replay.
+        const auto capacity=Batch_.Operations.size()*3;
+        m_pOperationBatchBuilder->ReserveOperations(capacity);
+        m_OperationBatchEventRecords.reserve(capacity);
         ApplyOperationBatchForward(Batch_);
         EndOperationBatch();
     }
@@ -2298,6 +2433,11 @@ void iCAX::Database::CRepository::HandleCommittedOperationBatch(IN const COperat
         return;
     }
 
+    if (Batch_.Kind == EOperationBatchKind::DerivedPublish)
+    {
+        AppendOperationLog(Batch_);
+        return;
+    }
     if (pSharedBatch_)
         m_pHistory->HandleSharedCommittedOperationBatch(std::move(pSharedBatch_));
     else
@@ -2313,4 +2453,10 @@ void iCAX::Database::CRepository::AppendOperationLog(IN const COperationBatch& B
     }
 
     m_pOperationLog->Append(FilterPersistentOperationBatch(Batch_, *m_pMetaRegistry));
+}
+
+void iCAX::Database::CRepository::RequireWritableNotificationContext() const
+{
+    if (m_bDerivedPublicationNotification)
+        throw std::runtime_error("Derived publication notifications are read-only; queue writes after notification");
 }

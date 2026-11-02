@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</ProjectGuid>
+    <RootNamespace>CamRuntime</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>CamRuntime</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><WholeProgramOptimization>true</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><WholeProgramOptimization>true</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup><TargetName>CamRuntime</TargetName></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_CAM_RUNTIME;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\IntentToolpath;$(MSBuildProjectDirectory)\..\ProcessPath;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\physics;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="SDO.h" />
+    <ClInclude Include="SDOSupport.h" />
+    <ClInclude Include="..\Machine\ComponentValueHelpers.h" />
+    <ClInclude Include="FeatureRecognitionService.h" />
+    <ClInclude Include="JobComponents.h" />
+    <ClInclude Include="LayerComponents.h" />
+    <ClInclude Include="CamRuntime.h" />
+    <ClInclude Include="MachineDefinitionSDOImplement.h" />
+    <ClInclude Include="..\Machine\MachineInstanceComponents.h" />
+    <ClInclude Include="..\Machine\MachineDescriptionLoader.h" />
+    <ClInclude Include="..\Machine\MachineResourceKeys.h" />
+    <ClInclude Include="..\Machine\MachineResources.h" />
+    <ClInclude Include="MachineSDOImplement.h" />
+    <ClInclude Include="..\Machine\MachineTransformConstraints.h" />
+    <ClInclude Include="..\Machine\SDFLoader.h" />
+    <ClInclude Include="..\Machine\URDFLoader.h" />
+    <ClInclude Include="SceneComponents.h" />
+    <ClInclude Include="SelectionComponents.h" />
+    <ClInclude Include="ToolpathGenerationService.h" />
+    <ClInclude Include="ToolpathOrderService.h" />
+    <ClInclude Include="ToolpathComponents.h" />
+    <ClInclude Include="ToolpathSDOImplement.h" />
+    <ClInclude Include="TopologyPayloadNames.h" />
+    <ClInclude Include="ToolpathResourceKeys.h" />
+    <ClInclude Include="ToolpathResources.h" />
+    <ClInclude Include="WorkpieceComponents.h" />
+    <ClInclude Include="WorkpieceSDOImplement.h" />
+    <ClInclude Include="WorkpieceResourceKeys.h" />
+    <ClInclude Include="CamRuntimeExport.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CADIntentSDO.cpp" />
+    <ClCompile Include="SDOSupport.cpp" />
+    <ClCompile Include="JobSDO.cpp" />
+    <ClCompile Include="IntentToolpathSDO.cpp" />
+    <ClCompile Include="MachineDefinitionSDO.cpp" />
+    <ClCompile Include="MachineDefinitionSDOImplement.cpp" />
+    <ClCompile Include="MachineSDO.cpp" />
+    <ClCompile Include="MachineSDOImplement.cpp" />
+    <ClCompile Include="ToolpathSDOImplement.cpp" />
+    <ClCompile Include="SelectionSDO.cpp" />
+    <ClCompile Include="ToolpathSDO.cpp" />
+    <ClCompile Include="WorkpieceModelSDO.cpp" />
+    <ClCompile Include="WorkpieceEditSDO.cpp" />
+    <ClCompile Include="WorkpieceSDO.cpp" />
+    <ClCompile Include="WorkpieceSDOImplement.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="FeatureRecognitionService.cpp" />
+    <ClCompile Include="CamRuntime.cpp" />
+    <ClCompile Include="SceneBootstrapBehaviour.cpp" />
+    <ClCompile Include="ToolpathGenerationService.cpp" />
+    <ClCompile Include="ToolpathOrderService.cpp" />
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\geometry\ExtrusionRecognition\ExtrusionRecognition.vcxproj">
+      <Project>{e108b465-2d5a-4904-a2fb-25f7f184d384}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
+      <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\Machine\Machine.vcxproj">
+      <Project>{90c52ed8-ab1d-48d8-bff3-4109f5d3757c}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\IntentToolpath\IntentToolpath.vcxproj">
+      <Project>{7f21c2a4-bda0-4f50-a60f-4b95ab58cb85}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ProcessPath\ProcessPath.vcxproj">
+      <Project>{c55984df-c3bf-4ed2-85f7-04d06d582a18}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
+      <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj">
+      <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj">
+      <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\physics\ColliderData\ColliderData.vcxproj">
+      <Project>{a50a9e89-b30b-4ca8-a682-1e48d9dd4263}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj">
+      <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj">
+      <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">
+      <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
+      <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Project\Project.vcxproj">
+      <Project>{d0b2bd35-1f9f-464b-a6d6-38b77c319f9f}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\PDO\PDO.vcxproj">
+      <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
+      <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj">
+      <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\EntityViewRuntime\EntityViewRuntime.vcxproj">
+      <Project>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\common\Transform\Transform.vcxproj">
+      <Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\common\SceneBootstrap\SceneBootstrap.vcxproj">
+      <Project>{d5e0c5b3-26b7-4c31-a87d-49f0f56c3c16}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

@@ -1,0 +1,125 @@
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { selectWorkpieceFile } from './fixtures/fiveAxisFilePicker.mjs';
+import { gizmoDriver } from './FiveAxisPlacementGizmo.native.browser.mjs';
+
+export async function verifyMultiWorkpiece({page,rpc,calls,output,sourcePath}) {
+  page.setDefaultTimeout(60000);
+  const invoke=(method,payload={})=>rpc({action:'invoke',scope:'scene',method,payload});
+  const read=()=>invoke('CamScene.ReadState');
+  const command=id=>page.evaluate(id=>fixture.entry.handleRibbonCommand(fixture.context,id),id);
+  const idle=()=>page.waitForFunction(()=>!fixture.view.pending&&!fixture.view.fiveWorkpieceSwitching,null,{timeout:180000});
+  const area=id=>page.evaluate(id=>fixture.context.actions.selectRibbonTab(id),id);
+  const initial=await read(),first=initial.placements[0];
+  const current=state=>state.setups.find(s=>s.id===state.activeSetupId);
+  const visible=async id=>{
+    await page.waitForFunction(id=>!fixture.view.pending&&!fixture.view.fiveWorkpieceSwitching&&fixture.view.scene.activePlacementId===id&&fixture.view.viewport.sceneObjects.size===1&&fixture.view.viewport.sceneObjects.has(id),id);
+    assert.equal(await page.evaluate(()=>fixture.view.error),'');
+  };
+  const clearCurrent=async()=>{const s=await read();await invoke('CamProcess.Clear',{commandId:crypto.randomUUID(),expected:s.expected,intentIds:s.intentToolpaths.filter(c=>c.setupId===s.activeSetupId).map(c=>c.id),categories:['Kerf','Leads','Gap','Overcut']});await command('five.refresh');};
+  await clearCurrent();await command('five.tool.generate');await idle();
+  const firstGenerated=current(await read()).generatedGeometry;
+  assert.equal(firstGenerated.status,'Current');assert.equal(firstGenerated.operations.length,27);
+  const firstCuts=(await read()).intentToolpaths;
+  await area('workpiece');await command('five.tool.select');
+  await selectWorkpieceFile(page,sourcePath);await idle();
+  let state=await read();assert.equal(state.workpieces.length,2);assert.equal(state.placements.length,2);
+  const second=state.placements.find(p=>p.id!==first.id);
+  assert.equal(await page.evaluate(()=>fixture.view.scene.activePlacementId),second.id);
+  assert.notEqual(first.setupId,second.setupId);assert.equal(state.setups.length,2);
+  assert.deepEqual(state.placements.map(p=>p.id),[first.id,second.id]);
+  await visible(second.id);
+  assert.equal(await page.evaluate(()=>fixture.view.scene.intentToolpaths.length),0);
+  assert.deepEqual(state.setups.find(s=>s.id===first.setupId).generatedGeometry,firstGenerated);
+  const {pick,numeric}=gizmoDriver(page);
+  await command('five.tool.translate');await pick('X');await numeric().fill('100');await numeric().press('Enter');await idle();
+  state=await read();assert.deepEqual(state.placements.find(p=>p.id===first.id),first);
+  assert.equal(state.placements.find(p=>p.id===second.id).transform[3],100);
+  await page.evaluate(()=>fixture.view.viewport.fitView());
+  await command('five.tool.rotate');await pick('Z');await numeric().fill('30');await numeric().press('Enter');await idle();
+  state=await read();const positioned=state.placements.find(p=>p.id===second.id);
+  assert.ok(Math.abs(positioned.transform[0]-Math.cos(Math.PI/6))<1e-8);
+  assert.deepEqual(state.placements.find(p=>p.id===first.id),first);
+  await page.locator(`[data-five-workpiece="${first.id}"]`).click();
+  await visible(first.id);
+  assert.equal(await page.evaluate(()=>fixture.view.scene.activePlacementId),first.id);
+  assert.equal(await page.evaluate(()=>fixture.view.viewport.transformManipulator?.control?.mode),'translate');
+  assert.equal(await page.evaluate(id=>fixture.view.viewport.sceneObjects.has(id),second.id),false);
+  await page.screenshot({path:resolve(output,'workpiece-list-first.png')});
+  await area('toolpath');
+  await command('five.tool.extract');await command('five.extraction.run');await idle();
+  assert.equal(await page.evaluate(()=>extractionModule.extractionDraft(fixture.view).extraction.selected.length),0);
+  await command('five.extraction.close');
+  await page.locator('[data-five-workpiece-chooser] summary').click();await page.locator(`[data-five-workpiece="${second.id}"]`).click();
+  await visible(second.id);
+  await command('five.tool.extract');state=await read();
+  const sources=await invoke('CamCut.QuerySources',{expected:state.expected,setupId:state.activeSetupId,placementId:second.id});
+  const face=sources.faceUses.find(f=>f.localId==='4');assert.ok(face);
+  await page.evaluate(face=>{const d=extractionModule.extractionDraft(fixture.view).extraction;d.mode='Faces';d.faces=[face];extractionModule.extractionChanged(fixture.view);},face);
+  await command('five.extraction.run');await idle();
+  assert.equal(await page.evaluate(()=>fixture.view.error),'');
+  assert.equal(await page.evaluate(()=>extractionModule.extractionDraft(fixture.view).extraction.selected.length),initial.intentToolpaths.length);
+  await page.locator('[data-five-command="five.extraction.confirm"]').click();await idle();state=await read();
+  assert.equal(state.intentToolpaths.length,initial.intentToolpaths.length*2);
+  assert.deepEqual(state.intentToolpaths.filter(c=>c.placementId===first.id),firstCuts);
+  assert.equal(await page.evaluate(()=>fixture.view.scene.intentToolpaths.length),27);
+  assert.equal(await page.locator('[data-five-intent]').count(),27);
+  assert.deepEqual(state.intentToolpaths.filter(c=>c.placementId===second.id).map(c=>Number(c.number)),Array.from({length:27},(_,i)=>i+1));
+  const secondCut=state.intentToolpaths.find(c=>c.placementId===second.id&&c.geometryKind==='Slot');
+  await invoke('CamCut.SetCommands',{commandId:crypto.randomUUID(),expected:state.expected,intentId:secondCut.id,beforeCommands:Array.from({length:40},(_,i)=>`; scroll test ${i}`).join('\n'),afterCommands:''});await command('five.refresh');
+  await page.locator(`[data-five-intent="${secondCut.id}"]`).click();await command('five.tool.compensation');await idle();
+  // Refresh while the user continues to edit and scroll both panels.
+  const width=page.locator('[data-five-field="cutKerf"]');await width.fill('0.1234');
+  await page.evaluate(()=>{
+    const input=document.querySelector('[data-five-field="cutKerf"]'),left=document.querySelector('.cam-context-pane'),right=document.querySelector('.cam-info-pane'),nested=document.querySelector('[data-five-cut-command="beforeCommands"]');
+    input.focus({preventScroll:true});input.setSelectionRange(2,5);left.scrollTop=90;right.scrollTop=35;
+    window.multiPreserved={input,left,right,nested,canvas:fixture.view.viewport.renderer.domElement,calls:0};
+    input.addEventListener('multi-listener',()=>multiPreserved.calls++);
+    fixture.holdMethod='CamScene.ReadState';fixture.hold=true;void fixture.entry.handleRibbonCommand(fixture.context,'five.refresh');
+  });
+  await page.waitForFunction(()=>fixture.held);
+  await page.evaluate(()=>{const p=multiPreserved;p.left.scrollTop=190;p.right.scrollTop=65;p.nested.scrollTop=140;p.positions=[p.left.scrollTop,p.right.scrollTop,p.nested.scrollTop];fixture.release();});await idle();
+  const preserved=await page.evaluate(()=>{const p=multiPreserved;p.input.dispatchEvent(new Event('multi-listener'));return {canvas:p.canvas===fixture.view.viewport.renderer.domElement,input:p.input===document.querySelector('[data-five-field="cutKerf"]'),focus:document.activeElement===p.input,selection:[p.input.selectionStart,p.input.selectionEnd],positions:p.positions,after:[p.left.scrollTop,p.right.scrollTop,p.nested.scrollTop],value:p.input.value,calls:p.calls};});
+  assert.equal(preserved.canvas,true);assert.equal(preserved.input,true);assert.equal(preserved.focus,true);assert.deepEqual(preserved.selection,[2,5]);assert.deepEqual(preserved.positions,preserved.after);assert.ok(preserved.positions.every(v=>v>0));assert.equal(preserved.value,'0.1234');assert.equal(preserved.calls,1);
+  state=await read();await invoke('CamCut.SetCommands',{commandId:crypto.randomUUID(),expected:state.expected,intentId:secondCut.id,beforeCommands:'',afterCommands:''});
+  await clearCurrent();
+  await command('five.tool.generate');await idle();assert.equal(await page.evaluate(()=>fixture.view.error),'');state=await read();
+  const generated=current(state).generatedGeometry;
+  assert.equal(generated.status,'Current');assert.equal(generated.operations.length,27);assert.ok(generated.operations.every(o=>o.placementId===second.id));
+  const cross=generated.transitions.filter(t=>t.fromPlacementId!==t.toPlacementId);assert.equal(cross.length,0);
+  assert.deepEqual(state.setups.find(s=>s.id===first.setupId).generatedGeometry,firstGenerated);
+  await page.evaluate(()=>{fixture.view.viewport.fitView();document.querySelector('.cam-context-pane').scrollTop=0;document.querySelector('.cam-info-pane').scrollTop=0;});await page.screenshot({path:resolve(output,'current-workpiece-generated.png')});
+  const reopened=await rpc({action:'save-reopen'});assert.deepEqual(reopened.workpieces,state.workpieces);assert.deepEqual(reopened.placements,state.placements);assert.deepEqual(reopened.intentToolpaths,state.intentToolpaths);assert.equal(reopened.activeSetupId,second.setupId);assert.deepEqual(current(reopened).generatedGeometry,generated);
+  await page.evaluate(()=>fixture.entry.releaseProject(fixture.context));
+  await page.evaluate(async()=>{const {getProjectView}=await import('/src/apps/_shared/workbench/state/projectViewStore.mjs');const {ViewClient}=await import('/src/iCAX-UI/SDK/View/viewClient.mjs');fixture.view=getProjectView(fixture.context.project.projectId);fixture.context.sceneProxy.views=new ViewClient(fixture.context.sceneProxy);fixture.context.activeRibbonTabId='workpiece';fixture.entry.mountProject(fixture.context);});
+  await visible(second.id);
+  assert.equal(await page.locator('[data-five-workpiece]').count(),2);
+  await page.locator(`[data-five-workpiece="${first.id}"]`).click();await visible(first.id);
+  assert.deepEqual(current(await read()).generatedGeometry,firstGenerated);
+  assert.equal(await page.evaluate(()=>fixture.view.scene.intentToolpaths.length),27);
+  await page.screenshot({path:resolve(output,'reopened-workpiece-list.png')});
+  // Switching during playback must dispose the previous head and reset its
+  // cursor; all frames belong to the new workpiece's independently saved plan.
+  await area('toolpath');await command('five.tool.simulation');
+  await page.waitForFunction(()=>fixture.view.fiveSimulation?.frames.length>0);
+  await page.evaluate(()=>window.firstPlayback=fixture.view.fiveSimulation);
+  await command('five.simulation.play');await page.waitForFunction(()=>fixture.view.fiveSimulation.cursor>0);
+  await page.locator('[data-five-workpiece-chooser] summary').click();await page.locator(`[data-five-workpiece="${second.id}"]`).click();await visible(second.id);
+  assert.equal(await page.evaluate(()=>firstPlayback.playing),false);
+  assert.equal(await page.evaluate(()=>firstPlayback.group),null);
+  assert.equal(await page.evaluate(()=>fixture.view.fiveSimulation.cursor),0);
+  assert.ok(await page.evaluate(ids=>fixture.view.fiveSimulation.frames.length>0&&fixture.view.fiveSimulation.frames.every(f=>ids.includes(f.intentId)),generated.operations.map(o=>o.intentId)));
+  // Attach a fixture to the first workpiece, then verify the native view's
+  // sources contain only the selected workpiece and that workpiece's fixture.
+  await area('workpiece');await page.locator(`[data-five-workpiece="${first.id}"]`).click();await visible(first.id);
+  state=await read();let fixtureTask=await invoke('CamFixture.Import',{commandId:crypto.randomUUID(),expected:state.expected,setupId:first.setupId,sourcePath});
+  while(fixtureTask.status==='Running'){await new Promise(r=>setTimeout(r,100));fixtureTask=await invoke('CamFixture.QueryTask',{epoch:fixtureTask.epoch,taskId:fixtureTask.taskId});}
+  assert.equal(fixtureTask.status,'Completed');const fixtureId=fixtureTask.result.fixtureId;
+  await command('five.refresh');await page.waitForFunction(id=>fixture.view.viewport.sceneObjects.has(id),fixtureId);
+  assert.equal(await page.evaluate(()=>fixture.view.viewport.sceneObjects.size),2);
+  await page.locator(`[data-five-workpiece="${second.id}"]`).click();await visible(second.id);
+  assert.equal(await page.evaluate(id=>fixture.view.viewport.sceneObjects.has(id),fixtureId),false);
+  assert.deepEqual(current(await read()).generatedGeometry,generated);
+  writeFileSync(resolve(output,'multi-workpiece-report.json'),JSON.stringify({passed:true,workpieces:2,visibleWorkpieces:1,operationsPerWorkpiece:[27,27],crossConnections:0,persistedActiveWorkpiece:true,playbackSwitch:true,fixtureVisibilityIsolated:true,preserved,coverage:{native:'production import, activation, placement, extraction, independent generation, fixtures and embedded persistence',browser:'Edge; actual chooser, pointer, keyboard and selection controls',standaloneCef:false},calls:calls.filter(c=>['CamWorkpiece.Import','CamWorkpiece.Activate','CamPlacement.SetTransform','CamPlan.Generate'].includes(c.method))},null,2));
+}

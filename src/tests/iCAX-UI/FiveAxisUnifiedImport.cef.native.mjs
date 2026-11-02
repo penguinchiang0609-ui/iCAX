@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {selectModelFile} from './fixtures/fiveAxisFilePicker.mjs';
+const output=resolve(process.env.ICAX_BROWSER_REPORT_DIRECTORY),base=pathToFileURL(resolve(process.env.ICAX_CEF_RUNTIME)+'/').href;
+mkdirSync(output,{recursive:true});
+const {chromium}=await import('playwright'),browser=await chromium.connectOverCDP('http://127.0.0.1:'+process.env.ICAX_CEF_PORT);
+const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url()===base+'iCAX-UI/SDK/AppShell/index.html');assert.ok(page);page.setDefaultTimeout(45000);
+const report={passed:false,standaloneCef:true,cases:[],errors:[]};page.on('pageerror',e=>report.errors.push(e.message));
+const idle=()=>page.waitForFunction(()=>!__icaxAppShell.getState().pendingCount&&!fixture.view.pending&&!fixture.view.fixtureRequest&&!fixture.view.fiveAxisImportActive,null,{timeout:120000});
+const command=async id=>{await page.evaluate(id=>__icaxAppShell.executeRibbonCommand(id),id);await idle();};
+const click=async id=>{await page.locator('[data-five-command="'+id+'"]').first().click();await idle();};
+const read=()=>page.evaluate(()=>fixture.view.viewportSceneProxy.invoke('CamScene.ReadState',{}, {timeoutMs:120000}));
+const list=()=>page.evaluate(()=>fixture.view.viewportSceneProxy.invoke('CamFixture.LibraryList',{}));
+const model=resolve('TestData/FA/刀路/刀路/整理测试刀路/多槽圆盖-3-7b202.igs');
+const tool=resolve('samples/structural-steel/vendors-angle-channel/tekspan-60300-cranked-t-plate.step');
+async function chooseFor(id,path,check){
+ const start=()=>id==='workpiece.import'?page.locator('[data-command-id="workpiece.import"]').click():command(id);
+ const before=await read(),opening=start();
+ await selectModelFile(page,path,{preview:true,open:false});
+ assert.equal(await page.getByRole('dialog',{name:'导入模型',exact:true}).count(),1);
+ assert.ok(await page.locator('[data-nesting-wireframe]').count());
+ await page.locator('footer [data-nesting-file-action="cancel"]').click();await opening;await idle();assert.deepEqual(await read(),before);
+ const importing=start();await selectModelFile(page,path,{preview:true});await importing;await idle();
+ assert.equal(await page.evaluate(()=>fixture.view.error),'');await check();
+ report.cases.push(id+': shared directory browser and real CAD preview, cancel leaves native Scene unchanged, Open performs the intended import');
+}
+try{
+ await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');
+ const created=await page.evaluate(p=>__icaxAppShell.createProject({projectName:'统一导入验收',projectPath:p,productId:'icax.five-axis-cam'}),resolve(output,'统一导入验收.i5cam'));
+ await page.waitForFunction(id=>window.__icaxWorkbench?.currentProjectId===id&&__icaxAppShell.getState().activeProjectId===id,created.activeProjectId);
+ await page.evaluate(async base=>{const {getProjectView}=await import(base+'apps/_shared/workbench/state/projectViewStore.mjs');window.fixture={view:getProjectView(__icaxAppShell.getState().activeProjectId)};
+ (globalThis.icax??globalThis.icaxNativeBridge).openFileDialog=async()=>{throw Error('Native OS file dialog must not be used for model imports');};},base);
+ await chooseFor('workpiece.import',model,async()=>assert.equal((await read()).workpieces.length,1));
+ await page.locator('[data-tab-id="workpiece"]').click();await idle();
+ await chooseFor('five.fixture.import',tool,async()=>assert.equal((await read()).fixtures.length,1));
+ await chooseFor('five.fixture.library.import',tool,async()=>{assert.equal((await read()).fixtures.length,1);assert.equal((await list()).entries.length,1);});
+ const entry=(await list()).entries[0];
+ const label=page.locator('[data-five-library-select="'+entry.id+'"]');await label.dblclick();
+ const input=page.locator('[data-five-library-field="'+entry.id+'"]');await input.fill('常用支撑');await input.press('Enter');await idle();
+ assert.equal((await list()).entries[0].name,'常用支撑');
+ await click('five.fixture.library.default:'+entry.id);assert.equal((await list()).defaultId,entry.id);
+ assert.equal(await page.locator('[data-five-command="five.fixture.library.delete:'+entry.id+'"]').isDisabled(),true);
+ await label.dblclick();await input.fill('尚未提交');
+ await page.evaluate(()=>{const proxy=fixture.view.viewportSceneProxy,invoke=proxy.invoke.bind(proxy);fixture.originalInvoke=invoke;proxy.invoke=async(method,...args)=>{const result=await invoke(method,...args);if(method==='CamFixture.LibraryList')await new Promise(r=>fixture.releaseLibrary=r);return result;};});
+ const refreshing=click('five.fixture.library.refresh');await page.waitForFunction(()=>fixture.releaseLibrary);
+ await input.evaluate(e=>{window.keptLibraryName=e;e.focus({preventScroll:true});e.setSelectionRange(1,3);fixture.releaseLibrary();});await refreshing;
+ await page.evaluate(()=>fixture.view.viewportSceneProxy.invoke=fixture.originalInvoke);
+ assert.deepEqual(await input.evaluate(e=>({same:e===window.keptLibraryName,start:e.selectionStart,end:e.selectionEnd,focused:document.activeElement===e})),{same:true,start:1,end:3,focused:true});
+ await input.press('Escape');await idle();assert.equal((await list()).entries[0].name,'常用支撑');
+ const box=await page.getByRole('dialog',{name:'工装库',exact:true}).boundingBox();assert.ok(box.width<=610);
+ assert.equal(await page.getByRole('button',{name:'保存名称',exact:true}).count(),0);
+ const previousUnits=(await read()).fixtureUnits.map(u=>u.id);await click('five.fixture.library.use:'+entry.id);const added=(await read()).fixtureUnits.find(u=>!previousUnits.includes(u.id));assert.ok(added);assert.equal(await page.evaluate(()=>fixture.view.fiveAxisFixtures.selected),added.id);
+ await page.screenshot({path:resolve(output,'compact-library.png')});
+ report.cases.push('Compact library uses row selection, inline rename, default/delete icons, and one Add button; refresh retains the active editor node and selection');
+ await click('five.fixture.library.close');await click('five.setup.activate:'+(await page.evaluate(()=>fixture.view.scene.activePlacementId)));await command('five.tool.simulation');
+ await chooseFor('five.simulation.head-import',tool,async()=>{const s=await read();assert.equal(s.setups.find(x=>x.id===s.activeSetupId).headModel.kind,'Imported');assert.equal(await page.evaluate(()=>fixture.view.fiveSimulation.headError),'');});
+ assert.deepEqual(report.errors,[]);report.passed=true;
+}catch(error){report.error=error.stack;process.exitCode=1;await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});}
+finally{writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser.close();}

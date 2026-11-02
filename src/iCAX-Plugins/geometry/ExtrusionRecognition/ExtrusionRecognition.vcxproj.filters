@@ -7,9 +7,18 @@
   <ItemGroup>
     <ClInclude Include="ExtrusionRecognitionExport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ExtrudeRecognizesService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="HealWork.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="MachiningEdgeAnalysisWork.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="MachiningEdgeSkinSpans.inc"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SectionZeroAreaTrimFace.inc"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ExtrusionRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ExtrusionRecognitionTypes.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SectionGeometry.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SectionProjectionMultiplicity.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="SectionMaterialProjection.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="SectionFaceSubset.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="SectionMaterialRecovery.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="SectionExactClassifier.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SectionDefinitionCodec.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SectionRuleEngine.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
@@ -18,6 +27,8 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ExtrudeRecognizesService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="HealWork.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachiningEdgeAnalysisWork.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SectionWireExtraction.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ExtrusionRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SectionGeometry.cpp"><Filter>Source Files</Filter></ClCompile>

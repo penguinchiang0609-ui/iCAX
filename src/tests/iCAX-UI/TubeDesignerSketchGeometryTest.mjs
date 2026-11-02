@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arcThroughPoints, curvePoint, editableSegments, nearestSegment, pathNodes, pathSamples, pathSvg, segmentSamples, TAU } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { arcThroughPoints, curvePoint, editableSegments, nearestSegment, pathNodes, pathSamples, pathSvg, segmentSamples, TAU } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 import { analyzeSectionDraft, breakEntityAtPoint, buildProfileFromSectionDraft, createInitialSketchState, entitiesFromProfile, finishCadCommand, handleCadPoint, handleSketchRibbonCommand, insertPointOnEntity, mergeSelectedEntities, updateEntityFromGrip } from "../../apps/tube-designer/webpage/sketchArea.mjs";
 
 const near=(a,b,tol=1e-7)=>assert.ok(Math.hypot(a[0]-b[0],a[1]-b[1])<tol,`${a} != ${b}`);

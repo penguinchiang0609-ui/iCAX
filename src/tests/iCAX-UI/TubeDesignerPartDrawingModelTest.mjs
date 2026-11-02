@@ -72,16 +72,16 @@ assert.equal(getDrawingPayload(state).features[0].arrayOffsets,undefined,"Disabl
 const ref={id:"missing",version:"v1",digest:"saved"};
 const original={id:"frozen",type:"custom",toolRef:ref,customRecipeField:{unknown:[1,2]},frozenCut:{url:"saved-solid",version:3},
   frozenTool:{schema:"icax.frozen-punch-tool",schemaVersion:1,ref,geometry:{type:"solid"},instance:{type:"custom"}}};
-const saved={entityId:"frozen-part",length:800,properties:{"tubeDesigner.partDrawing":{
+const saved={entityId:"frozen-part",length:800,properties:{"tubeDesigner.tubePart":{schema:"icax.tube-part-view",schemaVersion:1,
   drawing:{length:800},features:[original],ends:{start:{type:"keep"}},
 }}};
-const read=createDrawingState(saved);installDrawingCatalogue(read,{tools:[]});
+const read=createDrawingState(saved,saved.properties["tubeDesigner.tubePart"]);installDrawingCatalogue(read,{tools:[]});
 assert.equal(isDrawingToolReadOnly(read,read.features[0]),true);assert.equal(hasFrozenDrawingTool(read.features[0]),true);
 assert.equal(validateDrawing(read),"");assert.deepEqual(getDrawingPayload(read).features[0],original);
 assert.equal(read.ends.end.type,"keep");
 assert.equal(editDrawingFeature(read,"copy",0),false);assert.match(read.error,/仅可删除/);
 assert.equal(editDrawingFeature(read,"remove",0),true);assert.equal(read.features.length,0);
-assert.deepEqual(saved.properties["tubeDesigner.partDrawing"].features[0],original,"Model operations never mutate the source part");
+assert.deepEqual(saved.properties["tubeDesigner.tubePart"].features[0],original,"Model operations never mutate the source part");
 for(const path of ["partDrawingModel.mjs","partDrawing.mjs"]){
   const source=readFileSync(new URL("../../apps/tube-designer/webpage/"+path,import.meta.url),"utf8");
   assert.doesNotMatch(source,/from\s+["']\.\/punch(?:Wizard|Layout|Array|Editor)|recipeView/);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { parseSketchDxf } from "../../apps/tube-designer/webpage/sketchCadDxfImport.mjs";
-import { curvePoint } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 
 const near = (a, b, eps = 1e-8) => a.forEach((v, i) => assert.ok(Math.abs(v - b[i]) < eps, `${a} differs from ${b}`));
 const cadDxf = ({ unit = 4, tables = [], blocks = [], entities = [] }) => {

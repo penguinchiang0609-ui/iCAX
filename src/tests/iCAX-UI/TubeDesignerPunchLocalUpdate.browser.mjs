@@ -33,7 +33,7 @@ try {
     Object.assign(state,{catalogueStatus:"ready",revision:1,features:[{id:"A",diameter:10},{id:"B",diameter:10}]});
     const view={activeAreaId:"nesting",scene:{tubeDesigner:{}},tubeDesignerPunchWizard:state};
     const ref=(url,version=1)=>({url,version});
-    const recipe=()=>({partEntityId:"local-edit",features:structuredClone(state.features),ends:{}});
+    const recipe=()=>({features:structuredClone(state.features),ends:{}});
     const preview=version=>({toolsOnly:true,baseGeometry:ref("base"),baseMaterial:ref("base-material"),toolMaterial:ref("tool-material"),
       toolPreviews:[{target:"side",key:"A",geometry:ref("tool-A",version)},{target:"side",key:"B",geometry:ref("tool-B")}],
       baseBounds:{min:[0,-40,-40],max:[1000,40,40]},length:1000,revision:version,includesDraft:false});
@@ -101,7 +101,7 @@ try {
     check(reads.filter(([url])=>url==="base").length===1&&reads.filter(([url])=>url==="tool-B").length===1,"Unchanged geometry was fetched again");
     // Validation can stop a request before pendingPreviewRecipe is replaced.
     // Comparing it to the previous response would incorrectly leave stale A.
-    state.previewSourceRecipe={blank:JSON.stringify([state.partId,state.resourceId,state.resourceVersion,state.baseLength,undefined,null]),
+    state.previewSourceRecipe={blank:JSON.stringify([state.partId,state.baseLength,undefined,null]),
       features:structuredClone(state.features),ends:structuredClone(state.ends)};
     state.features[0].diameter=NaN;state.revision=3;
     state.previewComputeError={revision:3,message:"Invalid diameter"};ops.renderProject();

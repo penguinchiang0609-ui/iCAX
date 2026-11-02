@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {diagnoseSketchEntities,repairSketchEntities} from "../../apps/tube-designer/webpage/sketchCadRepair.mjs";
-import {curvePoint,splitSegment,editableSegments,TAU} from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import {curvePoint,splitSegment,editableSegments,TAU} from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 const line=(id,a,b)=>({id,kind:"line",x1:a[0],y1:a[1],x2:b[0],y2:b[1]});
 const circle=(id,cx=0)=>({id,kind:"circle",cx,cy:10,radius:3,closed:true});
 {
@@ -139,5 +139,46 @@ const circle=(id,cx=0)=>({id,kind:"circle",cx,cy:10,radius:3,closed:true});
   assert.ok(!result.issues.some(issue=>issue.type==="self-intersection"||issue.type==="gap"||issue.type==="complex"));
   const continuous={id:"continuous",kind:"path",segments:[{kind:"bezier",points:[[0,0],[1,3],[2,0]]},{kind:"bezier",points:[[2,0],[3,-3],[4,0]]}]};
   assert.equal(repairSketchEntities([continuous],{joinGaps:false,trimSelfIntersections:true}).trimmedSelfIntersections,0,"Adjacent endpoints are not self crossings");
+}
+{
+  const bevel=segmentIndices=>({enabled:true,side:"outer",angleDegrees:45,rootFace:1,segmentIndices});
+  const edges=[line("one",[0,0],[5,0]),line("two",[5,0],[10,0]),line("three",[10,0],[10,10])];
+  const path={id:"selected",kind:"path",segments:edges,bevel:bevel([0])},before=JSON.stringify(path);
+  const partial=repairSketchEntities([path],{joinGaps:false}).entities[0];
+  assert.equal(partial.segments.length,3,"Simplification cannot merge selected and unselected edges");
+  assert.deepEqual(partial.bevel.segmentIndices,[0]);assert.equal(JSON.stringify(path),before);
+  const merged=repairSketchEntities([{...path,bevel:bevel([0,1])}],{joinGaps:false}).entities[0];
+  assert.equal(merged.segments.length,2);assert.deepEqual(merged.bevel.segmentIndices,[0]);
+  const shifted=repairSketchEntities([{...path,bevel:bevel([2])}],{joinGaps:false}).entities[0];
+  assert.deepEqual(shifted.bevel.segmentIndices,[1]);
+  const draft=repairSketchEntities([{...path,bevel:{...bevel([0]),enabled:false}}],{joinGaps:false}).entities[0];
+  assert.equal(draft.segments.length,3);assert.deepEqual(draft.bevel.segmentIndices,[0]);
+  const reverseSource=[{...path,segments:edges.slice(0,2)},line("join",[0,-10],[0,0])],reverseBefore=JSON.stringify(reverseSource);
+  const reversed=repairSketchEntities(reverseSource,{simplify:false}).entities[0];
+  assert.deepEqual(reversed.bevel.segmentIndices,[1]);assert.equal(JSON.stringify(reverseSource),reverseBefore);
+  assert.deepEqual(curvePoint(reversed.segments[1],0),[5,0]);assert.deepEqual(curvePoint(reversed.segments[1],1),[0,0]);
+  assert.ok(reversed.segments.every(segment=>segment.bevel===undefined),"Feature recipes belong to the contour root");
+  const gap=[{...line("a",[0,0],[10,0]),bevel:bevel([0])},{...line("b",[10.005,0],[10.005,10]),bevel:bevel([0])}];
+  assert.deepEqual(repairSketchEntities(gap,{simplify:false}).entities[0].bevel.segmentIndices,[0,1,2]);
+  const oneSide=repairSketchEntities([{...gap[0],bevel:undefined},gap[1]],{simplify:false}).entities[0];
+  assert.deepEqual(oneSide.bevel.segmentIndices,[2],"A new bridge requires both neighboring selected edges");
+  const conflicting=[gap[0],{...gap[1],bevel:{...bevel([0]),angleDegrees:30}}],frozen=JSON.stringify(conflicting);
+  assert.throws(()=>repairSketchEntities(conflicting),/坡口参数不同/);assert.equal(JSON.stringify(conflicting),frozen);
+  const duplicate=[{...line("original",[0,0],[10,0]),bevel:bevel([0])},{...line("duplicate",[10,0],[0,0]),bevel:{...bevel([0]),angleDegrees:30}}];
+  assert.deepEqual(repairSketchEntities(duplicate).entities,duplicate,"Removing duplicates cannot delete a distinct bevel feature");
+  const overlap=[gap[0],{...line("overlap",[5,0],[15,0]),bevel:{...bevel([0]),angleDegrees:30}}];
+  assert.deepEqual(repairSketchEntities(overlap,{joinGaps:false}).entities,overlap);
+  const bow={id:"bevel-bow",kind:"path",closed:true,segments:[line("1",[0,0],[10,10]),line("2",[10,10],[0,10]),line("3",[0,10],[10,0]),line("4",[10,0],[0,0])],bevel:bevel([0])};
+  const rings=repairSketchEntities([bow],{joinGaps:false,trimSelfIntersections:true}).entities;
+  assert.equal(rings.length,2);
+  for(const ring of rings) {
+    assert.equal(ring.bevel.segmentIndices.length,1);
+    const selected=ring.segments[ring.bevel.segmentIndices[0]];
+    assert.equal(selected.x1,selected.y1);assert.equal(selected.x2,selected.y2);
+  }
+  const disappearing=repairSketchEntities([{...bow,bevel:bevel([1])}],{joinGaps:false,trimSelfIntersections:true}).entities;
+  assert.ok(disappearing.some(ring=>ring.bevel.enabled===false&&ring.bevel.segmentIndices.length===0));
+  const implicit={id:"implicit",kind:"path",closed:true,segments:[line("bottom",[0,0],[10,0]),line("right",[10,0],[10,10]),line("top",[10,10],[0,10])],bevel:bevel([3])};
+  assert.ok(!diagnoseSketchEntities([implicit]).some(issue=>issue.type==="gap"));
 }
 console.log("Sketch CAD repair: geometric duplicates, overlapping lines, exact ellipse/spline simplification, gap repair, closed-ring splitting and open-loop trimming passed.");

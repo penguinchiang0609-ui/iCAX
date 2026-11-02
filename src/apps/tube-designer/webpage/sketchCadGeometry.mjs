@@ -1,5 +1,6 @@
-import { TAU, curvePoint, editableSegments, nearestPath, splitSegment, reverseSegment, distance } from "./sketchGeometry.mjs";
+import { TAU, curvePoint, editableSegments, nearestPath, splitSegment, reverseSegment, distance } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 import { offsetCurveSegments, tangentFilletSegments, curveChamferSegments, curveTangent } from "./sketchCadCurves.mjs";
+import { mergeCadBevels, remapCadBevel } from "./cadBevel.mjs";
 
 // Editing always retains native curves. Numerical work below only finds curve
 // parameters; its samples never become the resulting editable geometry.
@@ -26,13 +27,17 @@ const segs = e => {
   if (e.kind === "bezier") return [clone(e)];
   const result = editableSegments(e);
   if (!result.length) throw new Error("该图形没有可编辑的曲线");
+  if (e.kind === "path" && e.closed && distance(curvePoint(result.at(-1), 1), curvePoint(result[0], 0)) > EPS)
+    result.push(line(curvePoint(result.at(-1), 1), curvePoint(result[0], 0)));
   return result;
 };
-function resultEntity(source, segments, closed = false) {
+function resultEntity(source, segments, closed = false, segmentSources) {
   const metadata = clone(source);
+  if (segmentSources && source.bevel) metadata.bevel = remapCadBevel(source.bevel, segmentSources);
+  const curves = segments.map(segment => { const value = clone(segment); delete value.bevel; return value; });
   for (const key of ["x", "y", "width", "height", "radius", "radiusX", "radiusY", "cx", "cy", "rotation", "startAngle", "sweep", "x1", "y1", "x2", "y2", "points", "segments", "brokenStart", "brokenEnd"]) delete metadata[key];
-  if (segments.length === 1 && !closed && segments[0].kind !== "bezier") return { ...metadata, ...clone(segments[0]), closed: false };
-  return { ...metadata, kind: "path", segments: clone(segments), closed };
+  if (curves.length === 1 && !closed && curves[0].kind !== "bezier") return { ...metadata, ...curves[0], closed: false };
+  return { ...metadata, kind: "path", segments: curves, closed };
 }
 function sliceSegment(s, lo, hi) {
   if (lo < EPS && hi > 1 - EPS) return clone(s);
@@ -41,14 +46,21 @@ function sliceSegment(s, lo, hi) {
   if (lo > EPS) result = splitSegment(result, lo / hi)[1];
   return result;
 }
-function sliceChain(segments, lo, hi) {
+function sliceChain(segments, lo, hi, segmentSources) {
   const result = [];
   const n = segments.length;
   for (let i = Math.floor(lo); i < Math.ceil(hi - EPS); i++) {
     const start = Math.max(0, lo - i), end = Math.min(1, hi - i);
-    if (end - start > EPS) result.push(sliceSegment(segments[mod(i, n)], start, end));
+    if (end - start > EPS) {
+      result.push(sliceSegment(segments[mod(i, n)], start, end));
+      segmentSources?.push(mod(i, n));
+    }
   }
   return result;
+}
+function slicedEntity(entity, segments, lo, hi) {
+  const sources = [], result = sliceChain(segments, lo, hi, sources);
+  return resultEntity(entity, result, false, sources);
 }
 function parameterAtAngle(s, a) {
   const start = (s.startAngle ?? 0), sweep = s.sweep ?? TAU;
@@ -108,7 +120,7 @@ function affineEntity(entity, matrix) {
   const apply = value => {
     const e = clone(value);
     if (e.kind === "rectangle") {
-      if (Math.abs(b) < EPS && Math.abs(c) < EPS) {
+      if (Math.abs(b) < EPS && Math.abs(c) < EPS && !(e.bevel?.segmentIndices && (a < 0 || d < 0))) {
         const p = point([e.x, e.y]), q = point([e.x + e.width, e.y + e.height]);
         return { ...e, x: Math.min(p[0], q[0]), y: Math.min(p[1], q[1]), width: Math.abs(q[0] - p[0]), height: Math.abs(q[1] - p[1]), radius: (e.radius ?? 0) * k };
       }
@@ -343,7 +355,7 @@ function entityIntersections(a, b) {
   return result;
 }
 function trimEntity(entity, cutters, point) {
-  const p = pointValue(point), segments = segs(entity), n = segments.length, closed = isClosed(entity), nearest = nearestPath(entity.kind === "bezier" ? { kind: "path", segments } : entity, p);
+  const p = pointValue(point), segments = segs(entity), n = segments.length, closed = isClosed(entity), nearest = nearestPath({ kind: "path", segments }, p);
   if (!nearest) throw new Error("未找到要修剪的曲线");
   const cuts = [];
   for (const cutter of cutters ?? []) for (const hit of entityIntersections(entity, cutter)) {
@@ -359,7 +371,7 @@ function trimEntity(entity, cutters, point) {
       const a = cuts[i], b = i + 1 < cuts.length ? cuts[i + 1] : cuts[0] + n;
       if (clicked >= a - EPS && clicked <= b + EPS) { lo = a; hi = b; break; }
     }
-    return { parts: [resultEntity(entity, sliceChain(segments, hi, lo + n), false)] };
+    return { parts: [slicedEntity(entity, segments, hi, lo + n)] };
   }
   const internal = cuts.filter(t => t > EPS && t < n - EPS);
   if (!internal.length) throw new Error("曲线与所选边界没有可修剪的交点");
@@ -367,8 +379,8 @@ function trimEntity(entity, cutters, point) {
   let index = limits.findIndex((v, i) => i < limits.length - 1 && clicked >= v - EPS && clicked <= limits[i + 1] + EPS);
   if (index < 0) index = limits.length - 2;
   const parts = [];
-  if (limits[index] > EPS) parts.push(resultEntity(entity, sliceChain(segments, 0, limits[index])));
-  if (limits[index + 1] < n - EPS) parts.push(resultEntity(entity, sliceChain(segments, limits[index + 1], n)));
+  if (limits[index] > EPS) parts.push(slicedEntity(entity, segments, 0, limits[index]));
+  if (limits[index + 1] < n - EPS) parts.push(slicedEntity(entity, segments, limits[index + 1], n));
   return { parts };
 }
 function extendEntity(entity, cutters, point) {
@@ -521,12 +533,17 @@ function offsetGeneralCurveEntity(entity, segments, amount, closed) {
       if (!chains[i].length || !chains[j].length) throw new Error("偏移距离过大，相邻曲线已消失");
     }
   }
-  const result = chains.flatMap((chain, i) => connectors.has(i) ? [...chain, connectors.get(i)] : chain);
+  const sources = [];
+  const result = chains.flatMap((chain, i) => {
+    sources.push(...chain.map(() => i));
+    if (connectors.has(i)) { sources.push([i, (i + 1) % chains.length]); return [...chain, connectors.get(i)]; }
+    return chain;
+  });
   for (let i = 0; i < result.length; i++) for (let j = i + 2; j < result.length; j++) {
     if (closed && i === 0 && j === result.length - 1) continue;
     if (segmentIntersections(result[i], result[j]).length) throw new Error("偏移结果发生自相交，请减小偏移距离或先分割轮廓");
   }
-  return { parts: [resultEntity(entity, result, closed)] };
+  return { parts: [resultEntity(entity, result, closed, sources)] };
 }
 
 function lineCorner(first, second, spec, preserveOrder = false) {
@@ -575,7 +592,13 @@ function filletEntities(entities, spec = {}) {
   if (!Array.isArray(entities) || !entities.length || entities.length > 2) throw new Error("请选择两条曲线，或一个含角点的轮廓");
   if (entities.length === 2) {
     const first = segs(entities[0]), second = segs(entities[1]);
-    return { parts: [resultEntity(entities[0], first.length === 1 && second.length === 1 ? curveCorner(first[0], second[0], spec).segments : curveChainsCorner(first, second, spec))] };
+    const bevel = mergeCadBevels(entities[0].bevel, entities[1].bevel, first.length, second.length);
+    if (first.length === 1 && second.length === 1) {
+      const source = { ...entities[0], ...(bevel ? { bevel } : {}) };
+      return { parts: [resultEntity(source, curveCorner(first[0], second[0], spec).segments, false, [0, [0, 1], 1])] };
+    }
+    if (bevel) throw new Error("多段轮廓连接倒角暂不能保留坡口边段关联，请先分割为单段曲线。");
+    return { parts: [resultEntity(entities[0], curveChainsCorner(first, second, spec))] };
   }
   const entity = entities[0], segments = segs(entity), closed = isClosed(entity), candidates = [];
   for (let i = 0; i < segments.length - (closed ? 0 : 1); i++) {
@@ -590,15 +613,21 @@ function filletEntities(entities, spec = {}) {
   candidates.sort((i, j) => p ? distance(curvePoint(segments[i], 1), p) - distance(curvePoint(segments[j], 1), p) : i - j);
   const index = candidates[0], next = (index + 1) % segments.length;
   if (!spec.chamfer && segments.some(s => s.kind === "bezier" || s.kind === "ellipseArc" || s.kind === "circleArc")) {
+    if (Array.isArray(entity.bevel?.segmentIndices)) throw new Error("多段曲线圆角暂不能保留指定坡口边段，请先分割轮廓。");
     const firstCount = closed ? Math.ceil(segments.length / 2) : index + 1, start = closed ? mod(index - firstCount + 1, segments.length) : 0;
     const ordered = closed ? segments.map((_, i) => segments[mod(start + i, segments.length)]) : segments;
     return { parts: [resultEntity(entity, filletOrientedChains(ordered.slice(0, firstCount), ordered.slice(firstCount), spec, curvePoint(segments[index], 1)), closed)] };
   }
   const corner = curveCorner(segments[index], segments[next], spec, true).segments;
+  const sources = segments.map((_, i) => i);
   if (next === 0) {
     segments[segments.length - 1] = corner[0]; segments[0] = corner[2]; segments.push(corner[1]);
-  } else segments.splice(index, 2, ...corner);
-  return { parts: [resultEntity(entity, segments, closed)] };
+    sources.push([index, next]);
+  } else {
+    segments.splice(index, 2, ...corner);
+    sources.splice(index, 2, index, [index, next], next);
+  }
+  return { parts: [resultEntity(entity, segments, closed, sources)] };
 }
 
 function curveCorner(first, second, spec, preserveOrder = false) {

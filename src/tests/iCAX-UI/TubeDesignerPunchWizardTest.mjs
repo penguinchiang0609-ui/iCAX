@@ -7,15 +7,15 @@ import {
   resolvePunchDistribution,
   renderPunchWizardDialog as renderPunchWizardView,
   validatePunchFeature,
+  addPunchWizardFeature, updatePunchWizardField, removePunchWizardFeature,
 } from "../../apps/tube-designer/webpage/punchWizard.mjs";
 import {
-  handlePartsAreaAction,
   canEditNestingSideSketch,
-  renderNestingRightPane,
   renderNestingViewportOverlay,
-  renderPunchWizardDialog,
 } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildPunchPreviewRows } from "../../apps/tube-designer/webpage/punchEditor.mjs";
+import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
+import { createTubeCadFixture } from "./fixtures/tubeCadDocument.mjs";
 
 const part = {
   entityId: "nest-part-1",
@@ -34,123 +34,114 @@ const view = {
 };
 const operations = { renderProject() {} };
 
-// Reopening a saved thumbnail must use the original blank's midpoint before
-// any native preview request, including a straight tube with zero holes.
-const savedStraight = { ...part, thumbnailGeometryResourceId: "saved-straight", thumbnailGeometryResourceVersion: 4 };
-const straightState = createPunchWizardState(savedStraight);
-assert.equal(straightState.features.length, 0);
-assert.equal(straightState.preview.isOriginal, true);
-assert.equal(straightState.preview.length, 1200);
-for (const mode of ["tools", "result"]) {
-  assert.deepEqual(buildPunchPreviewRows(straightState.preview, mode)[0].data.localToWorldMatrix.map(value => value === 0 ? 0 : value),
-    [1,0,0,-600, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-}
-const savedEndCut = { ...savedStraight, length: 900, properties: { ...part.properties,
-  "tubeDesigner.punchWizard": { baseLength: 1200, features: [], ends: { start: { type: "end-miter", trim: 300 }, end: { type: "keep" } } },
-} };
-const endCutState = createPunchWizardState(savedEndCut);
-assert.equal(endCutState.baseLength, 1200);
-assert.equal(endCutState.preview.length, 1200);
-assert.equal(buildPunchPreviewRows(endCutState.preview)[0].data.localToWorldMatrix[3], -600,
-  "A shortened end-cut part must not recenter around the shorter finished length");
-assert.deepEqual(endCutState.ends, savedEndCut.properties["tubeDesigner.punchWizard"].ends);
-assert.equal(createPunchWizardState({ thumbnailGeometryResourceId: "unknown-length" }).preview.length, 0,
-  "The editor's default 1000 mm is not evidence for the origin of an unknown saved geometry");
-
+// Creation has no published part geometry to hydrate.
+assert.equal(createPunchWizardState(part).preview,null);
 assert.deepEqual(punchWizardProfileInfo(part), { round: false, width: 40, depth: 20, diameter: 0 });
-assert.equal(validatePunchFeature(part, { type: "circle", face: "top", station: 600, offset: 0, diameter: 10 }), "");
+const creationFeature=values=>normalizePunchFeature({recordKind:"tool",toolRef:{id:"fixture-circle",version:"1",digest:"fixture"},...values});
+assert.equal(validatePunchFeature(part, creationFeature({type:"circle",face:"top",station:600,offset:0,diameter:10})), "");
 // Geometric footprint checks use the actual native BRep, not a guessed box face.
-assert.equal(validatePunchFeature(part, { type: "circle", face: "top", station: 600, offset: 18, diameter: 10 }), "");
-assert.match(validatePunchFeature(part, { type: "circle", station: 600, arrayCount: 2, arrayPitch: 0 }), /不能为零/);
-assert.match(validatePunchFeature(part, { type: "slot", face: "top", station: 600, spanAlong: 10, spanAcross: 12 }), /长度必须大于宽度/);
+assert.equal(validatePunchFeature(part, creationFeature({type:"circle",face:"top",station:600,offset:18,diameter:10})), "");
+assert.match(validatePunchFeature(part, creationFeature({station:600,arrayCount:2,arrayPitch:0})), /不能为零/);
+assert.match(validatePunchFeature(part, creationFeature({station:600,blindHole:true,cutDepth:0})), /盲孔深度/);
 
-const existingPart = {
-  ...part,
-  properties: {
-    ...part.properties,
-    "tubeDesigner.punchWizard": {
-      features: [{ type: "circle", face: "top", station: 320, diameter: 8, arrayCount: 2, arrayPitch: 100 }],
-    },
-  },
-};
-assert.equal(readPunchWizardFeatures(existingPart)[0].arrayCount, 2);
-assert.equal(createPunchWizardState(existingPart).features.length, 1);
+const creationDraft={features:[{type:"circle",face:"top",station:320,diameter:8,arrayCount:2,arrayPitch:100}]};
+assert.equal(readPunchWizardFeatures(creationDraft)[0].arrayCount,2);
+assert.equal(createPunchWizardState(part,creationDraft).features.length,1);
 assert.equal(normalizePunchFeature({ type: "unknown", arrayCount: 999 }).type, "unknown");
-assert.match(validatePunchFeature(part,{type:"unknown",station:600}),/无法识别/);
+assert.match(validatePunchFeature(part,{type:"unknown",station:600}),/请选择刀具模板/);
 
-await handlePartsAreaAction({}, view, "tube-designer-punch-open", { dataset: { tubeDesignerPartId: part.entityId } }, operations);
+view.tubeDesignerPunchWizard=createPunchWizardState(part);
 assert.equal(view.tubeDesignerPunchWizard.partId, part.entityId);
-const existingDialog = renderPunchWizardDialog({}, view);
-assert.match(existingDialog, /主管冲孔向导/);
-assert.match(existingDialog, /主管 · 横梁/);
-assert.match(existingDialog, /冲孔记录/);
-assert.match(existingDialog, /孔刀拉伸体/);
-assert.match(existingDialog, /刀具、位置姿态、多组阵列分别设置/);
-assert.match(existingDialog, /左端面/);
-assert.match(existingDialog, /右端面/);
-assert.doesNotMatch(existingDialog, /data-tube-designer-punch-row="draft"/);
-assert.match(existingDialog, /暂无冲孔记录，点击“＋ 添加行”开始/);
-assert.match(existingDialog, /data-cam-action="tube-designer-punch-add"[^>]*data-tube-designer-punch-new/);
-assert.match(existingDialog, /删除所选/);
-assert.match(existingDialog, /两端独立设置，不参与孔数与阵列/);
-assert.match(existingDialog, /data-cam-viewcube/);
-assert.doesNotMatch(existingDialog, /class="tube-designer-punch-editor\b/);
-assert.ok(existingDialog.indexOf('class="tube-designer-punch-sheet-scene"') < existingDialog.indexOf('class="tube-designer-punch-sheet"'));
-assert.match(renderPunchWizardView(part, view), /应用到零件/);
-
+const creationDialog=renderPunchWizardView(part,view,{tableMode:true,showEnds:true,title:"新建冲孔零件"});
+assert.match(creationDialog,/新建冲孔零件/);
+assert.match(creationDialog,/冲孔记录/);
+assert.match(creationDialog,/位置 \/ 姿态/);
+assert.match(creationDialog,/阵列维度/);
+assert.match(creationDialog,/左端面/);
+assert.match(creationDialog,/右端面/);
+assert.match(creationDialog,/data-cam-viewcube/);
 assert.deepEqual(
   (({station,arrayPitch,reference})=>({station,arrayPitch,reference}))(
     resolvePunchDistribution({arrayCount:4,distributionMode:"end-margins",headMargin:100,tailMargin:200},1200)),
   {station:100,arrayPitch:300,reference:"start"},
 );
 
-view.tubeDesignerPunchWizard.draft = { ...view.tubeDesignerPunchWizard.draft, station: 600, diameter: 8, arrayCount: 2, arrayPitch: 100 };
-await handlePartsAreaAction({}, view, "tube-designer-punch-add", {}, operations);
+view.tubeDesignerPunchWizard.draft = creationFeature({station:600,diameter:8,arrayCount:2,arrayPitch:100});
+assert.equal(addPunchWizardFeature(view,part),true);
 assert.equal(view.tubeDesignerPunchWizard.features.length, 1);
 assert.equal(view.tubeDesignerPunchWizard.features[0].arrayCount, 2);
-await handlePartsAreaAction({}, view, "tube-designer-punch-field-change", {
+assert.equal(updatePunchWizardField(view, {
   value: "640", dataset: { tubeDesignerPunchField: "station", tubeDesignerPunchIndex: "0" },
-}, operations);
+}),true);
 assert.equal(view.tubeDesignerPunchWizard.features[0].station, 640);
 assert.equal(view.tubeDesignerPunchWizard.selectedFeatureId, view.tubeDesignerPunchWizard.features[0].id);
-await handlePartsAreaAction({}, view, "tube-designer-punch-selection-change", {
-  checked: true, dataset: { tubeDesignerPunchIndex: "0" },
-}, operations);
-assert.deepEqual(view.tubeDesignerPunchWizard.selectedFeatureIds, [view.tubeDesignerPunchWizard.features[0].id]);
-await handlePartsAreaAction({}, view, "tube-designer-punch-remove-selected", {}, operations);
-assert.equal(view.tubeDesignerPunchWizard.features.length, 0);
-assert.deepEqual(view.tubeDesignerPunchWizard.selectedFeatureIds, []);
-view.tubeDesignerPunchWizard.draft = { ...view.tubeDesignerPunchWizard.draft, station: 600, diameter: 8, arrayCount: 2, arrayPitch: 100 };
-await handlePartsAreaAction({}, view, "tube-designer-punch-add", {}, operations);
-await handlePartsAreaAction({}, view, "tube-designer-punch-remove", { dataset: { tubeDesignerPunchIndex: "0" } }, operations);
+assert.equal(removePunchWizardFeature(view,"0"),true);
 assert.equal(view.tubeDesignerPunchWizard.features.length, 0);
 
 view.tubeDesignerPunchWizard.draft = { ...view.tubeDesignerPunchWizard.draft, station: 600, diameter: 8, arrayCount: 1 };
-await handlePartsAreaAction({}, view, "tube-designer-punch-add", {}, operations);
+assert.equal(addPunchWizardFeature(view,part),true);
+const savedPart={...part,manufacturingGeometryResourceVersion:1,properties:{"manufacturing.partKind":"tube","manufacturing.process":"punch",
+  "tubeDesigner.cadDocument":{documentResourceId:"saved-document",documentResourceVersion:1}}};
+view.scene.tubeDesigner.nestingGroups[0].parts=[savedPart];
+view.tubeDesignerPunchWizard=null;
+let geometry=createTubeCadFixture(1200);
+function tubeCadFixtureResult(part,construction,revision="1",resourceVersion=1) {
+  return {partEntityId:part.entityId,resourceVersion,revision,documentResourceId:`document-${part.entityId}`,documentResourceVersion:Number(revision),
+    geometry:{Section:structuredClone(construction.SolidNodes[0].Data.value.Section),MachiningFaces:{Faces:[{Id:1}],Metadata:{revision}}},
+    construction:structuredClone(construction),placement:{Location:{X:0,Y:0,Z:0},XDirection:{X:1,Y:0,Z:0},YDirection:{X:0,Y:1,Z:0},ZDirection:{X:0,Y:0,Z:1}},
+    nodes:construction.SolidNodes.map(node=>({nodeId:node.ID,kind:node.Data.type,base:node.ID===construction.BaseNodeID,
+      sketchEditable:node.Data.type==="SExtrudedRegionNode",geometryEditable:node.Data.type==="SExtrudedRegionNode"}))};
+}
 const calls = [];
 const context = {
   sceneProxy: {
     async invoke(method, request) {
       calls.push({ method, request });
-      return { tubeDesigner: view.scene.tubeDesigner };
+      if(method==="TubeDesigner.GetTubeCadDocument") {
+        const result=tubeCadFixtureResult(savedPart,geometry);
+        if(request.authoringView==="side")result.authoringView={mode:"side",sketch:{entities:[],coordinateSpace:"arc-length-axial"},
+          bindings:{entities:[]},reference:{available:true,length:1200,profile:savedPart.profile,
+            unfolding:{available:true,method:"section-arc-length",length:1200,perimeter:120,
+              surfaces:[{inner:false,uPeriod:120,rectangle:{available:true,width:1200,height:120},wires:[]}]}}};
+        return result;
+      }
+      if(method==="TubeDesigner.ApplyTubeCadDocument"){
+        geometry=structuredClone(request.construction);
+        return {...tubeCadFixtureResult(savedPart,geometry,"2",2),snapshot:{tubeDesigner:view.scene.tubeDesigner}};
+      }
+      if(method==="TubeDesigner.ReleaseTubeCadDocumentPreview")return {};
+      throw new Error(`Unexpected old saved-part apply: ${method}`);
     },
   },
   actions: { async refreshActiveSceneState() {} },
 };
-await handlePartsAreaAction(context, view, "tube-designer-punch-apply", { dataset: { tubeDesignerPartId: part.entityId } }, operations);
-assert.equal(calls[0].method, "TubeDesigner.ApplyPunchWizard");
-assert.equal(calls[0].request.features.length, 1);
-assert.equal(view.tubeDesignerPunchWizard, null);
-assert.equal(view.pending, false);
-
-assert.equal(canEditNestingSideSketch(part), false);
-assert.doesNotMatch(renderNestingRightPane({}, view), /tube-designer-part-open-sketch/);
-assert.doesNotMatch(renderNestingViewportOverlay({}, view), /tube-designer-part-open-sketch/);
-const hiddenSketchResult = await handlePartsAreaAction({}, view, "tube-designer-part-open-sketch", {
+await handleDesignerAreaAction(context,view,"tube-designer-punch-open",{dataset:{tubeDesignerPartId:part.entityId}},operations);
+assert.equal(calls[0].method,"TubeDesigner.GetTubeCadDocument");
+const state=view.tubeDesignerCadEditor;
+const hole=state.construction.SolidNodes.find(node=>node.ID!==state.construction.BaseNodeID&&node.Data.type==="SExtrudedRegionNode");
+await handleDesignerAreaAction(context,view,"tube-designer-cad-select",{dataset:{cadNode:hole.ID}},operations);
+await handleDesignerAreaAction(context,view,"tube-designer-cad-field",{dataset:{cadNode:hole.ID,cadField:"radius",cadLoop:hole.Data.value.Section.Boundaries[0].ID},value:"12"},operations);
+await handleDesignerAreaAction(context,view,"tube-designer-cad-add-hole",{},operations);
+await handleDesignerAreaAction(context,view,"tube-designer-cad-save",{},operations);
+assert.equal(calls.at(-1).method,"TubeDesigner.ApplyTubeCadDocument");
+assert.equal(geometry.SolidNodes.find(node=>node.ID===hole.ID).Data.value.Section.Boundaries[0].Curves[0].Segment.Curve.value.Radius,6);
+assert.equal(geometry.SolidNodes.filter(node=>node.Data.type==="SExtrudedRegionNode").length,3);
+assert.equal(view.tubeDesignerPunchWizard,null);
+assert.equal(state.dirty,false);
+assert.equal(state.geometry.MachiningFaces.Metadata.revision,"2");
+assert.equal(calls.at(-1).request.geometry,undefined);
+assert.ok(calls.at(-1).request.construction);
+assert.equal(canEditNestingSideSketch(savedPart),true);
+view.tubeDesignerActiveNestingPartId=part.entityId;view.tubeDesignerNestingSelectionKind="part";
+assert.match(renderNestingViewportOverlay({}, view), /tube-designer-part-open-sketch/);
+const sharedSketchResult = await handleDesignerAreaAction(context, view, "tube-designer-part-open-sketch", {
   dataset: { tubeDesignerPartId: part.entityId },
 }, operations);
-assert.deepEqual(hiddenSketchResult, { handled: true });
-assert.equal(view.tubeDesignerSketchDialogOpen, undefined);
-assert.equal(view.tubeDesignerSketch, undefined);
+assert.equal(sharedSketchResult.handled,true);
+assert.equal(view.tubeDesignerCadEditor,null);
+assert.equal(view.tubeDesignerSketchDialogOpen,true);
+assert.equal(view.tubeDesignerSketch.mode,"side");
+assert.equal(view.tubeDesignerSketch.sideCadSession.partEntityId,part.entityId);
+assert.equal(calls.filter(c=>c.method==="TubeDesigner.GetTubeCadDocument").at(-1).request.authoringView,"side");
 
-console.log("Punch wizard state, validation, rendering, array editing and native apply dispatch checks passed.");
+console.log("Punch creation helpers, saved CAD diameter/add-hole and original side workbench dispatch checks passed.");

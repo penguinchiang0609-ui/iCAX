@@ -60,7 +60,7 @@ export async function ensureLicenseStatus(context, view, { refresh = false } = {
     if (sessions.get(context.productProxy) === session && session.request === request) {
       publishStatus(session, status);
       if (isLicenseWorkspaceReadOnly(context, view) && !session.unlicensedLogged) {
-        context.actions?.log?.("error", "软件未授权。可切换产品、下料、资源库和关于页面；请在关于页申请授权或导入激活文件。");
+        context.actions?.log?.("error", "软件未授权。请在关于页申请授权或导入激活文件。");
         session.unlicensedLogged = true;
       }
     }
@@ -126,6 +126,8 @@ export function actionLicenseFeature(action, areaId = "view") {
   if (/-(close|cancel)$/.test(action)) return "";
   const resourceFeature = resourceActionLicenseFeature(action, areaId);
   if (resourceFeature !== undefined) return resourceFeature;
+  if (/^tube-machining-(stage|search|select)$/.test(action)) return "";
+  if (/^tube-(machining|path)-/.test(action)) return "machining.toolpath";
   if (/^(tube-designer-(toggle|select|focus)-|tube-designer-parts-(search|filter|clear-filters|select|toggle|fit|default|dimension|element))/.test(action)) return pageLicenseFeature(areaId);
   if (/export/.test(action)) return areaId === "nesting" ? "nesting.export" : areaId === "machining" ? "machining.export" : areaId === "view" ? "product.export" : "";
   if (/disassembl|refresh-manufacturing-plan/.test(action)) return "product.breakdown";
@@ -144,10 +146,24 @@ export function allowLicenseFeature(context, view, featureId) {
 export function renderLicenseStatus(view) {
   const status = view?.tubeDesignerLicense;
   const title = status?.developmentBypass ? "开发免授权" : status?.activated ? "已激活" : "未激活";
-  return `<div class="tube-designer-panel" data-tube-designer-license-status><div class="tube-designer-heading"><strong>软件授权</strong><span>${title}</span></div>
-    <p>${escape(status?.activated ? `${status.kind} · ${status.licenseId}` : status?.message || "正在检查本机授权…")}</p>
-    ${status?.developmentBypass ? "" : "<p>页面与页面内功能分别授权。导出申请交给供应商，收到激活文件后导入。</p>"}
-    <p>${escape(view?.tubeDesignerLicenseNotice)}</p></div>`;
+  return `<div class="tube-designer-panel" data-tube-designer-license-status><div class="tube-designer-heading"><strong>软件授权</strong><span data-license-title>${title}</span></div>
+    <p data-license-message>${escape(status?.activated ? `${status.kind} · ${status.licenseId}` : status?.message || "正在检查本机授权…")}</p>
+    <p data-license-help ${status?.developmentBypass ? "hidden" : ""}>页面与页面内功能分别授权。导出申请交给供应商，收到激活文件后导入。</p>
+    <p>无法导出申请时，可使用“检查并修复授权环境”。缺少 Intel 厂商证书时会联网获取，仅发送本机 TPM 公钥摘要。</p>
+    <p data-license-notice role="status" aria-live="polite">${escape(view?.tubeDesignerLicenseNotice)}</p></div>`;
+}
+
+function updateLicensePanel(context, view) {
+  if (view.disposed || context.isCurrentProject?.() === false) return;
+  const panel = context.mount?.querySelector?.("[data-tube-designer-license-status]");
+  if (!panel) return;
+  const status = view.tubeDesignerLicense;
+  const setText = (selector, text) => { const node = panel.querySelector(selector); if (node) node.textContent = text; };
+  setText("[data-license-title]", status?.developmentBypass ? "开发免授权" : status?.activated ? "已激活" : "未激活");
+  setText("[data-license-message]", status?.activated ? `${status.kind} · ${status.licenseId}` : status?.message || "正在检查本机授权…");
+  setText("[data-license-notice]", view.tubeDesignerLicenseNotice || "");
+  const help = panel.querySelector("[data-license-help]"); if (help) help.hidden = !!status?.developmentBypass;
+  panel.setAttribute("aria-busy", String(!!view.tubeDesignerLicenseBusy));
 }
 
 export async function handleLicenseCommand(context, view, commandId, ops) {
@@ -163,8 +179,16 @@ export async function handleLicenseCommand(context, view, commandId, ops) {
   view.tubeDesignerLicenseBusy = true;
   view.error = "";
   view.tubeDesignerLicenseNotice = "正在处理授权，请稍候…";
+  if (commandId === "licensing.repair-environment") view.tubeDesignerLicenseNotice = "正在检查授权环境；如缺少 Intel 厂商证书，将尝试联网获取，请稍候…";
+  updateLicensePanel(context, view);
   try {
-    if (commandId === "licensing.request" || commandId === "licensing.request-trial") {
+    if (commandId === "licensing.repair-environment") {
+      const result = await invoke("RepairEnvironment");
+      if (typeof result?.requestReady !== "boolean" || typeof result?.message !== "string" || !result.message || typeof result?.code !== "string") throw new Error("授权环境检查未返回有效结果，请检查当前安装版本。");
+      view.tubeDesignerLicenseNotice = result.message;
+      if (!result.requestReady) view.error = result.message;
+      // Repair prepares request material; it never publishes authorization grants.
+    } else if (commandId === "licensing.request" || commandId === "licensing.request-trial") {
       if (!bridge?.openDirectoryDialog) throw new Error("当前宿主不支持选择保存目录。");
       const directory = await bridge.openDirectoryDialog({title: "选择授权申请保存目录"});
       if (!directory) { view.tubeDesignerLicenseNotice = "已取消导出申请。"; return true; }
@@ -199,7 +223,7 @@ export async function handleLicenseCommand(context, view, commandId, ops) {
       const status = { activated: false, capabilities: {}, message: view.error };
       if (session) publishStatus(session, status); else view.tubeDesignerLicense = status;
     }
-    view.tubeDesignerLicenseNotice = "操作未完成，未放宽授权校验。";
+    view.tubeDesignerLicenseNotice = commandId === "licensing.repair-environment" ? view.error : "操作未完成，未放宽授权校验。";
   } finally {
     view.tubeDesignerLicenseBusy = false;
     if (!view.disposed && context.isCurrentProject?.() !== false) {
@@ -207,8 +231,7 @@ export async function handleLicenseCommand(context, view, commandId, ops) {
       context.refreshLicenseControls?.(view);
       // Update only this panel; allowed inputs, canvas and scroll containers
       // retain their actual nodes and the user's latest interaction state.
-      const panel = context.mount?.querySelector?.("[data-tube-designer-license-status]");
-      if (panel) panel.outerHTML = renderLicenseStatus(view);
+      updateLicensePanel(context, view);
       ops?.appendProjectLog?.(context, view.error ? "error" : "info", view.error || view.tubeDesignerLicenseNotice);
     }
   }

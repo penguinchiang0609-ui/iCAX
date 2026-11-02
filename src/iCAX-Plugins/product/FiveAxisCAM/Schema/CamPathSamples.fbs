@@ -1,0 +1,20 @@
+namespace iCAX.FiveAxisCAM;
+
+file_identifier "ICPS";
+
+// A view projection of the original samples, with full double precision.
+// Native exact curves and source maps remain in their authoritative resources.
+table CamPathPart {
+  role:string;
+  points:[double];
+  directions:[double]; // empty for original cutting-definition display lines
+}
+table CamPathSamplesEntry {
+  id:string;
+  parts:[CamPathPart];
+}
+table CamPathSamples {
+  schema_version:uint = 1;
+  entries:[CamPathSamplesEntry];
+}
+root_type CamPathSamples;

@@ -1,4 +1,5 @@
 import { renderRibbonCommandIcon } from "./ribbonIcons.mjs";
+import { normalizeRibbonWorkspace,renderRibbonWorkspace,ribbonWorkspaceCommand,ribbonWorkspaceKey,captureRibbonWorkspace,positionRibbonWorkspacePicker } from "./ribbonWorkspace.mjs";
 import { createStartupScreen } from "./startupScreen.mjs";
 import { createNewProjectMemory } from "./newProjectMemory.mjs";
 import {
@@ -12,8 +13,10 @@ import {
 const root = document.getElementById("app");
 const startupScreen = createStartupScreen(document);
 let startupPromise = null;
-const DIRECT_START_PRODUCT_ID = "icax.tube-designer";
-const DIRECT_START_PRODUCT_TITLE = "TubeDesigner";
+// The registered product list is authoritative. A URL must not bypass the
+// product chooser or select a product that the application did not enable.
+let startupProductId = "";
+let startupProductTitle = "工作台";
 const TOOLBAR_TOOLTIP_SELECTOR = [
   "[data-toolbar-tooltip]",
   ".ribbon-command",
@@ -78,7 +81,7 @@ const actions = {
     state.startupPhase = "loading";
     state.startCenterOpen = false;
     state.error = "";
-    startupScreen.setStage("正在启动 TubeDesigner");
+    startupScreen.setStage(`正在启动 ${startupProductTitle}`);
     startupPromise = (async () => {
       if (!state.appProxy) {
         state.bridgeStatus = "Connecting";
@@ -89,15 +92,27 @@ const actions = {
       state.bridgeStatus = "Connected";
       startupScreen.setStage("正在加载设计工作台");
       await actions.refresh();
-      if (!findProductState(DIRECT_START_PRODUCT_ID)) {
-        throw new Error("未找到 TubeDesigner，请检查程序安装是否完整。");
+      const products = getProducts();
+      if (!products.length) {
+        throw new Error("没有配置可用产品，请检查程序的产品配置。");
       }
-      startupScreen.setStage("正在准备设计场景");
-      await actions.openDirectTubeDesignerProject();
-      if (!state.activeProjectState || await state.productSurfaceMountPromise === false) {
-        throw new Error(state.error || "TubeDesigner 工作台加载失败。");
+      const startupProduct = products.length === 1 ? products[0] : null;
+      startupProductId = startupProduct?.productId || "";
+      startupProductTitle = startupProduct?.productName || "工作台";
+      startupScreen.setPresentation(startupProductTitle,
+        startupProduct ? state.productModules.get(startupProductId)?.getStartupPresentation?.() : undefined);
+      document.title = startupProductTitle;
+      if (startupProduct) {
+        startupScreen.setStage("正在准备设计场景");
+        await actions.openStartupProject();
+        if (!state.activeProjectState || await state.productSurfaceMountPromise === false) {
+          throw new Error(state.error || `${startupProductTitle} 工作台加载失败。`);
+        }
       }
       state.startupPhase = "ready";
+      // No project has mounted in a multi-product installation; render the
+      // original product/project start center before releasing the splash.
+      if (!startupProduct) await render();
       document.title = getApplicationTitle();
       startupScreen.finish();
     })();
@@ -110,7 +125,7 @@ const actions = {
 
   reportStartupProgress(progress, projectId) {
     if (state.startupPhase !== "loading"
-        || state.activeProductState?.productId !== DIRECT_START_PRODUCT_ID
+        || state.activeProductState?.productId !== startupProductId
         || !projectId
         || projectId !== state.activeProjectState?.projectId) {
       return false;
@@ -123,7 +138,7 @@ const actions = {
     await track("App.GetState", async () => {
       state.appState = await state.appProxy.getState();
       ensureSelectedProduct();
-      await mountSelectedProductModule();
+      if (state.startupPhase !== "loading" || getProducts().length === 1) await mountSelectedProductModule();
       await mountActiveProductModule();
     });
   },
@@ -155,18 +170,18 @@ const actions = {
     return state.appProxy.getProduct(product.productId) ?? product;
   },
 
-  async openDirectTubeDesignerProject() {
-    if (state.activeProjectState || !findProductState(DIRECT_START_PRODUCT_ID)) {
+  async openStartupProject() {
+    if (state.activeProjectState || !findProductState(startupProductId)) {
       return;
     }
 
-    await track("iTubeDesigner.OpenUntitledProject", async () => {
-      const productProxy = await actions.ensureProductStarted(DIRECT_START_PRODUCT_ID);
+    await track("App.OpenUntitledProject", async () => {
+      const productProxy = await actions.ensureProductStarted(startupProductId);
       // An empty project path is an in-memory, unsaved project.  It never
       // overwrites a user's existing project and Ctrl+S will still ask for a
       // normal save location.
       const response = await productProxy.openProjectCatalog("", {
-        catalogName: DIRECT_START_PRODUCT_TITLE,
+        catalogName: startupProductTitle,
         projectName: "未命名项目",
       });
       await enterProject({
@@ -180,7 +195,7 @@ const actions = {
     });
 
     if (await state.productSurfaceMountPromise === false) {
-      throw new Error(state.error || "iTubeDesigner 主界面加载失败");
+      throw new Error(state.error || `${startupProductTitle} 主界面加载失败`);
     }
   },
 
@@ -197,6 +212,10 @@ const actions = {
       && normalizePath(project.projectPath) === normalizePath(path));
     if (opened) {
       await actions.selectOpenProject(opened.projectId);
+      // A reconnect can restore native open projects before this shell's
+      // in-memory saved-file set. Explicitly opening their local file still
+      // means Save should use that file, just as the normal open branch does.
+      if (!path.includes("://")) state.savedProjectIds.add(opened.projectId);
       return;
     }
 
@@ -343,7 +362,8 @@ const actions = {
       const undoRedo = await state.activeSceneProxy.undo();
       const sceneState = await state.activeSceneProxy.getState();
       state.activeSceneState = { ...sceneState, undoRedo };
-    });
+      await getActiveProductModule()?.onProjectHistoryChanged?.(buildProductContext(), "undo");
+    }, { preserveSurface: typeof getActiveProductModule()?.onProjectHistoryChanged === "function" });
     if (await state.productSurfaceMountPromise === false) {
       throw new Error(state.error || "Product surface failed to synchronize after undo");
     }
@@ -358,7 +378,8 @@ const actions = {
       const undoRedo = await state.activeSceneProxy.redo();
       const sceneState = await state.activeSceneProxy.getState();
       state.activeSceneState = { ...sceneState, undoRedo };
-    });
+      await getActiveProductModule()?.onProjectHistoryChanged?.(buildProductContext(), "redo");
+    }, { preserveSurface: typeof getActiveProductModule()?.onProjectHistoryChanged === "function" });
     if (await state.productSurfaceMountPromise === false) {
       throw new Error(state.error || "Product surface failed to synchronize after redo");
     }
@@ -366,6 +387,19 @@ const actions = {
 
   refreshProjectHistoryControls() {
     refreshProjectHistoryControls();
+  },
+
+  async refreshNativeProjectHistory(expected = {}) {
+    const scene = state.activeSceneProxy, project = state.activeProjectProxy;
+    if (!scene || (expected.sceneProxy && expected.sceneProxy !== scene)
+        || (expected.projectId && expected.projectId !== project?.projectId)) return null;
+    const token = state.nativeHistoryRequest = (state.nativeHistoryRequest ?? 0) + 1;
+    const undoRedo = await scene.getUndoRedoState();
+    if (token !== state.nativeHistoryRequest || state.activeSceneProxy !== scene
+        || state.activeProjectProxy !== project) return null;
+    state.activeSceneState = { ...state.activeSceneState, undoRedo };
+    refreshProjectHistoryControls();
+    return undoRedo;
   },
 
   async refreshActiveSceneState(expected = {}) {
@@ -474,7 +508,7 @@ const actions = {
       if (choice === "save" && await actions.saveProject(false, entry) !== true) return false;
       const projects = getOpenProjects();
       const index = projects.findIndex((item) => item.projectId === projectId);
-      const catalog = findOpenProjectCatalog(entry);
+      const catalog = await findOpenProjectCatalog(entry);
       if (!catalog?.catalogId) throw new Error("项目目录尚未就绪，无法关闭。");
       // Catalogue responses replace the product's project registry. Serialize
       // closes of one product so an older response cannot restore a closed tab.
@@ -622,10 +656,50 @@ const actions = {
   refreshProductRibbon() {
     // Permission updates must not replace the workspace or its live editors.
     const ribbon = root.querySelector(".product-ribbon");
-    if (ribbon) ribbon.outerHTML = renderProductRibbon();
+    const project = state.activeProjectProxy, projectId = state.activeProjectState?.projectId;
+    const commandScrollLeft = ribbon?.querySelector('.ribbon-commands')?.scrollLeft ?? 0;
+    const active = document.activeElement;
+    const inputFocus=ribbon?.contains(active)&&active?.dataset?.ribbonInput?{id:active.dataset.ribbonInput,value:active.value,start:active.selectionStart,end:active.selectionEnd}:null;
+    const restoreWorkspace=captureRibbonWorkspace(ribbon);
+    const alerts = ribbon?.querySelector('[data-ribbon-alerts]');
+    const alertFocus = alerts?.contains(active)
+      ? active.matches('.ribbon-alerts-heading') ? { heading: true }
+        : active.dataset?.ribbonAlertId ? { id: active.dataset.ribbonAlertId } : null
+      : null;
+    if (ribbon) {
+      const template=document.createElement('template');template.innerHTML=renderProductRibbon();
+      const next=template.content.firstElementChild;
+      // Keep live parameter editors and their listeners through ribbon refreshes.
+      for(const input of next.querySelectorAll('[data-ribbon-input]')){
+        const existing=[...ribbon.querySelectorAll('[data-ribbon-input]')].find(node=>node.dataset.ribbonInput===input.dataset.ribbonInput&&node.type===input.type);
+        if(existing){existing.disabled=input.disabled;if(existing!==active)existing.value=input.value;input.replaceWith(existing);}
+      }
+      ribbon.replaceWith(next);
+    }
+    positionScrollableRibbonMenu(root.querySelector('.ribbon-commands.has-ribbon-alerts .ribbon-command-menu-toggle[aria-expanded="true"]'));
     refreshProjectSaveControl();
     refreshProjectHistoryControls();
     refreshProjectNavigationControls();
+    if (project === state.activeProjectProxy && projectId === state.activeProjectState?.projectId) {
+      const current = root.querySelector('.product-ribbon');
+      const row = current?.querySelector('.ribbon-commands');
+      if (row) row.scrollLeft = commandScrollLeft;
+      restoreWorkspace(current);
+      if(inputFocus&&(document.activeElement===active||!document.activeElement||document.activeElement===document.body)){
+        const input=[...(current?.querySelectorAll('[data-ribbon-input]')||[])].find(input=>input.dataset.ribbonInput===inputFocus.id);
+        if(input&&!input.disabled){input.value=inputFocus.value;input.focus({preventScroll:true});if(inputFocus.start!=null)input.setSelectionRange(inputFocus.start,inputFocus.end);}
+      }
+      // Only restore a replaced alert button. A live editor or another focus
+      // chosen during refresh keeps ownership of the keyboard.
+      if (projectId && alertFocus && (document.activeElement === active || !document.activeElement
+          || document.activeElement === document.body || document.activeElement === document.documentElement)) {
+        const matches = alertFocus.heading ? [] : [...(current?.querySelectorAll('.ribbon-alert-row') ?? [])]
+          .filter(button => button.dataset.ribbonAlertId === alertFocus.id);
+        const button = alertFocus.heading ? current?.querySelector('.ribbon-alerts-heading')
+          : matches.length === 1 ? matches[0] : null;
+        if (button && !button.disabled) button.focus({ preventScroll: true });
+      }
+    }
   },
 
   async windowCommand(command) {
@@ -680,6 +754,12 @@ root.addEventListener("focusout", (event) => {
 window.addEventListener("contextmenu", (event) => event.preventDefault(), { capture: true });
 window.addEventListener("resize", hideToolbarTooltip);
 window.addEventListener("scroll", hideToolbarTooltip, true);
+window.addEventListener("resize", () => {
+  if (root.querySelector('.ribbon-commands.has-ribbon-alerts .ribbon-command-menu')) closeRibbonCommandMenu();
+});
+window.addEventListener("scroll", event => {
+  if (event.target?.matches?.('.ribbon-commands.has-ribbon-alerts')) closeRibbonCommandMenu();
+}, true);
 window.addEventListener("beforeunload", (event) => {
   const guard = getActiveWindowCloseGuard();
   if (!guard?.blocked) return;
@@ -689,6 +769,8 @@ window.addEventListener("beforeunload", (event) => {
 
 root.addEventListener("click", (event) => {
   hideToolbarTooltip();
+  const workspacePicker=event.target.closest?.('[data-ribbon-workspace-picker]');
+  for(const open of root.querySelectorAll('[data-ribbon-workspace-picker][open]'))if(open!==workspacePicker)open.open=false;
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
     closeRibbonCommandMenu();
@@ -756,19 +838,28 @@ root.addEventListener("click", (event) => {
       return;
     }
     runAction(() => actions.selectRibbonTab(target.dataset.tabId), { preserveSurface: true });
+  } else if (action === "ribbon-workspace-toggle") {
+    event.preventDefault();
+    if(target.getAttribute('aria-disabled')!=='true'&&!isActiveProjectBusy()){workspacePicker.open=!workspacePicker.open;positionRibbonWorkspacePicker(workspacePicker);}
+  } else if (action === "ribbon-workspace-choice") {
+    if(isActiveProjectBusy())return;
+    const tab=getActiveRibbonDefinition().tabs.find(tab=>tab.id===state.activeRibbonTabId);
+    const id=ribbonWorkspaceCommand(tab?.workspace,target.dataset.ribbonWorkspaceChoice,target.dataset.value);
+    if(id){workspacePicker.open=false;workspacePicker.querySelector('summary').focus({preventScroll:true});runAction(()=>actions.executeRibbonCommand(id),{preserveSurface:true});}
   } else if (action === "ribbon-command-menu-toggle") {
     if (isActiveProjectBusy()) {
       return;
     }
-    const commandId = String(target.dataset.commandId ?? "");
-    state.openRibbonMenuCommandId = state.openRibbonMenuCommandId === commandId ? "" : commandId;
-    render();
+    if (state.openRibbonMenuCommandId === target.dataset.commandId) closeRibbonCommandMenu();
+    else openRibbonCommandMenu(target);
   } else if (action === "ribbon-command") {
+    const commandId = target.dataset.commandId;
     if (isActiveProjectBusy()) {
-      return;
+      const alerts = getActiveRibbonDefinition().alerts;
+      const item=alerts?.items?.find(item=>item.id===target.dataset.ribbonAlertId&&item.commandId===commandId&&!item.disabled);
+      if (!target.closest('[data-ribbon-alerts]') || !alerts?.commandId || commandId !== alerts.commandId&&!item) return;
     }
     closeRibbonCommandMenu();
-    const commandId = target.dataset.commandId;
     const module = getActiveProductModule();
     const preserveSurface = ["app.save", "app.saveAs"].includes(commandId)
       || module?.shouldPreserveRibbonCommandSurface?.(buildProductContext(), commandId) === true;
@@ -792,7 +883,25 @@ root.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && state.openRibbonMenuCommandId) {
     event.preventDefault();
-    closeRibbonCommandMenu();
+    closeRibbonCommandMenu(true);
+    return;
+  }
+  if(ribbonWorkspaceKey(event))return;
+  const menuToggle = event.target.closest?.('.ribbon-command-menu-toggle');
+  if (menuToggle && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+    event.preventDefault();
+    if (!isActiveProjectBusy()) openRibbonCommandMenu(menuToggle, true);
+    return;
+  }
+  const menu = event.target.closest?.('.ribbon-command-menu');
+  if(menu?.classList.contains('ribbon-input-popover')&&event.key==='Enter'){event.preventDefault();closeRibbonCommandMenu(true);return;}
+  if (menu && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const items = [...menu.querySelectorAll('button:not(:disabled)')];
+    const index = items.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus({ preventScroll: true });
     return;
   }
   if (event.key !== "Enter" && event.key !== " ") {
@@ -806,6 +915,22 @@ root.addEventListener("keydown", (event) => {
 
   event.preventDefault();
   runAction(() => actions.openProjectFromPath(target.dataset.projectPath));
+});
+
+// Run after product document handlers, so uncommitted editor drafts can handle
+// their own cancellation first. Persisted edits use the same native history
+// command as the title-bar buttons. Text inputs retain ordinary text undo.
+window.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.isComposing || event.repeat || event.altKey
+      || !(event.ctrlKey || event.metaKey)) return;
+  const key = event.key.toLowerCase();
+  if (key !== "z" && key !== "y") return;
+  if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+  const direction = key === "y" || event.shiftKey ? "redo" : "undo";
+  event.preventDefault();
+  const history = getCombinedProjectHistoryState();
+  if (!isActiveProjectBusy() && !isActiveProjectReadOnly() && history[direction === "undo" ? "canUndo" : "canRedo"])
+    runAction(() => executeProjectHistoryCommand(direction), { preserveSurface: true });
 });
 
 root.addEventListener("mousedown", (event) => {
@@ -900,9 +1025,22 @@ for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
   root.addEventListener(eventName, stopNewProjectDialogDrag);
 }
 
+root.addEventListener("change",event=>{
+  const field=event.target.closest?.('[data-ribbon-workspace-field]');
+  if(!field||field.disabled||isActiveProjectBusy())return;
+  const tab=getActiveRibbonDefinition().tabs.find(tab=>tab.id===state.activeRibbonTabId);
+  const id=ribbonWorkspaceCommand(tab?.workspace,field.dataset.ribbonWorkspaceField,field.value);
+  if(id)runAction(()=>actions.executeRibbonCommand(id),{preserveSurface:true});
+});
+
 root.addEventListener("input", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if(target.dataset.ribbonInput){
+    getActiveProductModule()?.handleRibbonInput?.(buildProductContext(),target.dataset.ribbonInput,target.value);
     return;
   }
 
@@ -959,6 +1097,8 @@ function render() {
   if (state.newProjectDialogOpen) {
     root.insertAdjacentHTML("beforeend", renderNewProjectDialog());
   }
+
+  positionScrollableRibbonMenu(root.querySelector('.ribbon-commands.has-ribbon-alerts .ribbon-command-menu-toggle[aria-expanded="true"]'));
 
   return mountActiveProductSurface();
 }
@@ -1110,20 +1250,20 @@ function renderStartCenter({ overlay }) {
   const products = getProducts();
   const product = getSelectedProductState();
   const projects = filterRecentProjects(product?.recentProjects ?? []);
-  const isDirectTubeDesigner = product?.productId === DIRECT_START_PRODUCT_ID;
+  const isSingleProduct = products.length === 1;
   return `
     <div class="${overlay ? "start-center-overlay" : "start-center-page"}">
       <section class="start-center">
         <header class="start-head">
           <div>
-            <strong>${isDirectTubeDesigner ? DIRECT_START_PRODUCT_TITLE : "工作台"}</strong>
+            <strong>${escapeText(isSingleProduct ? product?.productName || "工作台" : "工作台")}</strong>
             <span>${escapeText(state.bridgeStatus)}</span>
           </div>
           ${overlay ? `<button class="icon-button" type="button" data-action="close-start-center" title="关闭">×</button>` : ""}
         </header>
         <div class="start-error ${state.error ? "" : "empty"}">${state.error ? escapeText(state.error) : ""}</div>
-        <div class="start-body ${isDirectTubeDesigner ? "start-body--single-product" : ""}">
-          ${isDirectTubeDesigner ? "" : `<aside class="start-products">
+        <div class="start-body ${isSingleProduct ? "start-body--single-product" : ""}">
+          ${isSingleProduct ? "" : `<aside class="start-products">
             <div class="start-section-title">产品</div>
             <div class="start-product-list">
               ${products.length === 0 ? `<div class="empty-row">没有可用产品。</div>` : products.map((item) => `
@@ -1187,11 +1327,9 @@ function renderStartCenter({ overlay }) {
 }
 
 function getApplicationTitle() {
-  if (state.startupPhase !== "ready") return DIRECT_START_PRODUCT_TITLE;
+  if (state.startupPhase !== "ready") return startupProductTitle;
   if (!state.activeProjectState) {
-    return getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID
-      ? DIRECT_START_PRODUCT_TITLE
-      : "工作台";
+    return getProducts().length === 1 ? getProducts()[0].productName || "工作台" : "工作台";
   }
   return state.activeProductState?.productName
     || findProductState(state.activeProductState?.productId)?.productName
@@ -1222,14 +1360,13 @@ function renderTitleBar() {
 }
 
 function renderStartupTitleBar() {
-  const isDirectTubeDesigner = state.startupPhase !== "ready"
-    || getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID;
+  const isSingleProduct = getProducts().length === 1;
   return `
     <header class="title-bar start-title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" disabled>${isDirectTubeDesigner ? DIRECT_START_PRODUCT_TITLE : "工作台"}</button>
+        <button class="app-button" type="button" disabled>${escapeText(getApplicationTitle())}</button>
       </div>
-      <div class="startup-title">${state.startupPhase !== "ready" ? "" : isDirectTubeDesigner ? "项目" : "选择产品与项目"}</div>
+      <div class="startup-title">${state.startupPhase !== "ready" ? "" : isSingleProduct ? "项目" : "选择产品与项目"}</div>
       ${renderWindowControls()}
     </header>
   `;
@@ -1280,8 +1417,9 @@ function renderProductRibbon() {
   const ribbon = getActiveRibbonDefinition();
   ensureActiveRibbonTab(ribbon);
   const activeTab = ribbon.tabs.find((tab) => tab.id === state.activeRibbonTabId) ?? ribbon.tabs[0];
+  const tools=`<div class="ribbon-commands${ribbon.alerts?' has-ribbon-alerts':''}">${(activeTab?.groups??[]).map(group=>`<section class="ribbon-group" data-ribbon-scope="${escapeAttr(group.scope??'all')}"><div class="ribbon-command-list">${group.commands.map(renderRibbonCommand).join('')}</div><div class="ribbon-group-title">${group.titleCommandId?`<button class="ribbon-group-navigation" type="button" data-action="ribbon-command" data-command-id="${escapeAttr(group.titleCommandId)}" title="${escapeAttr(group.title)}">${escapeText(group.title)}</button>`:escapeText(group.title)}</div></section>`).join('')}</div>`;
   return `
-    <nav class="product-ribbon">
+    <nav class="product-ribbon ${activeTab?.workspace?'has-workspace':''}">
       <div class="ribbon-tabs">
         ${ribbon.tabs.map((tab) => `
           <button class="ribbon-tab ${activeTab?.id === tab.id ? "active" : ""}"
@@ -1292,74 +1430,125 @@ function renderProductRibbon() {
             ${escapeText(tab.title)}
           </button>
         `).join("")}
+        ${renderRibbonAlerts(ribbon.alerts)}
       </div>
-      <div class="ribbon-commands">
-        ${(activeTab?.groups ?? []).map((group) => `
-          <section class="ribbon-group" data-ribbon-scope="${escapeAttr(group.scope ?? "all")}">
-            <div class="ribbon-command-list">
-              ${group.commands.map(renderRibbonCommand).join("")}
-            </div>
-            <div class="ribbon-group-title">${escapeText(group.title)}</div>
-          </section>
-        `).join("")}
-      </div>
+      ${activeTab?.workspace?renderRibbonWorkspace(activeTab.workspace,renderRibbonCommandIcon,tools):tools}
     </nav>
   `;
 }
 
+function renderRibbonAlerts(alerts) {
+  if (!alerts) return "";
+  const { label, commandId, expanded, items } = alerts;
+  const action = commandId ? `data-action="ribbon-command" data-command-id="${escapeAttr(commandId)}"` : "disabled";
+  const extra = items.length > 2 ? `另有 ${items.length - 2} 条` : items.length ? `${items.length} 条` : "";
+  return `<section class="ribbon-alerts" data-ribbon-alerts aria-label="${escapeAttr(label)}" aria-expanded="${expanded}">
+    <button class="ribbon-alerts-heading" type="button" ${action} aria-expanded="${expanded}"><strong>${escapeText(label)}</strong><span>${escapeText(extra)}</span><b aria-hidden="true">${expanded ? '▴' : '▾'}</b></button>
+    <div class="ribbon-alert-items">${items.length ? items.slice(0, 2).map(item => `<button class="ribbon-alert-row" type="button" data-ribbon-alert-id="${escapeAttr(item.id)}" data-severity="${escapeAttr(item.severity)}" ${item.commandId&&!item.disabled?`data-action="ribbon-command" data-command-id="${escapeAttr(item.commandId)}"`:'disabled'} title="${escapeAttr([item.title, item.detail].filter(Boolean).join('：'))}"><span>${escapeText(item.title)}</span>${item.detail ? `<small>${escapeText(item.detail)}</small>` : ''}</button>`).join('') : '<span class="ribbon-alerts-empty">暂无告警</span>'}</div>
+  </section>`;
+}
+
 function renderRibbonCommand(command) {
+  const hasMenu=command.menuItems.length||command.inputPopover;
+  const input=command.inputBefore;
+  const prefix=input?`<label class="ribbon-inline-number${input.caption?' has-caption':''}">${input.caption?`<span class="ribbon-input-caption">${escapeText(input.caption)}</span>`:''}<input type="text" inputmode="decimal" aria-label="${escapeAttr(input.label)}" data-ribbon-input="${escapeAttr(input.id)}" value="${escapeAttr(input.value)}" ${input.disabled?'disabled':''}>${input.unit?`<span class="ribbon-input-unit">${escapeText(input.unit)}</span>`:''}</label>`:'';
+  const withInput=content=>input?`<div class="ribbon-input-command" role="group" aria-label="${escapeAttr(command.title)}">${prefix}${content}</div>`:content;
   const activeAttribute = command.active === undefined ? "" : ` aria-pressed="${command.active ? "true" : "false"}"`;
   const button = `
-    <button class="ribbon-command ${command.size === "large" ? "large" : ""} ${command.menuItems.length ? "split-main" : ""} ${command.active ? "active" : ""}"
+    <button class="ribbon-command ${command.size === "large" ? "large" : ""} ${hasMenu ? "split-main" : ""} ${command.active ? "active" : ""}"
             type="button"
             data-action="ribbon-command"
             data-command-id="${escapeAttr(command.id)}"
+            aria-label="${escapeAttr(command.title)}"
             data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
-            ${command.authorizationRequired ? `aria-disabled="true" title="${escapeAttr(command.unavailableReason)}"` : ""}
+            ${command.tooltip?`data-toolbar-tooltip="${escapeAttr(command.tooltip)}"`:''}
+            ${command.authorizationRequired ? 'aria-disabled="true"' : ''}
+            ${command.unavailableReason ? `title="${escapeAttr(command.unavailableReason)}"` : ''}
             ${activeAttribute}
             ${command.disabled || command.authorizationRequired ? "disabled" : ""}>
       ${renderRibbonCommandIcon(command.iconName, command.icon)}
       <span>${escapeText(command.title)}</span>
     </button>`;
-  if (!command.menuItems.length) return button;
+  if (!hasMenu) return withInput(button);
 
   const open = state.openRibbonMenuCommandId === command.id;
-  return `
-    <div class="ribbon-split-command ${command.size === "large" ? "large" : ""}" data-ribbon-split-command="${escapeAttr(command.id)}">
+  return withInput(`
+    <div class="ribbon-split-command ${command.size === "large" ? "large" : ""} ${command.inputPopover?.togglePosition==='bottom'?'toggle-bottom':''}" data-ribbon-split-command="${escapeAttr(command.id)}">
       ${button}
       <button class="ribbon-command-menu-toggle"
               type="button"
               data-action="ribbon-command-menu-toggle"
               data-command-id="${escapeAttr(command.id)}"
-              aria-label="展开${escapeAttr(command.title)}菜单"
-              aria-haspopup="menu"
+              aria-label="${command.inputPopover?`设置${escapeAttr(command.inputPopover.label)}`:`展开${escapeAttr(command.title)}菜单` }"
+              aria-haspopup="${command.inputPopover?'dialog':'menu'}"
+              data-toolbar-tooltip="${command.inputPopover?`设置${escapeAttr(command.inputPopover.label)}${command.inputPopover.unit?`，单位 ${escapeAttr(command.inputPopover.unit)}`:''}。`:`展开${escapeAttr(command.title)}菜单，选择操作方式。` }"
               aria-expanded="${open ? "true" : "false"}"
-              ${command.disabled || command.authorizationRequired ? "disabled" : ""}>
-        <span aria-hidden="true">⌄</span>
+              ${(command.inputPopover?command.inputPopover.disabled:command.disabled) || command.authorizationRequired ? "disabled" : ""}>
+        <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="m3 4.5 3 3 3-3"/></svg>
       </button>
-      ${open ? `<div class="ribbon-command-menu" role="menu" aria-label="${escapeAttr(command.title)}菜单">
+      ${open ? renderRibbonCommandMenu(command) : ""}
+    </div>`);
+}
+
+function renderRibbonCommandMenu(command) {
+  if(command.inputPopover){const input=command.inputPopover;return `<div class="ribbon-command-menu ribbon-input-popover" role="dialog" aria-label="${escapeAttr(input.label)}"><label><span>${escapeText(input.label)}</span><input type="text" inputmode="decimal" aria-label="${escapeAttr(input.label)}" data-ribbon-input="${escapeAttr(input.id)}" value="${escapeAttr(input.value)}">${input.unit?`<span>${escapeText(input.unit)}</span>`:''}</label><small>输入后直接保存；按 Enter 收起。</small></div>`;}
+  return `<div class="ribbon-command-menu" role="menu" aria-label="${escapeAttr(command.title)}菜单">
         ${command.menuItems.map((item) => `
           <button class="ribbon-command-menu-item"
                   type="button"
-                  role="menuitem"
+                  role="${item.active === undefined ? "menuitem" : "menuitemradio"}"
+                  ${item.active === undefined ? "" : `aria-checked="${item.active}"`}
                   data-action="ribbon-command"
                   data-command-id="${escapeAttr(item.id)}"
+                  ${item.tooltip?`data-toolbar-tooltip="${escapeAttr(item.tooltip)}"`:''}
                   ${item.authorizationRequired ? `aria-disabled="true" title="${escapeAttr(item.unavailableReason)}"` : ""}
                   ${item.disabled || item.authorizationRequired ? "disabled" : ""}>
             ${renderRibbonCommandIcon(item.iconName, item.icon)}
             <span>${escapeText(item.title)}</span>
+            ${item.active === undefined ? "" : '<svg class="ribbon-menu-check" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m3 8 3 3 7-7"/></svg>'}
           </button>
         `).join("")}
-      </div>` : ""}
-    </div>`;
+      </div>`;
 }
 
-function closeRibbonCommandMenu() {
+function openRibbonCommandMenu(toggle, focusItem = false) {
+  if (toggle.disabled) return;
+  const command = getActiveRibbonDefinition().tabs.flatMap(tab => tab.groups.flatMap(group => group.commands))
+    .find(item => item.id === toggle.dataset.commandId);
+  if (!command?.menuItems.length&&!command?.inputPopover) return;
+  closeRibbonCommandMenu();
+  state.openRibbonMenuCommandId = command.id;
+  toggle.setAttribute('aria-expanded', 'true');
+  // Opening a menu must not rebuild the workspace, canvas or active inputs.
+  toggle.parentElement.insertAdjacentHTML('beforeend', renderRibbonCommandMenu(command));
+  positionScrollableRibbonMenu(toggle);
+  if (focusItem||command.inputPopover) {
+    const menu = toggle.parentElement.querySelector('.ribbon-command-menu');
+    const focus=menu.querySelector('input')??menu.querySelector('[aria-checked="true"]:not(:disabled)')??menu.querySelector('button:not(:disabled)');focus?.focus({ preventScroll: true });if(command.inputPopover)focus?.select();
+  }
+}
+
+function positionScrollableRibbonMenu(toggle) {
+  if (!toggle?.closest?.('.ribbon-commands.has-ribbon-alerts')) return;
+  const menu = toggle.parentElement.querySelector('.ribbon-command-menu');
+  if (!menu) return;
+  // A fixed menu escapes the optional horizontal scroller's clipping box.
+  const rect = toggle.parentElement.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.maxHeight = `${Math.max(48, window.innerHeight - rect.bottom - 12)}px`;
+  menu.style.overflowY = 'auto';
+}
+
+function closeRibbonCommandMenu(restoreFocus = false) {
   if (!state.openRibbonMenuCommandId) return;
+  const toggle = root.querySelector('.ribbon-command-menu-toggle[aria-expanded="true"]');
   state.openRibbonMenuCommandId = "";
   root.querySelectorAll(".ribbon-command-menu").forEach((menu) => menu.remove());
   root.querySelectorAll(".ribbon-command-menu-toggle[aria-expanded='true']")
     .forEach((toggle) => toggle.setAttribute("aria-expanded", "false"));
+  if (restoreFocus) toggle?.focus({ preventScroll: true });
 }
 
 function renderProjectWorkspace() {
@@ -1737,8 +1926,11 @@ function buildOpenProjectContext(entry) {
   };
 }
 
-function findOpenProjectCatalog(entry) {
-  return (entry.productProxy?.state?.catalogs ?? []).find((catalog) =>
+async function findOpenProjectCatalog(entry) {
+  // Application-opened files may not be in the product proxy's cached summary.
+  // Query live ownership without re-adopting all other open scene proxies.
+  const productState = await entry.productProxy.invoke("Product.GetState");
+  return (productState?.catalogs ?? []).find((catalog) =>
     catalog.mainProject?.projectId === entry.projectId
     || (catalog.projects ?? []).some((project) => project.projectId === entry.projectId));
 }
@@ -1810,10 +2002,17 @@ function getProductProjectHistoryState() {
 function getCombinedProjectHistoryState() {
   const nativeHistory = state.activeSceneState?.undoRedo ?? {};
   const productHistory = getProductProjectHistoryState();
+  // Product repositories and local drawing drafts each own their complete
+  // availability. Neither falls through to unrelated scene undo.
+  if (productHistory.scope === 'product'||productHistory.scope === 'editor') return {
+    ...productHistory,
+    canUndo: Boolean(!productHistory.blocked && productHistory.canUndo),
+    canRedo: Boolean(!productHistory.blocked && productHistory.canRedo),
+  };
   return {
     ...nativeHistory,
-    canUndo: Boolean(productHistory.canUndo || nativeHistory.canUndo),
-    canRedo: Boolean(productHistory.canRedo || nativeHistory.canRedo),
+    canUndo: Boolean(!productHistory.blocked && (productHistory.canUndo || nativeHistory.canUndo)),
+    canRedo: Boolean(!productHistory.blocked && (productHistory.canRedo || nativeHistory.canRedo)),
   };
 }
 
@@ -1882,13 +2081,24 @@ function getActiveRibbonDefinition() {
 function normalizeRibbonDefinition(ribbon) {
   const tabs = Array.isArray(ribbon?.tabs) ? ribbon.tabs : [];
   return {
+    ...(ribbon?.alerts && typeof ribbon.alerts === "object" && !Array.isArray(ribbon.alerts) ? { alerts: {
+      label: String(ribbon.alerts.label ?? "告警"),
+      commandId: String(ribbon.alerts.commandId ?? ""),
+      expanded: Boolean(ribbon.alerts.expanded),
+      items: (Array.isArray(ribbon.alerts.items) ? ribbon.alerts.items : []).filter(item => item && typeof item === "object").map(item => ({
+        id: String(item.id ?? ""), title: String(item.title ?? ""), detail: String(item.detail ?? ""),commandId:String(item.commandId??""),disabled:Boolean(item.disabled),
+        severity: ["info", "warning", "error"].includes(item.severity) ? item.severity : "warning",
+      })),
+    } } : {}),
     tabs: tabs.map((tab) => ({
       id: String(tab.id ?? ""),
       title: String(tab.title ?? tab.id ?? ""),
       authorizationRequired: Boolean(tab.authorizationRequired),
       unavailableReason: String(tab.unavailableReason ?? ""),
+      workspace:normalizeRibbonWorkspace(tab.workspace),
       groups: (Array.isArray(tab.groups) ? tab.groups : []).map((group) => ({
         title: String(group.title ?? ""),
+        titleCommandId: String(group.titleCommandId ?? ""),
         scope: String(group.scope ?? "all"),
         commands: (Array.isArray(group.commands) ? group.commands : []).map((command) => ({
           id: String(command.id ?? ""),
@@ -1896,6 +2106,9 @@ function normalizeRibbonDefinition(ribbon) {
           icon: command.icon,
           iconName: command.iconName,
           iconTone: command.iconTone,
+          inputBefore: command.inputBefore,
+          inputPopover: command.inputPopover,
+          tooltip: String(command.tooltip ?? ""),
           size: command.size,
           active: command.active === undefined ? undefined : Boolean(command.active),
           disabled: Boolean(command.disabled),
@@ -1906,6 +2119,8 @@ function normalizeRibbonDefinition(ribbon) {
             title: String(item.title ?? item.id ?? ""),
             icon: item.icon,
             iconName: item.iconName,
+            tooltip: String(item.tooltip ?? ""),
+            active: item.active === undefined ? undefined : Boolean(item.active),
             disabled: Boolean(item.disabled),
             authorizationRequired: Boolean(item.authorizationRequired),
             unavailableReason: String(item.unavailableReason ?? ""),
@@ -2156,10 +2371,16 @@ function runAction(action, { preserveSurface = false, errorPresentation = "" } =
 async function track(label, work, progress = {}) {
   const operation = createProgressOperation(label, progress);
   const stopProgressTimer = startProgressStageTimer(operation);
+  const refresh = () => {
+    if (!progress.preserveSurface) return render();
+    refreshProjectHistoryControls();
+    refreshProjectSaveControl();
+    updateBottomDockLogs();
+  };
   state.pendingCount += 1;
   state.pendingOperations.push(operation);
   state.error = "";
-  render();
+  refresh();
   await waitForPaint();
   try {
     const result = await work();
@@ -2174,7 +2395,7 @@ async function track(label, work, progress = {}) {
     stopProgressTimer();
     state.pendingCount = Math.max(0, state.pendingCount - 1);
     state.pendingOperations = state.pendingOperations.filter((item) => item.id !== operation.id);
-    render();
+    refresh();
   }
 }
 

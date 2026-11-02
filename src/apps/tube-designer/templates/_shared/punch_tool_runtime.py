@@ -210,7 +210,8 @@ def _package(directory, package_root=None):
     content = member.read_bytes()
     if len(raw) + len(content) > MAX_BYTES:
         raise ValueError("刀具包超过 4 MB")
-    queries = Path(__file__).with_name("section_geometry.py").read_bytes()
+    queries = b"\0".join(Path(__file__).with_name(name).read_bytes() for name in (
+        "section_geometry.py", "directional_tube_geometry.py", "tube_profile_catalog.py"))
     digest = hashlib.sha256(raw + b"\0" + content + queries).hexdigest()
     return descriptor, defaults, operation_defaults, content, digest
 

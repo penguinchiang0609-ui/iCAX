@@ -1,4 +1,7 @@
-const VIEW_CUBE_ANIMATION_KEY = Symbol("laser3d.viewCubeAnimation");
+import { renderBeveledViewCube } from './beveledViewCube.mjs';
+import { attachViewCubeNavigation } from './viewCubeNavigation.mjs';
+const VIEW_CUBE_ANIMATION_KEY = Symbol("workbench.viewCubeAnimation");
+let nextCubeId=0;
 const VIEW_CUBE_SIZE = 116;
 const VIEW_CUBE_PIECES = Object.freeze(createViewCubePieces());
 const AXES = Object.freeze([
@@ -31,7 +34,7 @@ export function renderViewCube() {
       data-cam-viewcube-cube
       data-no-window-drag
       data-cam-viewcube-piece-count="${VIEW_CUBE_PIECES.length}"
-      aria-label="视角导航">
+      aria-label="视角导航" title="左键拖动旋转视野 · 单击方块切换标准视图">
     </div>
   `;
 }
@@ -51,6 +54,7 @@ export function attachViewCube(view, mount) {
 
   const animation = {
     host,
+    id:`cam-cube-${++nextCubeId}`,
     frameId: 0,
     lastSignature: "",
     onKeyDown: null,
@@ -69,6 +73,7 @@ export function attachViewCube(view, mount) {
     view.viewport.setStandardView?.(target.dataset.camView);
   };
   host.addEventListener("keydown", animation.onKeyDown);
+  animation.disposeNavigation = attachViewCubeNavigation(host, view.viewport);
   animation.tick = () => {
     animation.frameId = 0;
     updateViewCube(view, animation);
@@ -87,6 +92,7 @@ export function stopViewCubeAnimation(view) {
     window.cancelAnimationFrame(animation.frameId);
   }
   animation.host.removeEventListener("keydown", animation.onKeyDown);
+  animation.disposeNavigation?.();
   animation.host.replaceChildren();
   view[VIEW_CUBE_ANIMATION_KEY] = null;
 }
@@ -121,7 +127,20 @@ function updateViewCube(view, animation) {
     ? animation.host.ownerDocument.activeElement.closest?.('[data-cam-action="view-standard"]')
     : null;
   const focusedView = focusedPiece?.dataset.camView;
-  animation.host.innerHTML = renderViewCubeSvg(basis);
+  const activeElement = animation.host.ownerDocument.activeElement;
+  const focusedCompass = animation.host.contains(activeElement) && activeElement?.hasAttribute?.('data-cam-compass');
+  const appearance = view.viewport.options?.viewCubeAppearance ?? {};
+  animation.host.dataset.seamless = String(!!appearance.seamless);
+  animation.host.dataset.appearance = appearance.beveled ? 'beveled' : 'standard';
+  animation.host.dataset.compass = String(!!appearance.compass && !!appearance.beveled);
+  animation.host.innerHTML = appearance.beveled
+    ? renderBeveledViewCube({basis,pieces:VIEW_CUBE_PIECES,labels:{...FACE_LABELS,...appearance.faceLabels},title:viewTitle,id:animation.id,compass:appearance.compass,triad:appearance.triad})
+    : renderViewCubeSvg(basis, appearance);
+  const compass = animation.host.querySelector('[data-cam-compass]');
+  const heading = ((Number(view.viewport.getCameraState?.().theta ?? 0)*180/Math.PI)%360+360)%360;
+  compass?.setAttribute('aria-valuenow',String(Math.round(heading)));
+  compass?.setAttribute('aria-valuetext',`${Math.round(heading)}°`);
+  if (focusedCompass) compass?.focus({preventScroll:true});
   if (focusedView) {
     const pieces = animation.host.querySelectorAll('[data-cam-action="view-standard"]');
     const nextFocus = [...pieces].find((piece) => piece.dataset.camView === focusedView) ?? pieces[0];
@@ -129,7 +148,7 @@ function updateViewCube(view, animation) {
   }
 }
 
-function renderViewCubeSvg(basis) {
+function renderViewCubeSvg(basis, appearance) {
   const visibleFaces = collectVisibleFaces(basis);
   const bounds = computeProjectionBounds(visibleFaces);
   const scale = Math.min(
@@ -139,10 +158,16 @@ function renderViewCubeSvg(basis) {
   const offsetX = VIEW_CUBE_SIZE * 0.5 - (bounds.minX + bounds.maxX) * 0.5 * scale;
   const offsetY = VIEW_CUBE_SIZE * 0.5 - (bounds.minY + bounds.maxY) * 0.5 * scale;
 
-  const pieces = groupVisibleFacesByPiece(visibleFaces)
-    .sort((left, right) => left.depth - right.depth)
-    .map((piece) => renderPiece(piece, scale, offsetX, offsetY))
+  const groups = groupVisibleFacesByPiece(visibleFaces).sort((left, right) => left.depth - right.depth);
+  const pieces = groups.map((piece) => renderPiece(piece, scale, offsetX, offsetY, appearance))
     .join("");
+  // Keep the 26 original pick regions, but draw uninterrupted face borders and
+  // labels last so adjacent edge/corner hit regions never paint over the text.
+  const faceBorders = appearance.seamless ? AXES.filter(axis=>dot(axis.normal,basis.eye)>.0001).map(axis=>{
+    const points=faceCorners(vector(-1.5,-1.5,-1.5),vector(1.5,1.5,1.5),axis).map(p=>toSvgPoint(project(p,basis),scale,offsetX,offsetY)).map(p=>`${formatNumber(p.x)},${formatNumber(p.y)}`).join(' ');
+    return `<polygon class="cam-viewcube-outline" points="${points}" fill="none" pointer-events="none"/>`;
+  }).join('') : '';
+  const labels=groups.map(group=>renderPieceLabel(group,scale,offsetX,offsetY,appearance)).join('');
 
   return `
     <svg
@@ -159,6 +184,8 @@ function renderViewCubeSvg(basis) {
       </defs>
       <g filter="url(#cam-viewcube-shadow)">
         ${pieces}
+        ${faceBorders}
+        ${labels}
       </g>
     </svg>
   `;
@@ -186,6 +213,7 @@ function collectVisibleFaces(basis) {
         center: project(add(center, scaleVector(axis.normal, 0.01)), basis),
         depth: dot(center, basis.eye),
         shade: faceShade(axis.normal, basis.eye),
+        facing: dot(axis.normal, basis.eye),
       }));
     }
   }
@@ -210,12 +238,11 @@ function groupVisibleFacesByPiece(faces) {
   return [...groups.values()];
 }
 
-function renderPiece(group, scale, offsetX, offsetY) {
+function renderPiece(group, scale, offsetX, offsetY, appearance) {
   const faceMarkup = group.faces
     .sort((left, right) => left.depth - right.depth)
-    .map((face) => renderFaceSurface(group.piece, face, scale, offsetX, offsetY))
+    .map((face) => renderFaceSurface(group.piece, face, scale, offsetX, offsetY, appearance))
     .join("");
-  const labelMarkup = renderPieceLabel(group, scale, offsetX, offsetY);
   return `
     <g
       class="cam-viewcube-piece cam-viewcube-piece-${group.piece.kind}"
@@ -225,12 +252,12 @@ function renderPiece(group, scale, offsetX, offsetY) {
       tabindex="0"
       aria-label="${escapeAttr(viewTitle(group.piece.name))}">
       ${faceMarkup}
-      ${labelMarkup}
     </g>
   `;
 }
 
-function renderFaceSurface(piece, face, scale, offsetX, offsetY) {
+function renderFaceSurface(piece, face, scale, offsetX, offsetY, appearance) {
+  const fill=shadeColor(appearance.colors?.[piece.kind] ?? BASE_COLORS[piece.kind], face.shade);
   const points = face.corners
     .map((point) => toSvgPoint(point, scale, offsetX, offsetY))
     .map((point) => `${formatNumber(point.x)},${formatNumber(point.y)}`)
@@ -239,19 +266,21 @@ function renderFaceSurface(piece, face, scale, offsetX, offsetY) {
     <polygon
       class="cam-viewcube-surface"
       points="${points}"
-      fill="${shadeColor(BASE_COLORS[piece.kind], face.shade)}" />
+      ${appearance.seamless ? `style="--viewcube-fill:${fill}"` : ''}
+      fill="${fill}" />
   `;
 }
 
-function renderPieceLabel(group, scale, offsetX, offsetY) {
+function renderPieceLabel(group, scale, offsetX, offsetY, appearance) {
   if (group.piece.kind !== "center") {
     return "";
   }
   const face = group.faces.find((item) => item.axis.name === group.piece.name);
-  const label = FACE_LABELS[group.piece.name];
+  const label = appearance.faceLabels?.[group.piece.name] ?? FACE_LABELS[group.piece.name];
   if (!face || !label) {
     return "";
   }
+  if (appearance.seamless && face.facing < .22) return '';
   const point = toSvgPoint(face.center, scale, offsetX, offsetY);
   return `
     <text

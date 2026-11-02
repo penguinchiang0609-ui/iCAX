@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync,existsSync} from "node:fs";
 import {handlePartDrawingAction,openPartDrawing,getPartDrawingPayload,renderPartDrawingDialog,attachPartDrawingEditor,defaultDrawingProfile,beginDrawingOperation,finishDrawingOperation} from "../../apps/tube-designer/webpage/partDrawing.mjs";
-import {installDrawingCatalogue} from "../../apps/tube-designer/webpage/partDrawingModel.mjs";
-import {buildPartDrawingPreviewRows} from "../../apps/tube-designer/webpage/partDrawingPreview.mjs";
+import {installDrawingCatalogue,updateSelectedDrawingBevel,removeSelectedDrawingBevel,reselectDrawingBevel} from "../../apps/tube-designer/webpage/partDrawingModel.mjs";
+import {buildPartDrawingPreviewRows,resolvePartDrawingTopologyPick} from "../../apps/tube-designer/webpage/partDrawingPreview.mjs";
 import {renderNestingRightPane,renderNestingViewportOverlay} from "../../apps/tube-designer/webpage/partsArea.mjs";
 const root=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
 const tools=readdirSync(root,{withFileTypes:true}).filter(d=>d.isDirectory()&&existsSync(new URL(d.name+"/tool.json",root))).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",root)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
@@ -13,7 +13,7 @@ assert.equal(defaultDrawingProfile({...view,tubeDesignerSystemProfiles:[{...libr
 assert.equal(defaultDrawingProfile({...view,tubeDesignerSystemProfiles:[{...library,id:"angle"}]}).id,"angle");
 assert.equal(defaultDrawingProfile({tubeDesignerSystemProfiles:[{id:"broken"}]}),undefined);
 const calls=[];let choice="C:\\fixture\\截面.dxf",reject=false;
-const result={toolsOnly:true,geometry:{url:"final",version:1},baseGeometry:{url:"blank"},
+const result={toolsOnly:false,geometry:{url:"final",version:1},baseGeometry:{url:"blank"},
   toolPreviews:[{target:"feature",key:"test-tool",geometry:{url:"tools"}}],partEntityId:"saved",tubeDesigner:{nestingGroups:[]}};
 const context={appProxy:{bridge:{async openFileDialog(){return choice;}}},productProxy:{async invoke(method,payload){calls.push({method,payload});return {profile:structuredClone(profile)};}},sceneProxy:{async invoke(method,payload){calls.push({method,payload});if(reject)throw new Error("裁剪无效");return result;}}};
 const ops={renderProject(){},showNotice(){}};
@@ -26,7 +26,35 @@ assert.equal(view.tubeDesignerPunchWizard,unrelatedPunchState,"Opening drawing k
 assert.equal(view.tubeDesignerPartDrawing.mode,"main");
 assert.equal(view.tubeDesignerPartDrawing.mainApplied,true);
 assert.equal(s.drawing.section.key,"system:round","A new drawing starts with a default main tube");
-assert.deepEqual(buildPartDrawingPreviewRows(result).map(r=>r.data.geometry.url),["blank","tools"]);
+assert.equal(s.previewMode,"finished");
+assert.deepEqual(buildPartDrawingPreviewRows(result).map(r=>r.data.geometry.url),["final"]);
+assert.deepEqual(buildPartDrawingPreviewRows(result,{mode:"tools"}).map(r=>r.data.geometry.url),["blank","tools"]);
+assert.deepEqual(buildPartDrawingPreviewRows(result,{mode:"base"}).map(r=>r.data.geometry.url),["blank"]);
+{
+  const exact={...result,topology:{revision:"native-source-7",edges:[{id:27,geometry:{url:"edge-27",kind:"polyline"},adjacentFaceIds:[4,8]}],faces:[{id:4,edgeIds:[27],geometry:{url:"face-4"}}]}};
+  const rows=buildPartDrawingPreviewRows(exact);
+  assert.equal(rows[1].entityId,"drawing:topology:edge:27");assert.equal(rows[1].data.geometryKind,2);
+  const pick=resolvePartDrawingTopologyPick(exact,"edge",{objectId:rows[1].entityId},{faceIndex:987,index:666},[]);
+  assert.equal(pick.id,27);assert.equal(pick.faceIndex,undefined,"Native topology IDs own CAD references");
+  assert.equal(resolvePartDrawingTopologyPick(exact,"edge",{objectId:"drawing:finished"},{faceIndex:27,index:27},[]),null);
+  s.preview=exact;s.topologySelection=pick;
+  updateSelectedDrawingBevel(s,"enabled",{checked:true});updateSelectedDrawingBevel(s,"side",{value:"both"});
+  assert.deepEqual(getPartDrawingPayload(view).drawing.bevels[0].edgeIds,[27]);
+  assert.equal(s.drawing.bevels[0].topologyRevision,"native-source-7");assert.equal(s.drawing.bevels[0].bevel.side,"both");
+  updateSelectedDrawingBevel(s,"angleDegrees",{value:""});
+  assert.throws(()=>getPartDrawingPayload(view),/坡口角/);
+  updateSelectedDrawingBevel(s,"enabled",{checked:false});
+  assert.equal(getPartDrawingPayload(view).drawing.bevels[0].bevel.enabled,false,"A disabled bevel draft must not block CAD editing");
+  updateSelectedDrawingBevel(s,"angleDegrees",{value:"40"});updateSelectedDrawingBevel(s,"enabled",{checked:true});
+  const bevelId=s.drawing.bevels[0].id;
+  s.reselectBevelId=bevelId;s.preview={...exact,topology:{...exact.topology,revision:"native-source-8"}};
+  s.topologySelection={kind:"face",id:4,edgeIds:[27],topologyRevision:"native-source-8"};
+  assert.equal(reselectDrawingBevel(s),true);
+  assert.equal(s.drawing.bevels[0].id,bevelId);assert.equal(s.drawing.bevels[0].bevel.angleDegrees,40);
+  assert.equal(s.drawing.bevels[0].topologyRevision,"native-source-8");assert.equal(s.drawing.bevels[0].referenceFaceId,4);
+  s.reselectBevelId="";
+  removeSelectedDrawingBevel(s);assert.deepEqual(s.drawing.bevels,[]);s.topologySelection=null;
+}
 for(const label of ["系统内置","模板自带","我的","外部 DXF","特征树","主管"])assert.ok(renderPartDrawingDialog(view).includes(label));
 for(const label of ["应用本次","加入特征树","取消本次","应用主管","应用截面参数"])assert.ok(!renderPartDrawingDialog(view).includes(label),`Removed obsolete button: ${label}`);
 await act("section-select",{dataset:{drawingSection:"main"},value:"__dxf__"});assert.equal(s.drawing.section.source,"dxf");
@@ -114,43 +142,53 @@ const payload=getPartDrawingPayload(view);assert.equal(JSON.stringify(payload).i
 await act("apply");assert.equal(calls.at(-1).method,"TubeDesigner.AddPartDrawing");assert.equal(view.tubeDesignerPartDrawing,null);
 assert.equal(calls.at(-1).payload.toolsOnly,undefined,"The final Generate action, unlike editing previews, requests a real finished part");
 assert.equal(view.tubeDesignerPunchWizard,unrelatedPunchState,"Finishing drawing must not close or replace machining state");
-const part={entityId:"saved",name:"已保存零件",length:800,manufacturingGeometryResourceId:"final",manufacturingGeometryResourceVersion:7,properties:{"tubeDesigner.partDrawing":{...payload,baseLength:800}}};
+// Saved neutral documents use the same workbench and save current CAD operations.
 {
-  const newPart={...part,independentNesting:true,properties:{"manufacturing.process":"part-drawing","tubeDesigner.partDrawing":structuredClone(part.properties["tubeDesigner.partDrawing"])}};
-  const independentView={};openPartDrawing(independentView,newPart);
-  installDrawingCatalogue(independentView.tubeDesignerPartDrawing.state,{tools});
-  assert.equal(independentView.tubeDesignerPartDrawing.state.features.length,payload.features.length);
-  assert.equal(getPartDrawingPayload(independentView).drawing.length,800);
-  assert.equal(newPart.properties["tubeDesigner.punchWizard"],undefined,"Reading the dedicated drawing recipe must not rewrite the original part as a machining wizard");
-  assert.equal(independentView.tubeDesignerPunchWizard,undefined);
-  const inspector=renderNestingRightPane({}, {activeAreaId:"nesting",tubeDesignerActiveNestingPartId:newPart.entityId,
-    scene:{tubeDesigner:{nestingGroups:[{parts:[{...newPart,profile,properties:{...newPart.properties,"manufacturing.partKind":"tube"}}]}]}}});
-  const viewport=renderNestingViewportOverlay({}, {activeAreaId:"nesting",tubeDesignerActiveNestingPartId:newPart.entityId,
-    tubeDesignerNestingSelectionKind:"part",scene:{tubeDesigner:{nestingGroups:[{parts:[{...newPart,profile,properties:{...newPart.properties,"manufacturing.partKind":"tube"}}]}]}}});
-  assert.match(viewport,/data-cam-action="tube-designer-drawing-open"[^>]*>三维编辑/);
-  assert.doesNotMatch(viewport,/tube-designer-punch-open|冲孔向导/);assert.match(inspector,/三维绘制/);
+  const savedPart={entityId:"saved",name:"原生零件",length:500,quantity:1,material:"钢",manufacturingGeometryResourceVersion:7,
+    properties:{"tubeDesigner.cadDocument":{documentResourceId:"current-cad"}}};
+  const savedView={scene:{tubeDesigner:{nestingGroups:[{parts:[savedPart]}]}}};
+  const boundarySnapshot={geometry:{Section:{FillRule:0,Boundaries:[]},MachiningFaces:{Faces:[{Id:1}]}},
+    construction:{SolidNodes:[],UVFeatures:[]},placement:{Location:{X:0,Y:0,Z:0},XDirection:{X:1,Y:0,Z:0},YDirection:{X:0,Y:1,Z:0},ZDirection:{X:0,Y:0,Z:1}}};
+  const savedCalls=[];
+  const savedContext={sceneProxy:{async invoke(method,payload){
+    savedCalls.push({method,payload});
+    if(method==="TubeDesigner.GetTubeCadDocument")return {...structuredClone(boundarySnapshot),revision:"4",resourceVersion:7,documentResourceId:"current-cad",documentResourceVersion:3,
+      authoringView:{mode:"drawing",drawing:{length:500,name:savedPart.name,quantity:1,material:"钢",section:{source:"cad",profile}},features:[],ends:{},readOnlyNodes:[{nodeId:"wrapped",label:"二维切除"}]}};
+    if(method==="TubeDesigner.ApplyTubeCadDocument")return {...structuredClone(boundarySnapshot),revision:"5",resourceVersion:8,snapshot:{tubeDesigner:savedView.scene.tubeDesigner}};
+    throw new Error("Unexpected method: "+method);
+  }}};
+  assert.deepEqual(await handlePartDrawingAction(savedContext,savedView,"tube-designer-drawing-open",{dataset:{tubeDesignerPartId:"saved"}},ops),{handled:true});
+  const savedState=savedView.tubeDesignerPartDrawing.state;
+  installDrawingCatalogue(savedState,{tools});
+  assert.equal(savedState.cadSession.revision,"4");
+  assert.deepEqual(savedState.cadSession.geometry,boundarySnapshot.geometry);
+  assert.deepEqual(savedState.cadSession.construction,boundarySnapshot.construction);
+  assert.equal(savedCalls[0].payload.authoringView,"drawing");
+  assert.match(renderPartDrawingDialog(savedView),/td-draw-workbench/);
+  assert.match(renderPartDrawingDialog(savedView),/data-drawing-node="wrapped"/);
+  assert.doesNotMatch(renderPartDrawingDialog(savedView),/data-tube-cad-editor/);
+  await handlePartDrawingAction(savedContext,savedView,"tube-designer-drawing-main-change",{dataset:{drawingField:"length"},value:"600"},ops);
+  await handlePartDrawingAction(savedContext,savedView,"tube-designer-drawing-apply",{},ops);
+  assert.equal(savedCalls.at(-1).method,"TubeDesigner.ApplyTubeCadDocument");
+  assert.equal(savedCalls.at(-1).payload.resourceVersion,7);
+  assert.equal(savedCalls.at(-1).payload.revision,"4");
+  assert.equal(savedCalls.at(-1).payload.authoringEdit.main.length,600);
+  assert.deepEqual(savedCalls.at(-1).payload.authoringEdit.features,[]);
+  assert.equal(savedView.tubeDesignerPartDrawing,null);
 }
-view.tubeDesignerSystemProfiles=[];view.tubeDesignerTemplateProfiles=[];view.tubeDesignerUserData={profiles:[]};
-openPartDrawing(view,part);s=view.tubeDesignerPartDrawing.state;installDrawingCatalogue(s,{tools:[]});
-await command("main");assert.match(renderPartDrawingDialog(view),/主管截面和长度已锁定/);
-await act("main-change",{dataset:{drawingField:"length"},value:"900"});assert.equal(s.drawing.length,800);
-await node(s.features[0].id);assert.match(renderPartDrawingDialog(view),/仅可删除/);
-await act("selected-copy");assert.match(s.error,/仅可删除/);
-await act("selected-remove");assert.equal(s.features.length,1);await node(s.features[0].id);await act("selected-remove");
-await act("apply");assert.equal(calls.at(-1).method,"TubeDesigner.ApplyPartDrawing");assert.equal(calls.at(-1).payload.resourceVersion,7);
 // Coalesce edits while a previous native preview is still in flight.
 openPartDrawing(view);s=view.tubeDesignerPartDrawing.state;s.drawing.section={source:"dxf",profile};installDrawingCatalogue(s,{tools});
-let release;const slow={sceneProxy:{async invoke(method,payload){calls.push({method,payload});await new Promise(r=>{release=r;});return {...result,geometry:undefined,toolsOnly:true};}}};
+let release;const slow={sceneProxy:{async invoke(method,payload){calls.push({method,payload});await new Promise(r=>{release=r;});return result;}}};
 attachPartDrawingEditor(slow,view,null,ops);await new Promise(r=>setTimeout(r,280));
 assert.equal(s.previewPending,true);s.drawing.length=650;s.revision++;attachPartDrawingEditor(slow,view,null,ops);
 assert.notEqual(view.pending,true,"Intermediate preview uses inline progress, not the global input-blocking operation");
 assert.equal(view.tubeDesignerOperation,null);
 assert.equal(calls.at(-1).method,"TubeDesigner.PreviewPartDrawing");
-assert.equal(calls.at(-1).payload.toolsOnly,true,"Editing uses the dedicated tools-only preview, never cutting the main tube");
+assert.equal(calls.at(-1).payload.toolsOnly,false,"Drawing previews evaluate the real finished CAD part");
 release();await new Promise(r=>setTimeout(r,20));assert.equal(s.preview,null);
 await new Promise(r=>setTimeout(r,260));assert.equal(calls.at(-1).payload.drawing.length,650);
 release();await new Promise(r=>setTimeout(r,20));assert.equal(s.preview.revision,s.revision);
-assert.equal(s.error,"");assert.equal(s.preview.geometry,undefined);assert.equal(s.preview.baseGeometry.url,"blank");
+assert.equal(s.error,"");assert.equal(s.preview.geometry.url,"final");assert.equal(s.preview.baseGeometry.url,"blank");
 view.tubeDesignerPartDrawing=null;
 assert.equal(view.tubeDesignerPunchWizard,unrelatedPunchState);
 {
@@ -177,15 +215,15 @@ assert.equal(view.tubeDesignerPunchWizard,unrelatedPunchState);
 await Promise.all([
   {toolsOnly:true,baseGeometry:{url:"partial-base"},previewToolsComplete:false,resultError:"支管刀具构造失败"},
   {toolsOnly:true,baseGeometry:{url:"partial-base"},previewToolsComplete:false},
-  {baseGeometry:{url:"old-endpoint-base"},geometry:{url:"already-cut"}},
+  {baseGeometry:{url:"base-without-finished-part"}},
 ].map(async response=>{
   const candidate={tubeDesignerSystemProfiles:[library]};openPartDrawing(candidate);
   const candidateState=candidate.tubeDesignerPartDrawing.state;installDrawingCatalogue(candidateState,{tools});
   attachPartDrawingEditor({sceneProxy:{async invoke(method,request){
-    assert.equal(method,"TubeDesigner.PreviewPartDrawing");assert.equal(request.toolsOnly,true);return response;
+    assert.equal(method,"TubeDesigner.PreviewPartDrawing");assert.equal(request.toolsOnly,false);return response;
   }}},candidate,null,ops);
   await new Promise(resolve=>setTimeout(resolve,280));
-  assert.equal(candidateState.preview,null,"Partial or Boolean-preview responses must not be accepted as a complete drawing tool preview");
+  assert.equal(candidateState.preview,null,"Partial or tools-only responses must not be accepted as a finished CAD preview");
   assert.ok(candidateState.previewComputeError?.message);assert.equal(candidateState.previewPending,false);
 }));
 {
@@ -201,4 +239,4 @@ await Promise.all([
     if(previousRaf===undefined)delete globalThis.requestAnimationFrame;else globalThis.requestAnimationFrame=previousRaf;
   }
 }
-console.log("Part drawing: CAD command flow, live main/features/sections, undo/redo, latest-only preview, degraded locks and save/reopen passed.");
+console.log("Part drawing: creation commands, live main/features/sections, undo/redo, latest-only preview and current CAD workbench CAS save passed (controlled native data).");

@@ -1,0 +1,71 @@
+{
+  "product": "TubeDesigner",
+  "productVersion": "0.3.2",
+  "fileVersion": "0.3.2.0",
+  "releaseDate": "20261028",
+  "platform": "Windows x64 Release",
+  "recordedAt": "2026-10-28T16:09:11.598461+08:00",
+  "installer": {
+    "path": "D:\\penguinchinage0609\\release\\tubedesigner\\20261028-v0.3.2\\安装包\\TubeDesigner-0.3.2-20261028-x64-Setup.exe",
+    "bytes": 190429955,
+    "sha256": "ADD19D8491DEDC7330A123A97A64EFC04185B167A4A52B4011BE1FE917925AB8",
+    "productionNsisBuild": true,
+    "actualInstallationPerformed": false
+  },
+  "programDirectory": "D:\\penguinchinage0609\\release\\tubedesigner\\20261028-v0.3.2\\程序\\TubeDesigner",
+  "extractedVerificationDirectory": "D:\\penguinchinage0609\\iCAX\\output\\tests\\tubedesigner-release-0.3.2-20261028\\中文安装包验收\\TubeDesigner",
+  "payload": {
+    "files": 1006,
+    "matchingFiles": 1006,
+    "inventoryMatchesAuditedPayload": true,
+    "peFiles": 164,
+    "debugFlags": 0,
+    "debugCrtImports": 0,
+    "sensitiveFileFindings": [],
+    "applicationExecutionLevel": "asInvoker",
+    "launcherSha256": "5C5F5B7C1BA37CE4EFEAEB71829E826D09C3E5B16A30C2EC72FB92220E033629",
+    "tubeDesignerDllSha256": "138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9"
+  },
+  "licensing": {
+    "authorizationEnforced": true,
+    "developmentBypass": false,
+    "certificateFormat": "TDLIC003",
+    "featureCount": 13,
+    "reissueFormat": "TDREI001",
+    "reissueEvidence": "D:\\penguinchinage0609\\iCAX\\output\\tests\\tubedesigner-release-0.3.2-20261028\\packaged-runtime-acceptance\\成品程序原生状态.json",
+    "existingAuthorizationAccepted": true,
+    "supportsExplicitReissue": true,
+    "releaseBypass": false
+  },
+  "latestProductResources": {
+    "fileCount": 598,
+    "identicalFiles": 597,
+    "expectedDifferences": [
+      "apps/tube-designer/webpage/aboutArea.mjs"
+    ],
+    "unexpectedDifferences": [],
+    "sourceAggregateSha256": "27d74afc82929667930a466661d55ca63d6ea01939b18c630845c8d09b74b0c4",
+    "runtimeAggregateSha256": "1db7cba73260ab71d78386c9d953607ffd568115a4ea34575c34c8bebce81aa1",
+    "aggregateDefinition": "SHA256 of UTF-8 newline-joined sorted relativePath NUL fileSha256 records; no trailing newline."
+  },
+  "features": [
+    "方管与圆管四种配对，整管端头与窄插舌，单边与对穿公母。",
+    "两个相对方位或四个90度方位，周向角可调；公头和母口按实际构件姿态对应。",
+    "母口跨圆角、侧缘或端部时，以真实实体连通性判定，确实断管时才拦截。",
+    "T形公母插接与长短包接入口同步支持周向加工。",
+    "整合支持TDREI001再次授权资料的已验证客户端模块，保留TDLIC003强制授权和权限控制。"
+  ],
+  "verificationScope": {
+    "packageAndExtractionAudit": "passed",
+    "extractedNativeUiAcceptance": "passed",
+    "nativeUiReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\tubedesigner-release-0.3.2-20261028\\packaged-runtime-acceptance\\成品程序原生状态.json",
+    "nativeUiPageUrl": "file:///D:/penguinchinage0609/iCAX/output/tests/tubedesigner-release-0.3.2-20261028/%E4%B8%AD%E6%96%87%E5%AE%89%E8%A3%85%E5%8C%85%E9%AA%8C%E6%94%B6/TubeDesigner/iCAX-UI/SDK/AppShell/index.html",
+    "nativeBusinessMocked": false,
+    "installationUpgradeUninstall": "not performed by packaging audit",
+    "hardwareReissueQualification": "not performed",
+    "machineCuttingWeldingQualification": "not performed",
+    "existingGeometryCoverage": "40 product cases, 8 cold reopens, 160 exported stock pieces, and related geometry checks belong to the verified runtime-global baseline; they are not rerun by the packaging audit."
+  },
+  "evidenceDirectory": "D:\\penguinchinage0609\\iCAX\\output\\tests\\tubedesigner-release-0.3.2-20261028",
+  "userGuide": "D:\\penguinchinage0609\\iCAX\\doc\\iCAX-Engine\\Products\\TubeDesigner\\20261028-v0.3.2发布\\发布说明.html"
+}

@@ -86,6 +86,11 @@ const allRibbonDefinition = {
         ] },
         { title: "加工排序", commands: [command("machining.order", "加工顺序", "report", { size: "large" })] },
         { title: "切割头", commands: [command("machining.head", "切割头模型", "machine", { size: "large", iconTone: "orange" })] },
+        { title: "生产准备", commands: [
+          command("machining.machine", "机床与夹持", "machine"),
+          command("machining.simulation", "加工仿真", "view-fit"),
+          command("machining.output", "程序输出", "export"),
+        ] },
       ],
     },
     {
@@ -232,16 +237,17 @@ const allRibbonDefinition = {
         command("licensing.request-trial", "导出试用申请", "save", { size: "large" }),
         command("licensing.activate", "导入激活文件", "new", { size: "large", iconTone: "green" }),
         command("licensing.export-license", "导出授权文件", "save", { size: "large" }),
+        command("licensing.repair-environment", "检查并修复授权环境", "refresh", { size: "large" }),
       ] }],
     },
   ],
 };
 
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
-// 下料工作区公开；加工仍暂不公开，草图沿用资源编辑时的上下文入口。
+// 产品、下料与加工共用一个产品入口；草图沿用资源编辑时的上下文入口。
 export const ribbonDefinition = {
   ...allRibbonDefinition,
-  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "nesting", "resources", "about"].includes(tab.id)),
+  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "resources", "about"].includes(tab.id)),
 };
 
 export function getRibbonDefinition(options = {}) {

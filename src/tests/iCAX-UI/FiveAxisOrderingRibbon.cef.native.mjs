@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {copyFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {restoreNativeCefViewport} from './nativeCefViewport.mjs';
+const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
+const output=resolve(process.env.ICAX_MENU_REPORT_DIRECTORY||'output/tests/menu-order-20261026/standalone');
+mkdirSync(output,{recursive:true});
+const project=resolve(output,`排序菜单验收-${Date.now()}.i5cam`);
+copyFileSync(resolve(process.env.ICAX_MENU_SOURCE_PROJECT||'output/tests/fixture-cam-presentation-20261026/standalone/CAM装夹交互验收.i5cam'),project);
+const browser=await chromium.connectOverCDP(process.env.ICAX_MENU_CDP_URL||'http://127.0.0.1:9564');
+let page;
+try{
+ page=browser.contexts()[0].pages()[0];page.setDefaultTimeout(30000);
+ await restoreNativeCefViewport(page);
+ await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');
+ const closePrevious=await page.evaluate(output=>{const state=__icaxAppShell.getState();if(!String(state.activeProjectPath||'').replaceAll('\\','/').startsWith(output.replaceAll('\\','/')+'/'))return false;window.menuClose=__icaxAppShell.closeProject(state.activeProjectId);return true;},output);
+ if(closePrevious){await page.locator('[data-project-close-choice="save"]').click();await page.evaluate(()=>menuClose);}
+ await page.evaluate(project=>__icaxAppShell.openProject(project,'icax.five-axis-cam'),project);
+ await page.waitForFunction(async project=>{const {getProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.menuView=getProjectView(__icaxAppShell.getState().activeProjectId);return __icaxAppShell.getState().activeProjectPath===project&&menuView.scene?.domain?.workpieces?.length&&menuView.scene.intentToolpaths?.length>=3&&!menuView.pending;},project,{timeout:120000});
+ const idle=()=>page.waitForFunction(()=>!menuView.pending&&!menuView.fiveOrder?.request,null,{timeout:120000});
+ const read=()=>page.evaluate(()=>menuView.viewportSceneProxy.invoke('CamScene.ReadState',{}));
+ const setup=s=>s.setups.find(x=>x.id===s.activeSetupId),order=s=>setup(s).definitionOrder;
+ const ribbon=id=>page.locator(`.product-ribbon [data-command-id="${id}"]`);
+ const click=async id=>{await ribbon(id).click();await idle();assert.equal(await page.evaluate(()=>menuView.error||''),'');};
+ await page.locator('[data-tab-id="toolpath"]').click();await idle();
+ const toolbar=page.getByRole('toolbar',{name:'刀路管理'});
+ assert.deepEqual(await toolbar.getByRole('button').evaluateAll(ns=>ns.map(n=>n.getAttribute('aria-label'))),['新增','删除']);
+ const groups=await page.locator('.ribbon-group').evaluateAll(ns=>ns.map(n=>({title:n.querySelector('.ribbon-group-title').textContent.trim(),commands:[...n.querySelectorAll('[data-command-id]')].map(b=>b.dataset.commandId)})));
+ assert.deepEqual(groups.find(g=>g.title==='排序').commands,['five.tree.Up','five.tree.Down','five.tool.manual-order','five.tool.auto-order']);
+ assert.equal(groups.findIndex(g=>g.title==='排序')+1,groups.findIndex(g=>g.commands.includes('five.tool.simulation')));
+ for(const id of ['five.tree.Group','five.tree.Ungroup'])assert.ok(groups.find(g=>g.title==='刀路编辑').commands.includes(id));
+ const before=await read(),ids=order(before).filter(id=>!before.intentToolpaths.find(c=>c.id===id).locked);assert.ok(ids.length>=3);
+ const row=id=>page.locator(`[data-five-intent="${id}"]`);
+ await row(ids[1]).click();assert.equal(await ribbon('five.tree.Group').isDisabled(),true);
+ await row(ids[2]).click({modifiers:['Control']});assert.equal(await ribbon('five.tree.Group').isDisabled(),false);
+ await click('five.tree.Group');let state=await read();
+ const created=setup(state).cutGroups.find(g=>!setup(before).cutGroups.some(previous=>previous.id===g.id));assert.ok(created);
+ assert.deepEqual(state.intentToolpaths.filter(c=>c.groupId===created.id).map(c=>c.id).sort(),ids.slice(1,3).sort());
+ await page.locator(`[data-five-group="${created.id}"]`).click();await click('five.tree.Ungroup');
+ state=await read();assert.ok(!setup(state).cutGroups.some(g=>g.id===created.id));
+ await row(ids[1]).click();const initialOrder=order(state),index=initialOrder.indexOf(ids[1]);assert.ok(index>0);
+ await click('five.tree.Up');state=await read();assert.equal(order(state).indexOf(ids[1]),index-1);
+ await click('five.tree.Down');state=await read();assert.deepEqual(order(state),initialOrder);
+ await click('five.tool.manual-order');assert.equal(await page.getByRole('dialog',{name:'手动排序',exact:true}).isVisible(),true);
+ await page.locator('[data-five-command="five.order.close"]').last().click();
+ await ribbon('five.tool.auto-order').click();await idle();
+ const automaticOrderingError=await page.evaluate(()=>menuView.error||'');
+ assert.ok(!automaticOrderingError||automaticOrderingError==='CAM_INTENT_PLAN_NOT_CURRENT',automaticOrderingError);
+ state=await read();assert.equal(await page.getByRole('dialog',{name:'自动排序',exact:true}).isVisible(),true);
+ await page.locator('[data-five-command="five.order.close"]').last().click();await idle();
+ assert.deepEqual(await page.locator('[data-five-intent]').evaluateAll(ns=>ns.map(n=>n.dataset.fiveIntent)),order(state));
+ await page.evaluate(()=>menuView.viewport.fitView());
+ await page.screenshot({path:resolve(output,'排序与刀路编辑.png')});
+ writeFileSync(resolve(output,'report.json'),JSON.stringify({menuLayoutPassed:true,commandDispatchPassed:true,automaticOrderingCompleted:!automaticOrderingError,automaticOrderingError,coverage:{standaloneCef:true,nativeSceneRead:true,actualRibbonClicks:true,fileChooser:false},groups,sourceWorkpieces:state.workpieces.map(w=>({name:w.name,sourcePath:w.sourcePath})),cutCount:state.intentToolpaths.length,cases:['group and ungroup update native cut groups','up and down update native order','manual ordering opens from ribbon','automatic ordering reaches native scene','left toolbar contains only add and delete','tree order matches native machining order']},null,2));
+ console.log('PASS standalone CEF menu layout and command dispatch; automatic ordering result: '+(automaticOrderingError||'completed'));
+}catch(error){if(page)await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});throw error;}
+finally{try{if(page&&!page.isClosed())await restoreNativeCefViewport(page);}finally{await browser.close();}}

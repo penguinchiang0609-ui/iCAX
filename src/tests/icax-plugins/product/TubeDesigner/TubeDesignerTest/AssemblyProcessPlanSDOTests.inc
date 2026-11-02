@@ -224,16 +224,15 @@ TEST(AssemblyProcessPlanSDOTest, CommitReopensAndUpdatesOneStockWithoutAccumulat
     ASSERT_EQ(ids.size(),1u);
     const auto id=ids.at("shared-stock").To<std::string>();
     auto saved=part(scene,id);
-    EXPECT_EQ(recipe(saved).at("features").To<VariantArray>().size(),2u);
-    assertFrozenRecords(recipe(saved));
+    const auto beforeDocument=cadDocument(scene,id);
     checkSameShape(assemblyProcessPlanNativeShape(scene,preview),shape(scene,saved));
-    const auto before=recipe(saved);
+    const auto before=assemblyPlanMetadata(saved);
     const auto bytes=persistedShapeBytes(scene,saved);
     const auto count=scene.Resources().GetInfos().size();
     const auto replay=invoke(scene,"CommitAssemblyProcessPlan",input);
     EXPECT_TRUE(replay.at("replayed").To<bool>());
     EXPECT_EQ(replay.at("entityIds"),commit.at("entityIds"));
-    EXPECT_EQ(recipe(part(scene,id)),before);
+    EXPECT_EQ(assemblyPlanMetadata(part(scene,id)),before);
     EXPECT_EQ(scene.Resources().GetInfos().size(),count);
     const auto plans=invoke(scene,"GetAssemblyProcessPlans",{});
     ASSERT_EQ(plans.at("plans").To<VariantArray>().size(),1u);
@@ -253,7 +252,8 @@ TEST(AssemblyProcessPlanSDOTest, CommitReopensAndUpdatesOneStockWithoutAccumulat
     Scene reopened(scene.project,scene.GetSceneID(),false);
     file.Open(path,reopened.Database(),reopened.Resources());
     EXPECT_EQ(invoke(reopened,"GetAssemblyProcessPlans",{}),plans);
-    EXPECT_EQ(recipe(part(reopened,id)),before);
+    EXPECT_EQ(assemblyPlanMetadata(part(reopened,id)),before);
+    EXPECT_EQ(cadDocument(reopened,id),beforeDocument);
     EXPECT_EQ(persistedShapeBytes(reopened,part(reopened,id)),bytes);
     checkSameShape(shape(scene,saved),shape(reopened,part(reopened,id)));
 
@@ -286,7 +286,8 @@ TEST(AssemblyProcessPlanSDOTest, CommitReopensAndUpdatesOneStockWithoutAccumulat
     changed["instances"]=VariantArray{};
     const auto cleared=invoke(reopened,"CommitAssemblyProcessPlan",changed);
     EXPECT_EQ(cleared.at("entityIds"),commit.at("entityIds"));
-    EXPECT_TRUE(recipe(part(reopened,id)).at("features").To<VariantArray>().empty());
+    EXPECT_TRUE(assemblyPlanMetadata(part(reopened,id)).at("sourceInput").To<ObjectMap>().at("instances").To<VariantArray>().empty());
+    EXPECT_FALSE(cadDocument(reopened,id).at("nodes").To<VariantArray>().empty());
     const auto raw=shape(reopened,part(reopened,id));
     EXPECT_EQ(assemblyProcessPlanMaterial(raw,400,0,19,180),TopAbs_IN);
     EXPECT_EQ(assemblyProcessPlanMaterial(raw,750,0,29,90),TopAbs_IN);
@@ -299,7 +300,7 @@ TEST(AssemblyProcessPlanSDOTest, CommitFailureIsAtomicAndRequestIdentityCannotCh
     input["planId"]=std::string("atomic-plan");input["requestId"]=std::string("original-request");
     const auto commit=invoke(scene,"CommitAssemblyProcessPlan",input);
     const auto id=commit.at("entityIds").To<ObjectMap>().at("shared-stock").To<std::string>();
-    const auto before=recipe(part(scene,id));
+    const auto before=assemblyPlanMetadata(part(scene,id));
     const auto bytes=persistedShapeBytes(scene,part(scene,id));
     const auto task=std::dynamic_pointer_cast<iCAX::TubeDesigner::CTubeDesignerRootComponent>(
         scene.Database().GetMetaEntity()->GetComponent(iCAX::TubeDesigner::CTubeDesignerRootComponent::S_ClassName))->GetNestingTask();
@@ -317,7 +318,7 @@ TEST(AssemblyProcessPlanSDOTest, CommitFailureIsAtomicAndRequestIdentityCannotCh
         EXPECT_NE(std::string(failure.what()).find("z-last-stock 保存预备失败"),std::string::npos)<<failure.what();
     }
     EXPECT_GT(scene.Resources().GetInfos().size(),resourcesBefore);
-    EXPECT_EQ(recipe(part(scene,id)),before);
+    EXPECT_EQ(assemblyPlanMetadata(part(scene,id)),before);
     EXPECT_EQ(persistedShapeBytes(scene,part(scene,id)),bytes);
     EXPECT_EQ(std::dynamic_pointer_cast<iCAX::TubeDesigner::CTubeDesignerRootComponent>(
         scene.Database().GetMetaEntity()->GetComponent(iCAX::TubeDesigner::CTubeDesignerRootComponent::S_ClassName))->GetNestingTask(),task);
@@ -326,7 +327,7 @@ TEST(AssemblyProcessPlanSDOTest, CommitFailureIsAtomicAndRequestIdentityCannotCh
     EXPECT_EQ(plans.front().To<ObjectMap>().at("entityIds"),commit.at("entityIds"));
 }
 
-TEST(AssemblyProcessPlanSDOTest, OwnerMigrationAndIndependentWizardEditAreProtected)
+TEST(AssemblyProcessPlanSDOTest, OwnerChangeAndIndependentCadEditAreProtected)
 {
     Scene scene;
     auto input=assemblyProcessPlanFixture({});
@@ -338,21 +339,18 @@ TEST(AssemblyProcessPlanSDOTest, OwnerMigrationAndIndependentWizardEditAreProtec
     const auto ids=commit.at("entityIds").To<ObjectMap>();
     const auto firstId=ids.at("a-first").To<std::string>();
     const auto lastId=ids.at("z-last").To<std::string>();
-    EXPECT_TRUE(recipe(part(scene,firstId)).at("assemblyProcessPlan").To<ObjectMap>().contains("sourceInput"));
-    EXPECT_FALSE(recipe(part(scene,lastId)).at("assemblyProcessPlan").To<ObjectMap>().contains("sourceInput"));
+    EXPECT_TRUE(assemblyPlanMetadata(part(scene,firstId)).contains("sourceInput"));
+    EXPECT_FALSE(assemblyPlanMetadata(part(scene,lastId)).contains("sourceInput"));
     input["stocks"]=VariantArray{last};input["requestId"]=std::string("owner-migrate");
     const auto migrated=invoke(scene,"CommitAssemblyProcessPlan",input);
     ASSERT_EQ(migrated.at("entityIds").To<ObjectMap>().size(),1u);
     EXPECT_EQ(migrated.at("entityIds").To<ObjectMap>().at("z-last").To<std::string>(),lastId);
     EXPECT_THROW(part(scene,firstId),std::exception);
-    const auto config=recipe(part(scene,lastId));
-    EXPECT_TRUE(config.at("assemblyProcessPlan").To<ObjectMap>().contains("sourceInput"));
-    EXPECT_EQ(config.at("assemblyProcessPlan").To<ObjectMap>().at("requestJournal").To<VariantArray>().size(),2u);
-    const auto p=part(scene,lastId);
-    invoke(scene,"ApplyPunchWizard",{{"partEntityId",lastId},{"resourceId",p->GetManufacturingGeometryResourceID()},
-        {"resourceVersion",p->GetManufacturingGeometryResourceVersion()},
-        {"features",config.at("features")},{"ends",config.at("ends")}});
-    EXPECT_EQ(recipe(part(scene,lastId)).at("assemblyProcessPlan"),config.at("assemblyProcessPlan"));
+    const auto config=assemblyPlanMetadata(part(scene,lastId));
+    EXPECT_TRUE(config.contains("sourceInput"));
+    EXPECT_EQ(config.at("requestJournal").To<VariantArray>().size(),2u);
+    invoke(scene,"ApplyTubeCadDocument",cadPayload(scene,lastId));
+    EXPECT_EQ(assemblyPlanMetadata(part(scene,lastId)),config);
     input["requestId"]=std::string("owner-overwrite-edit");
     EXPECT_THROW(invoke(scene,"CommitAssemblyProcessPlan",input),std::exception);
 }

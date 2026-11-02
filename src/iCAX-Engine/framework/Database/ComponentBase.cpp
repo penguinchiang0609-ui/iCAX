@@ -7,6 +7,7 @@
 #include "IRepository.h"
 #include "IMetaRegistry.h"
 #include "ModifyFilter.h"
+#include "Repository.h"
 
 
 namespace
@@ -438,6 +439,8 @@ void iCAX::Database::CComponentBase::TriggerComponentChanging(IN const Component
         _pCoreListener->OnComponentChanging(this, _GetArgs());
     }
 
+    const auto _NotificationRepository = GetEntity() ? std::dynamic_pointer_cast<CRepository>(GetEntity()->GetRepository()) : nullptr;
+    CRepositoryDerivedNotificationScope _NotificationScope(_NotificationRepository.get());
     //!< 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
@@ -493,6 +496,8 @@ void iCAX::Database::CComponentBase::TriggerComponentChanged(IN const ComponentE
         _pCoreListener->OnComponentChanged(this, _GetArgs());
     }
 
+    const auto _NotificationRepository = GetEntity() ? std::dynamic_pointer_cast<CRepository>(GetEntity()->GetRepository()) : nullptr;
+    CRepositoryDerivedNotificationScope _NotificationScope(_NotificationRepository.get());
     //!< 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
@@ -549,6 +554,8 @@ bool iCAX::Database::CComponentBase::TryTriggerComponentChangedOwned(
     }
     if (!entity->TryTriggerEntityChangedOwned(GetComponentClass(),
         std::move(Previous_), std::move(New_), shared_from_this())) return false;
+    const auto notificationRepository = std::dynamic_pointer_cast<CRepository>(entity->GetRepository());
+    CRepositoryDerivedNotificationScope notificationScope(notificationRepository.get());
     for (auto it = m_Observers.begin(); it != m_Observers.end(); )
     {
         if (auto observer = it->lock())

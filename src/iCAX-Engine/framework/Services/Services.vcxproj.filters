@@ -30,6 +30,12 @@
     <ClInclude Include="IService.h">
       <Filter>Service</Filter>
     </ClInclude>
+    <ClInclude Include="..\GeometryServices\BoundaryLeadService.h" />
+    <ClInclude Include="..\GeometryServices\SurfaceTravelService.h" />
+    <ClInclude Include="..\GeometryServices\RigidMotionCollisionService.h" />
+    <ClInclude Include="..\GeometryServices\CurveOffset3DService.h">
+      <Filter>Service</Filter>
+    </ClInclude>
     <ClInclude Include="ServiceProvider.h">
       <Filter>Service</Filter>
     </ClInclude>

@@ -1081,7 +1081,7 @@ void ValidateSolidShape(
                             throw std::invalid_argument(Context_ + " requires closed solid shells");
                 }
                 GProp_GProps _Mass;
-                BRepGProp::VolumeProperties(Shape_, _Mass);
+                BRepGProp::VolumeProperties(Shape_, _Mass, 1.0e-9);
                 if (!std::isfinite(_Mass.Mass()) || _Mass.Mass() <= 0.0)
                     throw std::invalid_argument(Context_ + " requires finite positive-volume solids");
                 ++_SolidCount;

@@ -4,7 +4,9 @@ OCCT_INCLUDE_CMAKE_FILE (adm/cmake/occt_toolkit)
 
 # Set desired Memory Manager
 if     ("${USE_MMGR_TYPE}" STREQUAL "FLEXIBLE")
-  target_compile_definitions("TKernel" PRIVATE "OCCT_MMGT_OPT_FLEXIBLE")
+  # Recycle small geometry allocations instead of serializing each one through
+  # the Debug CRT heap. MMGT_OPT can still select another built-in manager.
+  target_compile_definitions("TKernel" PRIVATE "OCCT_MMGT_OPT_FLEXIBLE" "OCCT_MMGT_OPT_DEFAULT=1")
 elseif ("${USE_MMGR_TYPE}" STREQUAL "TBB")
   target_compile_definitions("TKernel" PRIVATE "OCCT_MMGT_OPT_TBB")
 elseif ("${USE_MMGR_TYPE}" STREQUAL "JEMALLOC")

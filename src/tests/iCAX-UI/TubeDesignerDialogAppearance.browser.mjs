@@ -21,7 +21,7 @@ try {
     return route.fulfill({ contentType: path.endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(file, 'utf8') });
   });
   await page.goto('http://dialog.test/');
-  await page.addStyleTag({ content: '*{box-sizing:border-box}body{margin:0}' + readFileSync(browserAssetPath('apps/_shared/workbench/styles/laser3dcam.css'), 'utf8') + tubeDesignerCss });
+  await page.addStyleTag({ content: '*{box-sizing:border-box}body{margin:0}' + readFileSync(browserAssetPath('apps/_shared/workbench/styles/workbench.css'), 'utf8') + tubeDesignerCss });
   const names = await page.evaluate(async () => {
     const designer = await import('/src/apps/tube-designer/webpage/designerViews.mjs');
     const settings = await import('/src/apps/tube-designer/webpage/nestingSettings.mjs');
@@ -55,7 +55,7 @@ try {
     const dv = base(); dv.tubeDesignerPartDrawing = { state, mode: 'main', selected: 'main', mainApplied: true };
     fixtures.push({ name: '三维绘制', html: drawing.renderPartDrawingWorkbench(dv, () => '') });
     const pv = base(); pv.scene.tubeDesigner.nestingGroups = [{ parts: [part] }]; pv.tubeDesignerPunchWizard = punch.createPunchWizardState(part);
-    fixtures.push({ name: '冲孔向导', html: parts.renderPunchWizardDialog({}, pv) });
+    fixtures.push({ name: '冲孔向导', html: punch.renderPunchWizardDialog(part,pv,{tableMode:true,title:"新建冲孔零件"}) });
     const sv = base(); sv.tubeDesignerSketchDialogOpen = true;
     fixtures.push({ name: '截面草图', html: sketch.renderSectionSketchDialog({}, sv) });
     window.appearanceFixtures = fixtures;
@@ -82,13 +82,13 @@ try {
       assert.equal(style.font, style.compact ? baseline.font.replace('12px / 16.8px', '11px / 15.4px') : baseline.font, name);
       assert.equal(style.border, baseline.border, name);
       assert.equal(style.background, baseline.background, name);
-      assert.deepEqual(style.header, style.compact ? { ...baseline.header, padding: '4px 10px', fontSize: '13px', minHeight: '36px' } : baseline.header, name);
-      if (style.close) assert.deepEqual(style.close, style.compact ? { ...baseline.close, width: 28, height: 28 } : baseline.close, name);
+      assert.deepEqual(style.header, style.compact ? { ...baseline.header, padding:'3px 8px',fontSize:'13px',minHeight:'32px' } : baseline.header, name);
+      if (style.close) assert.deepEqual(style.close, style.compact ? { ...baseline.close, width:26,height:26 } : baseline.close, name);
       if (style.input && baseline.input) assert.deepEqual(style.input, style.compact ? { ...baseline.input, minHeight: '26px', fontSize: '11px' } : baseline.input, name);
     }
-    assert.equal(style.header.minHeight, style.compact ? '36px' : '48px', name);
+    assert.equal(style.header.minHeight, style.compact ? '32px' : '48px', name);
     assert.equal(style.header.fontSize, style.compact ? '13px' : '14px', name);
-    if (style.close) { assert.equal(style.close.width, style.compact ? 28 : 32, name); assert.equal(style.close.fontSize, '22px', name); }
+    if (style.close) { assert.equal(style.close.width, style.compact ? 26 : 32, name); assert.equal(style.close.fontSize, '22px', name); }
     results.push({ name, style });
     if (['三维绘制', '冲孔向导', '排样参数'].includes(name)) await page.screenshot({ path: resolve(output, name + '.png') });
   }

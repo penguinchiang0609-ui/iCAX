@@ -2,6 +2,7 @@
 
 #include "TubeSideSketchCurveService.h"
 #include "TubeSideSketchPlanarCurves.h"
+#include "OpenCascadeResourceImport/CadBevelService.h"
 
 #include <etp/Analyzer.hxx>
 
@@ -38,11 +39,15 @@
 #include <GeomAdaptor_Curve.hxx>
 #include <GeomAdaptor_Surface.hxx>
 #include <GeomAPI.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <NCollection_List.hxx>
 #include <Precision.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopExp.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
+#include <NCollection_IndexedMap.hxx>
 #include <TopoDS.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
@@ -152,7 +157,7 @@ namespace iCAX::TubeDesigner
         double Volume(const TopoDS_Shape& Shape_)
         {
             GProp_GProps _Properties;
-            BRepGProp::VolumeProperties(Shape_, _Properties);
+            BRepGProp::VolumeProperties(Shape_, _Properties, 1.0e-9);
             return std::abs(_Properties.Mass());
         }
 
@@ -633,6 +638,103 @@ namespace iCAX::TubeDesigner
                 throw std::runtime_error("完整曲面边界的连续实体切刀生成失败");
             return _Solid.Shape();
         }
+
+        bool PointOnCurve(const gp_Pnt& Point_, const TopoDS_Edge& Edge_)
+        {
+            double _First,_Last;const auto _Curve=BRep_Tool::Curve(Edge_,_First,_Last);
+            if(_Curve.IsNull()) return false;
+            GeomAPI_ProjectPointOnCurve _Projection(Point_,_Curve,_First,_Last);
+            return _Projection.NbPoints()>0 && _Projection.LowerDistance()<1.0e-4;
+        }
+        bool EdgeOnCurve(const TopoDS_Edge& Edge_, const TopoDS_Edge& Boundary_)
+        {
+            BRepAdaptor_Curve _Curve(Edge_);
+            for(double _Fraction:{0.2,0.5,0.8})
+                if(!PointOnCurve(_Curve.Value(_Curve.FirstParameter()+(_Curve.LastParameter()-_Curve.FirstParameter())*_Fraction),Boundary_)) return false;
+            return true;
+        }
+        bool SelectedFlatBoundary(const TopoDS_Edge& Edge_,const SSideSketchPlanarBevel& Request_,double Period_)
+        {
+            BRepAdaptor_Curve _Curve(Edge_);
+            const auto _Mid=_Curve.Value((_Curve.FirstParameter()+_Curve.LastParameter())*0.5);
+            for(const auto& _Source:Request_.BoundaryEdges)
+            {
+                BRepAdaptor_Curve _Boundary(_Source);
+                const auto _Anchor=_Boundary.Value((_Boundary.FirstParameter()+_Boundary.LastParameter())*0.5);
+                const auto _Shift=std::round((_Anchor.X()-_Mid.X())/Period_)*Period_;
+                bool _Matches=true;
+                for(double _Fraction:{0.2,0.5,0.8})
+                {
+                    auto _Point=_Curve.Value(_Curve.FirstParameter()+(_Curve.LastParameter()-_Curve.FirstParameter())*_Fraction);
+                    _Point.SetX(_Point.X()+_Shift);
+                    if(!PointOnCurve(_Point,_Source)){_Matches=false;break;}
+                }
+                if(_Matches) return true;
+            }
+            return false;
+        }
+        SSideSurface ExactOuterSurface(SSideSurface Surface_)
+        {
+            if(!Surface_.Plane && !Surface_.TranslationPrism)
+            {
+                if(auto _Cylinder=occ::down_cast<Geom_CylindricalSurface>(Surface_.Surface);!_Cylinder.IsNull())
+                    Surface_.Surface=new Geom_CylindricalSurface(_Cylinder->Position(),
+                        _Cylinder->Radius()-(Surface_.ReverseFace?-1.0:1.0)*Surface_.OutsideClearance);
+                else if(auto _Offset=occ::down_cast<Geom_OffsetSurface>(Surface_.Surface);!_Offset.IsNull())
+                    Surface_.Surface=_Offset->BasisSurface();
+            }
+            Surface_.OutsideClearance=0;return Surface_;
+        }
+        gp_Pnt MappedPoint(const gp_Pnt& P_,const SSideSurface& Surface_)
+        {
+            if(Surface_.Plane) return P_.Transformed(Surface_.FlatToPlane);
+            const auto _UV=Surface_.ProfileCurve.IsNull()?gp_Pnt2d(P_.X()*Surface_.UScale+Surface_.UOffset,P_.Y())
+                :NonlinearUV(gp_Pnt2d(P_.X(),P_.Y()),Surface_);
+            return Surface_.Surface->Value(_UV.X(),_UV.Y());
+        }
+        std::vector<TopoDS_Edge> BevelBoundaries(const SSideSketchPlanarRegions& Regions_,
+            const SSideSketchPlanarBevel& Request_,const etp::PartAnalysis& Tube_,
+            const std::vector<SProfileCurve>& Profiles_,const STubeSideSketchOptions& Options_,double Period_,double Length_)
+        {
+            std::vector<TopoDS_Edge> _Result;
+            for(const auto& _Profile:Profiles_)
+            {
+                const auto _Clip=Rectangle(_Profile.UFirst,_Profile.ULast,0,Length_);
+                const auto _Surface=ExactOuterSurface(MakeSurface(Tube_,_Profile,Options_));
+                for(const auto& _Region:Request_.Faces)
+                {
+                    BRepAlgoAPI_Common _Common(_Region,_Clip);
+                    if(!_Common.IsDone()) throw std::runtime_error("坡口轮廓曲面裁剪失败");
+                    for(TopExp_Explorer _Faces(_Common.Shape(),TopAbs_FACE);_Faces.More();_Faces.Next())
+                    {
+                        const auto _Flat=TopoDS::Face(_Faces.Current());
+                        const auto _Mapped=_Surface.Plane?TopoDS::Face(BRepBuilderAPI_Transform(_Flat,_Surface.FlatToPlane,true).Shape()):MapCurvedFace(_Flat,_Surface);
+                        for(TopExp_Explorer _Edges(_Flat,TopAbs_EDGE);_Edges.More();_Edges.Next())
+                        {
+                            const auto _FlatEdge=TopoDS::Edge(_Edges.Current());
+                            if(!SelectedFlatBoundary(_FlatEdge,Request_,Period_)) continue;
+                            BRepAdaptor_Curve _Curve(_FlatEdge);
+                            for(TopExp_Explorer _MappedEdges(_Mapped,TopAbs_EDGE);_MappedEdges.More();_MappedEdges.Next())
+                            {
+                                const auto _MappedEdge=TopoDS::Edge(_MappedEdges.Current());bool _Matches=true;
+                                for(double _Fraction:{0.2,0.5,0.8})
+                                    if(!PointOnCurve(MappedPoint(_Curve.Value(_Curve.FirstParameter()+(_Curve.LastParameter()-_Curve.FirstParameter())*_Fraction),_Surface),_MappedEdge)){_Matches=false;break;}
+                                if(_Matches){_Result.push_back(_MappedEdge);break;}
+                            }
+                        }
+                    }
+                }
+            }
+            return _Result;
+        }
+        double BevelNumber(const iCAX::Data::ObjectMap& Map_,const std::string& Key_,double Default_)
+        {
+            const auto _It=Map_.find(Key_);if(_It==Map_.end())return Default_;
+            if(_It->second.Is<double>())return _It->second.To<double>();
+            if(_It->second.Is<std::int64_t>())return static_cast<double>(_It->second.To<std::int64_t>());
+            if(_It->second.Is<std::int32_t>())return static_cast<double>(_It->second.To<std::int32_t>());
+            throw std::runtime_error("坡口数值格式无效");
+        }
     }
 
     STubeBRepUnfoldingResult UnfoldTubeSideSketchCurveReference(const TopoDS_Shape& Shape_)
@@ -797,6 +899,65 @@ namespace iCAX::TubeDesigner
             if (!_Cut.IsDone() || _Cut.Shape().IsNull() || !BRepCheck_Analyzer(_Cut.Shape()).IsValid())
                 throw std::runtime_error("完整曲线实体整体切除失败");
             auto _Shape = _Cut.Shape();
+            if(!_Regions.Bevels.empty())
+            {
+                if(!Options_.BevelService) throw std::runtime_error("CAD 坡口服务未初始化");
+                NCollection_IndexedMap<TopoDS_Shape,TopTools_ShapeMapHasher> _Edges;
+                TopExp::MapShapes(_Shape,TopAbs_EDGE,_Edges);
+                NCollection_IndexedMap<TopoDS_Shape,TopTools_ShapeMapHasher> _Faces;
+                TopExp::MapShapes(_Shape,TopAbs_FACE,_Faces);
+                std::vector<TopoDS_Face> _CutWallFaces;
+                // Boolean history identifies the newly exposed tool walls.
+                // A narrow slot's opposite skin edge is not wall thickness.
+                const auto _AddCutFace=[&](const TopoDS_Shape& _Candidate)
+                {
+                    if(_Candidate.ShapeType()!=TopAbs_FACE || !_Faces.Contains(_Candidate)) return;
+                    if(std::none_of(_CutWallFaces.begin(),_CutWallFaces.end(),[&](const auto& _Face){return _Face.IsSame(_Candidate);}))
+                        _CutWallFaces.push_back(TopoDS::Face(_Candidate));
+                };
+                for(const auto& _Tool:_Tools) for(TopExp_Explorer _ToolFaces(_Tool,TopAbs_FACE);_ToolFaces.More();_ToolFaces.Next())
+                {
+                    _AddCutFace(_ToolFaces.Current());
+                    for(const auto& _Modified:_Cut.Modified(_ToolFaces.Current())) _AddCutFace(_Modified);
+                    for(const auto& _Generated:_Cut.Generated(_ToolFaces.Current())) _AddCutFace(_Generated);
+                }
+                std::vector<iCAX::CAD::SCadBevelOperation> _Operations;
+                for(const auto& _Request:_Regions.Bevels)
+                {
+                    const auto _Boundaries=BevelBoundaries(_Regions,_Request,_Tube,_Profiles,Options_,_Period,_Length);
+                    std::string _Side="outer";
+                    if(const auto _It=_Request.Parameters.find("side");_It!=_Request.Parameters.end())
+                    {
+                        if(!_It->second.Is<std::string>()) throw std::runtime_error("坡口侧面格式无效");
+                        _Side=_It->second.To<std::string>();
+                    }
+                    std::size_t _Matched=0;
+                    for(int _Index=1;_Index<=_Edges.Extent();++_Index)
+                    {
+                        const auto _Edge=TopoDS::Edge(_Edges(_Index));
+                        if(BRep_Tool::Degenerated(_Edge))continue;
+                        if(std::any_of(_Boundaries.begin(),_Boundaries.end(),[&](const auto& _Boundary){return EdgeOnCurve(_Edge,_Boundary);}))
+                        {
+                            std::uint64_t _WallFaceID=0;
+                            for(const auto& _Face:_CutWallFaces) for(TopExp_Explorer _FaceEdges(_Face,TopAbs_EDGE);_FaceEdges.More();_FaceEdges.Next())
+                                if(_FaceEdges.Current().IsSame(_Edge))
+                                {
+                                    const auto _ID=static_cast<std::uint64_t>(_Faces.FindIndex(_Face));
+                                    if(_WallFaceID && _WallFaceID!=_ID) throw std::runtime_error("坡口切壁面不唯一，请拆分轮廓后选择边段");
+                                    _WallFaceID=_ID;break;
+                                }
+                            if(!_WallFaceID) throw std::runtime_error("坡口边缺少实际切壁面");
+                            _Operations.push_back({static_cast<std::uint64_t>(_Index),_WallFaceID,_Side,
+                                BevelNumber(_Request.Parameters,"angleDegrees",45),BevelNumber(_Request.Parameters,"rootFace",0)});
+                            ++_Matched;
+                        }
+                    }
+                    if(!_Matched) throw std::runtime_error("坡口轮廓没有对应的实际管壁切口边");
+                }
+                const auto _Beveled=Options_.BevelService->ApplyNative(_Shape,_Operations);
+                if(!_Beveled.bOK)throw std::runtime_error(_Beveled.Diagnostic);
+                _Shape=_Beveled.Shape;
+            }
             const auto _Before = Volume(_Tube.Shape);
             const auto _After = Volume(_Shape);
             if (_After <= kCurveTolerance) throw std::runtime_error("二维绘制切除后没有剩余实体");

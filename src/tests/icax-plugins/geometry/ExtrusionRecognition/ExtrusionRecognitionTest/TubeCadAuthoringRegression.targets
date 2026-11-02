@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><TargetName>TubeCadAuthoringRegression</TargetName></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ClCompile Remove="@(ClCompile)" />
+    <ClCompile Include="$(SolutionDir)tests\icax-plugins\product\TubeDesigner\TubeDesignerTest\TubeCadDocumentAcceptance.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile>
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(SolutionDir)iCAX-Plugins\product;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions><Optimization>MaxSpeed</Optimization><BasicRuntimeChecks>Default</BasicRuntimeChecks><SupportJustMyCode>false</SupportJustMyCode></ClCompile>
+    <Link><AdditionalLibraryDirectories>$(OutDir);$(SolutionDir)x64\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>$(OutDir)OpenCascadeResourceImport.lib;$(OutDir)TubeDesigner.lib;Data.lib;Services.lib;TemplateRuntime.lib;Task.lib;Resources.lib;ProjectFile.lib;Database.lib;DatabaseLanguage.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+</Project>

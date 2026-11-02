@@ -99,6 +99,9 @@
   <Folder Name="/iCAX-Plugins/product/TubeDesigner/">
     <Project Path="iCAX-Plugins/product/TubeDesigner/TubeDesigner.vcxproj" Id="b29dc027-f531-428f-9bcc-2d3e028ca044" />
   </Folder>
+  <Folder Name="/iCAX-Plugins/product/FiveAxisCAM/">
+    <Project Path="iCAX-Plugins/product/FiveAxisCAM/FiveAxisCAM.vcxproj" Id="70259b92-4f37-4cfe-85d2-aa3610cc8624" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/common/" />
   <Folder Name="/iCAX-Plugins/common/SceneBootstrap/">
     <Project Path="iCAX-Plugins/common/SceneBootstrap/SceneBootstrap.vcxproj" Id="d5e0c5b3-26b7-4c31-a87d-49f0f56c3c16" />
@@ -111,6 +114,46 @@
     <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" Id="30dbd734-7124-4d09-b022-cc2e586cc4ee" />
   </Folder>
   <Folder Name="/iCAX-Plugins/geometry/" />
+  <Folder Name="/iCAX-Plugins/geometry/MachineKinematicsServices/">
+    <Project Path="iCAX-Plugins/geometry/MachineKinematicsServices/MachineKinematicsServices.vcxproj" Id="d0c74e36-04fc-4a81-96bb-47f528620730">
+      <Platform Solution="*|Win32" Project="x64" />
+      <Configuration Solution="Release|*" Project="Debug" />
+      <Build Solution="*|Win32" Project="false" />
+      <Build Solution="Release|*" Project="false" />
+    </Project>
+  </Folder>
+  <Folder Name="/iCAX-Plugins/geometry/MachineMotionPlanningServices/">
+    <Project Path="iCAX-Plugins/geometry/MachineMotionPlanningServices/MachineMotionPlanningServices.vcxproj" Id="6b52e6c3-7b18-4b2b-bb8d-af714d09d21f">
+      <Platform Solution="*|Win32" Project="x64" />
+      <Configuration Solution="Release|*" Project="Debug" />
+      <Build Solution="*|Win32" Project="false" />
+      <Build Solution="Release|*" Project="false" />
+    </Project>
+  </Folder>
+    <Folder Name="/iCAX-Plugins/geometry/CoalCollisionServices/">
+      <Project Path="iCAX-Plugins/geometry/CoalCollisionServices/CoalCollisionServices.vcxproj" Id="5b3d893d-ecae-46bd-92c2-bcacdbed55fc">
+        <Platform Solution="*|Win32" Project="x64" />
+        <Build Solution="*|Win32" Project="false" />
+      </Project>
+    </Folder>
+    <Folder Name="/iCAX-Plugins/geometry/DescartesPlanningServices/">
+      <Project Path="iCAX-Plugins/geometry/DescartesPlanningServices/DescartesPlanningServices.vcxproj" Id="45b25e43-0c1b-4f9a-905f-b18a408782d4">
+        <Platform Solution="*|Win32" Project="x64" />
+        <Build Solution="*|Win32" Project="false" />
+      </Project>
+    </Folder>
+    <Folder Name="/iCAX-Plugins/geometry/OmplPlanningServices/">
+      <Project Path="iCAX-Plugins/geometry/OmplPlanningServices/OmplPlanningServices.vcxproj" Id="866a286d-888e-4ced-9d95-ed31f46f389b">
+        <Platform Solution="*|Win32" Project="x64" />
+        <Build Solution="*|Win32" Project="false" />
+      </Project>
+    </Folder>
+    <Folder Name="/iCAX-Plugins/geometry/OpenCascadeGeometryServices/">
+    <Project Path="iCAX-Plugins/geometry/OpenCascadeGeometryServices/OpenCascadeGeometryServices.vcxproj" Id="c8efc55d-09c8-49cd-b07c-ab025ccba53d">
+      <Platform Solution="*|Win32" Project="x64" />
+      <Build Solution="*|Win32" Project="false" />
+    </Project>
+  </Folder>
   <Folder Name="/iCAX-Plugins/geometry/ExtrusionRecognition/">
     <Project Path="iCAX-Plugins/geometry/ExtrusionRecognition/ExtrusionRecognition.vcxproj" Id="e108b465-2d5a-4904-a2fb-25f7f184d384" />
   </Folder>
@@ -127,8 +170,11 @@
   <Folder Name="/iCAX-Plugins/cam/ProcessPath/">
     <Project Path="iCAX-Plugins/cam/ProcessPath/ProcessPath.vcxproj" Id="c55984df-c3bf-4ed2-85f7-04d06d582a18" />
   </Folder>
-  <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
-    <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" Id="41e6e443-2614-4e0d-914a-bfc4d5802cd4" />
+  <Folder Name="/iCAX-Plugins/cam/CamRuntime/">
+    <Project Path="iCAX-Plugins/cam/CamRuntime/CamRuntime.vcxproj" Id="41e6e443-2614-4e0d-914a-bfc4d5802cd4" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/cam/CutRecognition/">
+    <Project Path="iCAX-Plugins/cam/CutRecognition/CutRecognition.vcxproj" Id="b5bf1514-3ec5-43aa-83fb-1545454f5caf" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cam/Machine/"><Project Path="iCAX-Plugins/cam/Machine/Machine.vcxproj" Id="90c52ed8-ab1d-48d8-bff3-4109f5d3757c" /></Folder>
   <Folder Name="/iCAX-Plugins/physics/" />
@@ -225,14 +271,20 @@
   </Folder>
   <Folder Name="/tests/icax-plugins/" />
   <Folder Name="/tests/icax-plugins/geometry/" />
+  <Folder Name="/tests/icax-plugins/geometry/OpenCascadeGeometryServicesTest/">
+    <Project Path="tests/icax-plugins/geometry/OpenCascadeGeometryServicesTest/OpenCascadeGeometryServicesTest.vcxproj" Id="578151c2-74f3-46fb-8491-e08d7f57223b">
+      <Platform Solution="*|Win32" Project="x64" />
+      <Build Solution="*|Win32" Project="false" />
+    </Project>
+  </Folder>
   <Folder Name="/tests/icax-plugins/geometry/ExtrusionRecognition/" />
   <Folder Name="/tests/icax-plugins/geometry/ExtrusionRecognition/ExtrusionRecognitionTest/">
     <Project Path="tests/icax-plugins/geometry/ExtrusionRecognition/ExtrusionRecognitionTest/ExtrusionRecognitionTest.vcxproj" Id="65318d87-6cb9-42ad-8035-74d0849d1647" />
   </Folder>
   <Folder Name="/tests/icax-plugins/cam/" />
-  <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/" />
-  <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/">
-    <Project Path="tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/Laser3DCAMTest.vcxproj" Id="98fc70c1-b23d-4c66-9e4d-b6492e2354c1" />
+  <Folder Name="/tests/icax-plugins/cam/CamRuntime/" />
+  <Folder Name="/tests/icax-plugins/cam/CamRuntime/CamRuntimeTest/">
+    <Project Path="tests/icax-plugins/cam/CamRuntime/CamRuntimeTest/CamRuntimeTest.vcxproj" Id="98fc70c1-b23d-4c66-9e4d-b6492e2354c1" />
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/" />
@@ -251,5 +303,8 @@
   <Folder Name="/tests/icax-plugins/product/TubeDesigner/" />
   <Folder Name="/tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/">
     <Project Path="tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/TubeDesignerTest.vcxproj" Id="557945cd-abdc-43af-b76b-f61d0f102854" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/product/FiveAxisCAM/FiveAxisCAMTest/">
+    <Project Path="tests/icax-plugins/product/FiveAxisCAM/FiveAxisCAMTest/FiveAxisCAMTest.vcxproj" Id="79eae992-7820-4ad4-acec-6f7b3c3e2fc1" />
   </Folder>
 </Solution>

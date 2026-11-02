@@ -6,7 +6,9 @@ clear-opening targets; conversion happens on a copy, never on persisted inputs.
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib.util
 import math
+from pathlib import Path
 from typing import Any
 
 
@@ -20,12 +22,28 @@ def number(values: dict[str, Any], key: str, default: float) -> float:
 def center_spacing_positions(
     parameters: dict[str, Any], minimum: float, maximum: float, *,
     start_offset_key: str, end_offset_key: str, maximum_spacing_key: str,
-    label: str,
+    label: str, boundary_inset: float = 0.0,
 ) -> list[float]:
-    """Lay out bar centres from two fixed end offsets and a maximum centre spacing."""
+    """Equal clear-boundary intervals, or explicitly selected end offsets."""
+    maximum_spacing = number(parameters, maximum_spacing_key, 0)
+    if maximum_spacing <= 0:
+        raise ValueError(f"{label}最大中心距必须大于0")
+    if parameters.get('barDistribution', 'automatic') == 'automatic':
+        # Equal intervals include both clear frame boundaries. No independent
+        # first/last offset drafts participate in this mode.
+        minimum += boundary_inset
+        maximum -= boundary_inset
+        span = maximum - minimum
+        if span <= 0:
+            raise ValueError(f"{label}没有可用布杆空间")
+        intervals = max(2, math.ceil(span / maximum_spacing - 1.e-9))
+        if intervals - 1 > 100:
+            raise ValueError(f"{label}布置超出支持范围（按最大中心距计算超过100根）")
+        return [minimum + span * index / intervals for index in range(1, intervals)]
+    if parameters.get('barDistribution') != 'end_offsets':
+        raise ValueError('不支持的布杆方式')
     start_offset = number(parameters, start_offset_key, 0)
     end_offset = number(parameters, end_offset_key, 0)
-    maximum_spacing = number(parameters, maximum_spacing_key, 0)
     if start_offset < 0 or end_offset < 0:
         raise ValueError(f"{label}首末端中心留距不能为负数")
     if maximum_spacing <= 0:
@@ -156,6 +174,16 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
     for item in document.get("items", []):
         properties = item.setdefault("properties", {})
         properties["manufacturing.installationVerification"] = "required"
+    annotations=document.setdefault('extensions',{}).setdefault('tubeDesigner.specificationAnnotations',[])
+    existing={a['parameter'] for a in annotations}
+    pattern=original.get('infillPattern','grid')
+    for key,active in [('horizontalMaximumCenterSpacing',pattern!='vertical'),
+                       ('verticalMaximumCenterSpacing',pattern!='horizontal')]:
+        if active and key not in existing:
+            point=[number(original,'width',1200),0.,number(original,'height',1800)/2]
+            annotations.append({'id':'security-window.single-bar.'+key,'parameter':key,'kind':'parameter',
+                'start':point,'end':point,'offset':[150.,0.,80. if key.startswith('horizontal') else -80.],
+                'generatedValue':original[key]})
     process_rows = [{"key": "process.connection", "values": {"status": "工艺说明", "detail": construction}},
                     {"key": "process.assembly", "values": {"status": "工艺说明", "detail": "按零件表下料与开孔，先试装定位并复核外包和对角线，再焊接、清理及防腐；开启口框扇和五金另行试装、实测通行净空。"}}]
     if miter_active:
@@ -185,9 +213,53 @@ def generate_reviewed(parameters: dict[str, Any], context: dict[str, Any], *,
         leaf_width, leaf_depth = leaf.width, leaf.depth
         if parameters.get("infillPattern", "grid") != "horizontal":
             vertical_width = load_profile(parameters, "doorVertical").width
-    effective = prepare(parameters, layout=layout, fixed_width=fixed_width,
-                        leaf_width=leaf_width, leaf_depth=leaf_depth,
-                        vertical_width=vertical_width)
+    if layout == 'single-face' and parameters.get('accessDoorEnabled',False):
+        frame=load_profile(parameters,'frame')
+        pattern=parameters.get('infillPattern','grid')
+        horizontal=[] if pattern!='grid' else center_spacing_positions(parameters,0.,float(parameters['height']),
+            boundary_inset=frame.width, start_offset_key='lastHorizontalBottomOffset',end_offset_key='firstHorizontalTopOffset',
+            maximum_spacing_key='horizontalMaximumCenterSpacing',label='主横杆')
+        margin=frame.width if parameters['frameLayout']!='top_bottom' else 0.
+        vertical=[] if pattern=='horizontal' else center_spacing_positions(parameters,margin,float(parameters['width'])-margin,
+            start_offset_key='verticalLeftCenterOffset',end_offset_key='verticalRightCenterOffset',
+            maximum_spacing_key='verticalMaximumCenterSpacing',label='主竖杆')
+        spec=importlib.util.spec_from_file_location('icax_opening_cells',Path(__file__).with_name('security_window_opening_layout.py'))
+        opening_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(opening_module)
+        if pattern=='grid':
+            opening=opening_module.plan(parameters,frame=frame,fixed=load_profile(parameters,'doorFrame'),leaf=leaf,
+                                        horizontal_positions=horizontal,vertical_positions=vertical)
+        else:
+            opening=opening_module.plan_single(parameters,frame=frame,fixed=load_profile(parameters,'doorFrame'),leaf=leaf,
+                                                   vertical_positions=vertical)
+        for name,low,high in (('horizontal','bottom','top'),('vertical','left','right')):
+            if pattern==('vertical' if name=='horizontal' else 'horizontal'):continue
+            half=load_profile(parameters,'door'+name.title()).width/2
+            bounds=opening['leafBounds']
+            opening[name+'Axes']=[v for v in opening[name+'Axes']
+                if bounds[low]+leaf.width+half<=v<=bounds[high]-leaf.width-half]
+        if pattern=='vertical':
+            bounds=opening['leafBounds']
+            opening['verticalAxes']=center_spacing_positions(parameters,
+                bounds['left']+leaf.width,bounds['right']-leaf.width,
+                start_offset_key='doorVerticalLeftCenterOffset',end_offset_key='doorVerticalRightCenterOffset',
+                maximum_spacing_key='doorVerticalMaximumCenterSpacing',label='窗内竖杆')
+        effective=deepcopy(parameters);effective['_escapeGridLayout']=opening
+        axes=opening['boundaryAxes']; effective.update(doorLeft=axes['left']-fixed_width/2,
+            doorBottom=axes['bottom']-fixed_width/2,doorWidth=axes['right']-axes['left']+fixed_width,
+            doorHeight=axes['top']-axes['bottom']+fixed_width)
+    else:
+        effective = prepare(parameters, layout=layout, fixed_width=fixed_width,
+                            leaf_width=leaf_width, leaf_depth=leaf_depth,
+                            vertical_width=vertical_width)
     document = kernel(effective, context)
-    return finish(document, parameters, effective, layout=layout,
-                  fixed_width=fixed_width, leaf_depth=leaf_depth)
+    document=finish(document, parameters, effective, layout=layout,
+                    fixed_width=fixed_width, leaf_depth=leaf_depth)
+    opening=effective.get('_escapeGridLayout') or document.get('extensions',{}).get('tubeDesigner.escapeWindowLayout')
+    if opening:
+        opening=deepcopy(opening)
+        document['extensions']['tubeDesigner.escapeWindowLayout']=opening
+        anchor=next(item for item in document['items'] if item['key'].startswith('access_door.leaf.frame.'))
+        anchor['properties']['tubeDesigner.escapeWindowLayout']=deepcopy(opening)
+        document['extensions']['tubeDesigner.securityWindowReview'].update({key:opening[key] for key in
+            ('fixedClearWidth','fixedClearHeight','designClearWidth','designClearHeight')})
+    return document

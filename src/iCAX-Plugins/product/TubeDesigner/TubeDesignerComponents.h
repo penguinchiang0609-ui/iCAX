@@ -78,23 +78,16 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, iCAX::Data::ObjectMap, ItemProperties, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
-    // Domain slices for editable nesting parts.  The manufacturing component
-    // owns identity/quantity/final geometry; these components own their own
-    // editable recipe and can evolve independently of manufacturing data.
-    class CPartDrawingComponent final : public iCAX::Database::CComponentBase
+    // One versioned neutral CAD document; editor views and the evaluated
+    // manufacturing BRep are derived from this resource.
+    class CTubePartCadComponent final : public iCAX::Database::CComponentBase
     {
-        DECLARE_ICAX_COMPONENT(CPartDrawingComponent, CComponentBase)
-        DECLARE_ICAX_COMPONENT_CREATOR(CPartDrawingComponent)
-        DECLARED_ICAX_FIELD(CPartDrawingComponent, iCAX::Data::ObjectMap, Definition,
-            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
-    };
-
-    class CPunchWizardComponent final : public iCAX::Database::CComponentBase
-    {
-        DECLARE_ICAX_COMPONENT(CPunchWizardComponent, CComponentBase)
-        DECLARE_ICAX_COMPONENT_CREATOR(CPunchWizardComponent)
-        DECLARED_ICAX_FIELD(CPunchWizardComponent, iCAX::Data::ObjectMap, Definition,
-            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARE_ICAX_COMPONENT(CTubePartCadComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CTubePartCadComponent)
+        DECLARED_ICAX_FIELD(CTubePartCadComponent, std::string, DocumentResourceID,
+            std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CTubePartCadComponent, unsigned long long, DocumentResourceVersion,
+            0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
     };
 
     // The immutable tube identity of a manufacturing part.  The component is

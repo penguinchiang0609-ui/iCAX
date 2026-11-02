@@ -7,7 +7,9 @@ param(
     [string]$NSISCompilerPath,
     [string]$BuildDirectory = (Join-Path $PSScriptRoot '../../x64/Release'),
     [string]$VisualCppRuntimeDirectory,
-    [string]$ReleaseDate = (Get-Date -Format 'yyyyMMdd')
+    [string]$ReleaseDate = (Get-Date -Format 'yyyyMMdd'),
+    [ValidateSet('lzma', 'zlib')]
+    [string]$Compression = 'lzma'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,14 +57,16 @@ $validation = @{
 }
 if ($VisualCppRuntimeDirectory) { $validation.VisualCppRuntimeDirectory = $VisualCppRuntimeDirectory }
 & (Join-Path $PSScriptRoot 'package_tube_designer_release.ps1') @validation
+$packageManifest = Get-Content -LiteralPath (Join-Path $packageRoot 'apps/tube-designer/product.manifest.json') -Raw | ConvertFrom-Json
+$productVersion = [string]$packageManifest.productVersion
 
 $files = @(Get-ChildItem -LiteralPath $packageRoot -Recurse -File -Force |
     Where-Object { $_.FullName -notmatch '[\\/]__pycache__[\\/]' -and $_.Extension -notin @('.pyc', '.pyo') } |
     Sort-Object FullName)
 if ($files.Count -eq 0) { throw 'The validated package is empty.' }
-$installerName = "TubeDesigner-0.1.0-$ReleaseDate-x64-Setup.exe"
+$installerName = "TubeDesigner-$productVersion-$ReleaseDate-x64-Setup.exe"
 $installerPath = Join-Path $outputRoot $installerName
-$metadataRoot = Join-Path $outputRoot ('.installer-metadata/TubeDesigner-0.1.0-' + $ReleaseDate + '-x64')
+$metadataRoot = Join-Path $outputRoot ('.installer-metadata/TubeDesigner-' + $productVersion + '-' + $ReleaseDate + '-x64')
 Assert-NsisLiteral $metadataRoot
 [IO.Directory]::CreateDirectory($metadataRoot) | Out-Null
 
@@ -110,6 +114,8 @@ $configInclude = Join-Path $metadataRoot 'installer-config.nsh'
 [IO.File]::WriteAllLines($installInclude, $installLines, $utf8)
 [IO.File]::WriteAllLines($uninstallInclude, $uninstallLines, $utf8)
 $configLines = @(
+    ('!define PRODUCT_VERSION "' + $productVersion + '"'),
+    ('!define PRODUCT_FILE_VERSION "' + $productVersion + '.0"'),
     '!ifndef INSTALLER_OUTPUT',
     ('!define INSTALLER_OUTPUT "' + $installerPath + '"'),
     '!endif',
@@ -120,13 +126,20 @@ $configLines = @(
 )
 [IO.File]::WriteAllLines($configInclude, $configLines, $utf8)
 [IO.File]::WriteAllText((Join-Path $metadataRoot 'payload-inventory.json'),
-    (ConvertTo-Json -Depth 5 -InputObject ([ordered]@{ productVersion = '0.1.0'; releaseDate = $ReleaseDate; files = @($inventory.ToArray()) })), $utf8)
+    (ConvertTo-Json -Depth 5 -InputObject ([ordered]@{ productVersion = $productVersion; releaseDate = $ReleaseDate; files = @($inventory.ToArray()) })), $utf8)
 
 $compilerLog = Join-Path $metadataRoot 'makensis.log'
-& $compiler '/INPUTCHARSET' 'UTF8' ('/DCONFIG_INCLUDE=' + $configInclude) (Join-Path $PSScriptRoot 'TubeDesigner.nsi') 2>&1 |
+$compilerArguments = @('/INPUTCHARSET', 'UTF8', ('/DCONFIG_INCLUDE=' + $configInclude))
+if ($Compression -eq 'zlib') { $compilerArguments += '/DINSTALLER_ZLIB' }
+& $compiler @compilerArguments (Join-Path $PSScriptRoot 'TubeDesigner.nsi') 2>&1 |
     Tee-Object -FilePath $compilerLog
 if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed with exit code $LASTEXITCODE. See $compilerLog" }
 if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw "NSIS did not produce the installer: $installerPath" }
+$installerVersion = (Get-Item -LiteralPath $installerPath).VersionInfo
+if ($installerVersion.ProductVersion -ne $productVersion -or $installerVersion.FileVersion -ne "$productVersion.0") {
+    throw 'Installer version differs from the validated product version.'
+}
+Copy-Item -LiteralPath (Join-Path $packageRoot 'README.md') -Destination (Join-Path $outputRoot 'README.md') -Force
 $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText(($installerPath + '.sha256'), "$installerHash  $installerName`r`n", $utf8)
 Write-Output "Created installer: $installerPath"

@@ -2,7 +2,9 @@
 // production issuer directory, or Windows trust store is opened or modified.
 #include "IssuerCore.h"
 #include "LicenseFiles.h"
+#include "LicenseActivation.h"
 #include "TpmEvidence.h"
+#include "EnrollmentRepair.h"
 #include <wincrypt.h>
 #include <algorithm>
 #include <functional>
@@ -234,10 +236,11 @@ struct Fixture final {
         Sized(ekArea, std::span(rsa).subspan(sizeof(h) + h.cbPublicExp, h.cbModulus));
         WriteNewFile(requestPath, Request(false));
     }
-    Bytes Request(bool trial, std::uint64_t initial = 50, std::uint32_t nvIndex = 0x01501234) const {
+    Bytes Request(bool trial, std::uint64_t initial = 50, std::uint32_t nvIndex = 0x01501234,
+        std::uint8_t quoteSafe = 1, std::uint8_t nvSafe = 1) const {
         const auto nonce = RandomChallenge();
         Bytes attest; Append32(attest, 0xff544347); U16(attest, 0x8018); Sized(attest, qualified); Sized(attest, nonce);
-        Join(attest, Bytes(16)); attest.push_back(1); Join(attest, Bytes(8)); Append32(attest, 0); Sized(attest, HashBytes({}));
+        Join(attest, Bytes(16)); attest.push_back(quoteSafe); Join(attest, Bytes(8)); Append32(attest, 0); Sized(attest, HashBytes({}));
         Bytes request = Text(trial ? product.trialRequestFormat : product.permanentRequestFormat);
         for (const auto& field : {Text(product.id), Copy(nonce), akArea, qualified, ekArea}) AppendField(request, field);
         Append32(request, 1); AppendField(request, leaf); AppendField(request, attest); AppendField(request, TpmSignature(ak, attest));
@@ -245,7 +248,7 @@ struct Fixture final {
             Bytes nv; Append32(nv, nvIndex); U16(nv, 11); Append32(nv, 0x22040014); U16(nv, 0); U16(nv, 8);
             Bytes value; Append64(value, initial);
             Bytes evidence; Append32(evidence, 0xff544347); U16(evidence, 0x8014); Sized(evidence, qualified); Sized(evidence, nonce);
-            Join(evidence, Bytes(16)); evidence.push_back(1); Join(evidence, Bytes(8)); Sized(evidence, TpmSha256Name(nv)); U16(evidence, 0); Sized(evidence, value);
+            Join(evidence, Bytes(16)); evidence.push_back(nvSafe); Join(evidence, Bytes(8)); Sized(evidence, TpmSha256Name(nv)); U16(evidence, 0); Sized(evidence, value);
             AppendField(request, nv); Append64(request, initial); AppendField(request, evidence); AppendField(request, TpmSignature(ak, evidence));
         }
         return request;
@@ -281,6 +284,35 @@ struct OwnedTemp final {
         + L"-" + std::to_wstring(GetTickCount64()))) { Require(!std::filesystem::exists(path), "Test root must be new"); std::filesystem::create_directory(path); }
     ~OwnedTemp() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }
 };
+
+void ClockStateTests(const std::filesystem::path& directory) {
+    for (const bool trial : {false, true}) {
+        Fixture fixture(directory / (trial ? L"clock-trial" : L"clock-permanent"));
+        for (const auto quoteSafe : std::array<std::uint8_t, 2>{0, 1}) {
+            const auto path = fixture.directory / (L"quote-" + std::to_wstring(quoteSafe) + L".tdreq");
+            WriteNewFile(path, fixture.Request(trial, 50, 0x01501234, quoteSafe, 0));
+            Check(InspectRequest(fixture.product, path, fixture.store).isTrial == trial,
+                "Native issuer accepts authentic evidence independently of Clock continuity");
+            if (quoteSafe == 0) {
+                Policy policy; policy.customer = "TPM clock regression"; policy.kind = trial ? Kind::Trial : Kind::Permanent;
+                policy.days = 1;
+                const auto output = fixture.directory / L"clock.tdact";
+                Generate(fixture.product, fixture.store, path, Fixture::Password, policy, output);
+                const auto certificate = fixture.DecryptPackage(output);
+                Check(VerifyCertificate(certificate, Fixture::IssuerId, fixture.trustedPublic).kind == policy.kind,
+                    "Native issuer signs and encrypts valid safe=0 permanent and trial authorizations");
+            }
+        }
+        const auto invalidQuote = fixture.directory / L"invalid-quote.tdreq";
+        WriteNewFile(invalidQuote, fixture.Request(trial, 50, 0x01501234, 2, 1));
+        Reject([&] { InspectRequest(fixture.product, invalidQuote, fixture.store); }, "Malformed signed quote clock rejected");
+        if (trial) {
+            const auto invalidNv = fixture.directory / L"invalid-nv.tdreq";
+            WriteNewFile(invalidNv, fixture.Request(true, 50, 0x01501234, 1, 2));
+            Reject([&] { InspectRequest(fixture.product, invalidNv, fixture.store); }, "Malformed signed NV clock rejected");
+        }
+    }
+}
 
 void Tests(const std::filesystem::path& directory) {
     Fixture fixture(directory / L"permanent");
@@ -657,6 +689,8 @@ void BundleTests(const std::filesystem::path& directory){
         "Concurrent bundles with reversed product input order lock consistently and produce one exact cached result");
 }
 }
+#include "EnrollmentRepairTests.inc"
+#include "IssuerExportHistoryTests.inc"
 int wmain(int argc, wchar_t** argv) {
     try {
         if (argc == 3 && std::wstring_view(argv[1]) == L"--create-fixture") {
@@ -668,7 +702,7 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << "native_crypto_fixture=created\ntpm_hardware=not_exercised\n"; return 0;
         }
         Require(argc == 1, "Expected no arguments or --create-fixture <new-directory>");
-        OwnedTemp temporary; Tests(temporary.path); UpgradeTests(temporary.path); ProductTests(temporary.path); BundleTests(temporary.path);
+        OwnedTemp temporary; Tests(temporary.path); ClockStateTests(temporary.path); UpgradeTests(temporary.path); ProductTests(temporary.path); BundleTests(temporary.path); EnrollmentRepairTests(temporary.path); IssuerExportHistoryTests(temporary.path);
         std::cout << "native_issuer_checks=" << checks << "\ncrypto_interop=passed\ntpm_hardware=not_exercised\nproduction_state=not_accessed\n"; return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << " (after " << checks << " checks)\n"; return 1; }
 }

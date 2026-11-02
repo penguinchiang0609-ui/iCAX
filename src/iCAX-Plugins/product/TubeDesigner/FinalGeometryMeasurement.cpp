@@ -418,13 +418,18 @@ namespace
         return { _Minimum, _Maximum };
     }
 
-    std::optional<SBodyFrame> MeasureBodyFrame(IN const TopoDS_Shape& Shape_)
+    std::optional<SBodyFrame> MeasureBodyFrame(IN const TopoDS_Shape& Shape_, bool KnownXAxisAligned_ = false)
     {
+        SBodyFrame _Frame;
+        if (KnownXAxisAligned_) {
+            _Frame.Axis = gp_Dir(1, 0, 0);
+            _Frame.SectionX = gp_Dir(0, 1, 0);
+            _Frame.SectionY = gp_Dir(0, 0, 1);
+        } else {
         Bnd_OBB _Bounds;
         BRepBndLib::AddOBB(Shape_, _Bounds, false, true, false);
         if (_Bounds.IsVoid()) return std::nullopt;
 
-        SBodyFrame _Frame;
         const std::array _ObbExtents{
             SAxisExtent{ _Bounds.XDirection(), _Bounds.XHSize() },
             SAxisExtent{ _Bounds.YDirection(), _Bounds.YHSize() },
@@ -463,6 +468,7 @@ namespace
                 gp_Vec(_Frame.Axis).Crossed(gp_Vec(_Frame.SectionX))));
         }
 
+        }
         const gp_Pnt _Origin;
         const auto _ExactBounds = MeasureFrameBounds(
             Shape_, _Origin, _Frame.Axis, _Frame.SectionX, _Frame.SectionY);
@@ -1161,7 +1167,8 @@ ObjectMap MeasureFinalPlateGeometry(
 ObjectMap MeasureFinalPartGeometry(
     IN const TopoDS_Shape& Shape_,
     IN const std::string& strResourceID_,
-    IN std::uint64_t nResourceVersion_)
+    IN std::uint64_t nResourceVersion_,
+    IN bool bKnownXAxisAligned_)
 {
     ObjectMap _Result{
         { "source", std::string("final-brep") },
@@ -1175,7 +1182,7 @@ ObjectMap MeasureFinalPartGeometry(
         return _Result;
     }
 
-    const auto _Frame = MeasureBodyFrame(Shape_);
+    const auto _Frame = MeasureBodyFrame(Shape_, bKnownXAxisAligned_);
     if (!_Frame || _Frame->HalfLength <= kLinearTolerance)
     {
         _Result["message"] = std::string("无法从最终几何确定零件主方向");

@@ -117,11 +117,12 @@ def assert_declaration(test, document, design=None):
                     selected = parents[selected]
                     expected_keys.add(selected)
         test.assertEqual({item['key'] for item in combined['items']}, expected_keys)
-        dynamic_keys = {item['key'] for item in combined['items'] if 'designInput' in item}
-        test.assertEqual({mapping['itemKey'] for mapping in combined['sourceMappings']}, dynamic_keys)
+        source_keys = {item['key'] for item in combined['items']
+                       if 'designInput' in item or 'geometry' in item}
+        test.assertEqual({mapping['itemKey'] for mapping in combined['sourceMappings']}, source_keys)
         for mapping in combined['sourceMappings']:
             test.assertEqual(mapping['sources'], [{'itemKey': mapping['itemKey']}])
-        if not dynamic_keys:
+        if not source_keys:
             test.assertEqual(combined['sourceMappings'], [])
     return document
 
@@ -225,22 +226,25 @@ class ProductManufacturingDeclarationTests(unittest.TestCase):
         self.assertEqual(len(processes), 45)
         self.assertEqual(len(executed["items"]), 8)
 
-    def test_nondefault_miter_frame_defers_end_cuts_and_executes_equivalent_geometry(self):
-        descriptor, defaults, template = package("minimal_protective_grille")
-        values = dict(defaults, frameType="closed_frame", frameCornerJoint="miter_45")
+    def test_grille_frame_and_handle_keep_welds_when_infill_machining_is_declared(self):
+        _, defaults, template = package("minimal_protective_grille")
+        values = dict(defaults, frameType="closed_frame", jointMode="male_female_half_hole",
+                      frameWidth=40, frameDepth=30, frameCornerRadius=2, innerWidth=20, innerDepth=10)
         before = deepcopy(values)
         with forbid_processing() as calls:
             declaration = template.manufacturing(values)
         self.assertEqual(calls, [])
         self.assertEqual(values, before)
-        assert_declaration(self, declaration)
+        design = template.display(values)
+        assert_declaration(self, declaration, design)
         saved = deepcopy(declaration)
-        executed = execute_definition(declaration, design=template.display(values))
-        previous = template.generate(values, {"template": descriptor, "geometryPurpose": "manufacturing"})
+        executed = execute_definition(declaration, design=design)
         self.assertEqual(declaration, saved)
         self.assertEqual(values, before)
-        self.assertEqual(len(executed["items"]), 14)
-        self.assertEqual(canonical_geometry(executed), canonical_geometry(previous))
+        self.assertEqual(len(executed["items"]), len(design["items"]))
+        self.assertEqual({entry['properties']['recipe'] for entry in declaration['connections']},
+                         {'butt_weld', 'male_female_half_hole'})
+        self.assertTrue(all(entry['ready'] for entry in executed['extensions']['tubeDesigner.workpiecePreparations']))
 
     def test_processing_guard_rejects_actual_runtime_under_two_dynamic_aliases(self):
         path = SHARED_ROOT / "assembly_geometry_process_runtime.py"
@@ -257,14 +261,14 @@ class ProductManufacturingDeclarationTests(unittest.TestCase):
                 NeutralModel(template_id="test", template_version="1", package_digest="test", parameters={}).geometry(
                     "invalid.cut", "boolean", arguments={})
 
-    def test_all_ten_products_declare_with_actual_processing_disabled(self):
-        baselines = [entry for entry in json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
-                     if entry["name"] not in {"louver_window", "aluminium_window", "decorative_door"}]
-        self.assertEqual(len(baselines), 10)
-        for baseline in baselines:
-            with self.subTest(product=baseline["name"]):
-                _, _, template = package(baseline["name"])
-                values = deepcopy(baseline["parameters"])
+    def test_all_current_products_declare_with_actual_processing_disabled(self):
+        names = sorted(path.parent.name for path in (SRC / 'apps/tube-designer/templates/product').glob('*/template.json'))
+        self.assertIn('minimal_protective_grille', names)
+        self.assertIn('single_face_security_window', names)
+        for name in names:
+            with self.subTest(product=name):
+                _, defaults, template = package(name)
+                values = deepcopy(defaults)
                 before = deepcopy(values)
                 with forbid_processing() as calls:
                     declaration = template.manufacturing(values)

@@ -43,6 +43,7 @@ $configureArgs = @(
     "-DUSE_OPENVR=OFF",
     "-DUSE_FFMPEG=OFF",
     "-DUSE_TBB=OFF",
+    "-DUSE_MMGR_TYPE=FLEXIBLE",
     "-DUSE_VTK=OFF",
     "-DUSE_RAPIDJSON=OFF",
     "-DUSE_DRACO=OFF",

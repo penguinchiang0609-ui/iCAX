@@ -1,0 +1,240 @@
+{
+  "product": "TubeDesigner",
+  "version": "0.3.1",
+  "templateVersion": "2.2.0",
+  "recordedDate": "2026-10-27",
+  "passed": true,
+  "scope": "Release standalone geometry, actual NSIS payload extraction and fresh-process reopen; no administrator installation or real machine qualification",
+  "installer": {
+    "passed": true,
+    "startedAt": "2026-10-27T16:56:18.6993495+08:00",
+    "scope": "Extract the actual final production NSIS installer without installation; compare every declared payload size/SHA256 with both installer metadata and the audited release payload. No HKLM, existing installation, or release payload is modified.",
+    "installer": "D:\\penguinchinage0609\\release\\tubedesigner\\20261027-v0.3.1\\安装包\\TubeDesigner-0.3.1-20261027-x64-Setup.exe",
+    "inventory": "D:\\penguinchinage0609\\release\\tubedesigner\\20261027-v0.3.1\\安装包\\.installer-metadata\\TubeDesigner-0.3.1-20261027-x64\\payload-inventory.json",
+    "audit": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\package-audit\\payload-audit.json",
+    "sevenZip": "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\7z.exe",
+    "extractedDirectory": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\中文安装包验收\\TubeDesigner",
+    "mismatches": [],
+    "sha256": "2034936D92916315C3A12E4AB653B75E72B950BFF9682E39E7C237CE3AAC9B3A",
+    "installerBytes": 190408845,
+    "installerProductVersion": "0.3.1",
+    "installerFileVersion": "0.3.1.0",
+    "publishedChecksumMatches": true,
+    "extractionExitCode": 0,
+    "extractionSeconds": 7.2301564,
+    "installerSupportFiles": [
+      {
+        "path": "$PLUGINSDIR\\modern-wizard.bmp",
+        "bytes": 26494,
+        "sha256": "3AD2DC318056D0A2024AF1804EA741146CFC18CC404649A44610CBF8B2056CF2"
+      },
+      {
+        "path": "$PLUGINSDIR\\nsDialogs.dll",
+        "bytes": 9728,
+        "sha256": "9C76F4D53CEEE2A471C936E0899688405E1009CE962D140E9ACB49ED68D114CB"
+      },
+      {
+        "path": "$PLUGINSDIR\\System.dll",
+        "bytes": 12288,
+        "sha256": "AFE032F942E2ED0BF7494EC08BA813F5739FB522C640BDE81D30ECAF9F894432"
+      }
+    ],
+    "payloadFiles": 1005,
+    "matchedFiles": 1005,
+    "extractedFiles": 1008,
+    "executableProductVersion": "0.3.1",
+    "executableFileVersion": "0.3.1.0",
+    "executableIsDebug": false,
+    "finishedAt": "2026-10-27T16:56:27.9316675+08:00"
+  },
+  "licensing": {
+    "passed": true,
+    "checkedAt": "2026-10-27T16:57:18.7869531+08:00",
+    "runtime": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\中文安装包验收\\TubeDesigner",
+    "validator": "D:\\penguinchinage0609\\iCAX\\src\\tools\\build\\validate_tube_designer_licensing.ps1",
+    "authorizationEnforced": true,
+    "developmentBypass": false,
+    "policySchema": "TDLIC003",
+    "features": 13,
+    "moduleSha256": "B492E44220610247809575692FB5A7733D89F0250D8373957406415BC67E098C"
+  },
+  "geometry": {
+    "passed": true,
+    "scope": "Independent audits of actual 0.3.1 Release standalone outputs",
+    "nativeAcceptance": {
+      "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-accepted\\acceptance-report.json",
+      "sha256": "da6a210f1a7eb344c2f774e2e059b8c2ca445d6101a5e46deaad70f2ec84de55",
+      "caseCount": 11,
+      "passed": true
+    },
+    "pythonRegression": {
+      "testCount": 18,
+      "passed": true,
+      "log": {
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\through-joint-python-tests.log",
+        "sha256": "9091c8c8505e0aef64081f734dcd7c6532babd076e3144ee200033d05363ee3c"
+      },
+      "limitations": "Python public preview is not a substitute for native descriptor input validation"
+    },
+    "holeAudit": {
+      "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-hole-audit\\native-accepted\\summary.json",
+      "sha256": "5410c1eb6346c5319f7a82ef2af78745bc1336dc2cb2017a450a92d4048606cb",
+      "passed": true,
+      "caseCount": 11,
+      "STEPPrototypes": 15,
+      "physicalUprights": 24,
+      "physicalHolePairs": 66,
+      "classifiedSamples": 7178
+    },
+    "jointAudit": {
+      "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-joint-audit\\native-accepted\\summary.json",
+      "sha256": "edc17e9e78eeb58ede3c532a70f940d97d809a3273d260680dae036482175ff0",
+      "passed": true,
+      "caseCount": 5,
+      "throughCases": 4,
+      "throughConnections": 31,
+      "halfConnections": 4,
+      "exactMaterialRegions": 350,
+      "rectangularHoleWalls": 264,
+      "solidSamples": 1050,
+      "maxTipErrorMm": 2.0000000233721948E-07,
+      "maxIntersectionVolumeMm3": 0
+    },
+    "exportAudit": {
+      "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-export-audit\\native-accepted\\summary.json",
+      "sha256": "175daf6d22a8f316bffed1660c15e14bd949d79d5024fab30becce1a4402821a",
+      "caseCount": 11,
+      "passedCases": 11,
+      "STEPPrototypes": 32,
+      "physicalMembers": 67,
+      "nearbyPairsChecked": 86,
+      "passed": true,
+      "maxWorkbookLengthDifferenceMm": 0.0,
+      "interferingPairs": 0,
+      "maxIntersectionVolumeMm3": 0,
+      "noAdditionalStockBreaks": true
+    },
+    "stockBaseline": {
+      "noNativeDisabledExportClaimed": true,
+      "installationOff": "Same-parameter Python manufacturing preparation with installation holes disabled; exact source IDs, endpoints, source coverage, stock intervals and physical lengths compared with native output",
+      "buttWeldReference": "Same-parameter butt-weld layout source IDs, endpoints, connection graph and physical member counts compared with native output; through extension length checked per actual receiving source profile"
+    },
+    "freshProcessReopen": {
+      "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-accepted\\cold-reopen-report.json",
+      "sha256": "e6fec517e685098f4dbe49a0ce5dd18776eddd42020b924b10b44f6a01601f1e",
+      "passed": true,
+      "caseCount": 5,
+      "cases": [
+        "three-groups-ui-enabled",
+        "three-groups-male-female",
+        "front-three-groups",
+        "through-both-ends-ui",
+        "through-open-slot-round"
+      ],
+      "warmProcess": {
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-accepted\\native-accepted-process.json",
+        "sha256": "8bd4abaa06e5d3087671f7f60fa26067e9c16cdc4060c7eb9f39ca3892597b4d",
+        "label": "native-accepted",
+        "processId": 40832,
+        "startTime": "2026-10-27T16:54:14.1031361+08:00",
+        "executable": "D:\\penguinchinage0609\\release\\tubedesigner\\20261027-v0.3.1\\程序\\TubeDesigner\\TubeDesigner.exe",
+        "cdpEndpoint": "http://127.0.0.1:19502",
+        "listenerOwnerIds": [
+          40832
+        ],
+        "userDataRoot": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\userdata-native-accepted",
+        "verifiedNewProcess": true
+      },
+      "coldProcess": {
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-accepted\\native-accepted-cold-process.json",
+        "sha256": "32a526187eb0b0a569f467541b3b20fc00a37eb87dee710c15ed9743d47ec810",
+        "label": "native-accepted-cold",
+        "processId": 18680,
+        "startTime": "2026-10-27T16:55:50.1358348+08:00",
+        "executable": "D:\\penguinchinage0609\\release\\tubedesigner\\20261027-v0.3.1\\程序\\TubeDesigner\\TubeDesigner.exe",
+        "cdpEndpoint": "http://127.0.0.1:19503",
+        "listenerOwnerIds": [
+          18680
+        ],
+        "userDataRoot": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\userdata-native-accepted-cold",
+        "verifiedNewProcess": true
+      }
+    },
+    "previousFailedRuns": [
+      {
+        "run": "native-release",
+        "report": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-release\\acceptance-report.json",
+          "sha256": "d7ce95748201200843f0741d7fc58c8ed4b35740e071c2005108c70501fc84dc"
+        },
+        "accepted": false,
+        "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\ntrue !== false\n\n    at file:///D:/penguinchinage0609/iCAX/src/tests/iCAX-UI/TubeDesignerInstallationHoles.native.cef.mjs:156:12"
+      },
+      {
+        "run": "native-bound",
+        "report": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-bound\\acceptance-report.json",
+          "sha256": "97293f94b28ec18726fef33dd99d0efe70694117d1e95d751fe6bbc9bdf6f301"
+        },
+        "accepted": false,
+        "error": "page.waitForFunction: Timeout 120000ms exceeded.\n    at D:\\penguinchinage0609\\iCAX\\src\\tests\\iCAX-UI\\TubeDesignerInstallationHoles.native.cef.mjs:160:16"
+      },
+      {
+        "run": "native-final",
+        "report": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-through-joint-20261027\\native-final\\acceptance-report.json",
+          "sha256": "da3d7693cc2ca9e4322a8b63c015ad95816074a0b4912f5fc7fb6050792c09d7"
+        },
+        "accepted": false,
+        "error": "locator.scrollIntoViewIfNeeded: Element is not attached to the DOM\nCall log:\n\u001b[2m  - attempting scroll into view action\u001b[22m\n\u001b[2m    - waiting for element to be stable\u001b[22m\n\n    at D:\\penguinchinage0609\\iCAX\\src\\tests\\iCAX-UI\\TubeDesignerInstallationHoles.native.cef.mjs:163:23"
+      }
+    ],
+    "limits": [
+      "No real machine, screw-load, strength or production-process qualification",
+      "Assembly intersection tolerance is 0.001 cubic millimetres",
+      "No second native export with holes disabled; stock identity is checked against disabled Python layout and preparation",
+      "Fresh-process reopen covers five named cases; all eleven cases have actual export geometry audits",
+      "No installer execution or real-machine cutting/strength validation is claimed by this geometry audit"
+    ]
+  },
+  "installerFreshProcessReopen": {
+    "passed": true,
+    "freshProcess": true,
+    "nativeBusinessMocked": false,
+    "processId": 16148,
+    "warmProcessId": 40832,
+    "cdpEndpoint": "http://127.0.0.1:19504",
+    "cases": [
+      {
+        "name": "three-groups-ui-enabled",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "three-groups-male-female",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "front-three-groups",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "through-both-ends-ui",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "through-open-slot-round",
+        "passed": true,
+        "partTypes": 6,
+        "physicalQuantity": 14
+      }
+    ]
+  }
+}

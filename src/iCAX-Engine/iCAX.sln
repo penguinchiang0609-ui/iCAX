@@ -110,6 +110,16 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ResourcesTest", "..\tests\i
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ServicesTest", "..\tests\icax-engine\framework\Services\ServicesTest\ServicesTest.vcxproj", "{CAA4F5E3-1F6F-4A41-BC5A-5535A1F8CB07}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MachineKinematicsServices", "..\iCAX-Plugins\geometry\MachineKinematicsServices\MachineKinematicsServices.vcxproj", "{D0C74E36-04FC-4A81-96BB-47F528620730}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MachineMotionPlanningServices", "..\iCAX-Plugins\geometry\MachineMotionPlanningServices\MachineMotionPlanningServices.vcxproj", "{6B52E6C3-7B18-4B2B-BB8D-AF714D09D21F}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IntentToolpath", "..\iCAX-Plugins\cam\IntentToolpath\IntentToolpath.vcxproj", "{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TubeIntentAdapter", "..\iCAX-Plugins\cam\TubeIntentAdapter\TubeIntentAdapter.vcxproj", "{BD287F96-1432-43D4-BD2E-0FC70595EBEA}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IntentToolpathTest", "..\tests\icax-plugins\cam\IntentToolpathTest\IntentToolpathTest.vcxproj", "{7C9661A6-88CD-4636-9C2B-B57825207E32}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -118,6 +128,28 @@ Global
 		Release|Win32 = Release|Win32
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Debug|x64.ActiveCfg = Debug|x64
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Debug|x64.Build.0 = Debug|x64
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Release|x64.ActiveCfg = Release|x64
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Release|x64.Build.0 = Release|x64
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Debug|Win32.ActiveCfg = Debug|Win32
+		{7F21C2A4-BDA0-4F50-A60F-4B95AB58CB85}.Release|Win32.ActiveCfg = Release|Win32
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Debug|x64.ActiveCfg = Debug|x64
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Debug|x64.Build.0 = Debug|x64
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Release|x64.ActiveCfg = Release|x64
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Release|x64.Build.0 = Release|x64
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{BD287F96-1432-43D4-BD2E-0FC70595EBEA}.Release|Win32.ActiveCfg = Release|Win32
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Debug|x64.ActiveCfg = Debug|x64
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Debug|x64.Build.0 = Debug|x64
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Release|x64.ActiveCfg = Release|x64
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Release|x64.Build.0 = Release|x64
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Debug|Win32.ActiveCfg = Debug|x64
+		{7C9661A6-88CD-4636-9C2B-B57825207E32}.Release|Win32.ActiveCfg = Release|x64
+		{D0C74E36-04FC-4A81-96BB-47F528620730}.Debug|x64.ActiveCfg = Debug|x64
+		{D0C74E36-04FC-4A81-96BB-47F528620730}.Debug|x64.Build.0 = Debug|x64
+		{6B52E6C3-7B18-4B2B-BB8D-AF714D09D21F}.Debug|x64.ActiveCfg = Debug|x64
+		{6B52E6C3-7B18-4B2B-BB8D-AF714D09D21F}.Debug|x64.Build.0 = Debug|x64
 		{B1C027D1-B2EF-4F4B-8147-9FCE3EC31C52}.Debug|x64.ActiveCfg = Debug|x64
 		{B1C027D1-B2EF-4F4B-8147-9FCE3EC31C52}.Debug|x64.Build.0 = Debug|x64
 		{B1C027D1-B2EF-4F4B-8147-9FCE3EC31C52}.Release|x64.ActiveCfg = Release|x64

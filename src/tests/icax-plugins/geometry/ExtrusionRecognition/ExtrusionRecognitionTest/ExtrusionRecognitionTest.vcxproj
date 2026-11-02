@@ -51,6 +51,11 @@
     <ClCompile Include="ExtrusionRecognitionTests.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="HealFaceAudit.inc" />
+    <ClInclude Include="ZeroTrimRegression.inc" />
+    <ClInclude Include="GeometricMachiningBoundaryRegression.inc" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

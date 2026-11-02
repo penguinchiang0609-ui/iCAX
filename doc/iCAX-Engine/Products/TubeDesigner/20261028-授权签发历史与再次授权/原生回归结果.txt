@@ -1,0 +1,19 @@
+Test project D:/penguinchinage0609/iCAX/output/tests/issuer-export-history-20261028/build
+    Start 1: licensing-native-issuer
+1/7 Test #1: licensing-native-issuer ..........   Passed   13.67 sec
+    Start 2: licensing-native-issuer-ui
+2/7 Test #2: licensing-native-issuer-ui .......   Passed    1.34 sec
+    Start 3: licensing-core
+3/7 Test #3: licensing-core ...................   Passed    0.72 sec
+    Start 4: licensing-upgrade
+4/7 Test #4: licensing-upgrade ................   Passed    0.64 sec
+    Start 5: licensing-runtime-mode
+5/7 Test #5: licensing-runtime-mode ...........   Passed    0.03 sec
+    Start 6: licensing-ambiguous-mode
+6/7 Test #6: licensing-ambiguous-mode .........   Passed    0.03 sec
+    Start 7: licensing-bundle
+7/7 Test #7: licensing-bundle .................   Passed    0.04 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =  16.66 sec

@@ -4,6 +4,9 @@ import { SDOClient } from "../SDK/SDO/sdoClient.mjs";
 import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 import { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 
+// Restoring a saved database and its scene can outlast the short SDO default.
+const PROJECT_OPEN_TIMEOUT_MS = 5 * 60 * 1000;
+
 export class AppProxy {
   static async create(bridge, options = {}) {
     if (!bridge) {
@@ -76,7 +79,7 @@ export class AppProxy {
       projectPath,
       catalogName: options.catalogName ?? "",
       projectName: options.projectName ?? "",
-    });
+    }, { timeoutMs: options.timeoutMs ?? PROJECT_OPEN_TIMEOUT_MS });
     await this.#syncProductsFromState(response.state);
 
     const product = response.product ? await this.adoptProduct(response.product) : null;

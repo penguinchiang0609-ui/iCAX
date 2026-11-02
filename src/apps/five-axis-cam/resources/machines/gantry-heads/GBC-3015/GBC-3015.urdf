@@ -1,0 +1,777 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="iCAX GBC-3015 龙门 · BC 双回转头">
+  <link name="床身与导轨">
+    <visual name="base_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+    </visual>
+    <visual name="base_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+    </visual>
+    <visual name="base_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+    </visual>
+    <visual name="base_rail">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.75 0.8 0.83 1" />
+      </material>
+    </visual>
+    <visual name="base_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+    </visual>
+    <visual name="base_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_base_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+    </visual>
+    <collision name="base_box_1">
+      <origin xyz="-0.43 -1.06 -0.005" />
+      <geometry>
+        <box size="4.3 0.28 1.74" />
+      </geometry>
+    </collision>
+    <collision name="base_box_2">
+      <origin xyz="-0.43 1.06 -0.005" />
+      <geometry>
+        <box size="4.3 0.28 1.74" />
+      </geometry>
+    </collision>
+    <collision name="base_box_3">
+      <origin xyz="0.0 0.0 -0.49" />
+      <geometry>
+        <box size="3.35 1.85 0.55" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="工作台">
+    <icax_work_support />
+    <visual name="work_table_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_work_table_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="0.0 0.0 0.3270000130869448" />
+    </visual>
+    <visual name="work_table_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_work_table_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="0.0 0.0 0.3270000130869448" />
+    </visual>
+    <visual name="work_table_rail">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_work_table_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.75 0.8 0.83 1" />
+      </material>
+      <origin xyz="0.0 0.0 0.3270000130869448" />
+    </visual>
+    <visual name="work_table_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_work_table_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="0.0 0.0 0.3270000130869448" />
+    </visual>
+    <collision name="work_table_box_1">
+      <origin xyz="0.0 0.0 0.2420000130869448" />
+      <geometry>
+        <box size="3.12 1.58 0.18" />
+      </geometry>
+    </collision>
+    <collision name="work_table_box_2">
+      <origin xyz="-1.3 -0.58 -0.12299998691305519" />
+      <geometry>
+        <box size="0.14 0.14 0.42" />
+      </geometry>
+    </collision>
+    <collision name="work_table_box_3">
+      <origin xyz="-1.3 0.58 -0.12299998691305519" />
+      <geometry>
+        <box size="0.14 0.14 0.42" />
+      </geometry>
+    </collision>
+    <collision name="work_table_box_4">
+      <origin xyz="1.3 -0.58 -0.12299998691305519" />
+      <geometry>
+        <box size="0.14 0.14 0.42" />
+      </geometry>
+    </collision>
+    <collision name="work_table_box_5">
+      <origin xyz="1.3 0.58 -0.12299998691305519" />
+      <geometry>
+        <box size="0.14 0.14 0.42" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="X 龙门横梁">
+    <visual name="x_bridge_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <visual name="x_bridge_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <visual name="x_bridge_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <visual name="x_bridge_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <visual name="x_bridge_rail">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.75 0.8 0.83 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <visual name="x_bridge_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_x_bridge_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="-0.011249996721744537 0.0 -1.2390000224113464" />
+    </visual>
+    <collision name="x_bridge_box_1">
+      <origin xyz="-0.011249996721744537 -1.06 -0.14400002241134646" />
+      <geometry>
+        <box size="0.53 0.28 0.57" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_2">
+      <origin xyz="-0.011249996721744537 1.06 -0.14400002241134646" />
+      <geometry>
+        <box size="0.53 0.28 0.57" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_3">
+      <origin xyz="0.008750003278255463 0.0 0.21099997758865352" />
+      <geometry>
+        <box size="0.49 2.42 0.31" />
+      </geometry>
+    </collision>
+    <collision name="x_bridge_box_4">
+      <origin xyz="-0.15124999672174455 -0.3 0.40099997758865347" />
+      <geometry>
+        <box size="0.13 1.44 0.065" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="Y 滑鞍">
+    <visual name="y_carriage_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_y_carriage_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-0.3395000025629997 0.0 -1.4699999690055847" />
+    </visual>
+    <visual name="y_carriage_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_y_carriage_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-0.3395000025629997 0.0 -1.4699999690055847" />
+    </visual>
+    <visual name="y_carriage_rail">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_y_carriage_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.75 0.8 0.83 1" />
+      </material>
+      <origin xyz="-0.3395000025629997 0.0 -1.4699999690055847" />
+    </visual>
+    <visual name="y_carriage_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_y_carriage_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-0.3395000025629997 0.0 -1.4699999690055847" />
+    </visual>
+    <collision name="y_carriage_box_1">
+      <origin xyz="-0.029500002562999728 0.0 -0.0699999690055848" />
+      <geometry>
+        <box size="0.2 0.37 0.45" />
+      </geometry>
+    </collision>
+    <collision name="y_carriage_box_2">
+      <origin xyz="0.015499997437000257 0.0 0.22500003099441535" />
+      <geometry>
+        <box size="0.21 0.23 0.14" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="Z 滑枕">
+    <visual name="z_slide_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_z_slide_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="0.00299999862909317 0.0 -0.7544999718666077" />
+    </visual>
+    <visual name="z_slide_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_z_slide_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="0.00299999862909317 0.0 -0.7544999718666077" />
+    </visual>
+    <visual name="z_slide_rail">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_z_slide_rail.stl" />
+      </geometry>
+      <material name="rail">
+        <color rgba="0.75 0.8 0.83 1" />
+      </material>
+      <origin xyz="0.00299999862909317 0.0 -0.7544999718666077" />
+    </visual>
+    <visual name="z_slide_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_z_slide_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="0.00299999862909317 0.0 -0.7544999718666077" />
+    </visual>
+    <visual name="z_slide_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_z_slide_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="0.00299999862909317 0.0 -0.7544999718666077" />
+    </visual>
+    <collision name="z_slide_box_1">
+      <origin xyz="-0.00700000137090683 0.0 0.005500028133392343" />
+      <geometry>
+        <box size="0.24 0.23 1.6" />
+      </geometry>
+    </collision>
+    <collision name="z_slide_box_2">
+      <origin xyz="0.00299999862909317 0.0 -0.7574999718666077" />
+      <geometry>
+        <box size="0.23 0.26 0.095" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="C 回转叉架">
+    <visual name="c_yoke_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_c_yoke_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="0 0 0.144999995827675" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="c_yoke_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_c_yoke_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="0 0 0.144999995827675" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="c_yoke_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_c_yoke_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="0 0 0.144999995827675" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="c_yoke_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_c_yoke_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="0 0 0.144999995827675" rpy="0 0 1.5707963267949" />
+    </visual>
+    <collision name="c_yoke_box_1">
+      <origin xyz="0 0 0.0874994947845937" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.226 0.226 0.115001002086162" />
+      </geometry>
+    </collision>
+    <collision name="c_yoke_box_2">
+      <origin xyz="3.4478976923787e-16 -0.10224950038743 -0.0500000041723251" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.11550099922514 0.171475026275635 0.2" />
+      </geometry>
+    </collision>
+    <collision name="c_yoke_box_3">
+      <origin xyz="-3.4478976923787e-16 0.10224950038743 -0.0500000041723251" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.11550099922514 0.171475026275635 0.2" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="B 激光切割头">
+    <icax_tool name="GBC-3015 物理喷嘴" type="laser_cutting_head" tcp_mm="-1.99768074009807e-16 -3.26246023178101 -220" beam="0 0 -1" />
+    <visual name="laser_head_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="laser_head_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="laser_head_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="laser_head_copper">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_copper.stl" />
+      </geometry>
+      <material name="copper">
+        <color rgba="0.78 0.46 0.19 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="laser_head_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <visual name="laser_head_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_laser_head_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 0" rpy="0 0 1.5707963267949" />
+    </visual>
+    <collision name="laser_head_box_1">
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 -0.015" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.185002 0.116002 0.120002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_2">
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 -0.116500003635883" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.088002 0.088002 0.0830020072717667" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_3">
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 -0.165699998915195" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.068002003695488 0.068002003695488 0.0306020021696091" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab">
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 -0.217" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.014002 0.014002 0.006002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_upper_slab">
+      <origin xyz="-1.99768074009807e-19 -0.00326246023178101 -0.197" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.048002 0.048002 0.034002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5">
+      <origin xyz="-0.025 0.015786039768219 0.0863198262304068" rpy="0 0 1.5707963267949" />
+      <geometry>
+        <box size="0.171905 0.090002 0.0963623475391865" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="外罩（剖视）">
+    <visual name="enclosure_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_green">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_green.stl" />
+      </geometry>
+      <material name="green">
+        <color rgba="0.08 0.7 0.35 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_amber">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_amber.stl" />
+      </geometry>
+      <material name="amber">
+        <color rgba="0.96 0.55 0.06 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <visual name="enclosure_red">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_enclosure_red.stl" />
+      </geometry>
+      <material name="red">
+        <color rgba="0.72 0.06 0.04 1" />
+      </material>
+      <origin xyz="0.43000006675720215 -0.04250001907348633 -0.5949999988079071" />
+    </visual>
+    <collision name="enclosure_box_1">
+      <origin xyz="6.675720215509884e-08 1.2674999809265137 -0.1449999988079071" />
+      <geometry>
+        <box size="4.54 0.1 2.5" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_2">
+      <origin xyz="-2.269999933242798 -1.2625000190734863 -0.1449999988079071" />
+      <geometry>
+        <box size="0.15 0.17 2.5" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_3">
+      <origin xyz="-2.269999933242798 1.1774999809265136 -0.1449999988079071" />
+      <geometry>
+        <box size="0.15 0.17 2.5" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_4">
+      <origin xyz="2.270000066757202 -1.2625000190734863 -0.1449999988079071" />
+      <geometry>
+        <box size="0.15 0.17 2.5" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_5">
+      <origin xyz="2.270000066757202 1.1774999809265136 -0.1449999988079071" />
+      <geometry>
+        <box size="0.15 0.17 2.5" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_6">
+      <origin xyz="-2.269999933242798 -0.04250001907348633 1.1150000011920929" />
+      <geometry>
+        <box size="0.17 2.6 0.16" />
+      </geometry>
+    </collision>
+    <collision name="enclosure_box_7">
+      <origin xyz="2.270000066757202 -0.04250001907348633 1.1150000011920929" />
+      <geometry>
+        <box size="0.17 2.6 0.16" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="电气柜">
+    <visual name="cabinet_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_cabinet_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-2.2299999594688416 -0.8715000301599503 0.025000005960464478" />
+    </visual>
+    <visual name="cabinet_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_cabinet_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-2.2299999594688416 -0.8715000301599503 0.025000005960464478" />
+    </visual>
+    <visual name="cabinet_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_cabinet_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-2.2299999594688416 -0.8715000301599503 0.025000005960464478" />
+    </visual>
+    <visual name="cabinet_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_cabinet_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="-2.2299999594688416 -0.8715000301599503 0.025000005960464478" />
+    </visual>
+    <visual name="cabinet_teal">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_cabinet_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="-2.2299999594688416 -0.8715000301599503 0.025000005960464478" />
+    </visual>
+    <collision name="cabinet_box_1">
+      <origin xyz="4.0531158429502057e-08 0.008499969840049748 0.025000005960464478" />
+      <geometry>
+        <box size="0.62 0.87 1.68" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="操作台">
+    <visual name="console_dark">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_shell">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_black">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_screen">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_screen.stl" />
+      </geometry>
+      <material name="screen">
+        <color rgba="0.07 0.22 0.28 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_steel">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_amber">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_amber.stl" />
+      </geometry>
+      <material name="amber">
+        <color rgba="0.96 0.55 0.06 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <visual name="console_red">
+      <geometry>
+        <mesh filename="meshes/GBC-3015_console_red.stl" />
+      </geometry>
+      <material name="red">
+        <color rgba="0.72 0.06 0.04 1" />
+      </material>
+      <origin xyz="-2.069999933242798 1.0999999642372131 0.08125001192092896" />
+    </visual>
+    <collision name="console_box_1">
+      <origin xyz="6.675720198856538e-08 -3.576278695405222e-08 -0.13874998807907105" />
+      <geometry>
+        <box size="0.11 0.11 1.25" />
+      </geometry>
+    </collision>
+    <collision name="console_box_2">
+      <origin xyz="6.675720198856538e-08 -3.576278695405222e-08 -0.768749988079071" />
+      <geometry>
+        <box size="0.5 0.4 0.045" />
+      </geometry>
+    </collision>
+    <collision name="console_box_3">
+      <origin xyz="6.675720198856538e-08 -0.03000003576278676 0.5312500119209289" />
+      <geometry>
+        <box size="0.54 0.24 0.52" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="table_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="工作台" />
+    <origin xyz="0.0 0.0 -0.3270000130869448" />
+  </joint>
+  <joint name="X" type="prismatic">
+    <parent link="床身与导轨" />
+    <child link="X 龙门横梁" />
+    <origin xyz="-0.41875000327825546 0.0 1.2390000224113464" />
+    <axis xyz="1 0 0" />
+    <limit lower="-1.5" upper="1.5" velocity="1.2" effort="5000" />
+  </joint>
+  <joint name="Y" type="prismatic">
+    <parent link="X 龙门横梁" />
+    <child link="Y 滑鞍" />
+    <origin xyz="0.3282500058412552 0.0 0.23099994659423828" />
+    <axis xyz="0 1 0" />
+    <limit lower="-0.75" upper="0.75" velocity="1.2" effort="5000" />
+  </joint>
+  <joint name="Z" type="prismatic">
+    <icax_home position="0.15" />
+    <parent link="Y 滑鞍" />
+    <child link="Z 滑枕" />
+    <origin xyz="0.0874999988079071 0.0 -0.06549999713897703" />
+    <axis xyz="0 0 1" />
+    <limit lower="-0.45" upper="0.15" velocity="0.8" effort="5000" />
+  </joint>
+  <joint name="C" type="revolute">
+    <parent link="Z 滑枕" />
+    <child link="C 回转叉架" />
+    <origin xyz="0.00299999862909317 0.0 -0.8994999676942825" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.141592653589793" upper="3.141592653589793" velocity="1.5" effort="5000" />
+  </joint>
+  <joint name="B" type="revolute">
+    <parent link="C 回转叉架" />
+    <child link="B 激光切割头" />
+    <origin xyz="1.99768074009807e-19 0.00326246023178101 -0.0750000041723251" />
+    <axis xyz="0 1 0" />
+    <limit lower="-2.09439510239" upper="2.09439510239" velocity="1.5" effort="5000" />
+  </joint>
+  <joint name="enclosure_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="外罩（剖视）" />
+    <origin xyz="-0.43000006675720215 0.04250001907348633 0.5949999988079071" />
+  </joint>
+  <joint name="cabinet_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="电气柜" />
+    <origin xyz="2.2299999594688416 0.8715000301599503 -0.025000005960464478" />
+  </joint>
+  <joint name="console_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="操作台" />
+    <origin xyz="2.069999933242798 -1.0999999642372131 -0.08125001192092896" />
+  </joint>
+</robot>

@@ -111,7 +111,7 @@ try {
   await page.goto('http://punch-batch.test/');
   const { tubeDesignerCss } = await importBrowserAsset('apps/tube-designer/webpage/styles/tubeDesigner.css.mjs');
   await page.addStyleTag({ content: '*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif}'
-    + readFileSync(resolve(browserAssetRoot, 'apps/_shared/workbench/styles/laser3dcam.css'), 'utf8') + tubeDesignerCss });
+    + readFileSync(resolve(browserAssetRoot, 'apps/_shared/workbench/styles/workbench.css'), 'utf8') + tubeDesignerCss });
   await page.evaluate(async ({ profiles, catalogue, initialScene, native }) => {
     const creation = await import('/src/apps/tube-designer/webpage/nestingPunchPart.mjs');
     const wizard = await import('/src/apps/tube-designer/webpage/punchWizard.mjs');

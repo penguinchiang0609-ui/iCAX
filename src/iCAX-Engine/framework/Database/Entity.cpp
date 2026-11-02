@@ -237,6 +237,7 @@ void iCAX::Database::CEntity::TriggerEntityChanging(IN const EntityEventArgs::Ev
     };
     auto _pCoreListener = std::dynamic_pointer_cast<IEntityEventListener>(GetRepository());
     const auto _Repository = std::dynamic_pointer_cast<CRepository>(GetRepository());
+    if (_Repository) _Repository->RequireWritableNotificationContext();
     if (_Repository && (_Repository->IsOperationBatchActive() || _Repository->IsRepositoryEventSuppressed()))
     {
         // The repository intentionally ignores changing notifications during
@@ -247,6 +248,7 @@ void iCAX::Database::CEntity::TriggerEntityChanging(IN const EntityEventArgs::Ev
         _pCoreListener->OnEntityChanging(this, _GetArgs());
     }
 
+    CRepositoryDerivedNotificationScope _NotificationScope(_Repository.get());
     // 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
@@ -312,6 +314,7 @@ void iCAX::Database::CEntity::TriggerEntityChanged(IN const EntityEventArgs::Eve
         _pCoreListener->OnEntityChanged(this, _GetArgs());
     }
 
+    CRepositoryDerivedNotificationScope _NotificationScope(_Repository.get());
     // 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
@@ -380,6 +383,7 @@ bool iCAX::Database::CEntity::TryTriggerEntityChangedOwned(IN const std::string&
     }
     repository->RecordOwnedComponentModification(GetID(), Class_,
         std::move(Previous_), std::move(New_), pComponent_, shared_from_this());
+    CRepositoryDerivedNotificationScope notificationScope(repository.get());
     // No borrowed references into the repository's event vector survive this
     // call: an observer may append more facts and force that vector to grow.
     for (auto it = m_Observers.begin(); it != m_Observers.end(); )

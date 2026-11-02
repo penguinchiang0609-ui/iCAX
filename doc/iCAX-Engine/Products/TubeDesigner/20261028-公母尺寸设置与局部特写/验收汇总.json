@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "date": "2026-10-28",
+  "applicationVersion": "0.3.2",
+  "templateVersion": "2.3.1",
+  "changes": [
+    "连接方式、公头尺寸、母孔尺寸分组",
+    "单个公头/母孔特写与联动尺寸",
+    "原49个物理输入，无派生键进入宿主参数",
+    "管型选择状态更新保留选择框节点及监听器"
+  ],
+  "nativeBusinessMocked": false,
+  "nativePreviewCombinations": 16,
+  "nativeUiCases": 2,
+  "nativeProfileSelectionNodeAndListenerPreserved": true,
+  "browserInteractionSummary": "ui-test-summary.json",
+  "nativeFinalReport": "native/最终原生界面验证.json",
+  "delivery": "D:/penguinchinage0609/release/tubedesigner/20261028-v0.3.2/公母尺寸界面验证/TubeDesigner",
+  "deliveryMatchesTestedRuntime": true,
+  "deliveryFileCheck": "delivery-file-check.json",
+  "installerRebuilt": false,
+  "documentation": "D:\\penguinchinage0609\\iCAX\\doc\\iCAX-Engine\\Products\\TubeDesigner\\20261028-公母尺寸设置与局部特写\\公母尺寸设置说明.html"
+}

@@ -36,6 +36,14 @@ def ak_public(area):
     return blob
 
 
+def read_attestation_clock_info(reader):
+    # Clock continuity is not used for device freshness (nonce) or trial
+    # persistence (non-orderly NV counter). Validate the TPMI_YES_NO encoding.
+    reader.take(16)
+    if reader.take(1) not in (b"\0", b"\1"):
+        raise ValueError("Invalid TPM clock safe flag")
+
+
 def verify_quote(area, qualified, nonce, attest, signature):
     r = Reader(signature)
     if (r.u16(), r.u16()) != (0x18, 0x0b):
@@ -54,9 +62,7 @@ def verify_quote(area, qualified, nonce, attest, signature):
         raise ValueError("Not a TPM quote")
     if r.sized(68) != qualified or r.sized(64) != nonce:
         raise ValueError("Quote binding mismatch")
-    r.take(16)
-    if r.take(1) != b"\x01":
-        raise ValueError("Unsafe TPM clock")
+    read_attestation_clock_info(r)
     r.take(8)
     if r.u32() != 0 or r.sized(32) != hashlib.sha256(b"").digest():
         raise ValueError("Unexpected quote PCR data")
@@ -231,9 +237,7 @@ def verify_trial_evidence(ak, qualified, nonce, nv, initial, attest, signature):
     r = Reader(attest)
     if (r.u32(), r.u16()) != (0xff544347, 0x8014) or r.sized(68) != qualified or r.sized(64) != nonce:
         raise ValueError("NV attestation binding mismatch")
-    r.take(16)
-    if r.take(1) != b"\1":
-        raise ValueError("Unsafe TPM clock")
+    read_attestation_clock_info(r)
     r.take(8)
     if r.sized(68) != sha256_name(nv) or r.u16() != 0 or r.sized(8) != initial.to_bytes(8, "big"):
         raise ValueError("NV contents do not match request")

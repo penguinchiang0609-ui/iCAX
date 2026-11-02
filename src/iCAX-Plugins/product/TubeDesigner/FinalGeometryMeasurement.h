@@ -54,11 +54,13 @@ namespace iCAX::TubeDesigner
     /*
     * 从最终制造 BRep 观察线性零件和开口尺寸。调用方不得传入模板参数或布尔意图；
     * 返回值只描述 Shape_ 当前实际存在的几何。
+     * bKnownXAxisAligned_ 仅供已完成并验证 +X 对齐的调用方使用，尺寸仍从最终几何求得。
     */
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap MeasureFinalPartGeometry(
         IN const TopoDS_Shape& Shape_,
         IN const std::string& strResourceID_,
-        IN std::uint64_t nResourceVersion_);
+        IN std::uint64_t nResourceVersion_,
+        IN bool bKnownXAxisAligned_ = false);
 
     // Plate dimensions and annotation axes come from the final solid, not a tube section.
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap MeasureFinalPlateGeometry(

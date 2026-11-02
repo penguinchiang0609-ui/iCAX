@@ -6,8 +6,10 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Face.hxx>
 
 namespace iCAX::OpenCascade
 {
@@ -34,6 +36,14 @@ namespace iCAX::OpenCascade
         IN const std::string& strDisplayName_,
         IN const std::string& strSourceID_,
         IN double dTolerance_ = 0.001);
+
+    // Exact topology export with caller-supplied display triangulations. The
+    // provider must supply the corresponding current face, in model coordinates;
+    // no remeshing or tessellation-derived CAD reconstruction is performed.
+    using BRepTriangulationProvider = std::function<iCAX::GeometryData::Triangulation3(const TopoDS_Face&,std::uint64_t)>;
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP iCAX::GeometryData::BRepModel ConvertOpenCascadeShapeToBRepWithDisplay(
+        const TopoDS_Shape& shape, const std::string& displayName, const std::string& sourceID,
+        const BRepTriangulationProvider& triangulations);
 
     struct SBRepConversionInput final
     {

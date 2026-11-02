@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { repositoryRoot, startSideSketchNativeBridge } from "./fixtures/sideSketchNativeBridge.mjs";
 import { offsetSketchEntity } from "../../apps/tube-designer/webpage/sketchCadGeometry.mjs";
-import { curvePoint, editableSegments, distance } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint, editableSegments, distance } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 
 const artifacts = resolve(process.env.ICAX_ARTIFACT_DIR || resolve(repositoryRoot, "output/tests/sketch-cad-kerf-native"));
 mkdirSync(artifacts, { recursive: true });

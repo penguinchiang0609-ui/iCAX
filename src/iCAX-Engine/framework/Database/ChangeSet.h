@@ -22,7 +22,8 @@ namespace iCAX
             LoadBaseline, //!< 静默加载基线数据，不进入历史或日志。
             Transaction,  //!< 事务作用域。
             UserCommand,  //!< 普通用户命令或批量命令。
-            Replay        //!< Undo/Redo/快速保存恢复等回放操作。
+            Replay,       //!< Undo/Redo/快速保存恢复等回放操作。
+            DerivedPublish //!< 原子持久派生结果；不改变用户撤销/重做历史。
         };
 
         struct _DATABASE_EXP CChangeEntityKey final

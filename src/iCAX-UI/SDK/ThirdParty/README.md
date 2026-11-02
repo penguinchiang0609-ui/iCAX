@@ -5,3 +5,4 @@
 这些库只服务于 H5 前端实现，不属于 Engine/Framework，也不属于具体产品业务代码。当前内置：
 
 - `three/`：Three.js r185，作为 H5 默认三维 viewport 的 renderer runtime。
+- `three-mesh-bvh/`：three-mesh-bvh 0.9.1（MIT），用于显示网格的离散空间查询。来自 npm 官方发布包，仅将入口的 `three` 导入改为相邻内置 Three.js；许可证随库保留。

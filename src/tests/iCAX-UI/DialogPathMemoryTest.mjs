@@ -31,16 +31,18 @@ function fixture(results = []) {
   assert.equal(first.bridge.openFileDialog, currentMethod, "validation installs wrappers once");
   const detached = first.bridge.openFileDialog;
   await detached(options);
-  assert.equal(first.calls[1].options.defaultPath, "D:\\CAD\\", "open chooser starts in last successful parent directory");
+  assert.equal(first.calls[1].options.initialDirectory, "D:\\CAD", "open chooser starts in last successful parent directory");
+  assert.equal(first.calls[1].options.defaultPath, undefined, "remembered directory never becomes an open filename");
   assert.equal(options.defaultPath, undefined, "caller options are not mutated");
   assert.equal(first.calls[0].options.memoryKey, undefined, "memory metadata is not sent to native");
 
   // A new bridge represents the next document/program using the same persisted store.
   const next = fixture(["", "E:\\other\\new.step"]);
   await next.bridge.openFileDialog({ ...options, title: "renamed caption" });
-  assert.equal(next.calls[0].options.defaultPath, "D:\\CAD\\", "explicit key survives changed captions and cancellation");
+  assert.equal(next.calls[0].options.initialDirectory, "D:\\CAD", "explicit key survives changed captions and cancellation");
   await next.bridge.openFileDialog({ title: "another operation", filters: options.filters });
   assert.equal(next.calls[1].options.defaultPath, undefined, "unrelated operation locations are isolated");
+  assert.equal(next.calls[1].options.initialDirectory, undefined, "unrelated operation receives no remembered directory");
 }
 
 {
@@ -48,14 +50,18 @@ function fixture(results = []) {
   await first.bridge.saveFileDialog({ memoryKey: "parts-export", defaultPath: "old.xlsx" });
   const next = fixture([null, "C:/projects/current.ictd", null]);
   await next.bridge.saveFileDialog({ memoryKey: "parts-export", defaultPath: "new.xlsx" });
-  assert.equal(next.calls[0].options.defaultPath, "D:/exports/new.xlsx", "new export retains new filename in remembered directory");
+  assert.equal(next.calls[0].options.defaultPath, "new.xlsx", "new export retains its requested filename");
+  assert.equal(next.calls[0].options.initialDirectory, "D:/exports", "new export receives remembered directory separately");
   await next.bridge.saveFileDialog({ memoryKey: "parts-export", defaultPath: "C:/projects/current.ictd" });
   assert.equal(next.calls[1].options.defaultPath, "C:/projects/current.ictd", "explicit entity path wins over chooser memory");
+  assert.equal(next.calls[1].options.initialDirectory, undefined, "remembered folder cannot override explicit entity location");
   await next.bridge.saveFileDialog({ memoryKey: "parts-export", defaultPath: "projects/current.ictd" });
   assert.equal(next.calls[2].options.defaultPath, "projects/current.ictd", "relative entity paths with their own location are preserved too");
+  assert.equal(next.calls[2].options.initialDirectory, undefined, "relative entity location cannot receive remembered folder");
   const reopened = fixture([null]);
   await reopened.bridge.saveFileDialog({ memoryKey: "parts-export", defaultPath: "after.xlsx" });
-  assert.equal(reopened.calls[0].options.defaultPath, "C:/projects/after.xlsx");
+  assert.equal(reopened.calls[0].options.defaultPath, "after.xlsx");
+  assert.equal(reopened.calls[0].options.initialDirectory, "C:/projects");
 }
 
 {
@@ -75,11 +81,23 @@ function fixture(results = []) {
   await first.bridge.openFileDialog({ title: "root chooser" });
   const next = fixture([null]);
   await next.bridge.openFileDialog({ title: "root chooser" });
-  assert.equal(next.calls[0].options.defaultPath, "C:\\", "drive root survives path normalization");
+  assert.equal(next.calls[0].options.initialDirectory, "C:\\", "drive root survives path normalization");
+  assert.equal(next.calls[0].options.defaultPath, undefined);
 
   const mapped = fixture([null]);
   await mapped.bridge.openFileDialog({ title: "explicit start", initialDirectory: "/tmp/cad", defaultPath: "chosen.step" });
-  assert.deepEqual(mapped.calls[0].options, { title: "explicit start", defaultPath: "/tmp/cad/chosen.step" }, "directory maps to actual OPENFILENAMEW transport field");
+  assert.deepEqual(mapped.calls[0].options, { title: "explicit start", initialDirectory: "/tmp/cad", defaultPath: "chosen.step" }, "native directory and filename remain separate");
+}
+
+{
+  const first = fixture(["\\\\server\\客户资料\\激活.tdact"]);
+  await first.bridge.openFileDialog({ memoryKey: "authorization-import" });
+  const next = fixture([null, null]);
+  await next.bridge.openFileDialog({ memoryKey: "authorization-import", defaultPath: "" });
+  assert.deepEqual(next.calls[0].options, { defaultPath: "", initialDirectory: "\\\\server\\客户资料" }, "UNC directory and empty filename remain separate");
+  await next.bridge.openFileDialog({ memoryKey: "authorization-import", initialDirectory: "E:\\新的目录" });
+  assert.equal(next.calls[1].options.initialDirectory, "E:\\新的目录", "explicit directory overrides remembered location");
+  assert.equal(next.calls[1].options.defaultPath, undefined);
 }
 
 {
@@ -106,9 +124,9 @@ function fixture(results = []) {
     assert.deepEqual(writes, [], "opt-out does not save successful selections");
     await bridge[method]({ title: "per-page chooser", defaultPath: "next.step" });
     assert.equal(reads.length, 1, "opt-out applies to one invocation; later invocations can remember locations");
-    assert.equal(method === "openDirectoryDialog" ? calls[1].initialDirectory : calls[1].defaultPath,
-      method === "openDirectoryDialog" ? "D:/remembered" : "D:/remembered/next.step",
+    assert.equal(calls[1].initialDirectory, "D:/remembered",
       "opted-out successful selection leaves the previous remembered location intact");
+    assert.equal(calls[1].defaultPath, "next.step", "filename remains separate from remembered directory");
     assert.deepEqual(writes, [], "subsequent cancellation retains the old location");
   }
 }
@@ -121,10 +139,11 @@ function fixture(results = []) {
   await assert.rejects(broken.openFileDialog({ title: "error chooser" }), /native chooser failed/);
   const next = fixture([null]);
   await next.bridge.openFileDialog({ title: "error chooser" });
-  assert.equal(next.calls[0].options.defaultPath, "D:/safe/", "native errors do not replace previous successful directory");
+  assert.equal(next.calls[0].options.initialDirectory, "D:/safe", "native errors do not replace previous successful directory");
+  assert.equal(next.calls[0].options.defaultPath, undefined);
   const unsupported = { nativeValue: 1 };
   assert.equal(installDialogPathMemory(unsupported, { storage }), unsupported);
   assert.equal(unsupported.openFileDialog, undefined, "optional chooser methods are not fabricated");
 }
 
-console.log("PASS native dialog path memory: recreated document, per-invocation opt-out, cancellation/error, operation isolation, save filename, native binding and transport mapping");
+console.log("PASS native dialog path memory: recreated document, per-invocation opt-out, cancellation/error, operation isolation, save filename, native binding and separate directory transport");

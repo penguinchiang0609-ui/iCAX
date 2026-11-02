@@ -89,7 +89,7 @@ assert.equal(editDrawingFeature(editing,"redo"),true);
 const saved=getDrawingPayload(editing);
 assert.deepEqual(saved.features[0].skippedInstances,["0:3","1:3","2:3"]);
 assert.equal(saved.features[0].arrayEditing,undefined);
-const reopened=createDrawingState({entityId:"reopened",length:1000,properties:{"tubeDesigner.partDrawing":JSON.parse(JSON.stringify(saved))}});
+const reopened=createDrawingState({entityId:"draft-copy",length:1000},JSON.parse(JSON.stringify(saved)));
 installDrawingCatalogue(reopened,{tools:[tool]});
 assert.equal(drawingArraySkipText(reopened.features[0]),"4:*");
 assert.deepEqual(getDrawingPayload(reopened).features[0].skippedInstances,saved.features[0].skippedInstances);

@@ -16,9 +16,11 @@ namespace iCAX
     class CRepositoryUndoRedoHistoryScope final : public iCAX::Database::IRepositoryUndoScope
     {
     public:
-        explicit CRepositoryUndoRedoHistoryScope(IN iCAX::Database::CRepositoryUndoRedoHistory& History_)
+        explicit CRepositoryUndoRedoHistoryScope(IN iCAX::Database::CRepositoryUndoRedoHistory& History_,
+            std::function<void(const COperationBatch&)> Rollback_)
             : m_History(History_)
             , m_bCompleted(false)
+            , m_Rollback(std::move(Rollback_))
         {
         }
 
@@ -45,15 +47,38 @@ namespace iCAX
             m_History.EndCommand();
             m_bCompleted = true;
         }
+        void EndWithoutHistory() override
+        {
+            if(m_bCompleted)return;
+            m_History.EndCommand(false);m_bCompleted=true;
+        }
 
         bool IsCompleted() const override
         {
             return m_bCompleted;
         }
 
+        void Cancel() override
+        {
+            if (m_bCompleted) return;
+            // Replay notifies observers synchronously; reentrant End/Cancel
+            // must not publish the command we are discarding.
+            m_bCompleted = true;
+            try { m_History.CancelCommand(m_Rollback); }
+            catch (...) { m_bCompleted = false; throw; }
+        }
+
+        void IncludeObservableProperty(const iCAX::Data::uuid& EntityID_,
+            const std::string& Class_, const std::string& Property_) override
+        {
+            if (m_bCompleted) throw std::logic_error("Undo scope is already completed");
+            m_History.IncludeObservableProperty(EntityID_, Class_, Property_);
+        }
+
     private:
         iCAX::Database::CRepositoryUndoRedoHistory& m_History;
         bool m_bCompleted;
+        std::function<void(const COperationBatch&)> m_Rollback;
     };
     }
 }
@@ -74,7 +99,8 @@ iCAX::Database::CRepositoryUndoRedoHistory::CRepositoryUndoRedoHistory(IN std::s
     }
 }
 
-std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositoryUndoRedoHistory::BeginCommand(IN const std::string& strName_)
+std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositoryUndoRedoHistory::BeginCommand(IN const std::string& strName_,
+    std::function<void(const COperationBatch&)> Rollback_)
 {
     if (strName_.empty())
     {
@@ -86,8 +112,10 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
     }
 
     m_pCommandBuilder = std::make_unique<COperationBatchBuilder>(EOperationBatchKind::UserCommand, strName_);
+    m_RetainedDerivedEntities.clear();
     m_CommandBatches.clear();
-    return std::make_unique<CRepositoryUndoRedoHistoryScope>(*this);
+    m_IncludedObservableProperties.clear();
+    return std::make_unique<CRepositoryUndoRedoHistoryScope>(*this, std::move(Rollback_));
 }
 
 bool iCAX::Database::CRepositoryUndoRedoHistory::IsRecording() const
@@ -111,8 +139,10 @@ void iCAX::Database::CRepositoryUndoRedoHistory::HandleCommittedOperationBatch(I
 
 void iCAX::Database::CRepositoryUndoRedoHistory::Clear()
 {
+    m_RetainedDerivedEntities.clear();
     m_pCommandBuilder.reset();
     m_CommandBatches.clear();
+    m_IncludedObservableProperties.clear();
     m_UndoStack.clear();
     m_RedoStack.clear();
 }
@@ -176,40 +206,82 @@ std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CReposito
     return GetStepArray(m_RedoStack);
 }
 
-void iCAX::Database::CRepositoryUndoRedoHistory::EndCommand()
+void iCAX::Database::CRepositoryUndoRedoHistory::EndCommand(bool RecordHistory_)
 {
     if (!m_pCommandBuilder)
     {
         return;
     }
 
-    auto _pBuilder = std::move(m_pCommandBuilder);
-    auto _CommittedBatches = std::move(m_CommandBatches);
+    auto _Batch = RecordHistory_ ? BuildCurrentCommand() : COperationBatch{};
+    m_RetainedDerivedEntities.clear();
+    m_pCommandBuilder.reset();
     m_CommandBatches.clear();
-
-    // End 时才做 meta 过滤：记录阶段保留原始顺序，结束阶段只剔除不可撤销字段。
-    auto _Batch = _pBuilder->Take();
-    std::size_t _OperationCount = 0;
-    for (const auto& _Committed : _CommittedBatches)
-        _OperationCount += _Committed->Operations.size();
-    _Batch.Operations.reserve(_OperationCount);
-    for (const auto& _Committed : _CommittedBatches)
-    {
-        auto _Transactional = FilterTransactionalOperationBatch(*_Committed, GetMetaRegistry());
-        _Batch.Operations.insert(_Batch.Operations.end(),
-            std::make_move_iterator(_Transactional.Operations.begin()),
-            std::make_move_iterator(_Transactional.Operations.end()));
-    }
-    if (_Batch.IsEmpty())
-    {
-        return;
-    }
-
+    m_IncludedObservableProperties.clear();
+    if (_Batch.IsEmpty()) return;
     auto _pStep = std::make_shared<CHistoryStep>();
     _pStep->ID = iCAX::Data::GenerateNewUUID();
     _pStep->Name = _Batch.Name;
     _pStep->Batch = std::move(_Batch);
     PushStep(_pStep);
+}
+
+iCAX::Database::COperationBatch iCAX::Database::CRepositoryUndoRedoHistory::BuildCurrentCommand(bool RetainDerived_) const
+{
+    auto _Batch = m_pCommandBuilder->Build();
+    std::size_t _OperationCount = 0;
+    for (const auto& _Committed : m_CommandBatches)
+        _OperationCount += _Committed->Operations.size();
+    _Batch.Operations.reserve(_OperationCount);
+    for (const auto& _Committed : m_CommandBatches)
+    {
+        auto _Transactional = FilterUndoCommandOperationBatch(*_Committed, GetMetaRegistry(),
+            m_IncludedObservableProperties);
+        _Batch.Operations.insert(_Batch.Operations.end(),
+            std::make_move_iterator(_Transactional.Operations.begin()),
+            std::make_move_iterator(_Transactional.Operations.end()));
+    }
+    if (RetainDerived_)
+        std::erase_if(_Batch.Operations, [this](const auto& operation) {
+            return m_RetainedDerivedEntities.contains(operation.EntityID);
+        });
+    return _Batch;
+}
+
+void iCAX::Database::CRepositoryUndoRedoHistory::CancelCommand(
+    const std::function<void(const COperationBatch&)>& Rollback_)
+{
+    if (!m_pCommandBuilder) return;
+    const auto batch = BuildCurrentCommand(false);
+    if (!batch.IsEmpty()) {
+        if (!Rollback_) throw std::logic_error("Undo cancellation requires its repository rollback handler");
+        // Keep the pending command until rollback succeeds, allowing a caller
+        // to retry safely if a replay validator rejects the inverse batch.
+        Rollback_(batch);
+    }
+    m_pCommandBuilder.reset();
+    m_CommandBatches.clear();
+    m_IncludedObservableProperties.clear();
+    m_RetainedDerivedEntities.clear();
+}
+
+void iCAX::Database::CRepositoryUndoRedoHistory::RetainDerivedEntity(const iCAX::Data::uuid& EntityID_)
+{
+    if (!IsRecording()) throw std::logic_error("Derived receipt retention requires an active undo command");
+    m_RetainedDerivedEntities.insert(EntityID_);
+}
+
+void iCAX::Database::CRepositoryUndoRedoHistory::IncludeObservableProperty(
+    const iCAX::Data::uuid& EntityID_, const std::string& Class_, const std::string& Property_)
+{
+    if (!m_pCommandBuilder) throw std::logic_error("No active undo command");
+    const auto& meta = GetMetaRegistry();
+    if (!meta.HasTypeByName(Class_) || !meta.HasPropertyByName(Class_, Property_)
+        || meta.GetPropertyKindByName(Class_, Property_) != EPropertyKind::Value
+        || meta.GetPropertyChangePolicyByName(Class_, Property_) != EPropertyChangePolicy::Observable
+        || meta.GetPropertyPersistenceByName(Class_, Property_) != EPropertyPersistence::Persistent)
+        throw std::invalid_argument("Undo inclusion requires a persistent Observable value property");
+    m_IncludedObservableProperties.emplace(EntityID_, Class_, Property_);
 }
 
 const iCAX::Database::IMetaRegistry& iCAX::Database::CRepositoryUndoRedoHistory::GetMetaRegistry() const

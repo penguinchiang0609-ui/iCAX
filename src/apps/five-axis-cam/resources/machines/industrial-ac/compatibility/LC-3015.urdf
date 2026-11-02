@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="iCAX LC-3015 五轴激光加工中心">
+  <!-- Endpoint compatibility declaration for the original LC-3015 link frames. Metadata only; never instantiate this descriptor. The original authored nozzle is at local (0,0,-220) mm. -->
+  <link name="床身与导轨">
+  </link>
+  <link name="工作台">
+    <icax_work_support />
+  </link>
+  <link name="X 龙门横梁">
+  </link>
+  <link name="Y 滑鞍">
+  </link>
+  <link name="Z 滑枕">
+  </link>
+  <link name="C 回转叉架">
+  </link>
+  <link name="A 激光切割头">
+    <icax_tool name="LC-3015 原始坐标系物理喷嘴" type="laser_cutting_head" tcp_mm="0 0 -220" beam="0 0 -1" />
+  </link>
+  <link name="外罩（剖视）">
+  </link>
+  <link name="电气柜">
+  </link>
+  <link name="操作台">
+  </link>
+  <joint name="table_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="工作台" />
+    <origin xyz="0.0 0.0 0.0" />
+  </joint>
+  <joint name="X" type="prismatic">
+    <parent link="床身与导轨" />
+    <child link="X 龙门横梁" />
+    <origin xyz="-0.43 0.0 0.0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-1.5" upper="1.5" velocity="1.2" effort="5000" />
+  </joint>
+  <joint name="Y" type="prismatic">
+    <parent link="X 龙门横梁" />
+    <child link="Y 滑鞍" />
+    <origin xyz="0.0 0.0 0.0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-0.75" upper="0.75" velocity="1.2" effort="5000" />
+  </joint>
+  <joint name="Z" type="prismatic">
+    <parent link="Y 滑鞍" />
+    <child link="Z 滑枕" />
+    <origin xyz="0.43 0.0 0.65" />
+    <axis xyz="0 0 1" />
+    <limit lower="-0.45" upper="0.15" velocity="0.8" effort="5000" />
+  </joint>
+  <joint name="C" type="revolute">
+    <parent link="Z 滑枕" />
+    <child link="C 回转叉架" />
+    <origin xyz="0.0 0.0 0.0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.141592653589793" upper="3.141592653589793" velocity="1.5" effort="5000" />
+  </joint>
+  <joint name="A" type="revolute">
+    <parent link="C 回转叉架" />
+    <child link="A 激光切割头" />
+    <origin xyz="0.0 0.0 -0.22" />
+    <axis xyz="1 0 0" />
+    <limit lower="-2.09439510239" upper="2.09439510239" velocity="1.5" effort="5000" />
+  </joint>
+  <joint name="enclosure_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="外罩（剖视）" />
+    <origin xyz="0.0 0.0 0.0" />
+  </joint>
+  <joint name="cabinet_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="电气柜" />
+    <origin xyz="0.0 0.0 0.0" />
+  </joint>
+  <joint name="console_mount" type="fixed">
+    <parent link="床身与导轨" />
+    <child link="操作台" />
+    <origin xyz="0.0 0.0 0.0" />
+  </joint>
+</robot>

@@ -46,7 +46,7 @@
     <Manifest Include="Application.manifest">
       <Filter>资源文件</Filter>
     </Manifest>
-    <ResourceCompile Include="Application.rc">
+    <ResourceCompile Include="$(ICAXApplicationResourceFile)">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>

@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {resolve} from 'node:path';
+import {mkdirSync,writeFileSync} from 'node:fs';
+const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'C:/Users/pengu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const output=resolve(process.env.ICAX_BROWSER_REPORT_DIRECTORY||'output/tests/cam-ribbon-create-20261031/desktop');mkdirSync(output,{recursive:true});
+const browser=await chromium.connectOverCDP('http://127.0.0.1:9589');
+const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().endsWith('/AppShell/index.html'));assert.ok(page);page.setDefaultTimeout(45000);
+const report={passed:false,standaloneCef:true,nativeQueue:true,sourceProject:process.env.ICAX_CREATION_USE_CURRENT?'current active project':'HatRail batch-created copy',errors:[]};
+page.on('pageerror',e=>report.errors.push(e.message));
+try{
+ await page.waitForFunction(()=>__icaxAppShell?.getState().startupPhase==='ready');
+ if(!process.env.ICAX_CREATION_USE_CURRENT)await page.evaluate(path=>__icaxAppShell.openProject(path,'icax.five-axis-cam'),resolve('output/tests/cam-ribbon-create-20261031/hatrail-native-browser/batch-created.i5cam'));
+ await page.evaluate(async()=>{const {getProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.creationDesktop={get view(){return getProjectView(__icaxAppShell.getState().activeProjectId);}};});
+ const idle=()=>page.waitForFunction(()=>!__icaxAppShell.getState().pendingCount&&!creationDesktop.view.pending&&!!creationDesktop.view.scene?.domain);
+ await idle();await page.locator('[data-tab-id="toolpath"]').click();await idle();await page.evaluate(()=>__icaxAppShell.executeRibbonCommand('five.cam-page.cutting'));await idle();
+ await page.waitForFunction(()=>creationDesktop.view.viewport?.sceneObjects.get(creationDesktop.view.scene.activePlacementId)?.geometry);
+ const read=()=>page.evaluate(()=>creationDesktop.view.viewportSceneProxy.invoke('CamScene.ReadState',{})),before=await read();
+ if(!process.env.ICAX_CREATION_USE_CURRENT)assert.equal(before.intentToolpaths.length,18);
+ assert.equal(await page.locator('.cam-context-pane [data-five-command="five.tree.Delete"],.cam-context-pane [data-five-command="five.tool.extract"]').count(),0);
+ const mergeArrow=page.locator('.ribbon-command-menu-toggle[data-command-id="five.path.merge"]');
+ await mergeArrow.click();const tolerance=page.getByRole('textbox',{name:'合并容差',exact:true});assert.equal(await tolerance.isVisible(),true);await page.screenshot({path:resolve(output,'merge-tolerance.png')});await tolerance.fill('0.075');await tolerance.press('Enter');assert.equal(await tolerance.count(),0);
+ await mergeArrow.click();assert.equal(await tolerance.inputValue(),'0.075');await tolerance.press('Escape');
+ const buttons=page.locator('.ribbon-command[data-command-id^="five.extraction.begin."]');
+ assert.deepEqual(await buttons.allTextContents().then(xs=>xs.map(x=>x.trim())),['批量识别','选边','选加工面']);
+ assert.equal(await buttons.locator('svg').count(),3);assert.equal(await page.locator('.ribbon-command-menu-toggle[data-command-id="five.extraction.begin"]').count(),0);
+ const rects=await buttons.evaluateAll(ns=>ns.map(n=>n.getBoundingClientRect().toJSON()));assert.ok(rects.every(r=>r.top===rects[0].top));assert.ok(rects[1].left>=rects[0].right&&rects[2].left>=rects[1].right);
+ await page.screenshot({path:resolve(output,'ribbon-direct-create.png')});
+ for(const mode of ['Edges','Region','Faces']){
+   await page.locator(`.ribbon-command[data-command-id="five.extraction.begin.${mode}"]`).click();await idle();
+   assert.equal(await page.evaluate(()=>__icaxAppShell.getState().error),'');assert.equal(await page.evaluate(()=>creationDesktop.view.error),'');
+   assert.equal(await page.evaluate(async()=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return extractionDraft(creationDesktop.view).extraction.mode}),mode);
+   const panel=page.locator('.cam-info-pane [data-five-key="extraction-panel"]');await panel.waitFor();
+   assert.equal(await page.locator('.five-overlay [data-five-key="extraction-panel"], [data-five-key="extraction-dialog"]').count(),0);
+   assert.equal(await page.getByRole('dialog',{name:'添加刀路',exact:true}).count(),0);
+   assert.equal(await page.locator('[data-five-command^="five.extraction.mode."]').count(),0);
+   assert.equal(await page.locator(`.ribbon-command[data-command-id="five.extraction.begin.${mode}"]`).evaluate(n=>n.classList.contains('active')),true);
+   const box=await panel.boundingBox(),pane=await page.locator('.cam-info-pane').boundingBox();assert.ok(box.x>=pane.x&&box.x+box.width<=pane.x+pane.width+1);
+ }
+ const draftBeforeRepeat=await page.evaluate(async()=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return JSON.stringify(extractionDraft(creationDesktop.view).extraction)});
+ await page.locator('.ribbon-command[data-command-id="five.extraction.begin.Faces"]').click();await idle();
+ assert.equal(await page.evaluate(async()=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return JSON.stringify(extractionDraft(creationDesktop.view).extraction)}),draftBeforeRepeat);
+ const scope=page.getByRole('group',{name:'识别范围',exact:true});assert.equal(await scope.getByRole('checkbox').count(),2);assert.equal(await page.locator('select[data-five-extraction-scope]').count(),0);
+ const setScope=async value=>{await page.getByRole('checkbox',{name:'内孔',exact:true}).setChecked(value==='inner'||value==='all');await page.getByRole('checkbox',{name:'外轮廓',exact:true}).setChecked(value==='outer'||value==='all');};
+ assert.equal(await scope.locator('xpath=..').getAttribute('class'),'five-position-actions');
+ const scopeBox=await scope.boundingBox(),confirmBox=await page.locator('[data-five-command="five.extraction.confirm"]').boundingBox();assert.ok(scopeBox.y+scopeBox.height<=confirmBox.y+1);
+ assert.equal(await page.locator('[data-five-command="five.extraction.run"]').count(),0);
+ const selectedFaces=await page.evaluate(async()=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return JSON.stringify(extractionDraft(creationDesktop.view).extraction.faces)});
+ for(const value of ['inner','outer','none','all']){await setScope(value);await page.waitForFunction(async value=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return extractionDraft(creationDesktop.view).extraction.boundaryScope===value},value);assert.equal(await page.evaluate(async()=>{const {extractionDraft}=await import('../../../apps/five-axis-cam/webpage/extractionActions.mjs');return JSON.stringify(extractionDraft(creationDesktop.view).extraction.faces)}),selectedFaces);if(value==='none')assert.equal(await page.locator('[data-five-command="five.extraction.confirm"]').isDisabled(),true);}
+ report.recognitionCheckboxes=true;
+ await page.getByLabel('加工观察方向',{exact:true}).click();await page.waitForFunction(()=>!!creationDesktop.view.fiveExtractionDirection);
+ const direction=page.getByRole('textbox',{name:'加工观察方向 Z',exact:true});await direction.fill('-2');
+ await direction.evaluate(n=>{window.creationDockEvents=0;window.creationDockNodes={input:n,canvas:creationDesktop.view.viewport.renderer.domElement};n.focus({preventScroll:true});n.setSelectionRange(0,2);n.addEventListener('creation-probe',()=>window.creationDockEvents++)});
+ await page.evaluate(()=>__icaxAppShell.executeRibbonCommand('five.display.numbers'));
+ report.dockedInput=await direction.evaluate(n=>{n.dispatchEvent(new Event('creation-probe'));return {sameInput:n===creationDockNodes.input,sameCanvas:creationDockNodes.canvas===creationDesktop.view.viewport.renderer.domElement,focused:document.activeElement===n,selection:[n.selectionStart,n.selectionEnd],events:creationDockEvents}});
+ assert.deepEqual(report.dockedInput,{sameInput:true,sameCanvas:true,focused:true,selection:[0,2],events:1});
+ const scrollStyle=await page.addStyleTag({content:'.cam-context-pane,.cam-info-pane{height:300px!important;display:block!important;overflow:auto!important}.cam-context-pane::after,.cam-info-pane::after{content:"";display:block;min-height:1000px}.five-path-list{height:130px!important;flex:none!important;overflow:auto!important}.five-path-list::after{content:"";display:block;min-height:1000px}'});
+ await page.evaluate(()=>{creationDockNodes.search=document.querySelector('[data-five-search]');window.creationLateRefresh=new Promise(resolve=>{window.creationRelease=()=>{creationDockNodes.input.dispatchEvent(new CustomEvent('five-snap-state',{bubbles:true}));resolve();};});});
+ const latestScrolls=await page.evaluate(()=>{const n=creationDockNodes.input;n.focus({preventScroll:true});n.setSelectionRange(1,2);return ['.cam-context-pane','.cam-info-pane','.five-path-list'].map((s,i)=>{const node=document.querySelector(s);node.scrollTop=65+i*30;return node.scrollTop;});});
+ assert.ok(latestScrolls.every(n=>n>0));await page.evaluate(()=>creationRelease());await page.evaluate(()=>creationLateRefresh);
+ report.delayedRefresh=await page.evaluate(()=>({sameInput:creationDockNodes.input===document.querySelector('[data-five-extraction-direction="2"]'),sameCanvas:creationDockNodes.canvas===creationDesktop.view.viewport.renderer.domElement,sameSearch:creationDockNodes.search===document.querySelector('[data-five-search]'),focused:document.activeElement===creationDockNodes.input,selection:[creationDockNodes.input.selectionStart,creationDockNodes.input.selectionEnd],scrolls:['.cam-context-pane','.cam-info-pane','.five-path-list'].map(s=>document.querySelector(s).scrollTop)}));
+ assert.deepEqual(report.delayedRefresh,{sameInput:true,sameCanvas:true,sameSearch:true,focused:true,selection:[1,2],scrolls:latestScrolls});
+ await scrollStyle.evaluate(n=>n.remove());
+ await page.screenshot({path:resolve(output,'batch-direction.png')});
+ await page.getByRole('textbox',{name:'加工观察方向 Z',exact:true}).press('Escape');
+ await page.locator('[data-five-command="five.extraction.close"]').first().click();await idle();
+ const after=await read();for(const key of ['intentToolpaths','workpieces','placements','setups','fixtures','fixtureUnits'])assert.deepEqual(after[key],before[key],key);
+ assert.deepEqual(report.errors,[]);report.passed=true;report.cutCount=after.intentToolpaths.length;report.tolerancePopover=true;report.directCreationModes=['Faces','Edges','Region'];report.dockedCreation=true;report.repeatKeepsSelection=true;report.observationArrow=true;report.geometryAndPosesUnchanged=true;
+ await page.screenshot({path:resolve(output,'cam-ready.png')});
+}catch(error){report.failure=error.stack;await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});throw error;}
+finally{writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));await browser.close();}
+console.log(JSON.stringify(report,null,2));

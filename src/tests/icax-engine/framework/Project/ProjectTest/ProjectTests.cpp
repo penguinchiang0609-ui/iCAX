@@ -522,7 +522,7 @@ TEST(ProjectTest, SettingsAreInitializedFromCreateInfo)
     _Info.Settings.Set("unit.angle", std::string("Degree"));
     _Info.Settings.Set("geometry.defaultTolerance", 0.001);
     _Info.Settings.Set("coordinate.project", std::string("LaserPartCS"));
-    _Info.Settings.Set("defaultLayer", "laser3dcam.toolpath", std::string("outer-cut"));
+    _Info.Settings.Set("defaultLayer", "test.toolpath", std::string("outer-cut"));
 
     CProject _Project(_Info);
 
@@ -533,7 +533,7 @@ TEST(ProjectTest, SettingsAreInitializedFromCreateInfo)
     EXPECT_EQ(
         "outer-cut",
         _Project.Settings()
-            .Get("defaultLayer", "laser3dcam.toolpath", iCAX::Data::Variant())
+            .Get("defaultLayer", "test.toolpath", iCAX::Data::Variant())
             .To<std::string>());
     EXPECT_EQ(
         "fallback",
@@ -1183,6 +1183,157 @@ TEST(ProjectQuickSaveTest, MarkProjectFileSavedTruncatesAndReopensLog)
     EXPECT_GT(std::filesystem::file_size(_Project.GetQuickSaveLogPath()), _HeaderOnlyLogSize);
 
     RemoveProjectFiles(_ProjectPath);
+}
+
+namespace
+{
+    std::string ReadQuickSaveTestFile(const std::filesystem::path& Path_)
+    {
+        std::ifstream _Input(Path_, std::ios::binary);
+        return {std::istreambuf_iterator<char>(_Input), std::istreambuf_iterator<char>()};
+    }
+
+    std::shared_ptr<iCAX::Database::CComponentBase> AddQuickSaveTestValue(CProject& Project_)
+    {
+        auto _Entity = Project_.MainSceneDatabase().CreateEntity(iCAX::Data::GenerateNewUUID());
+        auto _Component = _Entity->AddComponent(S_QuickSaveComponentClass);
+        if (!_Component->SetProperty("Value", iCAX::Data::PropertyValue(1)))
+            throw std::runtime_error("Cannot initialize quick-save test value");
+        return _Component;
+    }
+}
+
+TEST(ProjectQuickSaveTest, SaveAsRetiresOnlyTheOldSessionJournalAndPreservesOriginalArchive)
+{
+    const auto _Original = MakeTempProjectPath();
+    const auto _SavedAs = MakeTempProjectPath();
+    { std::ofstream _File(_Original, std::ios::binary); _File << "original saved archive"; }
+    { std::ofstream _File(_SavedAs, std::ios::binary); _File << "completed new archive"; }
+    const auto _OriginalBytes = ReadQuickSaveTestFile(_Original);
+    auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+    CProject _Project(_Info);
+    _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    const auto _Component = AddQuickSaveTestValue(_Project);
+    const auto _OldLog = _Project.GetQuickSaveLogPath();
+    ASSERT_TRUE(std::filesystem::exists(_OldLog));
+
+    _Project.MarkProjectFileSaved(_SavedAs.string(), S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+
+    EXPECT_EQ(_OriginalBytes, ReadQuickSaveTestFile(_Original));
+    EXPECT_EQ("completed new archive", ReadQuickSaveTestFile(_SavedAs));
+    EXPECT_FALSE(std::filesystem::exists(_OldLog));
+    EXPECT_EQ(_SavedAs.string(), _Project.GetProjectPath());
+    EXPECT_EQ(_SavedAs.string() + ".log", _Project.GetQuickSaveLogPath());
+    ASSERT_TRUE(_Project.IsQuickSaveLogOpen());
+    const auto _HeaderSize = std::filesystem::file_size(_Project.GetQuickSaveLogPath());
+    ASSERT_TRUE(_Component->SetProperty("Value", iCAX::Data::PropertyValue(2)));
+    _Project.CloseQuickSaveLog();
+    EXPECT_GT(std::filesystem::file_size(_SavedAs.string() + ".log"), _HeaderSize);
+    EXPECT_FALSE(std::filesystem::exists(_OldLog));
+    RemoveProjectFiles(_Original); RemoveProjectFiles(_SavedAs);
+}
+
+TEST(ProjectQuickSaveTest, SamePathAndCaseOrDotAliasesKeepTheReopenedJournal)
+{
+    for (const int _Alias : {0, 1, 2})
+    {
+        const auto _Original = MakeTempProjectPath();
+        auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+        CProject _Project(_Info);
+        _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+        const auto _Component = AddQuickSaveTestValue(_Project);
+        auto _Destination = _Alias == 1
+            ? (_Original.parent_path() / "." / _Original.filename()).string() : _Original.string();
+        if (_Alias == 2)
+            for (auto& _Character : _Destination)
+                if (_Character >= 'a' && _Character <= 'z') _Character -= 'a' - 'A';
+        _Project.MarkProjectFileSaved(_Destination, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+        ASSERT_TRUE(std::filesystem::exists(_Original.string() + ".log"));
+        const auto _HeaderSize = std::filesystem::file_size(_Original.string() + ".log");
+        ASSERT_TRUE(_Component->SetProperty("Value", iCAX::Data::PropertyValue(2)));
+        _Project.CloseQuickSaveLog();
+        EXPECT_GT(std::filesystem::file_size(_Original.string() + ".log"), _HeaderSize);
+        RemoveProjectFiles(_Original);
+    }
+}
+
+TEST(ProjectQuickSaveTest, EquivalentJournalFilesAreNotRetired)
+{
+    const auto _Original = MakeTempProjectPath();
+    const auto _SavedAs = MakeTempProjectPath();
+    auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+    CProject _Project(_Info);
+    _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    const auto _Component = AddQuickSaveTestValue(_Project);
+    std::filesystem::create_hard_link(_Original.string() + ".log", _SavedAs.string() + ".log");
+    _Project.MarkProjectFileSaved(_SavedAs.string(), S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    EXPECT_TRUE(std::filesystem::exists(_Original.string() + ".log"));
+    ASSERT_TRUE(std::filesystem::exists(_SavedAs.string() + ".log"));
+    ASSERT_TRUE(_Component->SetProperty("Value", iCAX::Data::PropertyValue(2)));
+    _Project.CloseQuickSaveLog();
+    EXPECT_EQ(ReadQuickSaveTestFile(_Original.string() + ".log"), ReadQuickSaveTestFile(_SavedAs.string() + ".log"));
+    RemoveProjectFiles(_Original); RemoveProjectFiles(_SavedAs);
+}
+
+TEST(ProjectQuickSaveTest, SaveAsJournalOpenFailurePreservesAndReopensTheOriginalLog)
+{
+    const auto _Original = MakeTempProjectPath();
+    const auto _SavedAs = MakeTempProjectPath();
+    auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+    CProject _Project(_Info);
+    _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    const auto _Component = AddQuickSaveTestValue(_Project);
+    const auto _LogBytes = ReadQuickSaveTestFile(_Original.string() + ".log");
+    std::filesystem::create_directory(_SavedAs.string() + ".log");
+
+    EXPECT_THROW(_Project.MarkProjectFileSaved(_SavedAs.string(), S_TestQuickSaveLogMagic,
+        S_TestQuickSaveLogVersion), std::runtime_error);
+    EXPECT_EQ(_Original.string(), _Project.GetProjectPath());
+    EXPECT_EQ(_Original.string() + ".log", _Project.GetQuickSaveLogPath());
+    EXPECT_EQ(_LogBytes, ReadQuickSaveTestFile(_Original.string() + ".log"));
+    ASSERT_TRUE(_Project.IsQuickSaveLogOpen());
+    ASSERT_TRUE(_Component->SetProperty("Value", iCAX::Data::PropertyValue(2)));
+    _Project.CloseQuickSaveLog();
+    EXPECT_GT(ReadQuickSaveTestFile(_Original.string() + ".log").size(), _LogBytes.size());
+    std::filesystem::remove(_SavedAs.string() + ".log");
+    RemoveProjectFiles(_Original); RemoveProjectFiles(_SavedAs);
+}
+
+TEST(ProjectQuickSaveTest, SaveAsInvalidDestinationParentLeavesOriginalLogOpenAndUnchanged)
+{
+    const auto _Original = MakeTempProjectPath();
+    const auto _BlockingFile = MakeTempProjectPath();
+    auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+    CProject _Project(_Info);
+    _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    const auto _Component = AddQuickSaveTestValue(_Project);
+    const auto _LogBytes = ReadQuickSaveTestFile(_Original.string() + ".log");
+    EXPECT_THROW(_Project.MarkProjectFileSaved((_BlockingFile / "failed.ictd").string(),
+        S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion), std::filesystem::filesystem_error);
+    EXPECT_EQ(_Original.string(), _Project.GetProjectPath());
+    EXPECT_EQ(_LogBytes, ReadQuickSaveTestFile(_Original.string() + ".log"));
+    ASSERT_TRUE(_Project.IsQuickSaveLogOpen());
+    ASSERT_TRUE(_Component->SetProperty("Value", iCAX::Data::PropertyValue(2)));
+    _Project.CloseQuickSaveLog();
+    EXPECT_GT(ReadQuickSaveTestFile(_Original.string() + ".log").size(), _LogBytes.size());
+    RemoveProjectFiles(_Original); RemoveProjectFiles(_BlockingFile);
+}
+
+TEST(ProjectQuickSaveTest, SaveAsDoesNotRetireAJournalTheSessionDoesNotOwn)
+{
+    const auto _Original = MakeTempProjectPath();
+    const auto _SavedAs = MakeTempProjectPath();
+    auto _Info = MakeProjectInfo(); _Info.ProjectPath = _Original.string();
+    CProject _Project(_Info);
+    _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    AddQuickSaveTestValue(_Project);
+    _Project.CloseQuickSaveLog();
+    const auto _LogBytes = ReadQuickSaveTestFile(_Original.string() + ".log");
+    _Project.MarkProjectFileSaved(_SavedAs.string(), S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
+    EXPECT_EQ(_LogBytes, ReadQuickSaveTestFile(_Original.string() + ".log"));
+    EXPECT_TRUE(_Project.IsQuickSaveLogOpen());
+    _Project.CloseQuickSaveLog();
+    RemoveProjectFiles(_Original); RemoveProjectFiles(_SavedAs);
 }
 
 TEST(ProjectQuickSaveTest, CloseDoesNotAppendRepositoryCleanup)

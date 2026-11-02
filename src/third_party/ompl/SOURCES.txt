@@ -1,0 +1,15 @@
+OMPL 2.0.2, released 2026-08-14, BSD 3-clause.
+Upstream: https://github.com/ompl/ompl/releases/tag/2.0.2
+Source archive: https://codeload.github.com/ompl/ompl/tar.gz/refs/tags/2.0.2
+SHA256: D867190A46A7F730923475A68AF2E09FC9E796017A59BE395A4BF3900D0C3AE4
+Unmodified upstream core sources, matching the directory set in upstream
+src/ompl/CMakeLists.txt. Demos, Python and optional extensions are excluded.
+Boost 1.87.0 and Eigen 3.4.0 are shared with the pinned Coal dependencies.
+Boost.Serialization sources are linked statically. Debug uses the Debug CRT
+and STL ABI with optimized algorithms, matching the host process.
+OMPL does not implement CAD collision or machining policies. The neutral
+IConfigurationPathPlanningService accepts numerical axes and caller-supplied
+state and entire-motion validators. The current evaluation uses RRTConnect,
+an initial direct-path check and bounded path simplification. Timeouts and
+invalid endpoints are reported explicitly; approximate goals are rejected.
+This evaluation module is not enabled in the production product manifest.

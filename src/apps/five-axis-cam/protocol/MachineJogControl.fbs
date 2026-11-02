@@ -1,0 +1,10 @@
+namespace iCAX.FiveAxisCAM;
+file_identifier "F5JC";
+table MachineJogControl {
+  schema_version:uint = 1;
+  token:string (required);
+  epoch:string (required);
+  sequence:ulong;
+  held:bool; // A NEW sequence is required for every dead-man heartbeat.
+}
+root_type MachineJogControl;

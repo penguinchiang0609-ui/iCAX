@@ -3,7 +3,8 @@ import { buildPartDrawingPreviewRows } from "./partDrawingPreview.mjs";
 // A side sketch preview owns neutral resources only. It never creates a scene
 // entity and never shares the part-drawing editor's state or viewport lifetime.
 const controllers = new WeakMap();
-const keyFor = preview => JSON.stringify([preview?.baseGeometry, preview?.baseMaterial, preview?.baseBounds]);
+const keyFor = preview => JSON.stringify([preview?.geometry, preview?.material,
+  preview?.baseGeometry, preview?.baseMaterial, preview?.bounds ?? preview?.baseBounds]);
 
 function owned(controller) {
   return controllers.get(controller.mount) === controller
@@ -40,6 +41,7 @@ export function attachSideSketchPreview(context, view, mount, ops = {}) {
     || controller.sceneProxy !== context.sceneProxy)) disposeSideSketchPreview(mount), controller = null;
   if (!controller) {
     controller = { mount, context, view, state, host, partId: state.targetPartId, sceneProxy: context.sceneProxy,
+      releaseMethod: state.sideCadSession ? "TubeDesigner.ReleaseTubeCadDocumentPreview" : "TubeDesigner.ReleaseNestingSideSketchPreview",
       previewResourceKey: state.sidePreviewResourceKey, viewport: null, key: null, desiredKey: null, sequence: 0, flight: null };
     controllers.set(mount, controller);
   }
@@ -74,7 +76,10 @@ export function attachSideSketchPreview(context, view, mount, ops = {}) {
       viewport.mount(controller.host);
       viewport.setStandardView("iso");
     }
-    const rows = buildPartDrawingPreviewRows(preview);
+    // This viewport displays the actual piece. Source stock bounds can extend
+    // outside a trimmed or selected component and must not move its presentation
+    // when a live preview replaces the persisted thumbnail.
+    const rows = buildPartDrawingPreviewRows({ ...preview, baseBounds: preview.bounds ?? preview.baseBounds });
     const references = rows.flatMap(row => [row.data.geometry, row.data.material]).filter(Boolean);
     const receipt = await controller.viewport.applyViewSnapshot({ revision: `side-sketch:${sequence}`, rows }, controller.sceneProxy.resources);
     if (!current()) return false;
@@ -117,21 +122,22 @@ export function disposeSideSketchPreview(mount) {
   controller.viewport?.dispose();
   if (controller.state.sidePreviewResourceKey === controller.previewResourceKey)
     releaseSideSketchPreview({ sceneProxy: controller.sceneProxy }, controller.state);
-  else releasePreviewKey(controller.sceneProxy, controller.previewResourceKey);
+  else releasePreviewKey(controller.sceneProxy, controller.previewResourceKey, controller.releaseMethod);
 }
 
 export function releaseSideSketchPreview(context, state) {
   const previewResourceKey = state?.sidePreviewResourceKey;
   if (!previewResourceKey) return;
   state.sidePreviewResourceKey = null;
-  releasePreviewKey(context.sceneProxy, previewResourceKey);
+  releasePreviewKey(state.sideCadSession?.sceneProxy ?? context.sceneProxy, previewResourceKey,
+    state.sideCadSession ? "TubeDesigner.ReleaseTubeCadDocumentPreview" : "TubeDesigner.ReleaseNestingSideSketchPreview");
 }
 
-function releasePreviewKey(sceneProxy, previewResourceKey) {
+function releasePreviewKey(sceneProxy, previewResourceKey, method = "TubeDesigner.ReleaseNestingSideSketchPreview") {
   if (!previewResourceKey) return;
   // Releasing transient presentation resources must not block cancel or save.
   try {
-    const request = sceneProxy?.invoke?.("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey });
+    const request = sceneProxy?.invoke?.(method, { previewResourceKey });
     Promise.resolve(request).catch(() => {});
   } catch {}
 }

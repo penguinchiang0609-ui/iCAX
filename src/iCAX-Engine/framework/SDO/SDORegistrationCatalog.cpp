@@ -3,6 +3,7 @@
 
 #include "SDORegistry.h"
 
+#include <filesystem>
 
 
 namespace
@@ -20,26 +21,29 @@ namespace
             return {};
         }
 
-        const auto _RequiredLength = GetFullPathNameA(strPath_.c_str(), 0, nullptr, nullptr);
+        const auto _WidePath = std::filesystem::path(std::u8string(
+            reinterpret_cast<const char8_t*>(strPath_.data()), strPath_.size())).wstring();
+        const auto _RequiredLength = GetFullPathNameW(_WidePath.c_str(), 0, nullptr, nullptr);
         if (_RequiredLength == 0)
         {
             return strPath_;
         }
 
-        std::vector<char> _Buffer(static_cast<size_t>(_RequiredLength) + 1);
-        const auto _Length = GetFullPathNameA(strPath_.c_str(), static_cast<DWORD>(_Buffer.size()), _Buffer.data(), nullptr);
+        std::vector<wchar_t> _Buffer(static_cast<size_t>(_RequiredLength) + 1);
+        const auto _Length = GetFullPathNameW(_WidePath.c_str(), static_cast<DWORD>(_Buffer.size()), _Buffer.data(), nullptr);
         if (_Length == 0 || _Length >= _Buffer.size())
         {
             return strPath_;
         }
 
-        std::string _Normalized(_Buffer.data(), _Length);
+        const auto _UTF8Path = std::filesystem::path(std::wstring(_Buffer.data(), _Length)).u8string();
+        std::string _Normalized(reinterpret_cast<const char*>(_UTF8Path.data()), _UTF8Path.size());
         std::replace(_Normalized.begin(), _Normalized.end(), '/', '\\');
         std::transform(
             _Normalized.begin(),
             _Normalized.end(),
             _Normalized.begin(),
-            [](IN const unsigned char ch_) { return static_cast<char>(std::tolower(ch_)); });
+            [](IN const char ch_) { return ch_ >= 'A' && ch_ <= 'Z' ? static_cast<char>(ch_ - 'A' + 'a') : ch_; });
         return _Normalized;
     }
 
@@ -51,25 +55,26 @@ namespace
         }
 
         HMODULE _Module = nullptr;
-        if (!GetModuleHandleExA(
+        if (!GetModuleHandleExW(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            reinterpret_cast<LPCSTR>(pAddress_),
+            reinterpret_cast<LPCWSTR>(pAddress_),
             &_Module))
         {
             return {};
         }
 
-        std::vector<char> _Buffer(MAX_PATH);
+        std::vector<wchar_t> _Buffer(MAX_PATH);
         while (true)
         {
-            const auto _Length = GetModuleFileNameA(_Module, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            const auto _Length = GetModuleFileNameW(_Module, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
             if (_Length == 0)
             {
                 return {};
             }
             if (_Length < _Buffer.size() - 1)
             {
-                return NormalizeModulePath(std::string(_Buffer.data(), _Length));
+                const auto _UTF8Path = std::filesystem::path(std::wstring(_Buffer.data(), _Length)).u8string();
+                return NormalizeModulePath(std::string(reinterpret_cast<const char*>(_UTF8Path.data()), _UTF8Path.size()));
             }
             _Buffer.resize(_Buffer.size() * 2);
         }

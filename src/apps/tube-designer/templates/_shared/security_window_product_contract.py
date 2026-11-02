@@ -41,6 +41,8 @@ def _logical_segment(item,parameters):
                                      else [[1.,0.],[0.,1.]]),
             'contours':deepcopy(item['properties']['tubeDesigner.profile']['contours'])}
     segment=deepcopy(item['properties']['tubeDesigner.designSegment'])
+    if segment.pop('logicalCenterline',False):
+        return segment
     start,end=segment['start'],segment['end']
     direction=unit(sub(end,start))
     key=item['key']
@@ -100,6 +102,7 @@ def _design(parameters,context,core):
                        package_digest=source['template']['packageDigest'],parameters=parameters)
     shared=core.SharedTubeGeometry(model)
     logical_segments = {item['key']: _logical_segment(item, parameters) for item in source['items']}
+    _runtime('security_window_escape_members').arrange(source, logical_segments, parameters)
     display_frames = _runtime('security_window_display_geometry')
     support_interval = _runtime('assembly_stock_allowance')._support_interval
     frame_ends = display_frames.frame_end_layout(logical_segments,

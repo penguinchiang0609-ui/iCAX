@@ -12,9 +12,40 @@
 #include <SDO/SDOText.h>
 #include <Product/ProductSDO.h>
 #include <ApplicationContext/UserDataStore.h>
+#include "../../../../../iCAX-Application/Application/ProductSelection.h"
+#include <sstream>
 
 
 using namespace iCAX::Application;
+
+TEST(ApplicationProductSelection, ReadsEveryConfiguredManifestRelativeToExecutable)
+{
+    const auto Root = std::filesystem::temp_directory_path() / "icax-startup-selection";
+    std::istringstream Input("\xEF\xBB\xBF# enabled products\r\n\r\n  apps/tube-designer/product.manifest.json  \r\napps/five-axis-cam/product.manifest.json\n");
+    const auto Paths = ReadProductSelection(Input, Root);
+    ASSERT_EQ(Paths.size(), 2);
+    EXPECT_EQ(Paths[0], std::filesystem::weakly_canonical(Root / "apps/tube-designer/product.manifest.json"));
+    EXPECT_EQ(Paths[1], std::filesystem::weakly_canonical(Root / "apps/five-axis-cam/product.manifest.json"));
+}
+
+TEST(ApplicationProductSelection, SupportsSingleAbsoluteManifestAndUtf8Paths)
+{
+    const auto Manifest = std::filesystem::temp_directory_path() / std::filesystem::path(u8"三维 CAM/product.manifest.json");
+    const auto Utf8 = Manifest.u8string();
+    std::istringstream Input(std::string(Utf8.begin(), Utf8.end()));
+    const auto Paths = ReadProductSelection(Input, std::filesystem::temp_directory_path() / "different-directory");
+    ASSERT_EQ(Paths.size(), 1);
+    EXPECT_EQ(Paths.front(), std::filesystem::weakly_canonical(Manifest));
+}
+
+TEST(ApplicationProductSelection, EmptyOrUnreadableSelectionDoesNotSilentlyEnableDefaultProduct)
+{
+    std::istringstream Empty("# no enabled products\r\n \t\r\n");
+    EXPECT_THROW(ReadProductSelection(Empty, std::filesystem::temp_directory_path()), std::runtime_error);
+    std::istringstream Failed("apps/five-axis-cam/product.manifest.json\n");
+    Failed.setstate(std::ios::badbit);
+    EXPECT_THROW(ReadProductSelection(Failed, std::filesystem::temp_directory_path()), std::runtime_error);
+}
 
 namespace
 {

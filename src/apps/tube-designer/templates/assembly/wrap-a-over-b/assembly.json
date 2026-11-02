@@ -306,6 +306,22 @@
         "parameter": "maleFemale",
         "value": true
       }
+    },
+    {
+      "key": "tabAngle",
+      "displayName": "插舌周向角",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 1,
+      "unit": "°",
+      "level": "basic",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
     }
   ],
   "partProcesses": [
@@ -365,7 +381,7 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
-        "allowEndOpening": true
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "part",
@@ -405,7 +421,8 @@
         "pairCount": 2,
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
-        "trim": 0
+        "trim": 0,
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "end",
@@ -444,7 +461,7 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
-        "allowEndOpening": true
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "part",
@@ -484,7 +501,8 @@
         "pairCount": 4,
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
-        "trim": 0
+        "trim": 0,
+        "tabAngle": "$tabAngle"
       },
       "previewPlacement": {
         "target": "end",

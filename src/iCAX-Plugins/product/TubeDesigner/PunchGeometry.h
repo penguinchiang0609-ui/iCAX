@@ -1,4 +1,5 @@
 #pragma once
+#include "OpenCascadeResourceImport/CadFeatureModelService.h"
 #include "TubeDesignerExport.h"
 #include "Data/Variant.h"
 #include <TopoDS_Shape.hxx>
@@ -98,6 +99,8 @@ namespace iCAX::TubeDesigner
     // Preview-only relaxation: retain every valid disconnected result while
     // editing. Production creation/application never enables this flag.
     struct SPunchPreviewDiagnostics final {
+        const iCAX::CAD::ICadFeatureModelService* ModelService = nullptr;
+        iCAX::CAD::SCadFeatureModelResult ModelResult;
         bool AllowDisconnectedResults = false;
         bool ResultComputed = false;
         std::size_t SolidCount = 0;

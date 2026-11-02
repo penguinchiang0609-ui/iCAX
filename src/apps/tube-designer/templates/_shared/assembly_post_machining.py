@@ -14,6 +14,7 @@ import sys
 
 
 DEPENDENCIES = ['assembly_tube_machining.py', 'section_geometry.py',
+                'directional_tube_geometry.py', 'tube_profile_catalog.py',
                 '../mold/paired-end-tabs/tool.py', '../mold/paired-side-slots/tool.py']
 
 
@@ -42,7 +43,9 @@ def _tool(name):
     source = path.read_bytes()
     sections = _load('section_geometry')
     identity = ('icax_post_tool_' + name.replace('-', '_') + '_'
-                + hashlib.sha256(source).hexdigest() + '_' + sections.__name__)
+                + hashlib.sha256(source + Path(__file__).with_name('directional_tube_geometry.py').read_bytes()
+                                 + Path(__file__).with_name('tube_profile_catalog.py').read_bytes()).hexdigest()
+                + '_' + sections.__name__)
     if identity not in sys.modules:
         spec = importlib.util.spec_from_file_location(identity, path)
         module = importlib.util.module_from_spec(spec)
@@ -144,7 +147,7 @@ def _round_end_tool(graph, stock, end, tip, depth, width):
     slab = graph.node('round-ear.slab-profile','profile2d',arguments={
         'placement':{'origin':[tip+sign*(depth-reach)/2,center_y,lo[1]-1.],
                      'xAxis':[sign,0.,0.],'yAxis':[0.,1.,0.]},
-        'contours':[_tool('paired-end-tabs')._rectangle(depth+reach,2*reach)]})
+        'contours':[_load('directional_tube_geometry').rectangle(depth+reach,2*reach)]})
     slab = graph.node('round-ear.slab','extrude',[slab],{'vector':[0.,0.,hi[1]-lo[1]+2.]})
     ear = graph.node('round-ear.keep-profile','profile2d',arguments={
         'placement':{'origin':[tip,center_y,lo[1]-1.],
@@ -201,7 +204,7 @@ def _round_aperture_tool(graph, stock, branch, pose, node, outward, normal, outs
     shell = graph.node('round-socket.shell','extrude',[profile],{'vector':inward})
     band = graph.node('round-socket.band-profile','profile2d',arguments={
         'placement':{'origin':band_origin,'xAxis':pose['yAxis'],'yAxis':pose['zAxis']},
-        'contours':[_tool('paired-end-tabs')._rectangle(width+2*gap,2*radius)]})
+        'contours':[_load('directional_tube_geometry').rectangle(width+2*gap,2*radius)]})
     band = graph.node('round-socket.band','extrude',[band],{'vector':inward})
     return graph.node('round-socket.tool','boolean',[shell,band],{'operation':'intersect'})
 
@@ -329,10 +332,13 @@ def tube_post_aperture(process_input, parameters):
         branch_profile = deepcopy(process_input['parts']['branch']['section'])
         branch_profile = branch_profile.get('profile', branch_profile)
         host_shell = shells['stock']
-        if host_shell.get('circularShell'):
-            raise ValueError('立柱插接当前需要方矩管的平直承接壁')
-        face_bounds = _tool('paired-side-slots')._face(host_shell, face, {
-            'min': [0., *stock['bounds']['min']], 'max': [stock['length'], *stock['bounds']['max']]})
+        if joint == 'insert':
+            face_bounds = _load('directional_tube_geometry').flat_receiver_face(host_shell, face, {
+                'min':[0.,*stock['bounds']['min']], 'max':[stock['length'],*stock['bounds']['max']]})
+        else:
+            across=3-normal
+            face_bounds={'center':(stock['bounds']['min'][across-1]+stock['bounds']['max'][across-1])/2,
+                         'wall':host_shell['wallThickness']}
         envelope = machining._envelope(branch, pose, gap)
         across = 3 - normal
         if joint == 'insert' and (envelope['min'][across] <= face_bounds['flat'][0] + .01
@@ -371,46 +377,12 @@ def tube_post_aperture(process_input, parameters):
                                    'insertion':depth,'clearance':gap,'retainedSection':'curved-shell-band'}]}
             generated = _tool('paired-side-slots').generate(
                 {'pairCount': 2, 'tabWidth': width, 'tabLength': depth, 'sideClearance': gap,
-                 'pairRotation': math.degrees(math.atan2(-z[0], z[3 - normal])),
-                 'allowEndOpening': not geometry['sharedCorner'],
-                 'allowSideOpening': not geometry['sharedCorner']},
+                 'pairRotation': math.degrees(math.atan2(-z[0], z[3 - normal]))},
                 {'targetSection': host_profile, 'feature': {'face': face, 'reference': 'start',
                  'station': socket_center[0], 'offset': socket_center[3 - normal] - face_bounds['center'],
                  'section': {'profile': branch_profile}},
                  'bounds': {'min': [0., *stock['bounds']['min']], 'max': [stock['length'], *stock['bounds']['max']]},
                  'placement': {'rotation': 0.}})
-            if geometry['sharedCorner']:
-                planes = geometry['keepPlanes']
-                if not isinstance(planes, list) or not planes:
-                    raise ValueError('共享拼角母槽须观察实际45度保留端面')
-                slot_nodes = {item['key']: item for item in generated['model']['geometry']}
-                retained = 0
-                for key, item in slot_nodes.items():
-                    if item['operator'] != 'profile2d':
-                        continue
-                    placement = item['arguments']['placement']
-                    center, u, v = (placement[name] for name in ('origin', 'xAxis', 'yAxis'))
-                    vector = slot_nodes[key.removesuffix('-profile')]['arguments']['vector']
-                    # Read each generated capsule's real short radius; an
-                    # eccentric inner boundary can give the two skins
-                    # different thicknesses without moving their datum.
-                    radius = abs(item['arguments']['contours'][0]['segments'][0]['start'][1])
-                    half_line = width / 2
-                    intervals = []
-                    for plane in planes:
-                        n = machining.unit(plane['inwardNormal'])
-                        p = machining._vector(plane['origin'], '拼角端面')
-                        distance = machining.dot([a-b for a,b in zip(center, p)], n)
-                        support = half_line * abs(machining.dot(u, n)) + radius * math.hypot(machining.dot(u, n), machining.dot(v, n))
-                        advance = machining.dot(vector, n)
-                        intervals.append((distance-support+min(0.,advance), distance+support+max(0.,advance)))
-                    if any(high <= .01 for low, high in intervals):
-                        continue  # This ear belongs entirely to the other receiver.
-                    if any(low <= .01 for low, high in intervals):
-                        raise ValueError('公母插槽越过实际45度拼角接缝，无法保留完整母槽桥料')
-                    retained += 1
-                if not retained:
-                    raise ValueError('共享拼角承接梁没有完整保留的实际母槽')
             root = _append_tool(graph, generated)
         if joint == 'insert' and not geometry['sharedCorner']:
             # A terminal receiver owns the entire opening. At a true miter

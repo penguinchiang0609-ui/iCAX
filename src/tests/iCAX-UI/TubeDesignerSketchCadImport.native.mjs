@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync } from
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { mapSketchCadDocument } from '../../apps/tube-designer/webpage/sketchCadExchange.mjs';
-import { curvePoint, editableSegments } from '../../apps/tube-designer/webpage/sketchGeometry.mjs';
+import { curvePoint, editableSegments } from '../../apps/_shared/workbench/sketch/sketchGeometry.mjs';
 import { repositoryRoot, startSideSketchNativeBridge } from './fixtures/sideSketchNativeBridge.mjs';
 
 const output = resolve(process.env.ICAX_ARTIFACT_DIR || resolve(repositoryRoot, 'output/tests/sketch-cad-import/native'));

@@ -153,6 +153,10 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="IService.h" />
+    <ClInclude Include="..\GeometryServices\BoundaryLeadService.h" />
+    <ClInclude Include="..\GeometryServices\SurfaceTravelService.h" />
+    <ClInclude Include="..\GeometryServices\RigidMotionCollisionService.h" />
+    <ClInclude Include="..\GeometryServices\CurveOffset3DService.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ServiceProvider.h" />
     <ClInclude Include="ServiceRegistrationCatalog.h" />

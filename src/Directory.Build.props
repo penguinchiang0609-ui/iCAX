@@ -10,5 +10,7 @@
     <ICAXSourceRoot>$(MSBuildThisFileDirectory)</ICAXSourceRoot>
     <OutDir>$(ICAXSourceRoot)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\$(Platform)\$(Configuration)\$(MSBuildProjectName)\</IntDir>
+    <!-- Optional isolated intermediates for large standalone validation builds. -->
+    <IntDir Condition="'$(ICAXIntermediateRoot)' != ''">$(ICAXIntermediateRoot)\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
 </Project>

@@ -8,8 +8,12 @@ import { browserReportDirectory, readBrowserAsset, serveBrowserAsset } from './b
 const output = browserReportDirectory('appshell-project-close');
 mkdirSync(output, { recursive: true });
 const rawTemplate = JSON.parse(readBrowserAsset('apps/tube-designer/templates/product/single_face_security_window/template.json'));
-const rawProfile = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/round/profile.json'));
-rawProfile.display = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/round/display.json'));
+const rawProfile = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/rect/profile.json'));
+rawProfile.display = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/rect/display.json'));
+const rawRound = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/round/profile.json'));
+rawRound.display = JSON.parse(readBrowserAsset('apps/tube-designer/templates/profile/round/display.json'));
+const rawAssembly = JSON.parse(readBrowserAsset('apps/tube-designer/templates/assembly/wrap-a-over-b/assembly.json'));
+const licenseFeatures = JSON.parse(readBrowserAsset('licensing/features.json')).features;
 const report = { status: 'running', checks: [], screenshots: [],
   scope: 'Real browser AppShell DOM, production ProductProxy/ProjectProxy and TubeDesigner entry/workbench. Scope-checked native transport is controlled. No user project files, native file selector or standalone CEF application were operated.' };
 const errors = [];
@@ -31,7 +35,7 @@ try {
     return serveBrowserAsset(route);
   });
   await page.goto('http://project-close.test/src/iCAX-UI/SDK/AppShell/index.html');
-  await page.evaluate(async ({ rawTemplate, rawProfile }) => {
+  await page.evaluate(async ({ rawTemplate, rawProfile, rawRound, rawAssembly, licenseFeatures }) => {
     const { ProductProxy } = await import('/src/iCAX-UI/ProductProxy/ProductProxy.mjs');
     const { ProjectProxy } = await import('/src/iCAX-UI/ProjectProxy/ProjectProxy.mjs');
     const { getProjectView } = await import('/src/apps/_shared/workbench/state/projectViewStore.mjs');
@@ -42,8 +46,24 @@ try {
         displayName: catalogText(field.displayName), groupKey: field.group,
         options: field.choices?.map(choice => ({ ...choice, label: catalogText(choice.displayName) })) })) };
     const parameters = Object.fromEntries(schema.parameters.map(field => [field.key, field.defaultValue]));
+    // Controlled hollow contour samples provide the metadata needed by the
+    // product editor. Geometry generation is outside this close-flow fixture.
+    const profileSnapshot = (values, sectionKind = 'rect') => ({ schema: 'icax.imported-tube-profile', schemaVersion: 1,
+      kind: 'profile-package', profileForm: 'parametric', sectionKind, parameters: values,
+      contours: [{ kind: 'polygon', points: [[0, 0], [40, 0], [40, 30], [0, 30]] },
+        { kind: 'polygon', points: [[2, 2], [2, 28], [38, 28], [38, 2]] }] });
+    const systemProfiles = [rawProfile, rawRound].map(descriptor => {
+      const values = Object.fromEntries(descriptor.parameters.map(p => [p.key, p.defaultValue]));
+      return { id: descriptor.id, name: catalogText(descriptor.displayName), libraryScope: 'system', descriptor,
+        defaultParameters: values, previewProfile: profileSnapshot(values, descriptor.id) };
+    });
     const f = window.fixture = { getProjectView, requests: [], gates: new Map(), entries: new Map(), opens: [],
-      saveResults: [], closeErrors: new Map(), saveErrors: new Map(), stopChannels: [], failures: [], generation: 0 };
+      saveResults: [], savedProjects: new Map(), closeErrors: new Map(), saveErrors: new Map(), stopChannels: [], failures: [], generation: 0 };
+    const grants = ['page.product', 'product.design', 'product.breakdown', 'product.export'];
+    f.license = { activated: true, kind: '测试授权', licenseId: 'project-close-fixture', featureSchemaVersion: 1,
+      featureCatalog: licenseFeatures.map(({ id, label, parent }) => ({ id, label, parent })),
+      capabilities: Object.fromEntries(licenseFeatures.map(item => [item.id, grants.includes(item.id)
+        && (!item.parent || grants.includes(item.parent))])) };
     f.hold = (method, projectId) => {
       const key = method + '|' + projectId; let release;
       const promise = new Promise(done => { release = done; });
@@ -66,6 +86,15 @@ try {
         const catalog = nativeProduct.catalogs.find(c => c.catalogId === payload.catalogId);
         const projectId = catalog?.mainProject?.projectId ?? '';
         await request('product', method, payload, projectId);
+        if (method === 'TubeDesignerLicensing.Status') return structuredClone(f.license);
+        if (method === 'TubeDesigner.EvaluateProfilePackage') {
+          if (!systemProfiles.some(p => p.id === payload.profileRef.id)) throw Error('Unknown profile ' + payload.profileRef.id);
+          return { profile: profileSnapshot(payload.parameters, payload.profileRef.id) };
+        }
+        if (method === 'TubeDesignerLicensing.CheckAccess') {
+          if (!f.license.capabilities[payload.featureId]) throw Error('Fixture rejected unauthorized feature: ' + payload.featureId);
+          return { granted: true, featureId: payload.featureId };
+        }
         if (method === 'Product.GetState') return structuredClone(nativeProduct);
         if (method === 'Product.OpenProjectCatalog') {
           const entry = makeProject(payload.projectPath, payload.projectName || '未命名项目');
@@ -78,8 +107,7 @@ try {
           f.entries.get(projectId).closed = true;
           return structuredClone(nativeProduct);
         }
-        if (method === 'TubeDesigner.ListUserData') return { systemProfiles: [{ id: 'round', name: '圆管', libraryScope: 'system',
-          descriptor: rawProfile, defaultParameters: Object.fromEntries(rawProfile.parameters.map(p => [p.key, p.defaultValue])) }],
+        if (method === 'TubeDesigner.ListUserData') return { systemProfiles: structuredClone(systemProfiles),
           profiles: [], templateProfiles: [], customers: [], parameterPresets: [], punchTools: [], productTemplates: [] };
         if (method === 'TubeDesigner.ScanBatchExcelAutomation') return { workbooks: [], files: [], pending: [] };
         throw Error('Unexpected product request: ' + method);
@@ -94,6 +122,7 @@ try {
       const scene = { sceneId, sceneChannelId: projectId + '-scene-channel', undoRedo: { revision: 1, canUndo: false }, tubeDesigner: {
         templates: [{ id: schema.id, version: schema.version, name: schema.name, available: true }], instances,
         product: instances[0], activeProductId: instances[0].entityId, members: [], joints: [], parts: [], manufacturingGroups: [], nestingGroups: [] } };
+      if (f.savedProjects.has(path)) scene.tubeDesigner = structuredClone(f.savedProjects.get(path));
       const state = { projectId, projectName: name, projectPath: path, mainScene: scene };
       const catalog = { catalogId: 'close-catalog-' + projectId, catalogPath: path, mainProject: state };
       const snapshot = { viewId: projectId + '-view-' + generation, revision: '1', rows: [] };
@@ -107,9 +136,11 @@ try {
           if (method === 'TubeDesigner.List') return { tubeDesigner: structuredClone(scene.tubeDesigner) };
           if (method === 'TubeDesigner.GetTemplateDescriptor' || method === 'TubeDesigner.GetProductTemplateDescriptor') return { template: structuredClone(schema) };
           if (method === 'TubeDesigner.GetPunchTools') return { tools: [] };
+          if (method === 'TubeDesigner.GetAssemblyTemplates') return { assemblies: [structuredClone(rawAssembly)], errors: [] };
           if (method === 'Project.Save') {
             if (f.saveErrors.has(projectId)) throw Error(f.saveErrors.get(projectId));
             state.projectPath = payload.projectPath; catalog.catalogPath = payload.projectPath;
+            f.savedProjects.set(payload.projectPath, structuredClone(scene.tubeDesigner));
             return { saved: true, project: structuredClone(state) };
           }
           // The production editor commits existing-instance information before
@@ -141,8 +172,12 @@ try {
       const job = window.__icaxAppShell.openProject(path, product.productId).catch(error => { f.failures.push(error.message); throw error; });
       f.opens.push(job); return job;
     };
+    f.attachNativeSavedProject = path => {
+      const entry = makeProject(path, 'Restored native project');
+      product.updateState(structuredClone(nativeProduct)); return entry.projectId;
+    };
     await import('/src/iCAX-UI/SDK/AppShell/app/bootstrap.mjs');
-  }, { rawTemplate, rawProfile });
+  }, { rawTemplate, rawProfile, rawRound, rawAssembly, licenseFeatures });
 
   const shell = () => page.evaluate(() => window.__icaxAppShell.getState());
   const code = () => page.locator('[data-tube-designer-parameter="productCode"]');
@@ -152,6 +187,11 @@ try {
       return s.startupPhase === 'ready' && !s.pendingCount && v.tubeDesignerLoaded && !v.tubeDesignerLoading
         && !v.tubeDesignerUserDataSynchronizationPromise && !v.tubeDesignerUserDataRefreshPromise;
     });
+    // The shared shell keeps the current ribbon tab when another project
+    // becomes active. Explicitly navigate to Product before inspecting fields.
+    if ((await shell()).activeRibbonTabId !== 'view') {
+      await page.locator('[data-action="select-ribbon-tab"][data-tab-id="view"]').click();
+    }
     await code().waitFor({ state: 'visible' });
   };
   const open = async name => {
@@ -196,7 +236,23 @@ try {
   const screenshot = async name => { const path = resolve(output, name + '.png'); await page.screenshot({ path }); report.screenshots.push(path); };
 
   await activeReady();
+  assert.equal(await page.evaluate(async () => {
+    const s = window.__icaxAppShell.getState();
+    const { isProjectReadOnly } = await import('/src/apps/tube-designer/webpage/entry.mjs');
+    return isProjectReadOnly({ productProxy: window.fixture.product, project: { projectId: s.activeProjectId } });
+  }), false, 'Close fixture must supply a valid licensed workspace, not silently enter read-only mode');
   const initialId = (await shell()).activeProjectId;
+  const recoveredPath='D:/ProjectCloseTests/RecoveredNative.ictd';
+  const recoveredId=await page.evaluate(path=>window.fixture.attachNativeSavedProject(path),recoveredPath);
+  const dialogsBeforeRecovery=await requestCount('saveFileDialog'),opensBeforeRecovery=await requestCount('App.OpenProjectFile');
+  await page.evaluate(path=>window.__icaxAppShell.openProject(path,'icax.tube-designer'),recoveredPath);
+  await activeReady();assert.equal((await shell()).activeProjectId,recoveredId);
+  await page.locator('[data-command-id="app.save"]').click();
+  await page.waitForFunction(path=>window.fixture.savedProjects.has(path),recoveredPath);
+  assert.equal(await requestCount('saveFileDialog'),dialogsBeforeRecovery,'An already-open native file saves in place after shell reconnect');
+  assert.equal(await requestCount('App.OpenProjectFile'),opensBeforeRecovery,'Selecting the existing native project does not reopen or replace it');
+  await close(recoveredId);await activeReady();
+  report.checks.push('Explicitly opening a restored native file reestablishes saved-file identity; Save uses the same file without a native Save As dialog or a duplicate project');
   const aId = await open('A'), bId = await open('B');
   const semantics = await page.locator('.project-tabs .project-tab').evaluateAll(tabs => tabs.map(tab => ({
     container: tab.tagName, selects: tab.querySelectorAll('[data-action="select-open-project"]').length,
@@ -369,6 +425,57 @@ try {
   assert.equal((await shell()).activeProjectId, aId);
   report.checks.push('A pending task started after the close dialog opens is rechecked before native close, and the same project closes normally after the task clears');
 
+  // Exercise the public pages with real DOM navigation. Saved documents are
+  // immutable fixture snapshots: reopening must read them, not an old view.
+  report.pageLifecycle = [];
+  for (const area of ['view', 'nesting', 'machining', 'profiles', 'products', 'tools', 'assemblies', 'about']) {
+    const name = 'Page-' + area, expectedCode = 'SAVED-FROM-' + area;
+    const id = await open(name);
+    await code().fill(expectedCode);
+    await code().press('Tab');
+    await page.waitForFunction(({ id, expectedCode }) => {
+      const v = window.fixture.getProjectView(id);
+      return !v.tubeDesignerProductParameterCommitPromise
+        && window.fixture.entries.get(id).scene.tubeDesigner.product.parameters.productCode === expectedCode;
+    }, { id, expectedCode });
+    const tab = ['view', 'nesting', 'machining', 'about'].includes(area) ? area : 'resources';
+    await page.locator(`[data-action="select-ribbon-tab"][data-tab-id="${tab}"]`).click();
+    if (tab === 'resources') {
+      await page.locator(`[data-action="ribbon-command"][data-command-id="resources.${area}"]`).click();
+    }
+    await page.waitForFunction(({ tab, area }) => {
+      const s = window.__icaxAppShell.getState(), v = window.fixture.getProjectView(s.activeProjectId);
+      return s.activeRibbonTabId === tab && !s.pendingCount && !v.pending
+        && (tab !== 'resources' || v.activeAreaId === ({ products: 'templates' }[area] ?? area));
+    }, { tab, area });
+    assert.equal((await shell()).error, '');
+    const beforeCancel = await requestCount('Product.CloseProjectCatalog');
+    await promptClose(id); await choose('cancel');
+    assert.equal(await requestCount('Product.CloseProjectCatalog'), beforeCancel);
+    assert.equal((await shell()).activeRibbonTabId, tab);
+    // Closing a background project must not remount the active resource/about
+    // page, just as it must not replace the product editor's live canvas.
+    await page.evaluate(() => { window.fixture.pageSurface = document.querySelector('[data-product-surface="project"]'); });
+    await close(reopenId);
+    assert.equal(await page.evaluate(() => window.fixture.pageSurface === document.querySelector('[data-product-surface="project"]')), true);
+    assert.equal((await shell()).activeProjectId, id);
+    assert.equal((await shell()).activeRibbonTabId, tab);
+    await close(id, 'save');
+    await activeReady();
+    assert.equal(await open(name), id);
+    assert.equal(await code().inputValue(), expectedCode);
+    assert.equal(await page.evaluate(id => window.fixture.entries.get(id).scene.tubeDesigner.product.parameters.productCode, id), expectedCode);
+    await close(id); await activeReady();
+    // Recreate the background target with the same native identity for the
+    // next page's continuity check.
+    assert.equal(await open('Reopen'), reopenId);
+    await select(aId);
+    report.pageLifecycle.push({ area, cancelledCloseRetainedPage: true, backgroundCloseRetainedSurface: true,
+      savedThenReopenedFromSnapshot: true, expectedCode });
+    report.checks.push(`${area}: cancel and background close retain the page; save/close/reopen restores the saved product value with fresh project state`);
+    console.log('PASS project close page lifecycle: ' + area);
+  }
+
   const remainingIds = await page.evaluate(() => [...window.fixture.product.projects.keys()]);
   for (const id of remainingIds.filter(id => id !== initialId)) await close(id);
   await activeReady();
@@ -394,6 +501,7 @@ try {
   if (page) {
     const path = resolve(output, 'failure.png'); await page.screenshot({ path }).catch(() => {}); report.screenshots.push(path);
     report.failureState = await page.evaluate(() => ({ shell: window.__icaxAppShell?.getState(),
+      license: window.fixture?.getProjectView(window.__icaxAppShell?.getState().activeProjectId)?.tubeDesignerLicense,
       requests: window.fixture?.requests, gates: [...window.fixture?.gates.values() ?? []].map(g => ({ key: g.key, waiting: g.waiting })) })).catch(() => null);
   }
   throw error;

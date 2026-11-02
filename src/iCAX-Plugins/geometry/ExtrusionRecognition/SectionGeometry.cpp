@@ -968,6 +968,17 @@ namespace
             {
                 for (auto& _Point : SurfaceValue_.Poles) _Point = Transform_.Point(_Point);
             }
+            else if constexpr (std::is_same_v<T, RevolutionSurface3>)
+            {
+                TransformCurve3(SurfaceValue_.Basis, Transform_);
+                SurfaceValue_.Axis.Location = Transform_.Point(SurfaceValue_.Axis.Location);
+                SurfaceValue_.Axis.Direction = Transform_.Direction(SurfaceValue_.Axis.Direction);
+            }
+            else if constexpr (std::is_same_v<T, ExtrusionSurface3>)
+            {
+                TransformCurve3(SurfaceValue_.Basis, Transform_);
+                SurfaceValue_.Direction = Transform_.Direction(SurfaceValue_.Direction);
+            }
             else
             {
                 SurfaceValue_.Placement = Transform_.Placement(SurfaceValue_.Placement);

@@ -26,7 +26,7 @@ try {
     return serveBrowserAsset(route);
   });
   await page.goto('http://drawing-layout.test/');
-  await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}'+readBrowserAsset('apps/_shared/workbench/styles/laser3dcam.css')+tubeDesignerCss+`
+  await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}'+readBrowserAsset('apps/_shared/workbench/styles/workbench.css')+tubeDesignerCss+`
     .fixture-nested-scroll{height:75px;overflow:auto}.fixture-nested-scroll>div{height:500px}.fixture-scroll-space{height:800px}
   `});
   await page.evaluate(async ({actualProfile,branchTool})=>{
@@ -59,9 +59,10 @@ try {
       return {profile:{...structuredClone(profile.previewProfile),parameters:structuredClone(payload.parameters)}};
     }},sceneProxy:{async invoke(method,payload){
       calls.push({method,payload:structuredClone(payload)});
-      if(method!=='TubeDesigner.PreviewPartDrawing'||payload.toolsOnly!==true)throw Error('Unexpected scene API: '+method);
+      if(method==='TubeDesigner.ReleasePartDrawingPreview')return {released:true};
+      if(method!=='TubeDesigner.PreviewPartDrawing'||payload.toolsOnly!==false)throw Error('Unexpected scene API: '+method);
       if(fixture.holdPreview){fixture.waiting=true;await new Promise(resolve=>release=resolve);fixture.waiting=false;fixture.holdPreview=false;}
-      return {toolsOnly:true,previewComputed:true,baseGeometry:resource,baseMaterial:material,toolMaterial:material,toolPreviews:[],baseBounds:{min:[0,-30,-20],max:[500,30,20]},length:500};
+      return {toolsOnly:false,previewComputed:true,geometry:resource,material,baseGeometry:resource,baseMaterial:material,toolMaterial:material,toolPreviews:[],baseBounds:{min:[0,-30,-20],max:[500,30,20]},length:500};
     },resources:{async get(url){fixture.resourceReads++;return new Response(url===resource.url?geometryBytes:encodePreviewMaterial(0xabc4ceff),{status:200});}}}};
     const ops={createPartDrawingViewport(options){return viewport=createThreeViewport(options);},renderProject(){
       let html=drawing.renderPartDrawingDialog(view);
@@ -325,7 +326,7 @@ try {
   await closeButton.click();
   await page.waitForFunction(()=>window.fixture.view.tubeDesignerPartDrawing===null);
   assert.equal(await page.locator('.td-draw-workbench').count(),0);
-  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.filter(call=>['TubeDesigner.AddPartDrawing','TubeDesigner.ApplyPartDrawing'].includes(call.method))),[],'Closing the editor does not save or create a part');
+  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.filter(call=>call.method==='TubeDesigner.AddPartDrawing')),[],'Closing the editor does not save or create a part');
   assert.deepEqual(errors,[]);
   assert.ok(await page.evaluate(()=>window.fixture.calls.some(call=>call.method==='TubeDesigner.PreviewPartDrawing')));
   console.log('Drawing section template layout passed: actual rect display, hidden/enabled conditions, stable canvas and inputs, latest pane/nested scroll and focus/selection through async changes. Array inspector passed: no ribbon entry, none/one/two dimensions, retained inactive counts, signed 3 x 2 circular payload and unchanged native schema. Both pane splitters and header close passed. Browser rendering only; native geometry mocked.');

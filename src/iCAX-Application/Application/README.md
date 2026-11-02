@@ -29,6 +29,19 @@ Application/
 
 默认没有 UI 配置文件时，`TubeDesigner.exe` 使用 CEF/H5 UI 容器。需要切换 UI 技术时，可在 `Setting/UIContainer.Setting` 中配置 `type=wpf` 或 `type=qt`，前提是对应容器 DLL 实现了 `IUIContainer` 并注册到 `CUIContainerFactory`。需要无窗口验收时，可显式配置 `type=headless`。
 
-当前 Application 的产品注册配置位于 `Application.cpp` 的 `_LoadProductDefinitions`：仅将 `apps/tube-designer/product.manifest.json` 加入 `RuntimeConfig.Products`。启动页因此只显示 TubeDesigner，不自动注册其他目录中的产品，也不回退到“默认项目”。这不是 `Application.Setting` 中的运行时开关，修改后需要重新编译 Application 并重启。其他产品的代码、manifest 和用户项目仍保留，恢复注册即可重新使用；未注册期间不能从本应用打开其他产品的项目文件。
+可执行程序同目录的 `Application.Product.Setting` 声明启用的产品，每行一个产品清单路径；相对路径以可执行程序目录为基准。支持 UTF-8、空行和以 `#` 开头的注释。修改配置后重启即可生效，不扫描目录自动注册产品。空配置、缺失清单和重复产品 ID 都作为配置错误报告。未提供此文件时，当前发行配置默认启用 TubeDesigner。
+
+配置一款产品时，使用该产品的启动画面并直接打开未保存的空项目；配置多款产品时，进入原来的产品／最近项目选择页，不自动创建项目。判断依据是原生注册的产品列表，不受 URL 中 `product` 参数影响。公共首屏为中性工作台画面，产品界面模块可通过 `getStartupPresentation()` 提供自己的启动文字和图案。
+
+例如同时启用两款产品：
+
+```text
+apps/tube-designer/product.manifest.json
+apps/five-axis-cam/product.manifest.json
+```
+
+三维 CAM 的开发启动目录可用 `src/tools/build/start_five_axis_cam.ps1` 准备和启动。其配置只启用三维 CAM，资源和模块路径按运行目录展开，同时部署平台和该产品的窗口图标。
+
+启动器构建传入 `/p:ICAXApplicationTargetName=FiveAxisCAM` 时，从 `apps/branding/FiveAxisCAM.rc` 编译独立的程序图标和文件版本名称；默认 `TubeDesigner` 对应自身资源。通用版本布局仍由 `Application.rc` 提供。自定义发行版可指定 `ICAXApplicationResourceFile`。运行时窗口图标按 `apps/Branding.Setting` 和已配置产品列表选择，单产品使用产品图标，多产品使用平台图标。
 
 应用默认把 Scene 资源历史版本根目录设置为 `Temp/ResourceVersions`。宿主也可以在启动前通过 `CApplicationConfig::RuntimeConfig.Paths.ResourceVersionDirectory` 覆盖；相对路径以 `Paths.InstallDirectory` 为基准。

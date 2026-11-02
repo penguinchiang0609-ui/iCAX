@@ -13,11 +13,9 @@ std::map<std::string, AssemblyProcessSavedParts> ReadAssemblyProcessPlans(
 {
     std::map<std::string, AssemblyProcessSavedParts> _Plans;
     for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(Database_)) {
-        const auto _Wizard = GetComponent<CPunchWizardComponent>(_Entity);
-        if (!_Wizard) continue;
-        const auto& _Definition = _Wizard->GetDefinition();
-        const auto _It = _Definition.find("assemblyProcessPlan");
-        if (_It == _Definition.end()) continue;
+        const auto _Properties = _Part->GetItemProperties();
+        const auto _It = _Properties.find("manufacturing.assemblyProcessPlan");
+        if (_It == _Properties.end()) continue;
         if (!_It->second.Is<ObjectMap>())
             throw std::runtime_error("已保存的装配工艺来源格式无效");
         const auto _Metadata = _It->second.To<ObjectMap>();
@@ -74,10 +72,6 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
     const auto _Payload = DecodeObjectPayload(Request_);
     const auto _PlanID = GetRequiredText(_Payload, "planId", 160);
     const auto _RequestID = GetRequiredText(_Payload, "requestId", 160);
-    const auto _Plan = ResolveAssemblyProcessPlanRequest(Request_, ApplicationContext_, ProductContext_);
-    const auto _Digest = GetRequiredText(_Plan, "planDigest", 128);
-    const auto _RequestDigest = ContentDigest(_Digest,
-        iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Payload)));
     auto& _DB = Scene_->Database();
     const auto _Meta = _DB.GetMetaEntity();
     if (!_Meta) throw std::runtime_error("Missing project root");
@@ -85,6 +79,10 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
     AssemblyProcessSavedParts _Saved;
     if (const auto _Found = _AllSaved.find(_PlanID); _Found != _AllSaved.end())
         _Saved = _Found->second;
+    const auto _Plan = ResolveAssemblyProcessPlanRequest(Request_, ApplicationContext_, ProductContext_);
+    const auto _Digest = GetRequiredText(_Plan, "planDigest", 128);
+    const auto _RequestDigest = ContentDigest(_Digest,
+        iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Payload)));
     VariantArray _Journal;
     if (!_Saved.empty()) {
         (void)AssemblyProcessSavedPlan(_PlanID, _Saved);
@@ -162,7 +160,7 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
     struct SPreparedStock {
         std::string ID;
         iCAX::Data::PropertySet Part, Profile;
-        ObjectMap Wizard;
+        iCAX::Resource::CResourceReference Cad;
     };
     std::vector<SPreparedStock> _Prepared;
     for (const auto& [_StockID, _Planned] : _Requests) {
@@ -222,7 +220,22 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
                 throw std::invalid_argument("材料名称无效");
             const auto _Quantity = ValidateInstanceQuantity(GetUInt64(_Stocks.at(_StockID), "quantity", 1));
             const auto _Prefix = "tube-designer/nesting/assembly-process/" + UuidToString(_BatchID) + "/" + UuidToString(_EntityID);
-            const auto _Raw = StorePunchBRep(*Scene_, _Prefix + "/base", _Name + " 原始母材", _Base, Request_);
+            auto _Document = CompileTubePartCadDocument(*Scene_, _Base, _Shape,
+                &_Diagnostics.ModelResult, &_Features);
+            _Document.Metadata["authoringAuthority"] = "neutral-cad-document";
+            std::string _CadID;
+            if (const auto _Existing = _Saved.find(_StockID); _Existing != _Saved.end()) {
+                const auto _Component = GetComponent<CTubePartCadComponent>(_Existing->second.Entity);
+                if (!_Component) throw std::runtime_error("装配工艺母材缺少 CAD 文档");
+                _CadID = _Component->GetDocumentResourceID();
+                const auto _Previous = Scene_->Resources().Get<iCAX::GeometryData::Tube::CTubeCadDocument>(
+                    _CadID, _Component->GetDocumentResourceVersion());
+                if (!_Previous || _Previous->Revision == std::numeric_limits<std::uint64_t>::max())
+                    throw std::runtime_error("装配工艺 CAD 文档版本不可用");
+                _Document.Revision = _Previous->Revision + 1;
+            }
+            const auto _Cad = StoreTubeCadDocument(*Scene_,
+                "tube-designer/nesting/cad/" + UuidToString(_EntityID), _Name, _Document, _CadID);
             const auto _Resource = StorePunchBRep(*Scene_, _Prefix + "/processed", _Name, _Shape, Request_);
             const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
@@ -232,8 +245,7 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
             auto _Measurement = MeasureFinalPartGeometry(_Shape, _Resource.URL, _Resource.nVersion);
             _Measurement["nestingEnvelopeLength"] = _Envelope;
             _Measurement["normalizedAxis"] = std::string("+X");
-            VariantArray _FeatureSnapshots, _InstanceIDs;
-            for (const auto& _Feature : _Features) _FeatureSnapshots.emplace_back(PunchFeatureSnapshot(_Feature));
+            VariantArray _InstanceIDs;
             for (const auto& _Value : _Source.at("instances").To<VariantArray>()) {
                 const auto _Instance = _Value.To<ObjectMap>();
                 bool _UsesStock = false;
@@ -251,12 +263,6 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
                 _Metadata["sourceInput"] = _Source;
                 _Metadata["requestJournal"] = _Journal;
             }
-            ObjectMap _Wizard{{"schema", std::string("icax.tube-designer.punch-wizard")}, {"schemaVersion", 4ull},
-                {"baseResourceId", _Raw.URL}, {"baseResourceVersion", _Raw.nVersion}, {"baseLength", _Length},
-                {"baseBounds", ShapeBounds(_Base)},
-                {"baseEndProcess", ObjectMap{{"startCut", std::string("square")}, {"endCut", std::string("square")}}},
-                {"operations", PunchOperationChain(_Features, _Ends)}, {"ends", PunchEndsSnapshot(_Ends)},
-                {"features", _FeatureSnapshots}, {"assemblyProcessPlan", _Metadata}};
             const auto _Reference = ProfileReferencePayload(ParseProfileReference(_Manufacturing));
             const auto _Existing = _Saved.find(_StockID);
             const auto _Index = _Existing == _Saved.end() ? _NextIndex++ : _Existing->second.Part->GetPartIndex();
@@ -273,6 +279,7 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
                 {"manufacturing.process", std::string("assembly-process")}, {"manufacturing.requiresBending", _RequiresBending},
                 {"manufacturing.material", _Material}, {"manufacturing.categoryName", std::string("装配工艺下料")},
                 {"manufacturing.punchPart", true}, {"manufacturing.geometryMeasurement", _Measurement},
+                {"manufacturing.assemblyProcessPlan", _Metadata},
                 {"nesting.snapshot", ObjectMap{{"name", _Name}, {"quantity", _Quantity},
                     {"source", std::string("assembly-process")}, {"profileRef", _Reference}, {"length", _Envelope}}}};
             iCAX::Data::PropertySet _PartProperties{
@@ -295,7 +302,7 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
                 {CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready"))},
                 {CManufacturingPartComponent::PropertyName_ItemProperties, PropertyValue(_Properties)}};
             _Prepared.push_back({_StockID, std::move(_PartProperties),
-                TubeProfileComponentProperties(_Profile, "assembly-process"), std::move(_Wizard)});
+                TubeProfileComponentProperties(_Profile, "assembly-process"), _Cad});
         } catch (const std::exception& _Error) {
             throw std::runtime_error("母材 " + _StockID + " 保存预备失败：" + _Error.what());
         }
@@ -331,8 +338,9 @@ iCAX::Interaction::CInvocationResult HandleCommitAssemblyProcessPlan(
             if (!_Entity) _Transaction.CreateEntity(_ID);
             QueueUpsertComponent(_Transaction, _Entity, _ID, CManufacturingPartComponent::S_ClassName, _Part.Part);
             QueueUpsertComponent(_Transaction, _Entity, _ID, CTubeProfileComponent::S_ClassName, _Part.Profile);
-            QueueUpsertComponent(_Transaction, _Entity, _ID, CPunchWizardComponent::S_ClassName,
-                {{CPunchWizardComponent::PropertyName_Definition, PropertyValue(_Part.Wizard)}});
+            QueueUpsertComponent(_Transaction, _Entity, _ID, CTubePartCadComponent::S_ClassName,
+                {{CTubePartCadComponent::PropertyName_DocumentResourceID, PropertyValue(_Part.Cad.URL)},
+                 {CTubePartCadComponent::PropertyName_DocumentResourceVersion, PropertyValue(_Part.Cad.nVersion)}});
         }
         for (const auto& [_ID, _Part] : _Saved)
             if (!_EntityIDs.contains(_ID)) _Transaction.DisposeEntity(_Part.Entity->GetID());

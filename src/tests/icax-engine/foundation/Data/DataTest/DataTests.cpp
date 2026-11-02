@@ -8,6 +8,11 @@
 #include <Data/StableId.h>
 #include <Data/VariantSerializer.h>
 #include <Data/uuid.h>
+#include <bit>
+#include <cmath>
+#include <limits>
+#include <locale>
+#include <sstream>
 
 
 using namespace iCAX::Data;
@@ -300,6 +305,42 @@ TEST(DataSerializerTest, InvalidUuidThrows)
     EXPECT_THROW(
         VariantSerializer::Deserialize("{\"__variant_type\":\"uuid\",\"value\":\"invalid\"}"),
         std::runtime_error);
+}
+
+TEST(DataSerializerTest, NumericWireBytesMatchClassicStreamFormatting)
+{
+    const auto legacy = [](auto value) {
+        std::ostringstream stream;
+        stream.imbue(std::locale::classic());
+        stream.precision(std::numeric_limits<double>::max_digits10);
+        stream << value;
+        return stream.str();
+    };
+    const auto check = [&](double value) {
+        EXPECT_EQ("{\"__variant_type\":\"double\",\"value\":" + legacy(value) + "}",
+            VariantSerializer::Serialize(Variant(value)));
+        const auto single = static_cast<float>(value);
+        EXPECT_EQ("{\"__variant_type\":\"float\",\"value\":" + legacy(single) + "}",
+            VariantSerializer::Serialize(Variant(single)));
+    };
+    for (double value : {0., -0., .1, 1e-6, 1e-5, 1e16, 1e17,
+        (std::numeric_limits<double>::min)(), (std::numeric_limits<double>::max)(),
+        std::numeric_limits<double>::denorm_min(), std::nextafter(1., 2.),
+        std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()}) check(value);
+    uint64_t bits = 0x123456789abcdef0ull;
+    for (int i = 0; i < 2048; ++i) {
+        bits = bits * 6364136223846793005ull + 1442695040888963407ull;
+        const double value = std::bit_cast<double>(bits);
+        if (std::isfinite(value)) check(value);
+    }
+    const Double3 vector(.1, -0., std::numeric_limits<double>::denorm_min());
+    EXPECT_EQ("{\"__variant_type\":\"Double3\",\"value\":[" + legacy(vector[0]) + "," +
+        legacy(vector[1]) + "," + legacy(vector[2]) + "]}", VariantSerializer::Serialize(Variant(vector)));
+    const Double2x2 matrix(std::vector<double>{.1, 1e-6, -1e17, -0.});
+    EXPECT_EQ("{\"__variant_type\":\"Double2x2\",\"value\":[" + legacy(matrix(0,0)) + "," +
+        legacy(matrix(0,1)) + "," + legacy(matrix(1,0)) + "," + legacy(matrix(1,1)) + "]}",
+        VariantSerializer::Serialize(Variant(matrix)));
 }
 
 TEST(DataUuidTest, GeneratedUuidCanRoundTripThroughString)

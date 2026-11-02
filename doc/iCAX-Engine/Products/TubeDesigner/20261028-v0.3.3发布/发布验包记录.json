@@ -1,0 +1,74 @@
+{
+  "product": "TubeDesigner",
+  "productVersion": "0.3.3",
+  "fileVersion": "0.3.3.0",
+  "templateVersion": "2.3.1",
+  "configuration": "Windows x64 Release",
+  "releaseDate": "20261028",
+  "recordedAt": "2026-10-28T17:38:32.0719939+08:00",
+  "passed": true,
+  "installer": {
+    "path": "D:\\penguinchinage0609\\release\\tubedesigner\\20261028-v0.3.3\\安装包\\TubeDesigner-0.3.3-20261028-x64-Setup.exe",
+    "bytes": 190437455,
+    "sha256": "006878D1F8551EA45B785B3BADD58B983190B560BF45F6AB75E2F80C7B8D65F2",
+    "productionNsisBuild": true,
+    "actualInstallationPerformed": false
+  },
+  "programDirectory": "D:\\penguinchinage0609\\release\\tubedesigner\\20261028-v0.3.3\\程序\\TubeDesigner",
+  "payload": {
+    "files": 1007,
+    "matched": 1007,
+    "differences": 0,
+    "sourceResources": 599,
+    "identicalSourceResources": 599,
+    "nativeDlls": 131,
+    "identicalNativeDlls": 131,
+    "peFiles": 164,
+    "archiveEntries": 597,
+    "sensitiveFindings": 0,
+    "debugCrtImports": 0
+  },
+  "licensing": {
+    "authorizationEnforced": true,
+    "developmentBypass": false,
+    "releaseBypass": false,
+    "policySchema": "TDLIC003",
+    "authorizationReissueFormat": "TDREI001",
+    "supportsExplicitReissue": true,
+    "existingLicenseAccepted": true,
+    "moduleSha256": "138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9"
+  },
+  "nativeStandalone": {
+    "passed": true,
+    "actualExtractedExecutableStarted": true,
+    "nativeBusinessMocked": false,
+    "inputPreserved": true,
+    "jointUi": {
+      "groups": [
+        "连接方式",
+        "公头尺寸",
+        "母孔尺寸"
+      ],
+      "holeWidth": "6.35 mm",
+      "holeThickness": "1.35 mm",
+      "maleTip": "square"
+    },
+    "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\tubedesigner-release-0.3.3-20261028\\packaged-runtime-acceptance\\成品程序原生状态.json"
+  },
+  "features": [
+    "连接方式、公头尺寸、母孔尺寸分组",
+    "公头/母孔动态局部特写与联动尺寸",
+    "圆管及对穿齐平示意",
+    "管型切换保留输入控件节点与监听器"
+  ],
+  "previousInstallerPreserved": {
+    "path": "D:\\penguinchinage0609\\release\\tubedesigner\\20261028-v0.3.2\\安装包\\TubeDesigner-0.3.2-20261028-x64-Setup.exe",
+    "sha256": "add19d8491dedc7330a123a97a64efc04185b167a4a52b4011be1fe917925ab8",
+    "passed": true
+  },
+  "acceptanceLimits": [
+    "No actual installation, overwrite upgrade or uninstallation performed",
+    "No customer TPM trial reissue imported"
+  ],
+  "documentation": "D:\\penguinchinage0609\\iCAX\\doc\\iCAX-Engine\\Products\\TubeDesigner\\20261028-v0.3.3发布\\发布说明.html"
+}

@@ -1,0 +1,17 @@
+namespace iCAX.FiveAxisCAM;
+file_identifier "F5TP";
+
+// Overwritable Scene-owned telemetry. Reliable commands/results stay on SDO.
+table TaskProgress {
+  schema_version:uint = 1;
+  task_id:string (required);
+  epoch:string (required);
+  sequence:ulong;
+  status:string (required);
+  kind:string;
+  progress:uint;
+  error:string;
+  termination_reason:string;
+  details_json:string; // collisionProgress / repairProgress / machineProgress only
+}
+root_type TaskProgress;

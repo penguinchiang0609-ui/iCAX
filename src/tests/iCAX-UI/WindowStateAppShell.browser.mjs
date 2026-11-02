@@ -51,6 +51,8 @@ async function createAppShell(context) {
       getProject() { return projectProxy; }, async openProjectCatalog() { return { projectProxy, sceneProxy, catalog: { mainProject: projectState } }; },
       async invoke(method, payload) {
         requests.push({ scope: 'product', method, payload });
+        if (method === 'TubeDesignerLicensing.Status') return { activated: true, featureSchemaVersion: 1,
+          capabilities: { 'page.product': true, 'product.design': true } };
         if (method === 'TubeDesigner.GetBatchExcelAutomationSettings') return { settings: structuredClone(settings) };
         if (method === 'TubeDesigner.ScanBatchExcelAutomation') return { settings: structuredClone(settings), files: [], errors: [] };
         if (method === 'TubeDesigner.ListUserData') return { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], systemProfiles: [], templateProfiles: [] };
@@ -129,10 +131,13 @@ try {
     await icax.saveFileDialog({ memoryKey: 'test-list-export', defaultPath: 'C:/entity/current.ictd' });
     return f.nativeDialogRequests;
   });
-  assert.equal(dialogs[0].options.defaultPath, 'D:\\CAD\\');
-  assert.equal(dialogs[1].options.defaultPath, 'E:/outputs/next.xlsx');
+  assert.equal(dialogs[0].options.initialDirectory, 'D:\\CAD');
+  assert.equal(dialogs[0].options.defaultPath, undefined);
+  assert.equal(dialogs[1].options.initialDirectory, 'E:/outputs');
+  assert.equal(dialogs[1].options.defaultPath, 'next.xlsx');
   assert.equal(dialogs[2].options.initialDirectory, 'F:/folders/last');
   assert.equal(dialogs[3].options.defaultPath, 'C:/entity/current.ictd');
+  assert.equal(dialogs[3].options.initialDirectory, undefined);
   cases.push({ name: 'shared native dialog wrapper restores paths across processes and preserves current entity path', passed: true });
   assert.deepEqual(errors, []);
   writeFileSync(resolve(output, 'report.json'), JSON.stringify({ passed: true, cases, errors,

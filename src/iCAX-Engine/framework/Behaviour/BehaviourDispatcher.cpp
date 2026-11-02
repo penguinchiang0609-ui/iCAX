@@ -714,7 +714,10 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
         for (size_t _Index = 0; _Index < Args_.pBatch->Records.size(); ++_Index)
         {
             const auto& _Record = Args_.pBatch->Records[_Index];
-            if (_Record.strClassName.empty())
+            // Apply the dispatcher's existing binding filter before owning
+            // lifecycle snapshots. Unbound engineering components can carry
+            // large recipes but have no lifecycle notification to deliver.
+            if (_Record.strClassName.empty() || GetExecutionRank(_Record.strClassName) == kUnboundBehaviourRank)
             {
                 continue;
             }

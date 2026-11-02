@@ -154,6 +154,7 @@
     <ClInclude Include="ProductExport.h" />
     <ClInclude Include="ProductManifest.h" />
     <ClInclude Include="ProductRuntime.h" />
+    <ClInclude Include="ProductSettingsHistory.inc" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />

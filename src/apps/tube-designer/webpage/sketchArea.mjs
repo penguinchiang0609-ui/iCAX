@@ -1,7 +1,8 @@
+import { isTubeCadDocumentSnapshot, isTubeBoundaryGeometry } from "./tubeCadModel.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { sketchRibbonGroups } from "./ribbonDefinition.mjs";
 import { renderRibbonCommandIcon } from "../../../iCAX-UI/SDK/AppShell/app/ribbonIcons.mjs";
-import { arcThroughPoints, curvePoint, editableSegments, editPathAtPoint, isArc, isConic, movePathNode, moveSegmentEnd, nearestPath, nearestSegment, pathNodes, pathSamples, pathSvg, reverseSegment, translateSegment } from "./sketchGeometry.mjs";
+import { arcThroughPoints, curvePoint, editableSegments, editPathAtPoint, isArc, isConic, movePathNode, moveSegmentEnd, nearestPath, nearestSegment, pathNodes, pathSamples, pathSvg, reverseSegment, translateSegment } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 import { patchDomNode } from "./punchDomPatch.mjs";
 import { capturePaneInteraction } from "../../_shared/workbench/utils/paneInteractionState.mjs";
 import { attachSideSketchPreview, disposeSideSketchPreview, releaseSideSketchPreview } from "./sideSketchPreview.mjs";
@@ -10,6 +11,7 @@ import { arrayTransformMatrix, buildArrayTransforms, transformArrayEntity, valid
 import { CAD_TOOLS, CAD_TRANSFORMS, CAD_SHAPES, beginCadOperation, isCadOperation, cadOperationKind, cadPrompt, cadNumber, cadNumericSpec, cadTransformMatrix, updateCadPointer, renderCadOperationPanel, renderNumericPointPanel, numericPoint } from "./sketchCadCommands.mjs";
 import { boundsOfEntities, transformSketchEntities, trimSketchEntity, extendSketchEntity, offsetSketchEntity, filletSketchEntities, repairSketchEntities, diagnoseSketchEntities } from "./sketchCadGeometry.mjs";
 import { mapSketchCadDocument, buildSketchDxf, createRegularPolygon, createStar, createRacetrack } from "./sketchCadExchange.mjs";
+import { changeCadBevel, mergeCadBevels, remapCadBevel, renderCadBevelEditor, validateCadBevel } from "./cadBevel.mjs";
 
 const SECTION_MODE = "section";
 const SIDE_MODE = "side";
@@ -82,7 +84,6 @@ export function createInitialSketchState() {
     section: createDraft(),
     sideByMember: {},
     sideByPart: {},
-    sidePartVersions: {},
     sideTargetKind: "member",
     sideTargetSnapshot: null,
     sideReference: null,
@@ -113,7 +114,6 @@ export function ensureSketchState(view) {
   state.section.persisted ??= false;
   state.sideByMember ??= {};
   state.sideByPart ??= {};
-  state.sidePartVersions ??= {};
   state.sideTargetKind = state.sideTargetKind === "part" ? "part" : "member";
   state.targetPartId = String(state.targetPartId ?? "");
   state.sideReturnAreaId = String(state.sideReturnAreaId || "view");
@@ -195,22 +195,14 @@ export function beginProfileSectionSketch(view, source) {
   return state;
 }
 
-export function beginPartSideSketch(view, part, report) {
+function initializeNewPartSideSketch(view, part, report) {
   const partId = String(part?.entityId ?? "").trim();
   if (!partId || !(Number(part?.length) > 0)) {
     throw new Error("当前下料零件没有可编辑的侧面尺寸。");
   }
   const state = ensureSketchState(view);
   clearCadImport(state);
-  const resourceVersion = Number(part?.manufacturingGeometryResourceVersion ?? 0);
-  const versionKey = `${partId}@${resourceVersion}`;
-  if (!state.sideByPart[partId] || state.sidePartVersions[partId] !== versionKey) {
-    const stored = part?.properties?.["tubeDesigner.sideSketch"];
-    state.sideByPart[partId] = stored && typeof stored === "object"
-      ? draftFromStoredSketch(stored)
-      : createDraft();
-    state.sidePartVersions[partId] = versionKey;
-  }
+  state.sideByPart[partId] = createDraft();
   state.mode = SIDE_MODE;
   state.tool = "select";
   state.command = null;
@@ -222,16 +214,15 @@ export function beginPartSideSketch(view, part, report) {
     ? structuredCloneValue(report) : null;
   state.sideReturnAreaId = String(view.activeAreaId || "nesting");
   state.sideCreationPayload = null;
-  state.sidePreviewPayload = part?.properties?.["tubeDesigner.sideSketchRecipe"]
-    ? { partEntityId: partId, resourceVersion } : null;
-  if (state.sidePreviewPayload) state.sideByPart[partId].coordinateSpace = ARC_LENGTH_AXIAL;
+  state.sideCadSession = null;
+  state.sidePreviewPayload = null;
   state.sideViewport = { offsetU: 0, zoom: 1 };
   state.sidePreview = report?.preview ?? null;
   state.sidePreviewPartCount = Number(report?.splitPartCount || 1);
-  state.sidePreviewResourceKey = report?.previewResourceKey || (state.sidePreviewPayload
-    ? `side-preview-${Date.now()}-${++sideDraftSequence}` : null);
+  state.sidePreviewResourceKey = report?.previewResourceKey || null;
   state.sidePreviewSignature = report?.preview ? sideSketchSignature(state.sideByPart[partId]) : null;
   state.sidePreviewPending = false;
+  state.sidePreviewRequest = null;
   state.sidePreviewError = "";
   state.sideSavePending = false;
   state.sideSaveError = "";
@@ -247,7 +238,7 @@ export function beginNewPartSideSketch(view, payload, preview) {
   const partId = `side-sketch-draft-${Date.now()}-${++sideDraftSequence}`;
   const part = { entityId: partId, name: "二维绘制零件", length: Number(preview.length ?? payload.length),
     profile: structuredCloneValue(preview.profile), independentNesting: true };
-  const state = beginPartSideSketch(view, part, preview);
+  const state = initializeNewPartSideSketch(view, part, preview);
   state.sideByPart[partId] = createDraft();
   state.sideByPart[partId].coordinateSpace = ARC_LENGTH_AXIAL;
   state.sideCreationPayload = structuredCloneValue(payload);
@@ -255,6 +246,56 @@ export function beginNewPartSideSketch(view, payload, preview) {
   state.sidePreviewResourceKey = payload.previewResourceKey || partId;
   state.sidePreview = preview.preview ?? null;
   state.sidePreviewSignature = sideSketchSignature(state.sideByPart[partId]);
+  return state;
+}
+
+export async function openPartSideSketch(context, view, part, ops) {
+  if (!part?.properties?.["tubeDesigner.cadDocument"]?.documentResourceId)
+    throw new Error("当前零件没有可编辑的管材 CAD 文档。");
+  const sceneProxy = context.sceneProxy, scene = view.scene, returnAreaId = view.activeAreaId;
+  const request = {};
+  view.tubeDesignerSideOpenRequest = request;
+  const owned = () => !view.disposed && context.isCurrentProject?.() !== false
+    && context.sceneProxy === sceneProxy && view.scene === scene
+    && view.activeAreaId === returnAreaId && view.tubeDesignerSideOpenRequest === request;
+  let document;
+  try {
+    document = await sceneProxy.invoke("TubeDesigner.GetTubeCadDocument", {
+      partEntityId: part.entityId, resourceVersion: part.manufacturingGeometryResourceVersion,
+      authoringView: "side",
+    }, { timeoutMs: 180000 });
+  } catch (error) {
+    if (!owned()) return null;
+    throw error;
+  }
+  if (!owned()) return null;
+  if (!isTubeCadDocumentSnapshot(document)) throw new Error("没有返回有效的管材边界文档。");
+  const authoring = document.authoringView;
+  if (authoring?.mode !== "side" || !Array.isArray(authoring.sketch?.entities)
+    || authoring.reference?.unfolding?.available !== true)
+    throw new Error("没有返回有效的零件侧壁绘图内容。");
+  const state = initializeNewPartSideSketch(view, part, authoring.reference);
+  state.sideByPart[state.targetPartId] = {
+    ...createDraft(), ...structuredCloneValue(authoring.sketch),
+    selectedIds: [], selectedPoints: [], history: [], future: [], dirty: false, persisted: true,
+  };
+  state.sideCadSession = {
+    sceneProxy, scene, partEntityId: String(part.entityId), revision: document.revision,
+    resourceVersion: document.resourceVersion, documentResourceId: document.documentResourceId,
+    geometry: structuredCloneValue(document.geometry), construction: structuredCloneValue(document.construction),
+    placement: structuredCloneValue(document.placement), bindings: structuredCloneValue(authoring.bindings),
+    readOnlyNodes: structuredCloneValue(authoring.readOnlyNodes ?? []),
+  };
+  state.sidePreviewPayload = { partEntityId: String(part.entityId) };
+  state.sidePreviewResourceKey = `side-cad-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${++sideDraftSequence}`}`;
+  state.sidePreview = authoring.preview ?? null;
+  state.sidePreviewSignature = state.sidePreview ? sideSketchSignature(state.sideByPart[state.targetPartId]) : null;
+  view.tubeDesignerSketchDialogOpen = true;
+  const sessionOwned = () => !view.disposed && context.isCurrentProject?.() !== false
+    && context.sceneProxy === sceneProxy && view.scene === scene
+    && view.tubeDesignerSketch === state && view.tubeDesignerSideOpenRequest === request;
+  if (!await selectSketchArea(context, view, "sketch", sessionOwned)) return null;
+  ops.renderProject(context, view);
   return state;
 }
 
@@ -417,7 +458,7 @@ export function renderSketchRightPane(_context, view) {
       ${state.mode === SIDE_MODE && state.sideTargetKind === "part" ? renderSideReferenceSummary(state.sideReference,isArcLengthAxial(state)) : ""}
       ${state.mode === SIDE_MODE ? `<section class="tube-sketch-side-cut-settings" data-tube-sketch-side-cut-settings><label class="tube-designer-field"><span>开放线条切缝宽度（mm）</span><input type="number" min="0.01" max="1000" step="any" aria-label="开放线条切缝宽度（mm）" value="${escapeAttr(draft.trajectoryWidth ?? 0.5)}" data-cam-change-action="tube-designer-sketch-trajectory-width" ${view.pending ? "disabled" : ""}/></label><small>闭合轮廓内部镂空；开放曲线按此宽度切除。${isArcLengthAxial(state) ? "横向按周长周期无限重复；竖向超出管长的部分自动截断，原草图保留。" : "周长方向可跨接缝绘制。"}</small></section>` : ""}
       ${renderSketchValidation(validation, state.mode, draft)}
-      ${isArrayCommand(state.command) || isCadOperation(state.command) ? "" : selected ? renderEntityProperties(selected, isArcLengthAxial(state)) : `<div class="tube-sketch-property-empty">
+      ${isArrayCommand(state.command) || isCadOperation(state.command) ? "" : selected ? renderEntityProperties(selected, isArcLengthAxial(state), state.mode === SIDE_MODE) : `<div class="tube-sketch-property-empty">
         <span class="tube-sketch-property-empty-icon">⌁</span>
         <strong>${selectedIds.length > 1 ? `已选择 ${selectedIds.length} 个图形` : "尚未选择图形"}</strong>
         <span>${selectedIds.length > 1 ? "使用菜单中的合并或删除，也可按 Delete 键。" : "在绘图区单击图形，或拖出选择框。"}</span>
@@ -522,8 +563,7 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     return { handled: true, result: await previewSideSketch(context, view, ops) };
   }
   if (action === "tube-designer-sketch-cancel-section") {
-    await cancelSketch(context, view, ops);
-    return { handled: true };
+    return { handled: true, result: await cancelSketch(context, view, ops) };
   }
   if (action === "tube-designer-sketch-save-overwrite") {
     state.saveChoiceDialogOpen = false;
@@ -540,6 +580,17 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
   }
   if (action === "tube-designer-sketch-property") {
     updateSelectedProperty(currentDraft(view, state), target);
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
+  if (action === "tube-designer-sketch-bevel") {
+    const draft = currentDraft(view, state);
+    const entity = draft.entities.find(item => item.id === target?.dataset?.sketchEntityId);
+    if (state.mode !== SIDE_MODE || !entity || entity.kind === "text") return { handled: true };
+    pushHistory(draft);
+    entity.bevel = changeCadBevel(entity.bevel, target.dataset.cadBevelField, target);
+    draft.future = []; draft.dirty = true;
+    view.error = "";
     ops.renderProject(context, view);
     return { handled: true };
   }
@@ -689,7 +740,8 @@ async function handleCadOperationAction(context, view, action, target, ops) {
   if (action === "tube-designer-sketch-numeric-apply") {
     try {
       const member = targetSideEntity(view.scene?.tubeDesigner ?? {}, state);
-      handleCadPoint(state, draft, numericPoint(state), { ...canvasMetrics(state.mode, member, state), sampleStep: 1e-9 });
+      // Typed coordinates close only at the entered endpoint, independent of zoom.
+      handleCadPoint(state, draft, numericPoint(state), { ...canvasMetrics(state.mode, member, state), sampleStep: 1e-9, snapTolerance: 1e-9 });
       state.cadInputError = "";
     } catch (error) { state.cadInputError = error.message; }
     ops.renderProject(context, view);
@@ -2597,6 +2649,8 @@ export function validateSideSketchDraft(draft, member, reference = null) {
     ids.add(id);
     const issue = entityGeometryIssue(entity);
     if (issue) return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形${issue}` };
+    const bevelIssue = validateCadBevel(entity.bevel, { segmentCount: sketchBevelSegments(entity).length });
+    if (bevelIssue) return { ready: false, kind: "invalid", message: `第 ${index + 1} 个图形：${bevelIssue}` };
     const geometry = checkedSideEntityGeometry(entity);
     const bounds = geometry.bounds;
     if (![bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite)) {
@@ -3550,7 +3604,7 @@ function renderArcLengthAxialGuide(metrics, member, reference) {
     <g clip-path="url(#sketch-side-guide-bounds)">${regions.join("")}${wires.join("")}</g>${seams.join("")}
     ${endY>=metrics.canvasTop-1e-6&&endY<=metrics.canvasBottom+1e-6?`<line class="tube-sketch-side-unfolding-end" data-tube-sketch-axial-limit="length" x1="${metrics.canvasLeft}" y1="${endY}" x2="${metrics.canvasRight}" y2="${endY}"/><text x="10" y="${endY-8}">S ${formatNumber(length)}</text>`:""}
     ${zeroY>=metrics.canvasTop-1e-6&&zeroY<=metrics.canvasBottom+1e-6?`<line class="tube-sketch-side-unfolding-end" data-tube-sketch-axial-limit="zero" x1="${metrics.canvasLeft}" y1="${zeroY}" x2="${metrics.canvasRight}" y2="${zeroY}"/><text x="10" y="${zeroY}">S 0</text>`:""}
-    <text x="88" y="62">${escapeText(member?.name ?? "管件")} · 横向 U 每 ${formatNumber(period)} mm 重复 · 竖向 S 管长 ${formatNumber(length)} mm</text>
+    <text x="88" y="62">${escapeText(member?.name ?? "管件")} · 横向 U 每 ${formatNumber(period)} mm 重复 · 竖向 S 原材长度 ${formatNumber(length)} mm</text>
     ${sourceWires.some(wire => wire.role === "profile-junction") ? `<text x="88" y="78">蓝色虚线：截面曲线段交接</text>` : ""}
     <text x="88" y="578">毫米等比显示 · 中键平移 · 滚轮缩放 · 超出管长的图形生成时自动截断，原图保留</text>
   </g>`;
@@ -3611,7 +3665,29 @@ function mappedPathAttributes(entity, metrics) {
   return `d="${pathSvg(entity, point => point)}" transform="matrix(${sx} 0 0 ${sy} ${origin[0]} ${origin[1]})"`;
 }
 
+function sketchBevelSegments(entity) {
+  if (entity.kind === "text") return [];
+  const segments = editableSegments(entity);
+  if (entity.kind === "path" && entity.closed && segments.length) {
+    const a = curvePoint(segments.at(-1), 1), b = curvePoint(segments[0], 0);
+    if (pointDistance2d(a, b) > 1e-7) segments.push({ kind: "line", x1: a[0], y1: a[1], x2: b[0], y2: b[1] });
+  }
+  return segments.filter(segment => segment.kind !== "line" || pointDistance2d(curvePoint(segment, 0), curvePoint(segment, 1)) > 1e-9);
+}
+
 function renderSketchEntity(entity, mode, metrics, selected, selectedPointKeys = new Set()) {
+  const geometry = renderSketchEntityGeometry(entity, mode, metrics, selected, selectedPointKeys);
+  if (mode !== SIDE_MODE || !selected || entity.bevel?.enabled === false || !entity.bevel) return geometry;
+  const guides = sketchBevelSegments(entity).map((segment, index) => {
+    const chosen = entity.bevel.segmentIndices === undefined || entity.bevel.segmentIndices.includes(index);
+    const point = modelToCanvas(curvePoint(segment, 0.5), metrics);
+    const path = { kind: "path", segments: [segment], closed: false };
+    return `<g data-sketch-bevel-guide="${index}" pointer-events="none">${chosen ? `<path ${mappedPathAttributes(path, metrics)} fill="none" stroke="#ffb64c" stroke-width="3" vector-effect="non-scaling-stroke"/>` : ""}<text x="${point[0] + 5}" y="${point[1] - 5}" fill="#ffb64c" font-size="12">${index + 1}</text></g>`;
+  }).join("");
+  return geometry + `<g class="tube-sketch-bevel-guides">${guides}</g>`;
+}
+
+function renderSketchEntityGeometry(entity, mode, metrics, selected, selectedPointKeys = new Set()) {
   const className = `tube-sketch-entity ${isClosedBoundaryEntity(entity) ? "closed" : "open"} ${selected ? "selected" : ""}`;
   const attributes = `class="${className}" data-tube-sketch-entity-id="${escapeAttr(entity.id)}"`;
   if (entity.kind === "path") {
@@ -3723,7 +3799,7 @@ function curvePath(points, kind, closed) {
   return `M${points.map((point) => `${point[0]} ${point[1]}`).join(" L")}${closed ? " Z" : ""}`;
 }
 
-function renderEntityProperties(entity, arcLengthAxial = false) {
+function renderEntityProperties(entity, arcLengthAxial = false, sideMode = false) {
   const controls = [];
   const field = (...args) => entityPropertyField(entity.id, ...args);
   const xLabel = arcLengthAxial ? "U" : "X", yLabel = arcLengthAxial ? "S" : "Y";
@@ -3782,7 +3858,11 @@ function renderEntityProperties(entity, arcLengthAxial = false) {
       <div class="tube-sketch-property-title"><strong>几何参数</strong><span>毫米</span></div>
       <div class="tube-sketch-property-grid">${controls.join("")}</div>
     </section>
-    ${isCurve && !analyticArc && entity.kind!=="path" ? `<section class="tube-sketch-property-section"><div class="tube-sketch-property-actions">
+    ${sideMode && entity.kind !== "text" ? `<section class="tube-sketch-property-section"><div class="tube-sketch-property-title"><strong>切口坡口</strong></div>${renderCadBevelEditor(entity.bevel, {
+      action: "tube-designer-sketch-bevel", attributes: `data-sketch-entity-id="${escapeAttr(entity.id)}"`,
+      segmentCount: isClosedBoundaryEntity(entity) || entity.bevel?.segmentIndices ? sketchBevelSegments(entity).length : undefined,
+    })}</section>` : ""}
+    ${isCurve && !analyticArc ? `<section class="tube-sketch-property-section"><div class="tube-sketch-property-actions">
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-sketch-reverse">反转方向</button>
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-sketch-toggle-closed">${entity.closed ? "打开曲线" : "闭合曲线"}</button>
     </div></section>` : ""}`;
@@ -4025,11 +4105,13 @@ export function breakEntityAtPoint(draft, entityId, point) {
   if (original.kind === "circle" || original.kind === "ellipse") {
     const arc = editableSegments(original)[0];
     const hit = nearestSegment(arc, point);
-    parts = [{ ...arc, startAngle: hit.t * FULL_ANGLE, closed: false, brokenStart: true, brokenEnd: true }];
+    parts = [{ ...arc, startAngle: hit.t * FULL_ANGLE, closed: false, brokenStart: true, brokenEnd: true,
+      ...(original.bevel ? { bevel: remapCadBevel(original.bevel, [0]) } : {}) }];
   } else {
     const edited = editPathAtPoint(original, point, true);
     if (!edited) return { changed: false, message: "请选择曲线内部或闭合轮廓的顶点；已有开放端点不需要再次打断。" };
-    parts = edited.parts.map(part=>compactEditablePath(part));
+    parts = edited.parts.map((part, partIndex)=>compactEditablePath({ ...part,
+      ...(original.bevel ? { bevel: remapCadBevel(original.bevel, edited.segmentSources[partIndex]) } : {}) }));
   }
   parts.forEach((e) => { e.id = createEntityId(); });
   const selectedPoints = parts.length === 1
@@ -4044,7 +4126,9 @@ export function insertPointOnEntity(draft, entityId, point) {
   if (index < 0) return { changed: false, message: "请在要插入点的曲线上单击。" };
   const edited = editPathAtPoint(draft.entities[index], point, false);
   if (!edited) return { changed: false, message: "此处已有顶点，或所选图形不支持插入点。" };
-  const replacement = compactEditablePath({ ...edited.parts[0], id: entityId }, false);
+  const original = draft.entities[index];
+  const replacement = compactEditablePath({ ...edited.parts[0], id: entityId,
+    ...(original.bevel ? { bevel: remapCadBevel(original.bevel, edited.segmentSources[0]) } : {}) }, false);
   pushHistory(draft);
   draft.entities[index] = replacement;
   setDraftSelection(draft, [entityId]);
@@ -4056,9 +4140,10 @@ export function insertPointOnEntity(draft, entityId, point) {
 
 function compactEditablePath(path, simplify = true) {
   const { id, closed = false, brokenStart, brokenEnd } = path;
+  simplify &&= !path.bevel?.segmentIndices;
   let segments = editableSegments(path).map((s) => {
     const clean = { ...s };
-    delete clean.id; delete clean.closed; delete clean.brokenStart; delete clean.brokenEnd;
+    delete clean.id; delete clean.closed; delete clean.brokenStart; delete clean.brokenEnd; delete clean.bevel;
     return clean;
   });
   if (simplify) {
@@ -4070,13 +4155,14 @@ function compactEditablePath(path, simplify = true) {
     }
     segments = joined;
   }
-  const metadata = { id, closed, brokenStart: !closed && brokenStart === true, brokenEnd: !closed && brokenEnd === true };
+  const metadata = { id, closed, brokenStart: !closed && brokenStart === true, brokenEnd: !closed && brokenEnd === true,
+    ...(path.bevel ? { bevel: structuredClone(path.bevel) } : {}) };
   if (simplify && segments.length === 1 && isArc(segments[0])) {
     const s = segments[0];
     if (closed && Math.abs(Math.abs(s.sweep) - FULL_ANGLE) < 1e-7) {
       return s.kind === "circleArc"
-        ? { id, kind: "circle", cx:s.cx,cy:s.cy,radius:s.radius,closed:true }
-        : { id, kind: "ellipse",cx:s.cx,cy:s.cy,radiusX:s.radiusX,radiusY:s.radiusY,rotation:s.rotation??0,closed:true };
+        ? { ...metadata, kind: "circle", cx:s.cx,cy:s.cy,radius:s.radius,closed:true }
+        : { ...metadata, kind: "ellipse",cx:s.cx,cy:s.cy,radiusX:s.radiusX,radiusY:s.radiusY,rotation:s.rotation??0,closed:true };
     }
     if (!closed) return { ...s, ...metadata };
   }
@@ -4108,7 +4194,10 @@ function isOpenEndpointSelection(entity,index) {
 }
 function editablePath(entity,reverse=false) {
   const segments=editableSegments(entity);
+  const bevel = entity.bevel ? structuredClone(entity.bevel) : undefined;
+  if (reverse && bevel?.segmentIndices) bevel.segmentIndices = bevel.segmentIndices.map(index => segments.length - 1 - index).sort((a, b) => a - b);
   return {kind:"path",segments:reverse?segments.reverse().map(reverseSegment):segments,closed:false,
+    ...(bevel ? { bevel } : {}),
     brokenStart:reverse?entity.brokenEnd:entity.brokenStart,
     brokenEnd:reverse?entity.brokenStart:entity.brokenEnd};
 }
@@ -4125,7 +4214,9 @@ function joinPathsAtEndpoints(a,b,tolerance) {
     right.segments[0]=moveSegmentEnd(right.segments[0],false,joint);
     if(pointDistance2d(curvePoint(left.segments.at(-1),1),curvePoint(right.segments[0],0))>1e-7)return null;
   }
+  const bevel = mergeCadBevels(left.bevel, right.bevel, left.segments.length, right.segments.length);
   return {kind:"path",segments:[...left.segments,...right.segments],closed:false,
+    ...(bevel ? { bevel } : {}),
     brokenStart:left.brokenStart,brokenEnd:right.brokenEnd};
 }
 function closeEditablePath(path,tolerance) {
@@ -4251,6 +4342,7 @@ function reverseSelected(draft) {
   const entity = draft.entities.find((item) => item.id === draftSelectionIds(draft)[0]);
   if (!entity) return;
   pushHistory(draft);
+  const bevelSegments = sketchBevelSegments(entity).length;
   if (entity.kind === "line") {
     [entity.x1, entity.x2] = [entity.x2, entity.x1];
     [entity.y1, entity.y2] = [entity.y2, entity.y1];
@@ -4258,11 +4350,20 @@ function reverseSelected(draft) {
     Object.assign(entity, reverseSegment(entity));
     [entity.brokenStart,entity.brokenEnd]=[entity.brokenEnd,entity.brokenStart];
   } else if(entity.kind==="path") {
-    entity.segments=entity.segments.reverse().map(reverseSegment);
+    entity.segments=sketchBevelSegments(entity).reverse().map(reverseSegment);
+    [entity.brokenStart,entity.brokenEnd]=[entity.brokenEnd,entity.brokenStart];
+  } else if (entity.kind === "spline" && entity.bevel?.segmentIndices) {
+    entity.segments = sketchBevelSegments(entity).reverse().map(reverseSegment);
+    entity.kind = "path"; delete entity.points;
     [entity.brokenStart,entity.brokenEnd]=[entity.brokenEnd,entity.brokenStart];
   } else if (Array.isArray(entity.points)) {
     entity.points.reverse();
     [entity.brokenStart, entity.brokenEnd] = [entity.brokenEnd === true, entity.brokenStart === true];
+  }
+  if (entity.bevel?.segmentIndices) {
+    const pointsClosed = entity.closed && ["polyline", "freehand"].includes(entity.kind);
+    entity.bevel.segmentIndices = entity.bevel.segmentIndices.map(index => pointsClosed
+      ? (bevelSegments - 2 - index + bevelSegments) % bevelSegments : bevelSegments - 1 - index).sort((a, b) => a - b);
   }
   draft.future = [];
   draft.dirty = true;
@@ -4270,9 +4371,12 @@ function reverseSelected(draft) {
 
 function toggleSelectedClosed(draft) {
   const entity = draft.entities.find((item) => item.id === draftSelectionIds(draft)[0]);
-  if (!entity || !Array.isArray(entity.points)) return;
+  if (!entity || !(Array.isArray(entity.points) || entity.kind === "path")) return;
   pushHistory(draft);
+  const previousCount = sketchBevelSegments(entity).length;
   entity.closed = !entity.closed;
+  if (entity.bevel?.segmentIndices) entity.bevel = remapCadBevel(entity.bevel,
+    sketchBevelSegments(entity).map((_, index) => index < previousCount ? index : null));
   if (entity.closed) {
     delete entity.brokenStart;
     delete entity.brokenEnd;
@@ -4589,7 +4693,6 @@ async function cancelSketch(context, view, ops) {
   releaseSideSketchPreview(context, state);
   if (state.mode === SIDE_MODE && state.sideTargetKind === "part" && state.sidePreviewPayload) {
     delete state.sideByPart[state.targetPartId];
-    delete state.sidePartVersions[state.targetPartId];
     state.sideCreationPayload = null;
     state.sidePreviewPayload = null;
     state.sidePreview = null;
@@ -4604,13 +4707,15 @@ async function cancelSketch(context, view, ops) {
   return true;
 }
 
-async function selectSketchArea(context, view, areaId) {
+async function selectSketchArea(context, view, areaId, owned = () => true) {
   const resourceArea = ["profiles", "tools", "components"].includes(areaId);
   const tabId = resourceArea ? "resources" : areaId;
   if (resourceArea) view.tubeDesignerResourceLibraryArea = areaId;
   await context.actions?.selectRibbonTab?.(tabId);
+  if (!owned()) return false;
   context.activeRibbonTabId = tabId;
   view.activeAreaId = areaId;
+  return true;
 }
 
 function selectSavedProfileInLibrary(view, profileId) {
@@ -4628,16 +4733,19 @@ function selectSavedProfileInLibrary(view, profileId) {
 async function saveSideSketch(context, view, ops) {
   const state = ensureSketchState(view);
   if (view.pending || state.sideSavePending) return null;
-  const sceneProxy = context.sceneProxy;
+  const sceneProxy = context.sceneProxy, scene = view.scene;
   state.sideSaveError = "";
   try {
     return await applySideSketch(context, view, ops);
   } catch (error) {
     // The workbench logs and clears view.error. Keep a failed modal save
     // visible here so the user can correct the drawing, retry or cancel.
-    if (!view.disposed && context.sceneProxy === sceneProxy && view.tubeDesignerSketch === state) {
+    if (!view.disposed && context.isCurrentProject?.() !== false && view.scene === scene
+      && context.sceneProxy === sceneProxy && view.tubeDesignerSketch === state) {
       state.sideSaveError = error?.message ?? String(error);
       ops.renderProject(context, view);
+    } else {
+      return null;
     }
     throw error;
   }
@@ -4662,28 +4770,34 @@ async function applySideSketch(context, view, ops) {
   const wasDialogOpen = Boolean(view.tubeDesignerSketchDialogOpen);
   const creationPayload = state.sideCreationPayload;
   const sceneProxy = context.sceneProxy;
+  const scene = view.scene;
+  if (state.sideCadSession && (state.sideCadSession.sceneProxy !== sceneProxy
+    || state.sideCadSession.scene !== scene))
+    throw new Error("当前二维编辑会话已失效，请重新打开零件。");
+  const operation = { progress: { title: creationPayload ? "正在创建二维绘制零件" : "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "生成三维切割", mode: "Sketch" } };
+  view.tubeDesignerSideSaveOperation = operation;
+  const owned = () => !view.disposed && context.isCurrentProject?.() !== false
+    && context.sceneProxy === sceneProxy && view.scene === scene && view.tubeDesignerSketch === state;
   view.pending = true;
   state.sideSavePending = true;
-  view.progress = { title: creationPayload ? "正在创建二维绘制零件" : "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "生成三维切割", mode: "Sketch" };
+  view.progress = operation.progress;
   ops.renderProject(context, view);
   let saved = false;
   try {
     let method;
     let payload;
-    const independentPart = partTarget
-      && (member.independentNesting === true
-        || state.sideTargetSnapshot?.independentNesting === true);
     if (creationPayload) {
       method = "TubeDesigner.AddNestingSideSketchPart";
       payload = { ...structuredCloneValue(creationPayload), sketch };
       delete payload.previewResourceKey;
-    } else if (independentPart) {
-      method = "TubeDesigner.SavePartSketch";
-      payload = {
-        partEntityId: member.entityId,
-        resourceVersion: Number(member.manufacturingGeometryResourceVersion ?? 0),
-        sketch,
-      };
+    } else if (partTarget && state.sideCadSession) {
+      const session = state.sideCadSession;
+      method = "TubeDesigner.ApplyTubeCadDocument";
+      payload = { partEntityId: session.partEntityId, resourceVersion: session.resourceVersion,
+        revision: session.revision, authoringEdit: { mode: "side", sketch,
+          bindings: structuredCloneValue(session.bindings) } };
+    } else if (partTarget) {
+      throw new Error("当前二维编辑会话已失效，请重新打开零件。");
     } else {
       const targetMemberId = String(member.sourceMemberId ?? member.entityId ?? "");
       if (!productId || !targetMemberId) throw new Error("当前下料零件没有可保存草图的产品来源。");
@@ -4696,8 +4810,11 @@ async function applySideSketch(context, view, ops) {
     }
     const response = await sceneProxy.invoke(method, payload, { timeoutMs: 180000 });
     if (creationPayload && (!response?.tubeDesigner || !response?.partEntityId)) throw new Error("二维绘制未返回有效的下料零件。");
-    if (context.sceneProxy !== sceneProxy || view.tubeDesignerSketch !== state) return null;
-    if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
+    if (!owned() || view.tubeDesignerSideSaveOperation !== operation) return null;
+    const snapshot = state.sideCadSession ? response?.snapshot?.tubeDesigner : response?.tubeDesigner;
+    if (state.sideCadSession && !isTubeCadDocumentSnapshot(response)) throw new Error("二维修改没有返回有效的管材边界文档。");
+    if (state.sideCadSession && !snapshot) throw new Error("二维编辑未返回有效的零件场景。");
+    if (snapshot) scene.tubeDesigner = snapshot;
     if (partTarget && response?.partEntityIds?.length) view.tubeDesignerNestingSelectedPartIds = response.partEntityIds.map(String);
     if (creationPayload) {
       const partId = String(response.partEntityId);
@@ -4726,16 +4843,23 @@ async function applySideSketch(context, view, ops) {
     saved = true;
     return sketch;
   } finally {
-    view.pending = false;
-    state.sideSavePending = false;
-    view.progress = null;
-    if (saved) {
+    if (view.tubeDesignerSideSaveOperation === operation) {
+      delete view.tubeDesignerSideSaveOperation;
+      if (owned()) {
+        state.sideSavePending = false;
+        if (view.progress === operation.progress) {
+          view.pending = false;
+          view.progress = null;
+        }
+      }
+    }
+    if (saved && owned()) {
       state.sidePreviewRequest = null;
       disposeSideSketchPreview(context.mount);
       releaseSideSketchPreview(context, state);
       if (wasDialogOpen) {
         view.tubeDesignerSketchDialogOpen = false;
-        await selectSketchArea(context, view, state.sideReturnAreaId || "nesting");
+        if (!await selectSketchArea(context, view, state.sideReturnAreaId || "nesting", owned)) return null;
       }
       ops.renderProject(context, view);
       ops.showNotice(context, view, creationPayload ? "已创建二维绘制零件，可在下料列表调整数量或继续二维编辑。" : removing
@@ -4745,10 +4869,12 @@ async function applySideSketch(context, view, ops) {
         // Persistence has already succeeded. Restoring a previous nesting
         // result must not keep the sketch modal open as if it were unsaved.
         await restoreSavedNestingTask(view, context);
-        await context.actions?.refreshActiveSceneState?.();
+        if (owned()) await context.actions?.refreshActiveSceneState?.();
       }
     }
-    else ops.renderProject(context, view);
+    else if (!view.disposed && context.isCurrentProject?.() !== false
+      && context.sceneProxy === sceneProxy && view.scene === scene && view.tubeDesignerSketch === state)
+      ops.renderProject(context, view);
   }
 }
 
@@ -4796,8 +4922,11 @@ async function previewSideSketch(context, view, ops) {
   if (!state.sidePreviewPayload || state.sidePreviewPending) return null;
   const member = targetSideEntity(view.scene?.tubeDesigner ?? {}, state);
   const validation = validateSideSketchDraft(draft, member, state.sideReference);
-  if (!validation.ready) throw new Error(validation.message);
-  const sceneProxy = context.sceneProxy, mount = context.mount;
+  if (!validation.ready && (!state.sideCadSession || draft.entities.length || draft.endCuts))
+    throw new Error(validation.message);
+  const sceneProxy = context.sceneProxy, mount = context.mount, scene = view.scene;
+  const session = state.sideCadSession;
+  const releaseMethod = session ? "TubeDesigner.ReleaseTubeCadDocumentPreview" : "TubeDesigner.ReleaseNestingSideSketchPreview";
   const request = {}, signature = sideSketchSignature(draft);
   state.sidePreviewRequest = request;
   state.sidePreviewPending = true;
@@ -4805,22 +4934,29 @@ async function previewSideSketch(context, view, ops) {
   const previewResourceKey = state.sidePreviewResourceKey ??= `side-preview-${Date.now()}-${++sideDraftSequence}`;
   const releaseLate = () => {
     try {
-      Promise.resolve(sceneProxy.invoke("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey })).catch(() => {});
+      Promise.resolve(sceneProxy.invoke(releaseMethod, { previewResourceKey })).catch(() => {});
     } catch {}
   };
   const current = () => !view.disposed && context.isCurrentProject?.() !== false
     && state.sidePreviewRequest === request && view.tubeDesignerSketch === state
-    && view.tubeDesignerSketchDialogOpen && context.sceneProxy === sceneProxy && context.mount === mount;
+    && view.tubeDesignerSketchDialogOpen && view.scene === scene && context.sceneProxy === sceneProxy && context.mount === mount;
   ops.renderProject(context, view);
   try {
-    const response = await sceneProxy.invoke("TubeDesigner.PreviewNestingSideSketchPart", {
-      ...structuredCloneValue(state.sidePreviewPayload), sketch: buildSideSketchRecord(state, member, draft),
-      previewResourceKey,
-    }, { timeoutMs: 180000 });
+    const sketch = buildSideSketchRecord(state, member, draft);
+    const method = session ? "TubeDesigner.PreviewTubeCadDocument" : "TubeDesigner.PreviewNestingSideSketchPart";
+    const payload = session ? { partEntityId: session.partEntityId, resourceVersion: session.resourceVersion,
+      revision: session.revision, previewResourceKey,
+      authoringEdit: { mode: "side", sketch, bindings: structuredCloneValue(session.bindings) } }
+      : { ...structuredCloneValue(state.sidePreviewPayload), sketch, previewResourceKey };
+    const response = await sceneProxy.invoke(method, payload, { timeoutMs: 180000 });
     if (!current()) { releaseLate(); return null; }
     if (sideSketchSignature(draft) !== signature) return null;
-    if (response?.available !== true || !response.preview?.baseGeometry?.url) throw new Error(response?.message || "未能生成三维切割预览。");
-    state.sidePreview = response.preview;
+    const preview = session ? response.preview ?? response : response.preview;
+    if (session && (!isTubeBoundaryGeometry(response.documentGeometry)||!Array.isArray(response.documentConstruction?.SolidNodes)))
+      throw new Error("二维预览没有返回有效的管材边界文档。");
+    if ((!session && response?.available !== true) || !preview?.baseGeometry?.url)
+      throw new Error(response?.message || "未能生成三维切割预览。");
+    state.sidePreview = preview;
     state.sidePreviewPartCount = Number(response.splitPartCount || 1);
     state.sidePreviewSignature = signature;
     return response;

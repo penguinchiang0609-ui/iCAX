@@ -19,7 +19,7 @@ try {
   return route.fulfill({contentType:"text/javascript",body:readFileSync(file,"utf8")});
  });
  await page.goto("http://drawing.test/");
- const common=readFileSync(new URL("../../apps/_shared/workbench/styles/laser3dcam.css",import.meta.url),"utf8");
+ const common=readFileSync(new URL("../../apps/_shared/workbench/styles/workbench.css",import.meta.url),"utf8");
  await page.addStyleTag({content:"*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}"+common+tubeDesignerCss});
  await page.evaluate(async tools=>{
   const drawing=await import("/src/apps/tube-designer/webpage/partDrawing.mjs");
@@ -40,7 +40,8 @@ try {
    async invoke(method,payload){
     calls.push(structuredClone({method,payload}));
     if(method==="TubeDesigner.GetPartDrawingTools")return {tools};
-    if(method!=="TubeDesigner.PreviewPartDrawing"||payload.toolsOnly!==true)throw new Error("Unexpected drawing API/mode: "+method);
+    if(method==="TubeDesigner.ReleasePartDrawingPreview")return {released:true};
+    if(method!=="TubeDesigner.PreviewPartDrawing"||payload.toolsOnly!==false)throw new Error("Unexpected drawing API/mode: "+method);
     const main=put("main",JSON.stringify(payload.drawing),()=>{
      const shape=new THREE.Shape();shape.absarc(0,0,20,0,Math.PI*2,false);
      const hole=new THREE.Path();hole.absarc(0,0,18,0,Math.PI*2,true);shape.holes.push(hole);
@@ -58,7 +59,7 @@ try {
      } else {cutter=new THREE.CylinderGeometry(20,20,100,32);cutter.rotateX(Math.PI/2);cutter.translate(f.station??250,0,0);}
      return encode(cutter);
     })}));
-    return {toolsOnly:true,previewComputed:true,baseGeometry:main,baseMaterial,toolMaterial,toolPreviews,baseBounds:{min:[0,-20,-20],max:[payload.drawing.length,20,20]},length:payload.drawing.length};
+    return {toolsOnly:false,previewComputed:true,geometry:main,material:baseMaterial,baseGeometry:main,baseMaterial,toolMaterial,toolPreviews,baseBounds:{min:[0,-20,-20],max:[payload.drawing.length,20,20]},length:payload.drawing.length};
    },resources:{async get(url){reads.set(url,(reads.get(url)??0)+1);return new Response(resources.get(url),{status:resources.has(url)?200:404});}}
   }};
   const ops={createPartDrawingViewport(options){return viewport=createThreeViewport(options);},renderProject(){
@@ -68,6 +69,7 @@ try {
    preview.attachPartDrawingPreview(context,view,context.mount,ops);drawing.attachPartDrawingEditor(context,view,context.mount,ops);
   }};
   drawing.openPartDrawing(view);
+  view.tubeDesignerPartDrawing.state.previewMode="tools";
   window.fixture={view,drawing,ops,calls,reads,get state(){return view.tubeDesignerPartDrawing.state;},get fullRenders(){return fullRenders;},get localPatches(){return localPatches;},get viewport(){return viewport;}};
   document.addEventListener("change",async e=>{await drawing.handlePartDrawingAction(context,view,e.target.dataset.camChangeAction??"",e.target,ops);});
   document.addEventListener("click",async e=>{const t=e.target.closest("[data-cam-action]");if(t)await drawing.handlePartDrawingAction(context,view,t.dataset.camAction,t,ops);});
@@ -144,7 +146,7 @@ try {
   await act("selected-remove").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),1);
  }
  await checkIdentity();const calls=await page.evaluate(()=>window.fixture.calls);
- assert.ok(calls.some(c=>c.method==="TubeDesigner.GetPartDrawingTools"));assert.ok(calls.filter(c=>c.method==="TubeDesigner.PreviewPartDrawing").every(c=>c.payload.toolsOnly===true));
+ assert.ok(calls.some(c=>c.method==="TubeDesigner.GetPartDrawingTools"));assert.ok(calls.filter(c=>c.method==="TubeDesigner.PreviewPartDrawing").every(c=>c.payload.toolsOnly===false));
  assert.ok(calls.every(c=>!["TubeDesigner.GetPunchTools","TubeDesigner.PreviewPunchPart"].includes(c.method)));
  assert.deepEqual(await page.evaluate(()=>[...window.fixture.reads].filter(([url])=>url.startsWith("fixture://main/")).map(([,count])=>count)),[1],"Unchanged main geometry is fetched once through all parameter edits");
  assert.deepEqual(errors,[]);console.log("Dedicated drawing: 3 left-tree / canvas / right-inspector layouts, default main tube, live feature/section edits, current V strategy conditions, stable main resource + canvas + outer workbench passed.");

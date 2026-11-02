@@ -1,0 +1,87 @@
+{
+  "passed": true,
+  "publicData": true,
+  "caseId": "246",
+  "name": "套管.IGS",
+  "faces": 10,
+  "segments": 180,
+  "classificationCounts": {
+    "machining": 10,
+    "nonMachining": 4,
+    "exposed": 0,
+    "internal": 0,
+    "zeroTrim": 2
+  },
+  "sourceIdsArePlainText": true,
+  "onlyCurrentFaceIdCreatesNavigation": true,
+  "nonMachiningRecordsCreateNoFaceNavigation": true,
+  "classificationReview": {
+    "diagnostics": [
+      "Proved 278 coincident free-edge intervals without changing source faces",
+      "Prepared independent split faces with CAD Task workers=8",
+      "Collected independent face-local split tools with CAD Task workers=8",
+      "Reconstructed original face trims for splitting: face=2",
+      "Reconstructed original face trims for splitting: face=4",
+      "Reconstructed original face trims for splitting: face=6",
+      "Original trim reconstruction unavailable: face=7 Reconstructed original surface-trim topology is invalid",
+      "Reconstructed original face trims for splitting: face=8",
+      "Original trim reconstruction unavailable: face=9 Reconstructed original surface-trim topology is invalid",
+      "Retained 2 transverse/oblique planar cutting faces without axial split searches; original geometry unchanged",
+      "All section-vertex segments already exist as target edges",
+      "Non-machining zero-area trim source split face=7 proof=exactly-collapsed-nonperiodic-U-trim-domain-with-constant-control-coordinate UV=[1,1,0,0.016624023000000005] wires=1 coedge uses=1 UV roundoff budget=0 maximum UV endpoint gap=0 UV area representation bound=0; original face, support and trims retained in SplitGeometry",
+      "Non-machining zero-area trim source split face=9 proof=exactly-collapsed-nonperiodic-U-trim-domain-with-constant-control-coordinate UV=[1,1,0,0.016624022999999998] wires=1 coedge uses=1 UV roundoff budget=0 maximum UV endpoint gap=0 UV area representation bound=0; original face, support and trims retained in SplitGeometry",
+      "Proved 278 coincident free-edge intervals without changing source faces",
+      "Classified independent stock-skin faces with CAD Task workers=8",
+      "Classified 10 machining faces and 4 non-machining faces"
+    ],
+    "machiningFaces": 10,
+    "nonMachiningDerivedFaces": [
+      {
+        "faceId": "7",
+        "sourceId": "",
+        "sourceTags": [
+          "classify.zeroAreaTrim=true",
+          "classify.zeroAreaSourceFaceId=7",
+          "classify.zeroAreaSourceSplitFaceIndex=7",
+          "classify.zeroAreaProof=exactly-collapsed-nonperiodic-U-trim-domain-with-constant-control-coordinate",
+          "classify.zeroAreaUVBounds=1,1,0,0.016624023000000005",
+          "classify.zeroAreaWireCount=1",
+          "classify.zeroAreaCoedgeUseCount=1",
+          "classify.zeroAreaUVRoundoffBudget=0",
+          "classify.zeroAreaMaximumEndpointUVGap=0",
+          "classify.zeroAreaUVAreaRepresentationBound=0"
+        ]
+      },
+      {
+        "faceId": "9",
+        "sourceId": "",
+        "sourceTags": [
+          "classify.zeroAreaTrim=true",
+          "classify.zeroAreaSourceFaceId=9",
+          "classify.zeroAreaSourceSplitFaceIndex=9",
+          "classify.zeroAreaProof=exactly-collapsed-nonperiodic-U-trim-domain-with-constant-control-coordinate",
+          "classify.zeroAreaUVBounds=1,1,0,0.016624022999999998",
+          "classify.zeroAreaWireCount=1",
+          "classify.zeroAreaCoedgeUseCount=1",
+          "classify.zeroAreaUVRoundoffBudget=0",
+          "classify.zeroAreaMaximumEndpointUVGap=0",
+          "classify.zeroAreaUVAreaRepresentationBound=0"
+        ]
+      }
+    ],
+    "nonMachiningFaces": 4
+  },
+  "selectedExposedFaces": [],
+  "edgeStylesUnchanged": true,
+  "filesBefore": {
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.json": "07da9cfffb19983f75fa5c5c2aa5d5f85530c222ba5ee64448d1cb033700b106",
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.brep": "bd8abe143bc2f5c6cd05c63ec2eaba80c0022bbbcac1f79b0f6d318fd732b264",
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.step": "adeff8c85c77b8ecd490c6ab2b0ab99496f652bff5888b92522d30520c001bcd"
+  },
+  "filesAfter": {
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.json": "07da9cfffb19983f75fa5c5c2aa5d5f85530c222ba5ee64448d1cb033700b106",
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.brep": "bd8abe143bc2f5c6cd05c63ec2eaba80c0022bbbcac1f79b0f6d318fd732b264",
+    "D:\\penguinchinage0609\\iCAX\\TestData\\Tube\\EdgeAnalysis\\套管.step": "adeff8c85c77b8ecd490c6ab2b0ab99496f652bff5888b92522d30520c001bcd"
+  },
+  "pageErrors": []
+}

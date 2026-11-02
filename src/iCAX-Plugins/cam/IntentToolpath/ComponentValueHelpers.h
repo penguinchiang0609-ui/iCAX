@@ -6,6 +6,9 @@
 
 namespace iCAX::CAM::Intent
 {
+inline iCAX::Data::PropertyValue ToObjectMapVariant(const iCAX::Data::ObjectMap& value){return value;}
+inline iCAX::Data::ObjectMap FromObjectMapVariant(const iCAX::Data::PropertyValue& value){return value.To<iCAX::Data::ObjectMap>();}
+inline bool ObjectMapEqual(const iCAX::Data::ObjectMap& a,const iCAX::Data::ObjectMap& b){return a==b;}
 inline iCAX::Data::PropertyValue ToStringVariant(IN const std::string& Value_) { return iCAX::Data::PropertyValue(Value_); }
 inline std::string FromStringVariant(IN const iCAX::Data::PropertyValue& Value_) { return Value_.To<std::string>(); }
 inline bool StringEqual(IN const std::string& Left_, IN const std::string& Right_) { return Left_ == Right_; }

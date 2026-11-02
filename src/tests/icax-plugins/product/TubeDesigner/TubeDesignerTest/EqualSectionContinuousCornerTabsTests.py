@@ -73,45 +73,22 @@ class EqualSectionContinuousCornerTabsTests(unittest.TestCase):
             self.assertEqual(request, original)
             yield from prepared['features']
 
-    def test_current_two_left_right_and_three_use_frozen_shallow_edge_sockets(self):
-        total, rotations = 0, set()
-        for values, _, allocation, plan in self.cases:
-            with self.subTest(face=values['faceType'], side=values['sidePosition']):
-                features = list(self.prepared_corner_features(allocation, plan))
-                self.assertEqual(len(features), 4 if values['faceType'] == 'two' else 8)
-                for feature in features:
-                    total += 1
-                    parameters = feature['frozenTool']['parameters']
-                    self.assertTrue(parameters['allowSideOpening'])
-                    self.assertFalse(parameters['allowEndOpening'])
-                    self.assertNotIn('allowSideOpening', feature['frozenTool']['context']['feature'])
-                    graph = {node['key']: node for node in
-                             feature['frozenTool']['geometry']['model']['geometry']}
-                    slots = [graph['socket-' + str(index) + '-profile'] for index in range(2)]
-                    across = 1 if feature['face'] in ('top', 'bottom') else 2
-                    axial = parameters['pairRotation'] == 90
-                    rotations.add(parameters['pairRotation'])
-                    coordinates = [node['arguments']['placement']['origin'][0 if axial else across]
-                                   - (feature['station'] if axial else 0.) for node in slots]
-                    self.assertAlmostEqual(min(coordinates), -18.4)
-                    self.assertAlmostEqual(max(coordinates), 18.4)
-                    for index, slot in enumerate(slots):
-                        placement = slot['arguments']['placement']
-                        self.assertAlmostEqual(placement['origin'][across if axial else 0],
-                                               0. if axial else feature['station'])
-                        path = slot['arguments']['contours'][0]
-                        points = [segment[name] for segment in path['segments']
-                                  for name in ('start', 'middle', 'end') if name in segment]
-                        self.assertAlmostEqual(max(point[0] for point in points)
-                                               - min(point[0] for point in points), 9.6)
-                        self.assertAlmostEqual(max(point[1] for point in points)
-                                               - min(point[1] for point in points), 1.6)
-                        vector = graph['socket-' + str(index)]['arguments']['vector']
-                        self.assertAlmostEqual(math.sqrt(sum(value * value for value in vector)),
-                                               12. if axial else 12.02)
-                        self.assertLess(math.sqrt(sum(value * value for value in vector)), 36.8)
-        self.assertEqual(rotations, {0, 90})
-        self.assertEqual(total, 16)
+    def test_current_two_left_right_and_three_use_frozen_near_half_shell_sockets(self):
+        total,rotations=0,set()
+        for values,_,allocation,plan in self.cases:
+            features=list(self.prepared_corner_features(allocation,plan))
+            self.assertEqual(len(features),4 if values['faceType']=='two' else 8)
+            for feature in features:
+                total+=1;parameters=feature['frozenTool']['parameters']
+                self.assertNotIn('allowSideOpening',parameters)
+                self.assertNotIn('allowEndOpening',parameters)
+                graph={n['key']:n for n in feature['frozenTool']['geometry']['model']['geometry']}
+                self.assertEqual(len(graph['mating-ring.profile']['arguments']['contours']),2)
+                vector=graph['mating-ring']['arguments']['vector']
+                self.assertAlmostEqual(math.sqrt(sum(v*v for v in vector)),19.02)
+                self.assertEqual(graph['tool']['arguments']['operation'],'intersect')
+                rotations.add(parameters['pairRotation'])
+        self.assertEqual(rotations,{0,90});self.assertEqual(total,16)
 
     def test_public_input_and_returned_parameters_keep_only_current_product_fields(self):
         contract = load('security_window_product_contract')
@@ -130,22 +107,12 @@ class EqualSectionContinuousCornerTabsTests(unittest.TestCase):
                     self.assertEqual((profile['width'], profile['depth'], profile['wallThickness']),
                                      (38., 38., 1.2))
 
-    def test_internal_socket_policy_is_hidden_and_standalone_default_is_closed(self):
-        descriptor = json.loads((ROOT.parent / 'mold/paired-side-slots/tool.json').read_text(encoding='utf-8'))
-        policy = next(value for value in descriptor['parameters'] if value['key'] == 'allowSideOpening')
-        self.assertIs(policy['defaultValue'], False)
-        self.assertIs(policy['presentation']['visible'], False)
-        profile = {'contours': self.product._profile(self.defaults, 'frame').contours()}
-        request = {'targetSection': profile, 'bounds': {'min': [0., -19., -19.], 'max': [1200., 19., 19.]},
-            'features': [{'id': 'closed', 'toolRef': {'id': 'paired-side-slots'}, 'toolTarget': 'part',
-                'toolParameters': {'pairCount': 2, 'tabWidth': 8., 'tabLength': 12., 'sideClearance': .2,
-                                   'pairRotation': 0., 'allowEndOpening': False},
-                'face': 'top', 'reference': 'start', 'station': 19., 'offset': 0., 'rotation': 0.,
-                'section': {'profile': profile}}]}
-        original = deepcopy(request)
-        with self.assertRaisesRegex(ValueError, '平直侧壁'):
-            self.punch.prepare(request)
-        self.assertEqual(request, original)
+    def test_mother_survival_has_no_hidden_flat_or_edge_permission(self):
+        descriptor=json.loads((ROOT.parent/'mold/paired-side-slots/tool.json').read_text(encoding='utf-8'))
+        keys={v['key'] for v in descriptor['parameters']}
+        self.assertNotIn('allowSideOpening',keys)
+        self.assertNotIn('allowEndOpening',keys)
+        self.assertIn('tabAngle',keys)
 
     def test_only_continuous_tabs_relax_the_complete_port_check(self):
         call = self.corner()
@@ -207,8 +174,8 @@ class EqualSectionContinuousCornerTabsTests(unittest.TestCase):
         for part in result['parts']:
             for feature in part['features']:
                 if feature['toolRef']['id'] == 'paired-side-slots':
-                    self.assertTrue(feature['toolParameters']['allowSideOpening'])
-                    self.assertFalse(feature['toolParameters']['allowEndOpening'])
+                    self.assertNotIn('allowSideOpening',feature['toolParameters'])
+                    self.assertNotIn('allowEndOpening',feature['toolParameters'])
 
     def test_direct_rectangular_post_apertures_use_the_same_parameter_entry(self):
         allocation = grid_window('tabs', 'tabs', foldedPostJoint='tabs')[-1]
@@ -227,7 +194,7 @@ class EqualSectionContinuousCornerTabsTests(unittest.TestCase):
                 self.assertEqual(result['parameters'], call['parameters'])
             self.assertEqual(generated.call_count, len(calls))
             for parameters, context in (call.args for call in generated.call_args_list):
-                self.assertIs(parameters['allowSideOpening'], True)
+                self.assertNotIn('allowSideOpening',parameters)
                 self.assertNotIn('allowSideOpening', context['feature'])
 
 

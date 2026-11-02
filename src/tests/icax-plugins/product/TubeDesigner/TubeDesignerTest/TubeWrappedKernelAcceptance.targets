@@ -1,0 +1,28 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)CadBevelAcceptanceBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>TubeWrappedKernelAcceptance</TargetName>
+    <OutDir>$(SolutionDir)..\output\tests\tube-wrapped-kernel\native\</OutDir>
+    <IntDir>$(OutDir)obj\</IntDir>
+    <TargetPath>$(OutDir)$(TargetName)$(TargetExt)</TargetPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ClCompile Remove="$(MSBuildProjectDirectory)\CadBevelAcceptanceBridge.cpp" />
+    <ClCompile Include="$(MSBuildProjectDirectory)\TubeWrappedKernelAcceptance.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;_OPEN_CASCADE_RESOURCE_IMPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\standalone\occ-extrusion-toolpath\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeTubeWrapped.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_OPEN_CASCADE_RESOURCE_IMPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)shared_wrapped.obj</ObjectFileName>
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <ClCompile Update="@(ClCompile)">
+      <ObjectFileName>$(IntDir)%(Filename).obj</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+</Project>

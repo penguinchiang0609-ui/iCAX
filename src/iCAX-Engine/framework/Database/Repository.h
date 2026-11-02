@@ -28,6 +28,8 @@ namespace iCAX
         class CRepository final : public IRepository, public IEntityEventListener, public std::enable_shared_from_this<CRepository>
         {
             friend class CRepositoryEventSuppressor;
+            friend class CRepositoryDerivedPublicationScope;
+            friend class CRepositoryDerivedNotificationScope;
             friend class CEntityView;
             friend class CEntityWhereEvaluator;
             friend class CRepositoryTransaction;
@@ -85,6 +87,8 @@ namespace iCAX
             * @brief 开始事务
             */
             virtual ITransaction& BeginTransaction(IN const std::string& strName_ = std::string()) override;
+            ITransaction& BeginDerivedTransaction(const iCAX::Data::uuid& OwnerID_,
+                const std::string& Name_) override;
 
             /*
             * @brief 提交事务
@@ -101,6 +105,8 @@ namespace iCAX
             * @brief 开始一次撤销还原记录
             */
             virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_) override;
+            void RetainDerivedEntityForUndo(const iCAX::Data::uuid& EntityID_,
+                const iCAX::Data::uuid& OwnerID_) override;
 
             /*
             * @brief 当前是否正在记录撤销还原步骤
@@ -143,6 +149,8 @@ namespace iCAX
             * @brief 是否已打开快速保存操作日志
             */
             virtual bool HasOperationLog() const override;
+            bool IsWriteInProgress() const override;
+            bool FlushOperationLog() override;
 
             /*
             * @brief 回放操作日志
@@ -469,6 +477,11 @@ namespace iCAX
             */
             void AppendOperationLog(IN const COperationBatch& Batch_);
 
+            // Derived results are already committed when their batch is
+            // announced. Notification callbacks may read them, but must queue
+            // further writes instead of mutating a second transaction inline.
+            void RequireWritableNotificationContext() const;
+
         private:
             struct SEntityViewEntry final
             {
@@ -482,6 +495,8 @@ namespace iCAX
             std::string m_strOperationBatchName;
             int m_nRepositoryEventSuppressionDepth = 0;
             int m_nHistoryReplayDepth = 0;
+            bool m_bDerivedPublicationNotification = false;
+            int m_nDerivedPublicationDepth = 0;
             std::unique_ptr<CRepositoryTransaction> m_pCurrentTransaction;
             std::unique_ptr<CRepositoryUndoRedoHistory> m_pHistory;
             std::unique_ptr<COperationBatchJournal> m_pOperationLog;
@@ -497,6 +512,28 @@ namespace iCAX
             std::shared_ptr<VersionTable> m_pVerisonTable;                                     //!< 版本号表
             std::shared_ptr<CDerivedPropertyManager> m_pDerivedPropertyManager;                 //!< 派生字段管理器
             std::shared_ptr<IMetaRegistry> m_pMetaRegistry;
+        };
+
+        // External observers run while applying and rolling back component
+        // facts too. During a derived publication their callbacks are read-only.
+        class CRepositoryDerivedNotificationScope final
+        {
+        public:
+            explicit CRepositoryDerivedNotificationScope(CRepository* Repository_)
+                : m_Repository(Repository_), m_Previous(Repository_ && Repository_->m_bDerivedPublicationNotification)
+            {
+                if (m_Repository && m_Repository->m_nDerivedPublicationDepth > 0)
+                    m_Repository->m_bDerivedPublicationNotification = true;
+            }
+            ~CRepositoryDerivedNotificationScope()
+            {
+                if (m_Repository) m_Repository->m_bDerivedPublicationNotification = m_Previous;
+            }
+            CRepositoryDerivedNotificationScope(const CRepositoryDerivedNotificationScope&) = delete;
+            CRepositoryDerivedNotificationScope& operator=(const CRepositoryDerivedNotificationScope&) = delete;
+        private:
+            CRepository* m_Repository;
+            bool m_Previous;
         };
     }
 }

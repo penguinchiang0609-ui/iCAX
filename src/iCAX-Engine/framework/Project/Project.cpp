@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "Project.h"
+#include "Data/VariantSerializer.h"
+#include <tuple>
 
 
 namespace
@@ -92,6 +94,19 @@ namespace
     {
         std::u8string _Text(strPath_.begin(), strPath_.end());
         return std::filesystem::path(_Text);
+    }
+
+    bool SameLocalFile(IN const std::string& Left_, IN const std::string& Right_)
+    {
+        if (Left_.empty() || Right_.empty()) return Left_ == Right_;
+        const auto _LeftPath = PathFromUTF8(Left_);
+        const auto _RightPath = PathFromUTF8(Right_);
+        std::error_code _Error;
+        if (std::filesystem::equivalent(_LeftPath, _RightPath, _Error)) return true;
+        const auto _Left = std::filesystem::weakly_canonical(_LeftPath).wstring();
+        const auto _Right = std::filesystem::weakly_canonical(_RightPath).wstring();
+        return CompareStringOrdinal(_Left.c_str(), static_cast<int>(_Left.size()),
+            _Right.c_str(), static_cast<int>(_Right.size()), TRUE) == CSTR_EQUAL;
     }
 
     void EnsureParentDirectory(IN const std::string& strPath_)
@@ -259,28 +274,47 @@ void iCAX::Project::CProject::MarkProjectFileSaved(
     IN const std::string& strMagic_,
     IN uint32_t nVersion_)
 {
-    if (!strProjectPath_.empty())
-    {
-        SetProjectPath(strProjectPath_);
-    }
-
-    auto _LogPath = GetQuickSaveLogPath();
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    const auto _PreviousLogPath = GetQuickSaveLogPath();
+    auto _NewProjectPath = !strProjectPath_.empty() ? strProjectPath_ : m_ProjectPath;
+    const auto _LogPath = !m_QuickSaveLogPath.empty()
+        ? m_QuickSaveLogPath : MakeDefaultQuickSaveLogPath(_NewProjectPath);
     if (_LogPath.empty())
     {
         throw std::invalid_argument("Project quick save log path is empty");
     }
 
     auto& _Repository = GetMainScene().Database();
-    _Repository.CloseOperationLog();
-    {
-        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
-        m_bQuickSaveLogOpen = false;
-    }
+    const bool _WasLogOpen = _Repository.HasOperationLog();
+    const bool _OwnsPreviousLog = m_bQuickSaveLogOpen && _WasLogOpen;
+    // The caller has already written and validated the complete new archive.
+    // Keep the old path and journal intact until its replacement is writable.
     EnsureParentDirectory(_LogPath);
-    _Repository.OpenOperationLog(_LogPath, true, strMagic_, nVersion_);
+    const bool _SameLog = SameLocalFile(_PreviousLogPath, _LogPath);
+    _Repository.CloseOperationLog();
+    m_bQuickSaveLogOpen = false;
+    try
     {
-        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        _Repository.OpenOperationLog(_LogPath, true, strMagic_, nVersion_);
+        if (_OwnsPreviousLog && !_SameLog)
+        {
+            // A successful Save As leaves the original archive unchanged.
+            // Its old session journal must not replay the new file's edits.
+            std::filesystem::remove(PathFromUTF8(_PreviousLogPath));
+        }
+        m_ProjectPath.swap(_NewProjectPath);
         m_bQuickSaveLogOpen = true;
+    }
+    catch (...)
+    {
+        const auto _Failure = std::current_exception();
+        _Repository.CloseOperationLog();
+        if (_WasLogOpen)
+        {
+            _Repository.OpenOperationLog(_PreviousLogPath, false, strMagic_, nVersion_);
+            m_bQuickSaveLogOpen = true;
+        }
+        std::rethrow_exception(_Failure);
     }
 }
 
@@ -299,6 +333,59 @@ bool iCAX::Project::CProject::IsQuickSaveLogOpen() const
 {
     std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
     return m_bQuickSaveLogOpen;
+}
+
+std::vector<iCAX::Resource::CResourceInfo> iCAX::Project::CProject::AutoSavePersistentResources() const
+{
+    const auto& resources=MainSceneResources();
+    std::vector<iCAX::Resource::CResourceReference> roots;
+    for(const auto& info:resources.GetManifest(false)) roots.push_back({info.Key.Source,info.nVersion});
+    auto reachable=resources.CollectReachable(roots);
+    if(!reachable.IsComplete())throw std::runtime_error("Auto-save persistent resource dependency is missing");
+    return std::move(reachable.Resources);
+}
+
+std::string iCAX::Project::CProject::AutoSaveSettingsSignature() const
+{
+    using namespace iCAX::Data;
+    return VariantSerializer::Serialize(ObjectMap{{"projectId",GetProjectID()},{"sceneId",GetMainSceneID()},
+        {"name",GetProjectName()},{"settings",Settings().GetProperties()},
+        {"sceneSettings",GetMainScene().SceneSettings().GetProperties()}});
+}
+
+void iCAX::Project::CProject::CaptureAutoSaveBaseline(const std::string& path)
+{
+    const auto file=PathFromUTF8(path);
+    const auto signature=AutoSaveSettingsSignature();
+    auto resources=AutoSavePersistentResources();
+    const auto size=std::filesystem::file_size(file);
+    const auto stamp=std::filesystem::last_write_time(file).time_since_epoch().count();
+    const auto normalized=std::filesystem::weakly_canonical(file).u8string();
+    m_AutoSaveArchivePath.assign(reinterpret_cast<const char*>(normalized.data()),normalized.size());
+    m_AutoSaveSettingsSignature=signature;m_AutoSaveResources=std::move(resources);m_nAutoSaveArchiveSize=size;m_nAutoSaveArchiveWriteTime=stamp;
+}
+
+iCAX::Project::EAutoSaveCheckpoint iCAX::Project::CProject::TryAutoSaveJournal(const std::string& path)
+{
+    auto& db=MainSceneDatabase();
+    if(db.IsWriteInProgress())return EAutoSaveCheckpoint::Deferred;
+    if(m_AutoSaveArchivePath.empty()||!IsQuickSaveLogOpen()||!db.HasOperationLog())return EAutoSaveCheckpoint::SnapshotRequired;
+    const auto file=PathFromUTF8(path);std::error_code error;
+    if(!std::filesystem::is_regular_file(file,error)||error)return EAutoSaveCheckpoint::SnapshotRequired;
+    const auto normalized=std::filesystem::weakly_canonical(file,error).u8string();
+    if(error||std::string(reinterpret_cast<const char*>(normalized.data()),normalized.size())!=m_AutoSaveArchivePath)return EAutoSaveCheckpoint::SnapshotRequired;
+    if(std::filesystem::file_size(file)!=m_nAutoSaveArchiveSize||std::filesystem::last_write_time(file).time_since_epoch().count()!=m_nAutoSaveArchiveWriteTime)return EAutoSaveCheckpoint::SnapshotRequired;
+    if(AutoSaveSettingsSignature()!=m_AutoSaveSettingsSignature)return EAutoSaveCheckpoint::SnapshotRequired;
+    const auto resources=AutoSavePersistentResources();
+    if(resources.size()!=m_AutoSaveResources.size())return EAutoSaveCheckpoint::SnapshotRequired;
+    // The resource pool orders roots by key and normalizes dependency order.
+    // Compare the complete immutable descriptors without rebuilding Variant
+    // maps or serializing a large tagged JSON string on every checkpoint.
+    const auto fields=[](const iCAX::Resource::CResourceInfo& info){return std::tie(info.Key.Source,info.ResourceID,info.ResourceTypeID,
+        info.nVersion,info.Persistence,info.Name,info.Source,info.MediaType,info.FlatBufferIdentifier,info.ContentHash,info.nSize,
+        info.nSchemaVersion,info.nMinimumReaderVersion,info.nFlags,info.Metadata,info.Dependencies);};
+    for(std::size_t i=0;i<resources.size();++i)if(fields(resources[i])!=fields(m_AutoSaveResources[i]))return EAutoSaveCheckpoint::SnapshotRequired;
+    return db.FlushOperationLog()?EAutoSaveCheckpoint::Journal:EAutoSaveCheckpoint::SnapshotRequired;
 }
 
 const std::string& iCAX::Project::CProject::GetStartupComponent() const

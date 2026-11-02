@@ -1,5 +1,14 @@
 import { escapeText } from "../utils/format.mjs";
 
+// Busy state still guards commands while ordinary readbacks run. Products can
+// show only named task feedback after the first scene has loaded.
+export function pendingFeedbackTitle(context, view, fallback = "正在读取工程状态…") {
+  if (!view?.pending) return "";
+  if (view.progress?.title) return String(view.progress.title);
+  if (context?.pendingPresentation === "explicit" && view.scene) return "";
+  return fallback;
+}
+
 export function renderPanel(title, content) {
   return `
     <section class="cam-panel">

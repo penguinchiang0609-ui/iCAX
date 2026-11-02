@@ -1,0 +1,1115 @@
+{
+  "passed": true,
+  "date": "2026-10-27",
+  "templateVersion": "2.1.0",
+  "applicationVersion": "0.3.0",
+  "formalInstallerRebuilt": false,
+  "standaloneRelease": true,
+  "nativeBusinessMocked": false,
+  "sourcesMatchAcceptanceRuntime": [
+    {
+      "path": "apps\\tube-designer\\templates\\product\\minimal_protective_grille\\template.json",
+      "sha256": "b129bdaec6a19bebeef3a4b9259fdd33f723339f0eef12368a7059c54d14f392"
+    },
+    {
+      "path": "apps\\tube-designer\\templates\\product\\minimal_protective_grille\\display.json",
+      "sha256": "7f57f3b97ea5c4d784e59c2e40fa0281dce07e4fa1da19111d9a9cda784599f8"
+    },
+    {
+      "path": "apps\\tube-designer\\templates\\product\\minimal_protective_grille\\template.py",
+      "sha256": "0ee619081c67ea96f2b00c042fe4e2ce56cc405e0cfacf66321bb38f65c54296"
+    },
+    {
+      "path": "apps\\tube-designer\\templates\\product\\minimal_protective_grille\\manufacturing_rules.py",
+      "sha256": "3ca7ee60923ba8ed09936b5c36452c2ec398abdd19c6b2ea67932db03a0fe566"
+    },
+    {
+      "path": "apps\\tube-designer\\templates\\product\\minimal_protective_grille\\installation_holes.py",
+      "sha256": "9536aa24654c94b7cf95ef474ed52264d6a0d19035064ee1e9add1e5297f99ce"
+    },
+    {
+      "path": "apps\\tube-designer\\webpage\\minimalGrilleDiagram.mjs",
+      "sha256": "bd09b30fcf438d8fd5b319852475acfd38e30ae263f0890baf49d165ef7b26d8"
+    }
+  ],
+  "warmProcess": {
+    "label": "native-isolated",
+    "processId": 29556,
+    "startTime": "2026-10-27T11:16:12.6273992+08:00",
+    "executable": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\runtime\\TubeDesigner.exe",
+    "cdpEndpoint": "http://127.0.0.1:19482",
+    "listenerOwnerIds": [
+      29556
+    ],
+    "userDataRoot": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\userdata-native-isolated",
+    "verifiedNewProcess": true
+  },
+  "coldProcess": {
+    "label": "native-isolated-cold",
+    "processId": 28148,
+    "startTime": "2026-10-27T11:17:16.8517371+08:00",
+    "executable": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\runtime\\TubeDesigner.exe",
+    "cdpEndpoint": "http://127.0.0.1:19483",
+    "listenerOwnerIds": [
+      28148
+    ],
+    "userDataRoot": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\userdata-native-isolated-cold",
+    "verifiedNewProcess": true
+  },
+  "native": {
+    "passed": true,
+    "standaloneRelease": true,
+    "nativeBusinessMocked": false,
+    "runtime": "file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/AppShell/index.html",
+    "cdpEndpoint": "http://127.0.0.1:19482",
+    "processId": 29556,
+    "cases": [
+      {
+        "name": "three-groups-ui-enabled",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled.ictd",
+        "projectId": "ccdf1fea-69c4-4a7f-a401-e2b6cd006cec",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-report.json",
+        "members": 4,
+        "physicalQuantity": 4,
+        "partTypes": 2,
+        "groupsPerSide": 3
+      },
+      {
+        "name": "five-groups-existing-instance-edited",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited.ictd",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-report.json",
+        "members": 4,
+        "physicalQuantity": 4,
+        "partTypes": 2,
+        "groupsPerSide": 5
+      },
+      {
+        "name": "three-groups-male-female",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female.ictd",
+        "projectId": "cc50428d-426d-4b86-b955-b418c0f8c70c",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-report.json",
+        "members": 4,
+        "physicalQuantity": 4,
+        "partTypes": 2,
+        "groupsPerSide": 3
+      },
+      {
+        "name": "three-groups-closed-frame",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame.ictd",
+        "projectId": "8c5f6d57-6c80-4eac-b494-fdfaf632604d",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-report.json",
+        "members": 6,
+        "physicalQuantity": 6,
+        "partTypes": 3,
+        "groupsPerSide": 3
+      },
+      {
+        "name": "three-groups-bottom-rail",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail.ictd",
+        "projectId": "6a7a3a38-b5ab-4867-9305-52a32c333de7",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-report.json",
+        "members": 5,
+        "physicalQuantity": 5,
+        "partTypes": 3,
+        "groupsPerSide": 3
+      },
+      {
+        "name": "front-three-groups",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups.ictd",
+        "projectId": "35d68ccf-4f50-48a1-89a3-43107b4504b7",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-report.json",
+        "members": 4,
+        "physicalQuantity": 4,
+        "partTypes": 2,
+        "groupsPerSide": 3
+      },
+      {
+        "name": "open-slot-two-groups",
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups.ictd",
+        "projectId": "9c737258-5fbc-441e-aef9-2a93f3228e2e",
+        "passed": true,
+        "reportPath": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-report.json",
+        "members": 14,
+        "physicalQuantity": 14,
+        "partTypes": 6,
+        "groupsPerSide": 2
+      }
+    ],
+    "checks": [
+      {
+        "name": "real annotation edits preserve instance and recompute native linear anchors",
+        "passed": true
+      },
+      {
+        "name": "native rejects too-narrow-side",
+        "passed": true,
+        "error": "page.evaluate: SDOError: 安装孔径超过当前安装方向的竖管真实平直区域，无法保留最小余料；请调整 A 管用料或孔径\n    at SDOClient.receive (file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/SDO/sdoClient.mjs:248:22)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/SDO/sdoClient.mjs:60:23\n    at Object.__dispatchSDOFrame (file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/AppShell/index.html:193:9)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/AppShell/index.html:1:62"
+      },
+      {
+        "name": "native rejects rail-contact-overlap",
+        "passed": true,
+        "error": "page.evaluate: SDOError: 安装孔与横杆接头或外框转角重叠，无法保留余料和安装通道，请调整组数或上下端距\n    at SDOClient.receive (file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/SDO/sdoClient.mjs:248:22)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/SDO/sdoClient.mjs:60:23\n    at Object.__dispatchSDOFrame (file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/AppShell/index.html:193:9)\n    at file:///D:/penguinchinage0609/iCAX/output/tests/minimal-grille-installation-holes-20261027/runtime/iCAX-UI/SDK/AppShell/index.html:1:62"
+      },
+      {
+        "name": "saved installation project reopens with parameters, part IDs and quantities",
+        "passed": true
+      }
+    ],
+    "pageErrors": []
+  },
+  "coldReopen": {
+    "passed": true,
+    "freshProcess": true,
+    "nativeBusinessMocked": false,
+    "processId": 28148,
+    "warmProcessId": 29556,
+    "cdpEndpoint": "http://127.0.0.1:19483",
+    "cases": [
+      {
+        "name": "three-groups-ui-enabled",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "three-groups-male-female",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      },
+      {
+        "name": "front-three-groups",
+        "passed": true,
+        "partTypes": 2,
+        "physicalQuantity": 4
+      }
+    ]
+  },
+  "holeAudit": {
+    "passed": true,
+    "requiresCompleteNativeAcceptance": true,
+    "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\acceptance-report.json",
+    "sourceReportSha256": "5adc0fdd60bebc118b55c59f1970115270fb565a08498dd213173eb3ce33de99",
+    "caseCount": 7,
+    "classifiedSamples": 4656,
+    "physicalUprights": 15,
+    "physicalHolePairs": 44,
+    "STEPPrototypes": 9,
+    "caseReports": [
+      {
+        "case": "three-groups-ui-enabled",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 2,
+        "physicalHolePairs": 6,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 582,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\three-groups-ui-enabled\\native-installation-audit.json",
+        "reportSha256": "3269f970c1b737ab0da4756f4ec62719f763cdaa7f355c8da7531421d13a33af",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-report.json",
+        "sourceReportSha256": "3c6b88aa4118d0934f8ff26b3bcef792c78f2e55ba503cdbe54c8f1c6daf22cb",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          }
+        ]
+      },
+      {
+        "case": "five-groups-existing-instance-edited",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 2,
+        "physicalHolePairs": 10,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 970,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\five-groups-existing-instance-edited\\native-installation-audit.json",
+        "reportSha256": "98d3acfc3337f4c0df85cc21a51a0334e15c43e0f57b7bfff613d17813f19d44",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-report.json",
+        "sourceReportSha256": "d26728aeca63fe029499c69d49357d0f85357ce1cf3a71a935b222416d77d2e8",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0,
+              312.5,
+              575.0,
+              837.5,
+              1100.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              312.5,
+              575.0,
+              837.5,
+              1100.0
+            ],
+            "largeSide": "+y"
+          }
+        ]
+      },
+      {
+        "case": "three-groups-male-female",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 2,
+        "physicalHolePairs": 6,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 582,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\three-groups-male-female\\native-installation-audit.json",
+        "reportSha256": "11834eced1567913d82108830105795572b5bc9d1f8269ed44be0ff4b4eb6b50",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-report.json",
+        "sourceReportSha256": "bd45a582805f8a76ab8ac423e4bc5e51b9f4f012bfbeca9324d93ee19ae6b92e",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          }
+        ]
+      },
+      {
+        "case": "three-groups-closed-frame",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 2,
+        "physicalHolePairs": 6,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 582,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\three-groups-closed-frame\\native-installation-audit.json",
+        "reportSha256": "eb35363c18d629a48fe552931c5d4d012b304378b4a6f4977c8292c34fa72056",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-report.json",
+        "sourceReportSha256": "e081acfdaf2ebe93f24b6720bb90253716c433986b1aeb19cbac1f0d4a791069",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          }
+        ]
+      },
+      {
+        "case": "three-groups-bottom-rail",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 2,
+        "physicalHolePairs": 6,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 582,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\three-groups-bottom-rail\\native-installation-audit.json",
+        "reportSha256": "13b78a2b1ff15bdbc5241450001e6beabf951a5d6ce74695a829dbbe83d1cc56",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-report.json",
+        "sourceReportSha256": "1667bcc22906124a46fa66cdd9c1266fb114e4094bcb5d24a2213e926319606d",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              625.0,
+              1200.0
+            ],
+            "largeSide": "+y"
+          }
+        ]
+      },
+      {
+        "case": "front-three-groups",
+        "passed": true,
+        "orientation": "front",
+        "physicalUprights": 2,
+        "physicalHolePairs": 6,
+        "STEPPrototypes": 1,
+        "classifiedSamples": 582,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\front-three-groups\\native-installation-audit.json",
+        "reportSha256": "4b509a6d99658d726a8417a588237201aec754ec2fa481e93b3de78e66590514",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-report.json",
+        "sourceReportSha256": "d5a90cc1ee82d3652d88c8281d90222ba6159985ec5b71ea1de5a3693af41a06",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              55.0,
+              625.0,
+              1195.0
+            ],
+            "largeSide": "-z"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              55.0,
+              625.0,
+              1195.0
+            ],
+            "largeSide": "-z"
+          }
+        ]
+      },
+      {
+        "case": "open-slot-two-groups",
+        "passed": true,
+        "orientation": "side",
+        "physicalUprights": 3,
+        "physicalHolePairs": 4,
+        "STEPPrototypes": 3,
+        "classifiedSamples": 776,
+        "report": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-hole-audit\\native-isolated\\open-slot-two-groups\\native-installation-audit.json",
+        "reportSha256": "622f0d15341cc9f23d1ca757c63594e8c27de264491f33adeab598c999050563",
+        "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-report.json",
+        "sourceReportSha256": "9e6a40a4b68bdcfef4751bb49014d87d1db19db3c674153bcae1a453cf38406d",
+        "sourceLocalStations": [
+          {
+            "source": "frame.left.0001",
+            "stations": [
+              50.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.left.0002",
+            "stations": [
+              525.0
+            ],
+            "largeSide": "+y"
+          },
+          {
+            "source": "frame.right.0001",
+            "stations": [
+              50.0,
+              1200.0
+            ],
+            "largeSide": "-y"
+          }
+        ]
+      }
+    ]
+  },
+  "exportAudit": {
+    "passed": true,
+    "sourceReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\acceptance-report.json",
+    "sourceReportSha256": "5adc0fdd60bebc118b55c59f1970115270fb565a08498dd213173eb3ce33de99",
+    "sourceOverallNativeAcceptancePassed": true,
+    "sourceOverallError": null,
+    "requiresCompleteNativeAcceptance": true,
+    "coverage": "Completed native exports only; this does not certify the full UI acceptance suite",
+    "nativeStepReadback": true,
+    "exactAssemblyIntersection": true,
+    "stockBaseline": "Python layout and manufacturing preparation with identical parameters and installation holes disabled",
+    "nativeDisabledExportCompared": false,
+    "limits": [
+      "No real machine, screw-load, strength or production-process qualification",
+      "Assembly intersection tolerance is 0.001 cubic millimetres",
+      "No second native export with holes disabled; stock identity is checked against disabled Python layout and preparation"
+    ],
+    "tools": {
+      "StepReadback.exe": {
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\customer-joints-merge-20261023\\runtime\\StepReadback.exe",
+        "sha256": "e593f139437c88193797e0c3ae1e91b7e01463712f6823d2601d386ac86f442e"
+      },
+      "AssemblyAudit.exe": {
+        "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\customer-joints-merge-20261023\\runtime\\AssemblyAudit.exe",
+        "sha256": "c46d952e1366d07c7683624d77c20c4a042128f970355dc67608f4c8b4b80c4c"
+      }
+    },
+    "cases": [
+      {
+        "name": "five-groups-existing-instance-edited",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-report.json",
+        "sourceCaseSha256": "d26728aeca63fe029499c69d49357d0f85357ce1cf3a71a935b222416d77d2e8",
+        "types": 2,
+        "physicalQuantity": 4,
+        "disabledBaselinePhysicalQuantity": 4,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 4,
+          "nearbyPairsChecked": 4,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-export\\零件清单.xlsx",
+          "sha256": "0ffced7ea809b215b0359ce1ed0528136cf08ad0bd5d295ba0687a8580d5db87"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "4cdc2724646b425a2bfe067a098e55d5d287f38900241db77788135da1a433b1"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\five-groups-existing-instance-edited-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "e57f10f702ba4274f187f114d8d9ac2b09070a66e1c4a5cea57bc5f8bce6217b"
+          }
+        ]
+      },
+      {
+        "name": "front-three-groups",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-report.json",
+        "sourceCaseSha256": "d5a90cc1ee82d3652d88c8281d90222ba6159985ec5b71ea1de5a3693af41a06",
+        "types": 2,
+        "physicalQuantity": 4,
+        "disabledBaselinePhysicalQuantity": 4,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 4,
+          "nearbyPairsChecked": 4,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 548,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 548,
+            "measuredStockLengthMm": 548,
+            "disabledBaselineLengthMm": 548.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 548,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 548,
+            "measuredStockLengthMm": 548,
+            "disabledBaselineLengthMm": 548.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-export\\零件清单.xlsx",
+          "sha256": "83d157588939ccb856d867ce0b6312d10615ebcc7a38e9d5d58edff0732fd439"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "da53d8c6a0490d125f8c7cdba6a2e5f420ed01713385e7a60f1d1b4d076a2096"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\front-three-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "a7c5ee024fb3041f429a3ae1b9526369fe6bc5ed5b937cf12efa042b967b57bf"
+          }
+        ]
+      },
+      {
+        "name": "open-slot-two-groups",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-report.json",
+        "sourceCaseSha256": "9e6a40a4b68bdcfef4751bb49014d87d1db19db3c674153bcae1a453cf38406d",
+        "types": 6,
+        "physicalQuantity": 14,
+        "disabledBaselinePhysicalQuantity": 14,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 14,
+          "nearbyPairsChecked": 22,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 475,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 475,
+            "measuredStockLengthMm": 475,
+            "disabledBaselineLengthMm": 475.0
+          },
+          {
+            "key": "frame.left.0002",
+            "visibleLengthMm": 575,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 575,
+            "measuredStockLengthMm": 575,
+            "disabledBaselineLengthMm": 575.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "inner.handle_jamb.0001",
+            "visibleLengthMm": 200,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 200,
+            "measuredStockLengthMm": 200,
+            "disabledBaselineLengthMm": 200.0
+          },
+          {
+            "key": "inner.lower.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.lower.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.lower.0003.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.lower_boundary.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.upper_boundary.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.upper.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.upper.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.upper.0003.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.upper.0004.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.middle.0001.01",
+            "visibleLengthMm": 268,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 268,
+            "measuredStockLengthMm": 268,
+            "disabledBaselineLengthMm": 268.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\零件清单.xlsx",
+          "sha256": "c902b1b2a27b94414fe7ef993a0bd860ea74c3fc37ab336a191468a1b61b4a6b"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "9d9cd5f6cb269fa426902a526fe3ab2b6f0ad4d03900fc48c3997ae94b54ab16"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-02.step",
+            "sha256": "0df68dae3627a7cc673c7dc9dd7a826c5709360ca29588093a39117e2705477d"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-03.step",
+            "sha256": "3d576cf4d26cccaa63f313a355abf6543aaa44cf960765d2a8da3bff1ec259f1"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "936eceff5653394a2c02812c0e491aeea5c6ad3f44ed73f5c20721ebbadc0dc1"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-02.step",
+            "sha256": "f669588b1f4441147169e8e8019af1f0fd74b2651b10bbdc616c0fa921714462"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\open-slot-two-groups-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-06.step",
+            "sha256": "6b1feaaf4590a392c92dffe5906fcd271ccde8006fadf90f726d37d9a68f8d1d"
+          }
+        ]
+      },
+      {
+        "name": "three-groups-bottom-rail",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-report.json",
+        "sourceCaseSha256": "1667bcc22906124a46fa66cdd9c1266fb114e4094bcb5d24a2213e926319606d",
+        "types": 3,
+        "physicalQuantity": 5,
+        "disabledBaselinePhysicalQuantity": 5,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 5,
+          "nearbyPairsChecked": 6,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.bottom.0001",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-export\\零件清单.xlsx",
+          "sha256": "227050e89eb87d95a7929299d1778585bb94e895b4bb6614bc6f34b2e2191e06"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "b8799ba9b512c150026859b3d556fd1e065990d951de8afaf8c385988db99f10"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-03.step",
+            "sha256": "3ee1632daf80b0df67eb43aaaa820cc3f94767c415ba2bfb7409477d6766f08e"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-bottom-rail-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "603029585c7fc1b0bd622304c7970bed79893a902375cc32c67b08184bc06247"
+          }
+        ]
+      },
+      {
+        "name": "three-groups-closed-frame",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-report.json",
+        "sourceCaseSha256": "e081acfdaf2ebe93f24b6720bb90253716c433986b1aeb19cbac1f0d4a791069",
+        "types": 3,
+        "physicalQuantity": 6,
+        "disabledBaselinePhysicalQuantity": 6,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 6,
+          "nearbyPairsChecked": 8,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.bottom.0001",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "frame.top.0001",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-export\\零件清单.xlsx",
+          "sha256": "3ce7957488ec5da895149291f850332c67a1943afceb11e5c97492990be9f6bd"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "0c3bd4f1f1d5c34eb8b10f760fc22bdbc44c90bd1c5624ce01dd3d593ac466c2"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-03.step",
+            "sha256": "b3be32a3b0498ec43a40eee941d18be3fdf77b156e1286f53594ddaa8f222392"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-closed-frame-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "4c39e9d84640c765c2a2f8678fd86fdd359b3119f46bbe5c31d1e4dac2e2cf32"
+          }
+        ]
+      },
+      {
+        "name": "three-groups-male-female",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-report.json",
+        "sourceCaseSha256": "bd45a582805f8a76ab8ac423e4bc5e51b9f4f012bfbeca9324d93ee19ae6b92e",
+        "types": 2,
+        "physicalQuantity": 4,
+        "disabledBaselinePhysicalQuantity": 4,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 4,
+          "nearbyPairsChecked": 4,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 2,
+            "expectedStockLengthMm": 494,
+            "measuredStockLengthMm": 494,
+            "disabledBaselineLengthMm": 494.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 2,
+            "expectedStockLengthMm": 494,
+            "measuredStockLengthMm": 494,
+            "disabledBaselineLengthMm": 494.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-export\\零件清单.xlsx",
+          "sha256": "a71d3b07f37a9bcf27f9c05adc3bf8f403ec2e0091ce02cf7d3e73fc8d80e912"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "4062db2ee2b6406500e5db75f9017dd157aefa6c040511fe816e0ce00b4ef955"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-male-female-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "5dc7c412bea84427a50f996d0e58f4416f89eb9a2c906e6ea8562e71f6784b95"
+          }
+        ]
+      },
+      {
+        "name": "three-groups-ui-enabled",
+        "passed": true,
+        "sourceCaseReport": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-report.json",
+        "sourceCaseSha256": "3c6b88aa4118d0934f8ff26b3bcef792c78f2e55ba503cdbe54c8f1c6daf22cb",
+        "types": 2,
+        "physicalQuantity": 4,
+        "disabledBaselinePhysicalQuantity": 4,
+        "noAdditionalStockBreaks": true,
+        "sourceMemberKeysUnchanged": true,
+        "sourceConnectionsUnchanged": true,
+        "maxWorkbookLengthDifferenceMm": 0.0,
+        "assemblyAudit": {
+          "passed": true,
+          "physicalMembers": 4,
+          "nearbyPairsChecked": 4,
+          "positiveContactPairs": 0,
+          "interferingPairs": 0,
+          "maxIntersectionVolumeMm3": 0,
+          "intersectionToleranceMm3": 0.001
+        },
+        "stockLengths": [
+          {
+            "key": "frame.left.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "frame.right.0001",
+            "visibleLengthMm": 1250,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 1250,
+            "measuredStockLengthMm": 1250,
+            "disabledBaselineLengthMm": 1250.0
+          },
+          {
+            "key": "inner.full.0001.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          },
+          {
+            "key": "inner.full.0002.01",
+            "visibleLengthMm": 488,
+            "insertedEnds": 0,
+            "expectedStockLengthMm": 488,
+            "measuredStockLengthMm": 488,
+            "disabledBaselineLengthMm": 488.0
+          }
+        ],
+        "allPathsExist": true,
+        "allStepShapesValidSingleSolids": true,
+        "workbook": {
+          "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-export\\零件清单.xlsx",
+          "sha256": "0ffced7ea809b215b0359ce1ed0528136cf08ad0bd5d295ba0687a8580d5db87"
+        },
+        "STEPFiles": [
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-边框-01.step",
+            "sha256": "b999c7ca3fb8a663fb13cab5f1415565db0a9cfa85b3b27108b2d6dede34d730"
+          },
+          {
+            "path": "D:\\penguinchinage0609\\iCAX\\output\\tests\\minimal-grille-installation-holes-20261027\\native-isolated\\three-groups-ui-enabled-export\\极简防护网 JJFHW×1\\极简防护网 JJFHW-内杆-01.step",
+            "sha256": "f56633742efbc6a6cd1521868dcf46fb422c46af48eaaffe82da4ffa84586f23"
+          }
+        ]
+      }
+    ],
+    "totals": {
+      "caseCount": 7,
+      "passedCases": 7,
+      "STEPPrototypes": 20,
+      "physicalMembers": 41,
+      "nearbyPairsChecked": 52
+    }
+  }
+}

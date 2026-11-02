@@ -1,6 +1,6 @@
 # 16 CAD for CAM 工件编辑与刀路关联详细设计
 
-> 说明：本文继续负责 CAD 导入、修复、编辑提交和 CAD 特征重新关联。工件区刀路的领域名称、组织方式、工艺衍生、合并、打断、替代关系及有效输出规则，以 `17-工件区意图刀路衍生模型.md` 为准；本文早期使用的 `ToolpathDefinition`、`ToolpathResult` 仅表示分层方向，不再作为最终领域模型。
+> 说明：本文继续负责 CAD 导入、修复、编辑提交和 CAD 特征重新关联。刀路的对象身份、组织、编辑/工艺操作、来源映射及有效输出以 [IntentToolpath 共享设计](../../../../iCAX-Plugins/cam/IntentToolpath/README.md)为准；`17-工件区意图刀路衍生模型.md` 及本文早期使用的 `ToolpathDefinition/ToolpathResult` 保留历史设计背景，不再作为最终领域模型。
 
 ## 1. 模块定位
 
@@ -102,7 +102,7 @@ ToolpathResultEntity
     AssociationReportResourceID
 ```
 
-当前 `CPathComponent` 可以在迁移期同时承担 Definition 和 Result 的部分职责，但目标结构必须将生成定义与计算结果分开。作业区只消费已确认的 `ToolpathResult`。
+当前统一模型由 `CEditableOperationComponent` 保存唯一编辑定义，`CEditableDerivedComponent` 保存精确派生结果。作业区只消费解析为 Current 的有效输出；`CPathComponent` 不承担过渡镜像，也不提供旧工程迁移。
 
 ## 4. 工件局部坐标系
 

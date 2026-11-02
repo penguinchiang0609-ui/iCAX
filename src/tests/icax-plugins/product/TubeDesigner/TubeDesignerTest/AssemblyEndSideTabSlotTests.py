@@ -72,7 +72,7 @@ class EndSideTabSlotTests(unittest.TestCase):
             self.assertEqual(tabs["toolRef"]["id"], "paired-end-tabs")
             self.assertEqual(slot["toolParameters"]["pairCount"], count)
             self.assertEqual(tabs["toolParameters"]["pairCount"], count)
-            self.assertFalse(slot["toolParameters"]["allowEndOpening"])
+            self.assertNotIn("allowEndOpening", slot["toolParameters"])
             self.assertEqual((slot["reference"], slot["station"], slot["face"]),
                              ("center", 0, "top"))
             self.assertEqual(slot["section"]["parameters"]["width"], 40)

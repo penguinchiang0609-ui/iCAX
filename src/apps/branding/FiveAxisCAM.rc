@@ -1,0 +1,7 @@
+#define ICAX_APPLICATION_ICON "five-axis-cam/webpage/assets/five-axis-cam.ico"
+#define ICAX_APPLICATION_NAME "FiveAxisCAM\0"
+#define ICAX_APPLICATION_FILENAME "FiveAxisCAM.exe\0"
+#define ICAX_APPLICATION_VERSION 0,1,0,0
+#define ICAX_APPLICATION_FILE_VERSION "0.1.0.0\0"
+#define ICAX_APPLICATION_PRODUCT_VERSION "0.1.0\0"
+#include "../../iCAX-Application/Application/Application.rc"

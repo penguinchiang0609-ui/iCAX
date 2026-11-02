@@ -1,3 +1,56 @@
-// The current public license workflow is verified through independent fresh
-// startups, real disabled controls and the public Product/Resources/About tabs.
-await import('./TubeDesignerLicenseStartup.browser.mjs');
+import assert from 'node:assert/strict';
+import {readFileSync, mkdirSync, writeFileSync} from 'node:fs';
+import {resolve, sep} from 'node:path';
+const {chromium} = await import(process.env.ICAX_PLAYWRIGHT_MODULE || 'playwright');
+const root = resolve('src'), output = resolve(process.env.ICAX_BROWSER_REPORT_DIRECTORY || 'output/tests/tubedesigner-repair-20261024/browser');
+mkdirSync(output, {recursive:true});
+const browser = await chromium.launch({channel:'msedge', headless:true});
+try {
+ const page = await browser.newPage({viewport:{width:1100, height:750}});
+ await page.route('http://license.test/**', route => {
+  const url = new URL(route.request().url());
+  if (url.pathname === '/') return route.fulfill({contentType:'text/html', body:'<!doctype html><html><body></body></html>'});
+  const path = resolve(root, decodeURIComponent(url.pathname).slice(1));
+  if (!path.startsWith(root + sep)) return route.abort();
+  return route.fulfill({contentType:'text/javascript', body:readFileSync(path,'utf8')});
+ });
+ await page.goto('http://license.test/');
+ const results = await page.evaluate(async () => {
+  const {handleLicenseCommand, renderLicenseStatus, ensureLicenseStatus} = await import('/apps/tube-designer/webpage/licensing.mjs');
+  const check = (ok, message) => {if (!ok) throw Error(message);};
+  const results = [];
+  let finish, current = true, requests = 0;
+  const view = {tubeDesignerLicense:{activated:false, capabilities:{}, message:'尚未激活'}};
+  document.body.innerHTML = `<main id="mount"><aside id="left" style="height:150px;overflow:auto"><div style="height:900px"></div></aside><aside id="right" style="height:300px;overflow:auto">${renderLicenseStatus(view)}<section id="nested" style="height:150px;overflow:auto"><input id="draft" value="参数草稿"><canvas></canvas><div style="height:1000px"></div></section><div style="height:1000px"></div></aside></main>`;
+  const mount = document.querySelector('#mount'), input = document.querySelector('input'), canvas = document.querySelector('canvas');
+  const panel = document.querySelector('[data-tube-designer-license-status]');
+  const scrolls = ['left','right','nested'].map(id => document.getElementById(id));
+  const context = {mount, isCurrentProject:()=>current, productProxy:{invoke:async(method)=>{if(method==='TubeDesignerLicensing.Status')return {activated:false,featureSchemaVersion:1,capabilities:{}}; requests++;return new Promise(r=>finish=r);}}};
+  await ensureLicenseStatus(context, view);
+  let listener = 0; input.addEventListener('probe',()=>listener++);
+  const pending = handleLicenseCommand(context, view, 'licensing.repair-environment', {});
+  check(panel.getAttribute('aria-busy')==='true','Progress must appear while awaiting response');
+  await handleLicenseCommand(context,view,'licensing.repair-environment',{});
+  check(requests===1,'Duplicate click must not start another repair');
+  input.focus();input.value='等待期间继续输入';input.setSelectionRange(1,5,'backward');
+  scrolls.forEach((n,i)=>n.scrollTop=[130,180,90][i]);
+  finish({requestReady:true, code:'repaired', message:'已获取本机证书，请导出申请'});await pending;
+  check(mount.querySelector('input')===input&&mount.querySelector('canvas')===canvas&&mount.querySelector('[data-tube-designer-license-status]')===panel,'DOM nodes must be retained');
+  check(document.activeElement===input&&input.selectionStart===1&&input.selectionEnd===5&&input.value==='等待期间继续输入','Latest input focus and selection must survive');
+  check(scrolls.every((n,i)=>n.scrollTop===[130,180,90][i]),'Both sidebars and nested scroll must retain latest position');
+  input.dispatchEvent(new Event('probe'));check(listener===1,'Input listener retained');
+  check(view.tubeDesignerLicense.activated===false&&panel.querySelector('[data-license-title]').textContent==='未激活','Repair cannot activate');
+  results.push('async repair preserves nodes, listener, latest input, focus, selection and three scroll positions');
+  const conditional = handleLicenseCommand(context, view, 'licensing.repair-environment', {});
+  input.remove();const replacement=document.createElement('input');replacement.value='新字段';mount.append(replacement);replacement.focus();
+  finish({requestReady:false,code:'network_failed',message:'无法连接厂商服务'});await conditional;
+  check(document.activeElement===replacement&&replacement.value==='新字段','Removed field cannot steal focus');
+  check(panel.querySelector('[data-license-notice]').textContent==='无法连接厂商服务','Failure message visible');results.push('conditional removal retains new field and shows failure');
+  const switched = handleLicenseCommand(context, view, 'licensing.repair-environment', {});
+  current=false;panel.querySelector('[data-license-notice]').textContent='另一个项目';
+  finish({requestReady:true,code:'ready',message:'旧项目回复'});await switched;
+  check(panel.querySelector('[data-license-notice]').textContent==='另一个项目'&&document.activeElement===replacement,'Old project completion cannot modify new project');
+  results.push('project switch ignores stale repair DOM update');return results;
+ });
+ assert.equal(results.length,3);writeFileSync(resolve(output,'report.json'),JSON.stringify({passed:true,results},null,2));console.log(JSON.stringify(results));
+} finally {await browser.close();}

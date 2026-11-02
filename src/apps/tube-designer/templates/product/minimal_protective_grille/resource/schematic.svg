@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 360" role="img" aria-label="极简防护网局部把手位示意">
+  <rect width="440" height="360" rx="12" fill="#f5faf9"/>
+  <g fill="none" stroke="#168c83" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M159 38v266M281 38v266"/>
+    <path d="M159 50h122M159 78h122M159 106h122M159 134h122M159 162h122M204 190h77M159 218h122M159 246h122M159 274h122M159 302h122"/>
+    <path d="M204 162v56"/>
+  </g>
+  <rect x="163" y="166" width="37" height="48" fill="#f5d99e" fill-opacity=".5"/>
+  <g fill="none" stroke="#74918e" stroke-width="1.2">
+    <path d="M159 319v15M281 319v15M159 328h122"/>
+    <path d="M137 38h-18M137 304h-18M127 38v266"/>
+    <path d="M181 190H75"/>
+  </g>
+  <g fill="#355b56" font-family="Microsoft YaHei,sans-serif" font-size="13">
+    <text x="220" y="347" text-anchor="middle">成品宽</text>
+    <text x="107" y="176" text-anchor="middle" transform="rotate(-90 107 176)">成品高</text>
+    <text x="75" y="211" text-anchor="middle" font-size="12">把手净口</text>
+  </g>
+</svg>

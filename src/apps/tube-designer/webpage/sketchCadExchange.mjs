@@ -1,4 +1,4 @@
-import { curvePoint, editableSegments, TAU } from "./sketchGeometry.mjs";
+import { curvePoint, editableSegments, TAU } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 export { parseSketchDxf, mapSketchCadDocument } from "./sketchCadDxfImport.mjs";
 
 const finite = (value, label) => {

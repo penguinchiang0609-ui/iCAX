@@ -59,7 +59,7 @@ async function setup({ clear = false, missing = '' } = {}) {
         if (f.holdPreview) await new Promise(resolve => { f.finishPreview = resolve; });
         return {
         sourcePath: payload.sourcePath, sourceFileName: payload.sourcePath.split('/').at(-1), sizeBytes: 500, lastModifiedNs: '1001',
-        wireframe: { polylines: [[-200,-20,-10,200,-20,-10,200,20,-10,-200,20,-10,-200,-20,-10], [-200,-20,10,200,-20,10,200,20,10,-200,20,10,-200,-20,10]], edgeCount: 2, pointCount: 10 },
+        wireframe: { polylinesJson: JSON.stringify([[-200,-20,-10,200,-20,-10,200,20,-10,-200,20,-10,-200,-20,-10], [-200,-20,10,200,-20,10,200,20,10,-200,20,10,-200,-20,10]]), edgeCount: 2, pointCount: 10 },
       }; }
       if (method === 'TubeDesigner.ReleaseNestingPartFilePreview') return { released: true };
       throw Error('Remembered file must never create/import a part: ' + method);
@@ -114,7 +114,7 @@ try {
   const reopened = await snapshot(); snapshots.push({ stage: 'cancel-reopen', ...reopened });
   check({ directory: reopened.directory, selectedPath: reopened.selectedPath, selectedRows: reopened.selectedRows },
     { directory, selectedPath, selectedRows: [selectedPath] }, 'cancel/reopen remembers directory and exact selected file');
-  check(reopened.previewPaths, [selectedPath], 'reopening uses cached wireframe without another STEP read');
+  check(reopened.previewPaths, [selectedPath,selectedPath], 'reopening requests native preview again; historical wireframes are not cached in JavaScript');
   check(await page.locator('[data-nesting-file-viewport] canvas').count(), 0, 'preview never creates a WebGL canvas');
   check(reopened.importedCalls, [], 'remembered selection loads preview without importing or saving');
   check(reopened.scene, { marker: 'unchanged-scene' }, 'preview keeps project scene unchanged');

@@ -28,7 +28,7 @@ try {
     const { patchParameterContent } = await import('/src/apps/tube-designer/webpage/libraryDomPatch.mjs');
     const THREE = await import('/src/iCAX-UI/SDK/ThirdParty/three/three.module.js');
     const { tubeDesignerCss } = await import('/src/apps/tube-designer/webpage/styles/tubeDesigner.css.mjs');
-    document.head.innerHTML = `<link rel="stylesheet" href="/src/apps/_shared/workbench/styles/laser3dcam.css"><style>${tubeDesignerCss}
+    document.head.innerHTML = `<link rel="stylesheet" href="/src/apps/_shared/workbench/styles/workbench.css"><style>${tubeDesignerCss}
       *{box-sizing:border-box}body.tube-designer-workspace{display:block;width:100%;height:100vh;margin:0;font:14px Arial,"Microsoft Yahei",sans-serif;background:#eff4f5}
       #workspace{display:grid;grid-template-columns:240px minmax(0,1fr) 350px;height:100vh}
       #stage{position:relative;min-width:0;min-height:0}#scene,#overlay{position:absolute;inset:0}#overlay{pointer-events:none}

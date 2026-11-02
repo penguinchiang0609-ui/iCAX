@@ -3,5 +3,5 @@
 
 std::uint32_t iCAX::CAM::Intent::GetIntentToolpathContractVersion() noexcept
 {
-    return 2;
+    return 3;
 }

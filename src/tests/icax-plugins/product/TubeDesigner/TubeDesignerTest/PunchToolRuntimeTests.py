@@ -1390,162 +1390,62 @@ class PunchTools(unittest.TestCase):
             operations[mode] = geometry["model"]["geometry"][-1]["arguments"]["operation"]
         self.assertEqual({"male": "subtract", "female": "union"}, operations)
 
-    def test_paired_side_sockets_follow_short_tube_wall_and_selected_face(self):
-        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
-        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
-        for count in (2, 4):
-            for face in ('top', 'bottom'):
-                with self.subTest(count=count, face=face):
-                    result = runtime.prepare({'bounds': {'min': [0, -30, -20], 'max': [360, 30, 20]},
-                        'targetSection': host, 'features': [{
-                            'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                            'toolParameters': {'pairCount': count, 'tabWidth': 8, 'tabLength': 12,
-                                               'sideClearance': .2},
-                            'station': 100, 'reference': 'start', 'face': face, 'offset': 0,
-                            'section': {'profile': branch}}]})
-                    snapshot = result['features'][0]['toolSnapshot']
-                    self.assertEqual(face, snapshot['context']['feature']['face'])
-                    geometry = snapshot['geometry']['model']['geometry']
-                    slots = [node for node in geometry if node['key'].endswith('-profile')]
-                    self.assertEqual(count, len(slots))
-                    # One socket follows each of the short tube's two opposite
-                    # walls.  Four adds the two remaining perpendicular walls.
-                    locations = {(round(node['arguments']['placement']['origin'][0]),
-                                  round(node['arguments']['placement']['origin'][1]))
-                                 for node in slots}
-                    expected = {(100, -19), (100, 19)}
-                    if count == 4:
-                        expected |= {(81, 0), (119, 0)}
-                    self.assertEqual(expected, locations)
-                    for node in slots:
-                        placement = node['arguments']['placement']
-                        x, y = placement['origin'][:2]
-                        axis = placement['xAxis']
-                        if round(y) == 0:
-                            self.assertAlmostEqual(abs(axis[1]), 1)
-                        else:
-                            self.assertAlmostEqual(abs(axis[0]), 1)
-        # A 40 mm deep branch cannot fit its sockets inside the 40 mm high
-        # flat side of this host; that must be rejected, not clipped open.
-        with self.assertRaisesRegex(ValueError, '平直侧壁'):
-            runtime.prepare({'bounds': {'min': [0, -30, -20], 'max': [360, 30, 20]},
-                'targetSection': host, 'features': [{
-                    'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                    'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
+    def test_directional_molds_accept_round_rect_and_rotated_circumferential_phases(self):
+        profiles = [
+            {'contours':[profile_rectangle(20,10),profile_rectangle(18,8)]},
+            {'contours':[{'kind':'circle','radius':15},{'kind':'circle','radius':13}]},
+            {'contours':[{'kind':'polygon','points':[[-15,-8],[0,-14],[15,-8],[15,8],[0,14],[-15,8]]},
+                         {'kind':'polygon','points':[[-13,-7],[0,-12],[13,-7],[13,7],[0,12],[-13,7]]}]},
+        ]
+        host={'contours':[profile_rectangle(30,20),profile_rectangle(28,18)]}
+        for profile,spans in zip(profiles,[(20,10),(15,15),(15,14)]):
+            for count in (2,4):
+                for angle in (0,27):
+                    for end in ('start','end'):
+                        request={'targetSection':profile,
+                            'bounds':{'min':[0,-spans[0],-spans[1]],'max':[180,*spans]},
+                            'ends':{end:{'type':'template','toolRef':{'id':'paired-end-tabs'},
+                                'rotation':13,'toolParameters':{'pairCount':count,'tabAngle':angle},
+                                'section':{'profile':host}}}}
+                        before=copy.deepcopy(request)
+                        saved=runtime.prepare(request)['ends'][end]['frozenTool']
+                        self.assertEqual(request,before)
+                        self.assertEqual(saved['parameters']['tabAngle'],angle)
+                        geometry={n['key']:n for n in saved['geometry']['model']['geometry']}
+                        self.assertEqual(geometry['tool']['arguments']['operation'],'subtract')
+                        bands=[n for n in geometry.values() if n['operator']=='extrude' and n['key'].startswith('tab-band.')]
+                        self.assertEqual(len(bands),count//2)
+                        # Two opposing physical directions share one diameter
+                        # band; each additional band turns a quarter revolution.
+                        if count==4:
+                            vectors=[n['arguments']['vector'] for n in bands]
+                            self.assertAlmostEqual(sum(a*b for a,b in zip(*vectors)),0,places=6)
+                    for face in ('top','bottom','left','right'):
+                        request={'targetSection':host,'bounds':{'min':[0,-30,-20],'max':[360,30,20]},
+                            'features':[{'id':'paired','toolTarget':'part','toolRef':{'id':'paired-side-slots'},
+                                'toolParameters':{'pairCount':count,'tabAngle':angle},
+                                'station':2,'face':face,'offset':0,'section':{'profile':profile}}]}
+                        before=copy.deepcopy(request);saved=runtime.prepare(request)['features'][0]['frozenTool']
+                        self.assertEqual(request,before)
+                        geometry={n['key']:n for n in saved['geometry']['model']['geometry']}
+                        self.assertEqual(len(geometry['mating-ring.profile']['arguments']['contours']),2)
+                        vector=geometry['mating-ring']['arguments']['vector']
+                        self.assertLess(math.sqrt(sum(v*v for v in vector)),31)
+                        self.assertEqual(geometry['tool']['arguments']['operation'],'intersect')
 
-    def test_paired_side_sockets_open_at_one_end_only_when_requested(self):
-        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
-        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
-        bounds = {'min': [0, -30, -20], 'max': [360, 30, 20]}
+    def test_directional_molds_keep_real_stock_and_insertion_guards(self):
+        branch={'contours':[profile_rectangle(20,20),profile_rectangle(18,18)]}
+        host={'contours':[profile_rectangle(30,20),profile_rectangle(28,18)]}
+        request={'bounds':{'min':[0,-20,-20],'max':[180,20,20]},'targetSection':branch,
+            'ends':{'end':{'type':'template','toolRef':{'id':'paired-end-tabs'},
+                'toolParameters':{'tabLength':40},'section':{'profile':host}}}}
+        with self.assertRaisesRegex(ValueError,'对侧壁'):runtime.prepare(request)
+        request['ends']['end']['toolParameters']={'pairCount':3}
+        with self.assertRaises(ValueError):runtime.prepare(request)
+        request['ends']['end']['toolParameters']={}
+        request['bounds']['max'][1]=23.5
+        with self.assertRaisesRegex(ValueError,'不一致'):runtime.prepare(request)
 
-        def prepare(station, allow_end_opening=None, length=360, pair_count=4):
-            tool_parameters = {'pairCount': pair_count, 'tabWidth': 8,
-                               'tabLength': 12, 'sideClearance': .2}
-            if allow_end_opening is not None:
-                tool_parameters['allowEndOpening'] = allow_end_opening
-            actual_bounds = {'min': bounds['min'],
-                             'max': [length, *bounds['max'][1:]]}
-            return runtime.prepare({'bounds': actual_bounds, 'targetSection': host,
-                'features': [{'id': 'paired', 'toolTarget': 'part',
-                    'toolRef': {'id': 'paired-side-slots'},
-                    'toolParameters': tool_parameters,
-                    'station': station, 'reference': 'start', 'face': 'top',
-                    'section': {'profile': branch}}]})
-
-        # The outer socket of the four-wall group reaches 0.2 mm beyond the
-        # host end. Existing users retain the closed-socket default.
-        with self.assertRaisesRegex(ValueError, '母槽越过长管端部'):
-            prepare(340)
-        with self.assertRaisesRegex(ValueError, '母槽越过长管端部'):
-            prepare(340, False)
-        result = prepare(340, True)
-        saved = result['features'][0]
-        self.assertTrue(saved['toolParameters']['allowEndOpening'])
-        profiles = [node for node in saved['toolSnapshot']['geometry']['model']['geometry']
-                    if node['key'].endswith('-profile')]
-        self.assertEqual(4, len(profiles))
-        self.assertEqual([340, 340, 359, 321],
-                         [round(node['arguments']['placement']['origin'][0])
-                          for node in profiles])
-        self.assertEqual(4, len([node for node in prepare(20, True)['features'][0]
-                                 ['toolSnapshot']['geometry']['model']['geometry']
-                                 if node['key'].endswith('-profile')]))
-        with self.assertRaisesRegex(ValueError, '母槽中心须位于长管内'):
-            prepare(362, True, pair_count=2)
-        with self.assertRaisesRegex(ValueError, '不能贯通两端'):
-            prepare(4, True, length=8, pair_count=2)
-
-    def test_paired_end_tabs_use_one_or_both_real_flat_walls(self):
-        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
-        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
-        for count in (2, 4):
-            result = runtime.prepare({'bounds': {'min': [0, -20, -20], 'max': [180, 20, 20]},
-                'targetSection': branch, 'ends': {'end': {'type': 'template',
-                    'toolRef': {'id': 'paired-end-tabs'}, 'trim': 10,
-                    'toolParameters': {'pairCount': count, 'tabWidth': 8, 'tabLength': 12},
-                    'section': {'profile': host}}}})
-            geometry = result['ends']['end']['toolSnapshot']['geometry']['model']['geometry']
-            ears = [node for node in geometry if node['key'].startswith('ear-')
-                    and node['key'].endswith('-profile')]
-            self.assertEqual(count, len(ears))
-            locations = [node['arguments']['placement']['origin'] for node in ears]
-            opposite = [point for point in locations if abs(point[1]) < .1]
-            self.assertEqual(2, len(opposite))
-            self.assertEqual({-1, 1}, {1 if point[2] > 0 else -1 for point in opposite})
-            remaining = [point for point in locations if abs(point[1]) >= 17.9]
-            self.assertEqual(2 if count == 4 else 0, len(remaining))
-            if remaining:
-                self.assertEqual({-1, 1}, {1 if point[1] > 0 else -1 for point in remaining})
-            self.assertEqual('subtract', geometry[-1]['arguments']['operation'])
-        with self.assertRaisesRegex(ValueError, '对侧壁'):
-            runtime.prepare({'bounds': {'min': [0, -20, -20], 'max': [180, 20, 20]},
-                'targetSection': branch, 'ends': {'end': {'type': 'template',
-                    'toolRef': {'id': 'paired-end-tabs'},
-                    'toolParameters': {'tabLength': 40}, 'section': {'profile': host}}}})
-
-    def test_paired_tools_resolve_actual_quarter_turned_product_stock(self):
-        section = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
-        branch = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 18)]}
-        bounds = {'min': [0, -20, -30], 'max': [360, 20, 30]}
-        ends = runtime.prepare({'bounds': bounds, 'targetSection': section,
-            'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
-                'section': {'profile': section}}}})
-        ear = next(node for node in ends['ends']['start']['toolSnapshot']['geometry']['model']['geometry']
-                   if node['key'] == 'ear-0-0-profile')
-        self.assertAlmostEqual(28, ear['arguments']['placement']['origin'][2], places=1)
-        slots = runtime.prepare({'bounds': bounds, 'targetSection': section,
-            'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
-        socket = next(node for node in slots['features'][0]['toolSnapshot']['geometry']['model']['geometry']
-                      if node['key'] == 'socket-0-profile')
-        self.assertAlmostEqual(-20.01, socket['arguments']['placement']['origin'][1], places=2)
-        self.assertAlmostEqual(19, socket['arguments']['placement']['origin'][2], places=1)
-        with self.assertRaisesRegex(ValueError, '平直侧壁'):
-            runtime.prepare({'bounds': bounds, 'targetSection': section,
-                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                    'station': 100, 'face': 'top', 'section': {'profile': branch}}]})
-        wrong = {'min': [0, -23.5, -30], 'max': [360, 23.5, 30]}
-        with self.assertRaisesRegex(ValueError, '不一致'):
-            runtime.prepare({'bounds': wrong, 'targetSection': section,
-                'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
-                    'section': {'profile': section}}}})
-        with self.assertRaisesRegex(ValueError, '不一致'):
-            runtime.prepare({'bounds': wrong, 'targetSection': section,
-                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                    'station': 100, 'face': 'left', 'section': {'profile': branch}}]})
-
-    def test_paired_tools_reject_square_axis_ambiguity_when_wall_depth_differs(self):
-        ambiguous = {'contours': [profile_rectangle(20, 20), profile_rectangle(18, 17)]}
-        host = {'contours': [profile_rectangle(30, 20), profile_rectangle(28, 18)]}
-        bounds = {'min': [0, -20, -20], 'max': [180, 20, 20]}
-        with self.assertRaisesRegex(ValueError, '歧义'):
-            runtime.prepare({'bounds': bounds, 'targetSection': ambiguous,
-                'ends': {'start': {'type': 'template', 'toolRef': {'id': 'paired-end-tabs'},
-                    'section': {'profile': host}}}})
-        with self.assertRaisesRegex(ValueError, '歧义'):
-            runtime.prepare({'bounds': bounds, 'targetSection': ambiguous,
-                'features': [{'id': 'paired', 'toolTarget': 'part', 'toolRef': {'id': 'paired-side-slots'},
-                    'station': 100, 'face': 'top', 'section': {'profile': host}}]})
 
 if __name__ == "__main__":
     unittest.main()

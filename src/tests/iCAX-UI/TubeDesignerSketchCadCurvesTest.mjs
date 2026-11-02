@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { offsetSketchEntity, filletSketchEntities, boundsOfEntities } from "../../apps/tube-designer/webpage/sketchCadGeometry.mjs";
 import { OFFSET_CURVE_TOLERANCE, offsetCurveSegments, curveDerivative } from "../../apps/tube-designer/webpage/sketchCadCurves.mjs";
-import { curvePoint, nearestSegment, editableSegments, reverseSegment, distance } from "../../apps/tube-designer/webpage/sketchGeometry.mjs";
+import { curvePoint, nearestSegment, editableSegments, reverseSegment, distance } from "../../apps/_shared/workbench/sketch/sketchGeometry.mjs";
 
 const near = (a, b, tolerance = 1e-7) => {
   if (Array.isArray(a)) { assert.equal(a.length, b.length); a.forEach((v, i) => near(v, b[i], tolerance)); }

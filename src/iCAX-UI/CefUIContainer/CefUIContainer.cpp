@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "CefUIContainer.h"
+#include "FileDialogStartPath.h"
 
 
 #include "PDO/PDOLease.h"
@@ -416,13 +417,20 @@ namespace
     {
         std::vector<wchar_t> _FileBuffer(32768, L'\0');
         const auto _Filter = _BuildDialogFilterSpec(Payload_);
+        std::wstring _DefaultPath;
         const auto _DefaultPathIter = Payload_.find("defaultPath");
         if (_DefaultPathIter != Payload_.end() && _DefaultPathIter->value().is_string())
         {
-            const auto _DefaultPath = _UTF8ToWide(_AsString(_DefaultPathIter->value(), "defaultPath"));
+            _DefaultPath = _UTF8ToWide(_AsString(_DefaultPathIter->value(), "defaultPath"));
             if (_DefaultPath.size() >= _FileBuffer.size()) throw std::invalid_argument("File path is too long");
-            std::copy(_DefaultPath.begin(), _DefaultPath.end(), _FileBuffer.begin());
         }
+        std::wstring _InitialDirectory;
+        const auto _InitialDirectoryIter = Payload_.find("initialDirectory");
+        if (_InitialDirectoryIter != Payload_.end() && _InitialDirectoryIter->value().is_string())
+            _InitialDirectory = _UTF8ToWide(_AsString(_InitialDirectoryIter->value(), "initialDirectory"));
+        const auto _StartPath = iCAX::Frontend::Cef::Detail::ResolveFileDialogStartPath(
+            std::move(_DefaultPath), std::move(_InitialDirectory));
+        std::copy(_StartPath.FileName.begin(), _StartPath.FileName.end(), _FileBuffer.begin());
         std::wstring _DefaultExtension;
         const auto _ExtensionIter = Payload_.find("defaultExtension");
         if (_ExtensionIter != Payload_.end() && _ExtensionIter->value().is_string())
@@ -448,6 +456,8 @@ namespace
         _OpenFileName.lpstrFile = _FileBuffer.data();
         _OpenFileName.nMaxFile = static_cast<DWORD>(_FileBuffer.size());
         _OpenFileName.nFilterIndex = 1;
+        _OpenFileName.lpstrInitialDir = _StartPath.InitialDirectory.empty()
+            ? nullptr : _StartPath.InitialDirectory.c_str();
         _OpenFileName.lpstrTitle = _Title.empty() ? nullptr : _Title.c_str();
         _OpenFileName.lpstrDefExt = _DefaultExtension.empty() ? nullptr : _DefaultExtension.c_str();
         _OpenFileName.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
@@ -617,10 +627,18 @@ namespace
     SIZE _GetMinimumWindowSize(IN HWND hWindow_)
     {
         const UINT _nDpi = _GetWindowDpiOrDefault(hWindow_);
-        return SIZE{
+        SIZE _Size{
             _ScaleByDpi(g_nMinWindowWidthDIP, _nDpi),
             _ScaleByDpi(g_nMinWindowHeightDIP, _nDpi)
         };
+        MONITORINFO _Monitor{ sizeof(MONITORINFO) };
+        if (::GetMonitorInfoW(::MonitorFromWindow(hWindow_, MONITOR_DEFAULTTONEAREST), &_Monitor))
+        {
+            // A scaled minimum must not force a maximized window over the taskbar.
+            _Size.cx = std::min(_Size.cx, _Monitor.rcWork.right - _Monitor.rcWork.left);
+            _Size.cy = std::min(_Size.cy, _Monitor.rcWork.bottom - _Monitor.rcWork.top);
+        }
+        return _Size;
     }
 
     LRESULT CALLBACK _BorderlessWindowProc(
@@ -633,10 +651,30 @@ namespace
 
         if (nMessage_ == WM_GETMINMAXINFO)
         {
+            if (_pOriginalProc) ::CallWindowProcW(_pOriginalProc, hWindow_, nMessage_, wParam_, lParam_);
+            else ::DefWindowProcW(hWindow_, nMessage_, wParam_, lParam_);
+
             auto* _pInfo = reinterpret_cast<MINMAXINFO*>(lParam_);
             const SIZE _MinSize = _GetMinimumWindowSize(hWindow_);
             _pInfo->ptMinTrackSize.x = std::max(_pInfo->ptMinTrackSize.x, static_cast<LONG>(_MinSize.cx));
             _pInfo->ptMinTrackSize.y = std::max(_pInfo->ptMinTrackSize.y, static_cast<LONG>(_MinSize.cy));
+
+            MONITORINFO _Monitor{ sizeof(MONITORINFO) };
+            if (::GetMonitorInfoW(::MonitorFromWindow(hWindow_, MONITOR_DEFAULTTONEAREST), &_Monitor))
+            {
+                // Borderless WS_POPUP windows otherwise maximize over the full monitor.
+                // Maximize positions are monitor-relative, including on secondary displays.
+                _pInfo->ptMaxPosition = {
+                    _Monitor.rcWork.left - _Monitor.rcMonitor.left,
+                    _Monitor.rcWork.top - _Monitor.rcMonitor.top
+                };
+                _pInfo->ptMaxSize = {
+                    _Monitor.rcWork.right - _Monitor.rcWork.left,
+                    _Monitor.rcWork.bottom - _Monitor.rcWork.top
+                };
+                _pInfo->ptMinTrackSize.x = std::min(_pInfo->ptMinTrackSize.x, _pInfo->ptMaxSize.x);
+                _pInfo->ptMinTrackSize.y = std::min(_pInfo->ptMinTrackSize.y, _pInfo->ptMaxSize.y);
+            }
             return 0;
         }
 

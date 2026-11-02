@@ -5,5 +5,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ExtrusionRecognitionTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClInclude Include="HealFaceAudit.inc"><Filter>源文件</Filter></ClInclude>
+    <ClInclude Include="ZeroTrimRegression.inc"><Filter>源文件</Filter></ClInclude>
+    <ClInclude Include="GeometricMachiningBoundaryRegression.inc"><Filter>源文件</Filter></ClInclude>
   </ItemGroup>
 </Project>

@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {writeFileSync,readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {serveBrowserAsset,browserReportDirectory} from './browserPackageRuntime.mjs';
+const {chromium}=await import('playwright'),output=browserReportDirectory('machine-plan-issue-20261101');
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('https://plan-issue.test/**',serveBrowserAsset);await page.goto('https://plan-issue.test/');
+ await page.addStyleTag({content:readFileSync(resolve('src/apps/five-axis-cam/webpage/workspace.css'),'utf8')});
+ await page.evaluate(async()=>{
+  const I=await import('/src/apps/five-axis-cam/webpage/machinePlanIssue.mjs'),M=await import('/src/apps/five-axis-cam/webpage/workspaceModel.mjs'),{patchWorkspacePanels}=await import('/src/apps/five-axis-cam/webpage/workspaceDom.mjs'),{planMachineMotion}=await import('/src/apps/five-axis-cam/webpage/machineMotionPlan.mjs'),{machineResourceTransport}=await import('/src/tests/iCAX-UI/fixtures/machineJSONResource.mjs'),{workspaceAlertItems}=await import('/src/apps/five-axis-cam/webpage/alerts.mjs'),THREE=await import('/src/iCAX-UI/SDK/ThirdParty/three/three.module.js');
+  const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],placement=[...identity];placement[3]=100;
+  const cuts=[{id:'one',setupId:'setup',name:'外轮廓',number:17,enabled:true},{id:'two',setupId:'setup',name:'内孔',number:6,enabled:true}];
+  const setup={id:'setup',definitionOrder:['one','two'],headModel:{name:'测试刀头'},machineSetup:{machineId:'machine',supportId:'support',toolId:'tool',placement},generatedGeometry:{status:'Current',revision:{revision:'g1'},operations:cuts.map((c,i)=>({intentId:c.id,order:i+1})),transitions:[{from:'one',to:'two',fromOrder:1,toOrder:2,policy:{strategy:'Quick',marginMm:.2,liftHeightMm:20},geometryStatus:'Generated',endpointStatus:'Current',points:[[0,0,0],[20,0,10],[40,0,0]],directions:[[0,0,-1],[0,0,-1],[0,0,-1]]}]}};
+  const domain={expected:{epoch:'e',mutationSequence:'1'},activeSetupId:'setup',setups:[setup],intentToolpaths:cuts,placements:[],fixtures:[{id:'fixture',name:'支撑板 3'}],workpieces:[]};
+  const view={fiveAxisArea:'toolpath',fiveCamPage:'rapid',scene:{domain,intentToolpaths:cuts,machines:[{entityId:'machine',elements:[],joints:[]}]},fiveMachine:{machineId:'machine',cursor:0,speed:1,originals:new Map()}};M.selectTool(view,'simulation');
+  const report={schema:'cam.machine-motion-plan',schemaVersion:'2',interpolation:'QuinticNormalized',modelKey:'attempt',status:'Unchecked',collisionStatus:'Unchecked',kinematicsStatus:'Unresolved',playbackAllowed:false,frames:[],sampleCount:0,configuration:setup.machineSetup,nodes:[{id:'support',parent:-1,type:'fixed',origin:identity,axis:[0,0,1]},{id:'tool',parent:0,type:'prismatic',origin:identity,axis:[1,0,0]}],support:0,tool:1,positions:[0,0],failedTarget:{station:'319',referenceSample:'1958',intentId:'two',role:'Rapid',positionMm:[120,20,30],beamDirection:[0,0,-1]},reason:'第 320 个关键姿态（原刀路点 1959，空移）在本次逆解搜索限额内未找到满足精度的轴姿态；尚不能判定为不可达。'};
+  document.body.innerHTML='<main class="five-workspace" style="position:relative;width:1400px;height:930px"><canvas></canvas><aside class="cam-context-pane" style="height:210px;overflow:auto"><div style="height:2000px"></div></aside><aside class="cam-info-pane" style="height:250px;overflow:auto"></aside><div id="overlay"></div></main>';
+  let camera={target:{x:0,y:0,z:0},radius:2000},release,conditional=false;const scene=new THREE.Scene(),support=new THREE.Group();support.position.set(1000,0,0);scene.add(support);
+  view.viewport={scene,sceneObjects:new Map([['support',support]]),getCameraState:()=>camera,setCameraState:v=>camera=v,invalidate(){}};
+  const calls=[],navigation=[],transport=machineResourceTransport();
+  const context={mount:document.querySelector('main'),isCurrentProject:()=>true,sceneProxy:{resources:transport.resources,async invoke(method,request){calls.push({method,request});if(method==='CamSimulation.PlanMachine'){await new Promise(r=>release=r);return {status:'Completed',epoch:'e',taskId:'task'};}if(method==='CamSimulation.ReadMachineAttempt')return transport.wire(report,'planResourceRef');throw Error(method);}}};
+  const ops={renderProject(){patchWorkspacePanels(context.mount,[['#overlay',I.renderMachinePlanIssue(view)],['.cam-info-pane','<input id="draft" data-five-key="draft" value="12.345"><div class="nested" data-five-key="nested" style="height:80px;overflow:auto"><div style="height:1000px"></div></div>'+(conditional?'<input data-five-key="conditional" aria-label="条件字段" value="changed">':'')+'<div style="height:1800px"></div>']]);},appendProjectLog(){}};
+  const navigate=async id=>{navigation.push(id);if(id==='five.area.toolpath')view.fiveAxisArea='toolpath';if(id.startsWith('five.cam-page.')){const page=id.slice(14);M.switchCamPage(view,page);M.selectTool(view,page==='rapid'?'rapid':'select');}if(id==='five.area.simulation')view.fiveAxisArea='simulation';ops.renderProject();};
+  const run=action=>I.machinePlanIssueCommand(context,view,action,ops,navigate);
+  context.mount.addEventListener('click',e=>{const id=e.target.closest('[data-five-command]')?.dataset.fiveCommand;if(id?.startsWith('five.plan-issue.'))void run(id.slice(16));});
+  ops.renderProject();window.test={I,M,view,report,context,ops,calls,navigation,run,workspaceAlertItems,get camera(){return camera;},release:()=>{conditional=true;release();},get held(){return !!release;},async plan(){view.fiveMachine.planRequest={commandId:'cmd',expected:structuredClone(domain.expected),setupId:'setup'};await planMachineMotion(context,view,view.fiveMachine,ops);ops.renderProject();}};
+ });
+ await page.evaluate(()=>{window.running=test.plan();});await page.waitForFunction(()=>test.held);
+ const interaction=await page.evaluate(()=>{
+  const input=document.querySelector('#draft'),left=document.querySelector('.cam-context-pane'),right=document.querySelector('.cam-info-pane'),nested=document.querySelector('.nested');
+  input.focus({preventScroll:true});input.setSelectionRange(1,4);left.scrollTop=110;right.scrollTop=140;nested.scrollTop=180;
+  window.before={input,canvas:document.querySelector('canvas'),left,right,nested};input.addEventListener('probe',()=>window.events=(window.events||0)+1);
+  left.scrollTop=230;right.scrollTop=270;nested.scrollTop=310;test.release();
+ });
+ await page.evaluate(()=>running);await page.locator('[aria-label="运动问题定位"]').waitFor();
+ const text=await page.locator('.five-plan-issue').innerText();assert.match(text,/轴姿态求解未完成/);assert.match(text,/空移 1 → 2/);assert.match(text,/外轮廓.*17.*内孔.*6/);assert.match(text,/1959.*320/);assert.match(text,/尚未确认碰撞/);
+ const preserved=await page.evaluate(()=>{before.input.dispatchEvent(new Event('probe'));return {same:before.input===document.querySelector('#draft'),canvas:before.canvas===document.querySelector('canvas'),focus:document.activeElement===before.input,selection:[before.input.selectionStart,before.input.selectionEnd],scroll:[before.left.scrollTop,before.right.scrollTop,before.nested.scrollTop],events};});
+ assert.deepEqual(preserved,{same:true,canvas:true,focus:true,selection:[1,4],scroll:[230,270,310],events:1});
+ assert.equal(await page.locator('[aria-label="条件字段"]').count(),1);
+ await page.evaluate(()=>test.run('locate'));
+ assert.deepEqual(await page.evaluate(()=>({id:test.view.fiveRapid?.id,point:test.view.fiveMachinePlanIssue.marker.position.toArray(),camera:test.camera.target,mutations:test.calls.filter(c=>c.method!=='CamSimulation.PlanMachine'&&c.method!=='CamSimulation.ReadMachineAttempt').length})),{id:'one/two',point:[20,20,30],camera:{x:20,y:20,z:30},mutations:0});
+ await page.evaluate(()=>test.run('edit'));assert.ok(await page.evaluate(()=>test.navigation.includes('five.rapid.path-edit')));
+ await page.evaluate(()=>test.run('close'));assert.equal(await page.locator('.five-plan-issue').count(),0);assert.equal(await page.evaluate(()=>test.workspaceAlertItems(test.view).some(a=>a.target.commandId==='five.plan-issue.open')),true);
+ await page.evaluate(()=>test.run('open'));assert.equal(await page.locator('.five-plan-issue').count(),1);
+ await page.evaluate(()=>{test.view.scene.domain.expected.mutationSequence='2';test.ops.renderProject();test.I.syncMachinePlanIssue(test.view);});assert.equal(await page.locator('.five-plan-issue').count(),0);assert.equal(await page.evaluate(()=>!!test.view.fiveMachinePlanIssue.marker),false);
+ await page.evaluate(()=>{const r={...test.report,status:'Blocked',collisionStatus:'Blocked',reason:'关键姿态 320 的接近运动：切割头与支撑板间隙不足。',rejectedMotion:{collisionJoints:[0,7],collisionBodies:['tool','fixture'],collisionPairs:[{first:{ownerElementId:'tool',ownerElementName:'切割头',boxName:'喷嘴碰撞盒'},second:{ownerElementId:'fixture',ownerElementName:'fixture',representation:'OwnMesh'}}]}};test.I.presentMachinePlanIssue(test.view,r);test.ops.renderProject();});
+ const collisionText=await page.locator('.five-plan-issue').innerText();assert.match(collisionText,/候选运动检测到碰撞/);assert.match(collisionText,/切割头 · 喷嘴碰撞盒 ↔ 支撑板 3/);assert.doesNotMatch(collisionText,/尚未确认碰撞/);
+ await page.screenshot({path:resolve(output,'collision-diagnosis.png')});
+ await page.evaluate(()=>test.run('inspect'));assert.ok(await page.evaluate(()=>test.navigation.includes('five.machine.inspect')));
+ await page.evaluate(()=>{test.I.presentMachinePlanIssue(test.view,{...test.report,status:'Blocked',collisionStatus:'Blocked',rejectedMotion:{sourceStation:'Initial',collisionJoints:[0,0]}});test.ops.renderProject();});
+ assert.match(await page.locator('.five-plan-issue').innerText(),/初始姿态／接近运动/);assert.equal(await page.locator('[data-five-command="five.plan-issue.locate"]').count(),0,'initial-pose collision must not claim the first cutting target is the collision position');
+ await page.evaluate(()=>{test.I.presentMachinePlanIssue(test.view,{...test.report,playbackAllowed:true});test.ops.renderProject();});assert.equal(await page.locator('.five-plan-issue').count(),0);
+ assert.deepEqual(errors,[]);
+ const result={passed:true,automaticFromPlanReceipt:true,collisionObjects:true,ikDistinctFromCollision:true,exactSourcePoint:true,rapidSelection:true,camFrameConversion:true,editNavigation:true,alertReopen:true,staleInvalidation:true,interaction:preserved,nativeTransport:'controlled resource-backed protocol fixture',standaloneCef:false};
+ writeFileSync(resolve(output,'report.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}finally{await browser.close();}

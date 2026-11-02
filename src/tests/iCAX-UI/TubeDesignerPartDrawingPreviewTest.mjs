@@ -47,14 +47,14 @@ function fixture() {
   const document = { createElement(tag) { return new Element(document, tag); } };
   const mount = new Element(document), host = new Element(document); host.dataset.partDrawingViewport = ""; mount.append(host);
   const reference = (url, version = 1) => ({ url, version });
-  const preview = (revision = 1, changed = {}) => ({ revision, toolsOnly: true,
+  const preview = (revision = 1, changed = {}) => ({ revision, toolsOnly: false, geometry: reference("finished", revision),
     baseGeometry: reference("base", changed.base ?? 1), baseMaterial: reference("base-material"),
     toolMaterial: reference("tool-material"), baseBounds: { min: [0, -20, -10], max: [changed.length ?? 500, 20, 10] },
     toolPreviews: ["first", "second"].map(key => ({ target: "feature", key, geometry: reference(key, changed[key] ?? 1) })),
   });
   const recipe = () => ({ drawing: { length: 500, section: { source: "library", key: "round" } },
     features: [{ id: "first", station: 100 }, { id: "second", station: 200 }], ends: {} });
-  const state = { revision: 1, preview: preview(), previewRecipe: recipe(), previewPending: false };
+  const state = { revision: 1, preview: preview(), previewRecipe: recipe(), previewPending: false, previewMode:"tools" };
   const drawing = { state, mode: "", selected: "" }, unrelated = { marker: "main-scene-punch-state" };
   const view = { tubeDesignerPartDrawing: drawing, tubeDesignerPunchWizard: unrelated, pending: false };
   const reads = [], delays = new Map(), failures = new Set(), viewports = [];
@@ -106,12 +106,12 @@ function fixture() {
   };
 }
 
-test("drawing rows are only stable base and operand resources, never a final boolean result", () => {
-  const f = fixture(), rows = buildPartDrawingPreviewRows({ ...f.state.preview, geometry: { url: "forbidden-final", version: 1 } });
+test("drawing rows default to the finished solid and offer stable auxiliary operands", () => {
+  const f = fixture(), rows = buildPartDrawingPreviewRows(f.state.preview,{mode:"tools"});
   assert.deepEqual(rows.map(row => row.entityId), ["drawing:base", "drawing:feature:first", "drawing:feature:second"]);
   assert.equal(rows[0].data.localToWorldMatrix[3], -250);
   assert.deepEqual(rows.map(row => row.data.renderClass), [1, 5, 5]);
-  assert.deepEqual(buildPartDrawingPreviewRows({ geometry: { url: "saved-result" } }), []);
+  assert.deepEqual(buildPartDrawingPreviewRows({ geometry: { url: "saved-result" } }).map(row=>row.entityId), ["drawing:finished"]);
 });
 
 test("local DOM updates retain one viewport and unchanged references cause no snapshot or resource read", async () => {

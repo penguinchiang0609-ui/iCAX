@@ -137,6 +137,11 @@ namespace iCAX
             * @brief 获取产品命令注册表。
             */
             virtual iCAX::Interaction::CSDORegistry& GetSDORegistry() const = 0;
+
+            // Update a fixed set of product setting keys as one native repository
+            // command. Scopes are product-wide and independent of project history.
+            virtual void UpdateSettingsWithHistory(const std::string& Scope_,
+                const iCAX::Data::PropertyBag& Fields_, const std::string& CommandName_);
         };
     }
 }

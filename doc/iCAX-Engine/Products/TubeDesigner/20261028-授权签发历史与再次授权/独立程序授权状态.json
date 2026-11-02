@@ -1,0 +1,100 @@
+{
+  "passed": true,
+  "nativeBusinessMocked": false,
+  "reissueClientBuild": true,
+  "status": {
+    "activated": true,
+    "authorizationReissueFormat": "TDREI001",
+    "capabilities": {
+      "machining.export": false,
+      "machining.toolpath": false,
+      "nesting.calculate": false,
+      "nesting.edit": false,
+      "nesting.export": false,
+      "page.machining": false,
+      "page.nesting": false,
+      "page.product": true,
+      "page.simulation": false,
+      "product.breakdown": true,
+      "product.design": true,
+      "product.export": true,
+      "simulation.run": false
+    },
+    "configured": true,
+    "developmentBypass": false,
+    "expiresAt": 0,
+    "featureCatalog": [
+      {
+        "id": "page.product",
+        "label": "产品页",
+        "parent": ""
+      },
+      {
+        "id": "page.nesting",
+        "label": "下料页",
+        "parent": ""
+      },
+      {
+        "id": "page.machining",
+        "label": "加工页",
+        "parent": ""
+      },
+      {
+        "id": "page.simulation",
+        "label": "仿真页",
+        "parent": ""
+      },
+      {
+        "id": "product.design",
+        "label": "产品设计",
+        "parent": "page.product"
+      },
+      {
+        "id": "product.breakdown",
+        "label": "产品拆单",
+        "parent": "page.product"
+      },
+      {
+        "id": "product.export",
+        "label": "产品导出",
+        "parent": "page.product"
+      },
+      {
+        "id": "nesting.edit",
+        "label": "下料零件编辑",
+        "parent": "page.nesting"
+      },
+      {
+        "id": "nesting.calculate",
+        "label": "排样计算",
+        "parent": "page.nesting"
+      },
+      {
+        "id": "nesting.export",
+        "label": "下料导出",
+        "parent": "page.nesting"
+      },
+      {
+        "id": "machining.toolpath",
+        "label": "加工刀路",
+        "parent": "page.machining"
+      },
+      {
+        "id": "machining.export",
+        "label": "加工导出",
+        "parent": "page.machining"
+      },
+      {
+        "id": "simulation.run",
+        "label": "运行仿真",
+        "parent": "page.simulation"
+      }
+    ],
+    "featureSchemaVersion": 1,
+    "features": 113,
+    "kind": "永久授权",
+    "licenseId": "59d24eea-c3a7-48d1-a19d-687c4d832e0b",
+    "releaseBypass": false,
+    "supportsExplicitReissue": true
+  }
+}

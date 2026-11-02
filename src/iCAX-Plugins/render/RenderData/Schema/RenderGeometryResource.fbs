@@ -26,6 +26,8 @@ table RenderGeometryResource {
   feeds:[float];
   point_flags:[uint];
   spans:[uint];
+  edge_positions:[float]; // sampled CAD topology, independent of tessellation
+  edge_ranges:[uint]; // packed (first point, count, feature flag)
 }
 
 root_type RenderGeometryResource;

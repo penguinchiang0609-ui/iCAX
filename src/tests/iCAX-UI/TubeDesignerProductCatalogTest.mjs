@@ -256,11 +256,12 @@ await test("editing existing instances never reapplies a catalog preset", async 
   assert.equal(payload.productEntityId, "saved-1");
 });
 
-await test("shipped railing and staircase descriptors are in distinct primary categories", () => {
+await test("shipped window products are peers and railing and staircase have distinct primary categories", () => {
   const readTemplate = (directory) => ({ ...JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${directory}/template.json`, import.meta.url))), available: true });
-  const shipped = ["single_face_security_window", "modular_guardrail", "straight_steel_staircase"].map(readTemplate);
+  const shipped = ["single_face_security_window", "minimal_protective_grille", "modular_guardrail", "straight_steel_staircase"].map(readTemplate);
   const tree = buildTemplateGroupTree(shipped);
   assert.deepEqual(tree.map((group) => group.title), ["窗", "护栏", "楼梯"]);
+  assert.deepEqual(tree[0].templates.map((template) => template.id), ["single-face-security-window", "minimal-protective-grille"]);
   assert.equal(tree[1].templates[0].id, "modular-guardrail");
   assert.equal(tree[2].templates.length, 1);
 });

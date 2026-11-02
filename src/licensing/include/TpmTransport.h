@@ -89,7 +89,7 @@ inline void VerifyQuote(const Bytes& publicArea, const Bytes& qualifiedName, con
     Require(r.Sized(68) == qualifiedName, "Quote signer mismatch");
     const auto challenge = r.Sized(64);
     Require(challenge.size() == nonce.size() && std::equal(challenge.begin(), challenge.end(), nonce.begin()), "Quote replay rejected");
-    r.U64(); r.U32(); r.U32(); Require(r.U8() == 1, "Unsafe TPM clock"); r.U64();
+    ReadAttestationClockInfo(r); r.U64();
     Require(r.U32() == 0, "Unexpected quote PCR selection");
     const auto digest = r.Sized(32); const auto expected = Hash({});
     Require(digest.size() == 32 && std::equal(digest.begin(), digest.end(), expected.begin()) && r.End(), "Invalid empty PCR digest");

@@ -1,0 +1,10 @@
+#pragma once
+#include <Windows.h>
+#include <algorithm>
+#include <string>
+#include <vector>
+#include <map>
+#include <optional>
+#include <variant>
+#include <unordered_map>
+#include <unordered_set>

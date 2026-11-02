@@ -42,7 +42,7 @@ try {
     return route.fulfill({ contentType: "text/javascript", body: code });
   });
   await page.goto("http://sketch-cad-import-native.test/");
-  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/laser3dcam.css"), "utf8") });
+  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, "apps/_shared/workbench/styles/workbench.css"), "utf8") });
   await page.evaluate(async () => {
     const sketch = await import("/src/apps/tube-designer/webpage/sketchArea.mjs");
     const parts = await import("/src/apps/tube-designer/webpage/partsArea.mjs");

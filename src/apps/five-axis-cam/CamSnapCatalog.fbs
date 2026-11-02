@@ -1,0 +1,9 @@
+// Versioned display catalog of native exact feature identities and samples.
+// The resource channel keeps this payload outside the bounded SDO queue.
+namespace iCAX.FiveAxisCAM;
+table CamSnapCatalog {
+  version:uint;
+  json:string (required);
+}
+root_type CamSnapCatalog;
+file_identifier "ICSC";

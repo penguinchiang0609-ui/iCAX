@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "nativeBusinessMocked": true,
+  "standaloneNative": false,
+  "productRenderer": {
+    "annotationOwnershipChecks": 3360,
+    "jointConditionStates": 144,
+    "passed": true,
+    "uiStates": 288
+  },
+  "mountingBrowser": {
+    "realWebGL": true,
+    "report": "mounting-browser/report.json",
+    "passed": true,
+    "actualEdits": 30
+  },
+  "insertJointBrowser": {
+    "report": "browser/report.json",
+    "physicalParameterCount": 49,
+    "passed": true,
+    "actualEdits": 24,
+    "inputCanvasAndListenersPreserved": true,
+    "focusSelectionNestedScrollPreserved": true
+  },
+  "nativeAcceptance": "separate parent task"
+}

@@ -126,6 +126,9 @@
     <ClInclude Include="ComponentBase.h">
       <Filter>extern\class</Filter>
     </ClInclude>
+    <ClInclude Include="DerivedComponentBase.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
     <ClInclude Include="DerivedProperty.h">
       <Filter>extern\class</Filter>
     </ClInclude>

@@ -1,4 +1,4 @@
-import { curvePoint, splitSegment, distance } from "./sketchGeometry.mjs";
+import { curvePoint, splitSegment, distance } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 
 // Ellipse and polynomial spline parallels are generally not conics or finite
 // polynomial curves. Store editable cubic Beziers, with a certified maximum

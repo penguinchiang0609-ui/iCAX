@@ -24,6 +24,7 @@
   <ImportGroup Label="Shared" />
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
   <Import Project="..\..\..\third_party\ortools\OrTools.props" />
+  <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
@@ -39,9 +40,9 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
@@ -60,6 +61,9 @@
     <ClInclude Include="BatchExcelAutomation.h" />
     <ClInclude Include="PunchGeometry.h" />
     <ClInclude Include="PartDrawingDefinition.h" />
+    <ClInclude Include="PartDrawingBevelSDO.inc" />
+    <ClInclude Include="TubeCadDocumentSDO.inc" />
+    <ClInclude Include="TubeCadWorkspaceSDO.inc" />
     <ClInclude Include="RecoveredPartDrawingFeatures.h" />
     <ClInclude Include="NestingAdapter.h" />
     <ClInclude Include="NestingResultExporter.h" />
@@ -123,6 +127,16 @@
   </ItemGroup>
   <Import Project="MachiningAnalyzer.props" />
   <ItemGroup><ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"><Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project></ProjectReference></ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile Update="ComponentModelLibrary.cpp;FinalGeometryMeasurement.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SupportJustMyCode>false</SupportJustMyCode>
+    </ClCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
   <Import Project="..\..\..\third_party\ortools\OrTools.Runtime.targets" />

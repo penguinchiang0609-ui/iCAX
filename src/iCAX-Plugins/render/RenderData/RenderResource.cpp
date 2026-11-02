@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 #include "RenderResource.h"
 
@@ -45,7 +45,9 @@ namespace
         IN const std::vector<float>& ToolAxes_,
         IN const std::vector<float>& Feeds_,
         IN const std::vector<uint32_t>& PointFlags_,
-        IN const std::vector<uint32_t>& Spans_)
+        IN const std::vector<uint32_t>& Spans_,
+        const std::vector<float>& EdgePositions_ = {},
+        const std::vector<uint32_t>& EdgeRanges_ = {})
     {
         flatbuffers::FlatBufferBuilder _Builder;
         const auto _Positions = _Builder.CreateVector(Positions_);
@@ -60,6 +62,8 @@ namespace
         const auto _PointFlags = _Builder.CreateVector(PointFlags_);
         const auto _Spans = _Builder.CreateVector(Spans_);
 
+        const auto _EdgePositions = _Builder.CreateVector(EdgePositions_);
+        const auto _EdgeRanges = _Builder.CreateVector(EdgeRanges_);
         const auto _Start = _Builder.StartTable();
         _Builder.AddElement<uint32_t>(4, 1, 0);
         _Builder.AddElement<uint32_t>(6, static_cast<uint32_t>(eKind_), 0);
@@ -76,6 +80,8 @@ namespace
         _Builder.AddOffset(28, _Feeds);
         _Builder.AddOffset(30, _PointFlags);
         _Builder.AddOffset(32, _Spans);
+        _Builder.AddOffset(34, _EdgePositions);
+        _Builder.AddOffset(36, _EdgeRanges);
         const auto _Root = _Builder.EndTable(_Start);
         _Builder.Finish(
             flatbuffers::Offset<void>(_Root),
@@ -93,6 +99,16 @@ namespace
         }
         return std::memcmp(Resource_.Data() + 4, pIdentifier_, 4) == 0;
     }
+}
+
+iCAX::Resource::CFlatBufferResource iCAX::Render::MakeRenderGeometryResource(
+    const SRenderMeshData& Mesh_, const SRenderMeshEdges& Edges_)
+{
+    return FinishGeometry(ERenderGeometryKind::Mesh, Mesh_.nDataVersion,
+        static_cast<uint32_t>(Mesh_.eTopology), Mesh_.nFlags,
+        Flatten3(Mesh_.Positions), Flatten3(Mesh_.Normals), Flatten2(Mesh_.TextureCoordinates),
+        Mesh_.VertexColorsRGBA, Mesh_.Indices, {}, {}, {}, {}, {},
+        Flatten3(Edges_.Positions), Edges_.Ranges);
 }
 
 iCAX::Resource::CFlatBufferResource iCAX::Render::MakeRenderGeometryResource(

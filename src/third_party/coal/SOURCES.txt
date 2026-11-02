@@ -1,0 +1,36 @@
+Coal collision core 3.0.4
+Upstream: https://github.com/coal-library/coal/releases/tag/v3.0.4
+Archive SHA256: 0A4F58E55B88A3D9F873CE79979AECC08491D212EA0B9311DF013DF3B22BFFAC
+Eigen 3.4.0: https://gitlab.com/libeigen/eigen/-/releases/3.4.0
+Archive SHA256: 8586084F71F9BDE545EE7FA6D00288B264A2B7AC3607B974E54D13E7162C1C72
+Boost headers 1.87.0: https://archives.boost.io/release/1.87.0/source/
+Archive SHA256: F55C340AA49763B1925CCF02B2E83F35FDCF634C9D5164A2ACB87540173C741D
+
+Build: powershell -File src/third_party/coal/prepare-coal.ps1 -Configuration Debug
+Use Release for the release CRT. No debug/release STL boundary is mixed.
+Downloaded upstream files are unmodified. CMake generates a build-local copy
+of Minkowski dispatch with a neighbor-topology guard: point-only convex hulls
+use the exact linear support scan, including hulls larger than 32 vertices.
+CMakeLists.txt builds a static
+collision core, omitting model loaders, archives, Octomap and Python. Generated
+configuration headers in config/ select this feature set. iCAX provides model
+IO and persistence, so Assimp and compiled Boost libraries are not needed.
+This core is linked only into CoalCollisionServices.dll. Public framework
+interfaces contain no Coal, Eigen, Boost or OpenCascade types.
+Each configuration installs dependency license notices; both development
+staging and the FiveAxisCAM package copy those notices with the program.
+
+The CAD consumer prepares a dedicated trimmed collision mesh with OCCT surface
+deflection control (0.05 mm). Coal stores it in native OBBRSS triangle BVHs,
+shared between per-face and complete-obstacle models. The larger of requested
+and reported mesh deflection, plus CAD face/edge/vertex tolerances, is included
+as a security margin. This is a tolerance-controlled collision representation,
+not a claim of mathematically exact tessellation. It is independent of display
+mesh quality. Unresolved mesh bounds continue to the exact CAD kernel.
+If meshing is unavailable, positive-weight spline pole hulls or conservative
+boxes are used. Coal evaluates point support maxima directly; Qhull is not
+needed. Head frusta conservatively enclose circular cross sections. Overlap or
+solver non-convergence cannot certify clearance. Continuous motion bounds,
+solid containment, cancellation and model revision invalidation remain in the
+geometry/CAM layers that already own them. No machine-level NC qualification
+is implied by a head-envelope clearance result.

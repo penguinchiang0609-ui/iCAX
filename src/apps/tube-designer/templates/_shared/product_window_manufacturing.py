@@ -177,6 +177,10 @@ def build_window_manufacturing(parameters, context, core, design=None):
     else:
         design = deepcopy(design)
     choices = {name: deepcopy(parameters.get(name, default)) for name, default in _PROCESS_DEFAULTS.items()}
+    # Fixed opening rails are continuous product members. Their T jambs have
+    # square butt ends; independent rectangular-frame forming does not apply.
+    choices['doorFrameJoinType'] = 'butt_90'
+    choices['doorFrameButtWrapMode'] = 'horizontal_wraps_side'
     item_keys = [item['key'] for item in design['items']]
     external_available = (
         parameters.get('faceType', 'single') == 'single'

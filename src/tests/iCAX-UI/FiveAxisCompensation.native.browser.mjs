@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+
+export async function verifyCompensation({page,rpc,calls,output}) {
+  page.setDefaultTimeout(60000);
+  const invoke=(method,payload={})=>rpc({action:'invoke',scope:'scene',method,payload});
+  const read=()=>invoke('CamScene.ReadState');
+  const command=id=>page.evaluate(id=>fixture.entry.handleRibbonCommand(fixture.context,id),id);
+  const idle=()=>page.waitForFunction(()=>!fixture.view.pending);
+  const state=await read(),ids=state.intentToolpaths.map(c=>c.id);
+  await invoke('CamProcess.Clear',{commandId:crypto.randomUUID(),expected:state.expected,intentIds:ids,categories:['Kerf','Leads','Gap','Overcut']});
+  const selected=state.intentToolpaths.find(c=>c.geometryKind==='Slot'&&c.machiningKind==='Cut');assert.ok(selected);
+  if(selected.retainedSide==='Unspecified')await invoke('CamCut.SetRetainedSide',{commandId:crypto.randomUUID(),expected:(await read()).expected,intentIds:[selected.id],retainedSide:selected.boundaryRole==='OuterTrim'?'Interior':'Exterior'});
+  await command('five.refresh');await idle();await page.locator(`.five-cut-tree [data-five-intent="${selected.id}"]`).click();
+  await command('five.tool.compensation');await idle();
+  await page.waitForFunction(()=>!fixture.view.fiveCompensation?.loading);
+  const stress=await page.addStyleTag({content:'.cam-context-pane::after,.cam-info-pane::after{content:"";display:block;height:1600px;flex-shrink:0}'});
+  await page.evaluate(()=>{fixture.holdMethod='CamProcess.PreviewCompensation';fixture.hold=true;fixture.compensationCanvas=fixture.view.viewport.renderer.domElement;fixture.compensationInput=document.querySelector('[data-five-field="cutKerf"]');fixture.compensationEvents=0;fixture.compensationInput.addEventListener('input',()=>fixture.compensationEvents++);});
+  const width=page.locator('[data-five-field="cutKerf"]');await width.fill('0.24');await width.blur();
+  await page.locator('[data-five-command="five.process.apply"]').click();await idle();await page.waitForFunction(()=>fixture.held);
+  const scroll=await page.evaluate(()=>{const i=fixture.compensationInput;i.focus({preventScroll:true});i.setSelectionRange(1,3);document.querySelector('.cam-context-pane').scrollTop=120;document.querySelector('.cam-info-pane').scrollTop=230;return [document.querySelector('.cam-context-pane').scrollTop,document.querySelector('.cam-info-pane').scrollTop];});
+  await page.evaluate(()=>{document.querySelector('.cam-context-pane').scrollTop+=30;document.querySelector('.cam-info-pane').scrollTop+=40;fixture.release();});
+  await page.waitForFunction(()=>!fixture.view.fiveCompensation.loading);
+  const kept=await page.evaluate(()=>({input:fixture.compensationInput===document.querySelector('[data-five-field="cutKerf"]'),canvas:fixture.compensationCanvas===fixture.view.viewport.renderer.domElement,focus:document.activeElement===fixture.compensationInput,selection:[fixture.compensationInput.selectionStart,fixture.compensationInput.selectionEnd],scroll:[document.querySelector('.cam-context-pane').scrollTop,document.querySelector('.cam-info-pane').scrollTop],events:fixture.compensationEvents}));
+  assert.equal(kept.input,true);assert.equal(kept.canvas,true);assert.equal(kept.focus,true);assert.deepEqual(kept.selection,[1,3]);assert.deepEqual(kept.scroll,[scroll[0]+30,scroll[1]+40]);assert.ok(kept.events>0);
+  await stress.evaluate(n=>n.remove());
+  const visible=()=>page.evaluate(id=>{const v=fixture.view,original=v.fiveCutPreview.group.children.find(n=>n.userData.cuttingLineId===id);const lines=[];v.fiveCompensationOverlay?.group.traverse(n=>{if(n.isLine&&n.userData.compensatedIntentId===id)lines.push({color:n.material.color.getHex(),points:n.geometry.attributes.position.count,role:n.userData.role});});return {original:original?.material.color.getHex(),lines};},selected.id);
+  let shown=await visible();assert.equal(shown.original,0xffffff);assert.ok(shown.lines.some(l=>l.role==='Cut'&&l.color===0xffc857&&l.points>2));
+  assert.equal((await read()).setups[0].generatedGeometry.status,'Missing','preview appears before any plan generation');
+  await command('five.tool.leads');shown=await visible();assert.equal(shown.original,0xffffff);assert.ok(shown.lines.length);
+  await command('five.tool.reverse');await page.waitForFunction(()=>!fixture.view.fiveCompensation.loading);shown=await visible();assert.equal(shown.original,0xffffff);assert.ok(shown.lines.length);
+  await command('five.tool.compensation');await idle();
+  await page.screenshot({path:resolve(output,'compensation-white-original-and-offset.png')});
+  assert.equal(await page.evaluate(()=>fixture.view.error),'');
+  const policy=(await invoke('CamProcess.Read',{expected:(await read()).expected,intentIds:[selected.id]})).items[0];assert.equal(policy.assignment.kerf.widthMm,.24);
+  await page.evaluate(()=>{fixture.compensationCanvas=fixture.view.viewport.renderer.domElement;});
+  const generate=async()=>{let t=await invoke('CamPlan.Generate',{commandId:crypto.randomUUID(),expected:(await read()).expected,setupId:state.activeSetupId});while(t.status==='Running'){await new Promise(r=>setTimeout(r,100));t=await invoke('CamPlan.QueryStatus',{epoch:t.epoch,taskId:t.taskId});}assert.equal(t.status,'Completed',t.error);await command('five.refresh');await idle();};
+  await generate();
+  const after=await read(),generated=after.setups[0].generatedGeometry;assert.equal(generated.status,'Current');assert.equal(generated.operations.length,ids.length);
+  const operation=generated.operations.find(o=>o.intentId===selected.id);assert.equal(operation.compensation.widthMm,.24);
+  assert.ok(operation.lengthMm>0&&operation.curveRef.url);assert.equal(generated.productionQualified,false);
+  const nominal=state.intentToolpaths.find(c=>c.id===selected.id),part=operation.parts.find(p=>p.role==='Cut');assert.ok(part.sourceSamples.some(s=>s.kind==='SourceOffset'));
+  assert.ok(part.sourceSamples.filter(s=>s.kind==='Connector').every(s=>!s.sourceSpanId));
+  assert.ok(Math.abs(operation.lengthMm-operation.compensation.perimeterMm)<1e-7);
+  assert.equal(await page.evaluate(()=>fixture.compensationCanvas===fixture.view.viewport.renderer.domElement),true);
+  assert.ok((await visible()).lines.length);
+  const exactPreview=await invoke('CamProcess.PreviewCompensation',{expected:after.expected,intentIds:[selected.id]});assert.deepEqual(exactPreview.items[0].parts,operation.parts);
+  await page.evaluate(()=>fixture.view.viewport.fitView());await page.screenshot({path:resolve(output,'stamped-bracket-compensated.png')});
+  const geometry=generated.revision;
+  await invoke('CamCut.Reverse',{commandId:crypto.randomUUID(),expected:after.expected,intentIds:[selected.id]});await command('five.refresh');
+  assert.equal((await read()).setups[0].generatedGeometry.status,'Stale');await generate();
+  const reversed=(await read()).setups[0].generatedGeometry.operations.find(o=>o.intentId===selected.id);assert.ok(Math.abs(reversed.lengthMm-operation.lengthMm)<1e-7);
+  assert.notDeepEqual((await read()).setups[0].generatedGeometry.revision,geometry);
+  await width.fill('0');await page.locator('[data-five-command="five.process.apply"]').click();await idle();await page.waitForFunction(()=>!fixture.view.fiveCompensation.loading);
+  shown=await visible();assert.equal(shown.lines.length,0);assert.notEqual(shown.original,0xffffff);
+  await rpc({action:'undo'});await command('five.refresh');await page.waitForFunction(()=>!fixture.view.fiveCompensation.loading);assert.equal((await visible()).original,0xffffff);
+  const reopened=await rpc({action:'save-reopen'});await command('five.refresh');await page.waitForFunction(()=>!fixture.view.fiveCompensation.loading);assert.equal((await visible()).original,0xffffff);assert.ok((await visible()).lines.length);
+  writeFileSync(resolve(output,'compensation-report.json'),JSON.stringify({passed:true,source:nominal.sourceKey,operations:ids.length,widthMm:.24,
+    compensatedLengthMm:operation.lengthMm,reverseLengthMm:reversed.lengthMm,curve:operation.curveRef,
+    kept,cases:['white original and colored compensated path before generation','tool switching retains both paths','exact preview equals generated parts','clear undo reopen','input canvas focus selection latest dual scroll preserved'],coverage:{browser:'Edge',native:'CamProcess.Update, PreviewCompensation and CamPlan.Generate',standaloneCef:false},calls:calls.filter(c=>['CamProcess.Update','CamPlan.Generate','CamProcess.PreviewCompensation'].includes(c.method))},null,2));
+  console.log('Compensation: native UI edit, generation, exact resource and reverse passed');
+}

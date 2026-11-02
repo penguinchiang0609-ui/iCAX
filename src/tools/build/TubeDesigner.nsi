@@ -11,17 +11,16 @@ Unicode true
 !include "${CONFIG_INCLUDE}"
 
 !define PRODUCT_NAME "TubeDesigner"
-!define PRODUCT_VERSION "0.1.0"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\iCAX.TubeDesigner"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "${INSTALLER_OUTPUT}"
 InstallDir "$PROGRAMFILES64\TubeDesigner"
 BrandingText "TubeDesigner"
-VIProductVersion "0.1.0.0"
+VIProductVersion "${PRODUCT_FILE_VERSION}"
 VIAddVersionKey /LANG=2052 "ProductName" "TubeDesigner"
-VIAddVersionKey /LANG=2052 "ProductVersion" "0.1.0"
-VIAddVersionKey /LANG=2052 "FileVersion" "0.1.0.0"
+VIAddVersionKey /LANG=2052 "ProductVersion" "${PRODUCT_VERSION}"
+VIAddVersionKey /LANG=2052 "FileVersion" "${PRODUCT_FILE_VERSION}"
 VIAddVersionKey /LANG=2052 "FileDescription" "TubeDesigner 安装程序"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "TubeDesigner"
 ManifestSupportedOS Win10
@@ -34,8 +33,12 @@ ShowUninstDetails show
   SetCompress off
 !else
   RequestExecutionLevel admin
+!ifdef INSTALLER_ZLIB
+  SetCompressor /SOLID zlib
+!else
   SetCompressor /SOLID lzma
   SetCompressorDictSize 32
+!endif
 !endif
 
 !ifdef PRODUCT_ICON
@@ -44,7 +47,7 @@ ShowUninstDetails show
 !endif
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "欢迎安装 TubeDesigner"
-!define MUI_WELCOMEPAGE_TEXT "此程序将安装 TubeDesigner 0.1.0（x64）。$\r$\n$\r$\n安装前请保存工作并退出正在运行的 TubeDesigner。"
+!define MUI_WELCOMEPAGE_TEXT "此程序将安装 TubeDesigner ${PRODUCT_VERSION}（x64）。$\r$\n$\r$\n安装前请保存工作并退出正在运行的 TubeDesigner。"
 !define MUI_FINISHPAGE_TITLE "TubeDesigner 安装完成"
 !define MUI_FINISHPAGE_TEXT "您可以通过桌面或开始菜单快捷方式打开 TubeDesigner。"
 !insertmacro MUI_PAGE_WELCOME

@@ -5,6 +5,7 @@ import { scheduleNestingPlanHydration, cancelNestingPlanHydration } from "./nest
 import { confirmWithoutTitle } from "./confirmDialog.mjs";
 import { attachMachiningSideEditor, handleMachiningPathAction, pathEditor, renderMachiningEditToolbar, renderMachiningPathList, renderMachiningPathProperties, renderMachiningSideEditor } from "./machiningEditor.mjs";
 import { handleMachiningViewportPick, machiningPathOverlay } from "./machiningViewport.mjs";
+import { machiningStage, machiningStages, renderMachiningReadiness, renderMachiningSourceActions, renderMachiningStagePanel, renderMachiningWorkflow } from "./machiningWorkspace.mjs";
 
 const PREFIX = "tube-machining-";
 const sections = {
@@ -53,25 +54,35 @@ export function selectedMachiningJob(view) {
 
 export function renderTubeMachiningLeftPane(_context, view) {
   const jobs = machiningJobs(view);
+  const query = state(view).query ?? "";
+  const visible = jobs.filter(job => `${job.name} ${job.sourceFileName ?? ""}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const active = selectedMachiningJob(view);
   return `<section class="tube-machining-pane"><header class="tube-machining-pane-title"><strong>加工清单</strong><span>${jobs.length} 项</span></header>
-    <p class="tube-machining-note">从上方菜单接收下料排样结果，或导入已排样的三维模型。</p>
-    <div class="tube-machining-job-list" aria-label="加工清单">${jobs.length ? jobs.map(job => `
+    ${renderMachiningSourceActions(view)}<label class="tube-cam-job-search"><span>筛选加工清单</span><input type="search" value="${escapeAttr(query)}" placeholder="母材名称或文件名" data-cam-change-action="${PREFIX}search" aria-label="筛选加工清单"></label>
+    <p class="tube-machining-note">每根母材独立编程，可接收下料排样或导入模型。</p>
+    <div class="tube-machining-job-list" aria-label="加工清单">${visible.length ? visible.map(job => `
       <button type="button" class="tube-machining-job ${job.id === active?.id ? "active" : ""}" data-cam-action="${PREFIX}select" data-job-id="${escapeAttr(job.id)}" aria-pressed="${job.id === active?.id}">
         <span class="tube-machining-source-tag">${job.sourceKind === "nesting" ? "下料关联" : "三维导入"}</span>
         <strong>${escapeText(job.name)}</strong><small>${job.plan ? `${job.plan.partCount ?? job.plan.placements.length} 件 · ${formatNumber(job.plan.stockLength)} mm` : escapeText(job.sourceFileName || "原排样记录")}</small>
-        <span class="tube-machining-job-status ${job.stale ? "stale" : ""}">${job.status}</span>
-      </button>`).join("") : `<div class="tube-machining-empty-list">暂无加工数据<br><small>加工清单与下料零件清单分开管理</small></div>`}</div></section>`;
+        <span class="tube-machining-job-status ${job.stale ? "stale" : ""}">${escapeText(job.status)}</span>
+      </button>`).join("") : `<div class="tube-machining-empty-list">${jobs.length ? "没有匹配的母材" : "暂无加工数据"}<br><small>${jobs.length ? "修改上方筛选条件" : "先接收排样，或导入 STEP / IGES 模型"}</small></div>`}</div></section>`;
+}
+
+export function renderTubeMachiningWorkflow(view) {
+  return view.activeAreaId === "machining" ? renderMachiningWorkflow(view, machiningJobs(view)) : "";
 }
 
 export function renderTubeMachiningRightPane(_context, view) {
   const job = selectedMachiningJob(view);
+  const editor = pathEditor(view, job);
+  const stagePanel = renderMachiningStagePanel(view, job, editor);
+  if (stagePanel) return `<section class="tube-machining-pane">${stagePanel}</section>`;
   const section = state(view).section;
   const [title, note] = sections[section] ?? sections.overview;
-  return `<section class="tube-machining-pane" data-window-state-controls="[data-path-field],[data-cam-change-action='tube-path-node-index'],input[data-path-id]">${renderMachiningPathList(view, job)}${renderMachiningPathProperties(view, job)}<header class="tube-machining-pane-title"><strong>${title}</strong><span>${section === "overview" ? "数据检查" : "待接入"}</span></header>
+  return `<section class="tube-machining-pane" data-window-state-controls="[data-path-field],[data-cam-change-action='tube-path-node-index'],input[data-path-id]">${renderMachiningReadiness(job, editor)}${renderMachiningPathList(view, job)}${renderMachiningPathProperties(view, job)}<header class="tube-machining-pane-title"><strong>${title}</strong><span>${section === "overview" ? "数据检查" : "待接入"}</span></header>
     <p class="tube-machining-note">${note}</p>
     ${section !== "overview" ? `<div class="tube-machining-pending">工艺模块准备中<br><small>当前支持独立名义刀路的解析与编辑，工艺轨迹将在下一阶段接入。</small></div>` : ""}
-    ${job ? `<dl class="tube-machining-facts"><dt>名称</dt><dd>${escapeText(job.name)}</dd><dt>来源</dt><dd>${job.sourceKind === "nesting" ? "下料区排样结果（关联）" : escapeText(job.sourceFileName)}</dd><dt>状态</dt><dd>${job.status}</dd>
+    ${job ? `<dl class="tube-machining-facts"><dt>名称</dt><dd>${escapeText(job.name)}</dd><dt>来源</dt><dd>${job.sourceKind === "nesting" ? "下料区排样结果（关联）" : escapeText(job.sourceFileName)}</dd><dt>状态</dt><dd>${escapeText(job.status)}</dd>
       ${job.plan ? `<dt>母材长度</dt><dd>${formatNumber(job.plan.stockLength)} mm</dd><dt>已排零件</dt><dd>${job.plan.partCount ?? job.plan.placements.length} 件</dd><dt>余料长度</dt><dd>${formatNumber(job.plan.remainingLength)} mm</dd>` : ""}
       ${job.sourceKind === "cad" ? `<dt>实体数量</dt><dd>${escapeText(job.solidCount)} 个</dd><dt>坐标</dt><dd>保留原装配坐标</dd><dt>单位</dt><dd>mm</dd>` : ""}
       <dt>实际轨迹</dt><dd>尚未添加工艺</dd></dl>
@@ -80,11 +91,15 @@ export function renderTubeMachiningRightPane(_context, view) {
 }
 
 export function renderTubeMachiningViewportOverlay(_context, view) {
+  return `<div data-tube-machining-overlay>${renderMachiningViewportContent(view)}</div>`;
+}
+
+function renderMachiningViewportContent(view) {
   const job = selectedMachiningJob(view);
   const editor = pathEditor(view, job);
-  const toolbar = renderMachiningEditToolbar(view, job);
+  const toolbar = machiningStage(view) === "program" ? renderMachiningEditToolbar(view, job) : "";
   if (!job || (job.stale && !editor?.paths.length && !editor?.drawing.length)) return `${toolbar}<div class="tube-machining-empty-stage"><span>加工区</span><h2>${job ? "排样来源已变化" : "准备三维加工"}</h2><p>${job ? "可直接绘制刀路，或接收有效的排样结果" : "接收下料排样结果，或导入 STEP / IGES 排样模型"}</p><small>解析刀路 · 三维编辑 · 二维侧面编辑</small></div>`;
-  return `${renderMachiningSideEditor(view, job)}${toolbar}<div class="tube-designer-cutting-scene-header tube-machining-scene-header"><small>${editor.paths.length ? "独立名义刀路 · 未添加工艺" : "加工模型 · 待分析刀路"}</small><strong>${escapeText(job.name)}</strong><span data-tube-designer-nesting-preview-status>${escapeText(state(view).preview?.error || "三维模型与刀路预览")}</span></div>`;
+  return `${machiningStage(view) === "program" ? renderMachiningSideEditor(view, job) : ""}${toolbar}<div class="tube-designer-cutting-scene-header tube-machining-scene-header"><small>${editor.paths.length ? "独立名义刀路 · 未添加工艺" : "加工模型 · 待分析刀路"}</small><strong>${escapeText(job.name)}</strong><span data-tube-designer-nesting-preview-status>${escapeText(state(view).preview?.error || "三维模型与刀路预览")}</span></div>`;
 }
 
 export function renderTubeMachiningDialogs(view) {
@@ -92,7 +107,7 @@ export function renderTubeMachiningDialogs(view) {
   if (!selected) return "";
   const plans = machiningSourcePlans(view);
   const disabled = view.pending ? "disabled" : "";
-  return `<div class="tube-designer-modal-backdrop"><section class="tube-designer-preset-dialog tube-machining-source-dialog" role="dialog" aria-modal="true" aria-labelledby="machining-source-title" data-window-state-controls="input[data-plan-id]">
+  return `<div class="tube-designer-modal-backdrop" data-machining-source-modal><section class="tube-designer-preset-dialog tube-machining-source-dialog" role="dialog" aria-modal="true" aria-labelledby="machining-source-title" data-window-state-controls="input[data-plan-id]">
     <header class="tube-designer-dialog-header"><div><strong id="machining-source-title">接收排样结果</strong><span>直接关联现有排样，不复制零件模型</span></div><button class="tube-designer-dialog-close" aria-label="关闭" data-cam-action="${PREFIX}cancel" ${disabled}>×</button></header>
     <div class="tube-machining-source-list">${plans.length ? plans.map(plan => `<label><input type="checkbox" data-cam-change-action="${PREFIX}source-check" data-plan-id="${escapeAttr(plan.id)}" ${selected.includes(String(plan.id)) ? "checked" : ""} ${disabled}><span><strong>${escapeText(plan.name)}</strong><small>${plan.partCount ?? plan.placements.length} 件 · 母材 ${formatNumber(plan.stockLength)} mm</small></span></label>`).join("") : `<p class="tube-machining-note">下料区还没有排样结果。请先完成排样，或取消后直接导入 STEP / IGES。</p>`}</div>
     <footer class="tube-designer-preset-dialog-footer"><button class="tube-designer-secondary" data-cam-action="${PREFIX}cancel" ${disabled}>取消</button><button class="tube-designer-primary" data-cam-action="${PREFIX}receive" ${!selected.length || view.pending ? "disabled" : ""}>接收 ${selected.length} 根母材</button></footer>
@@ -125,6 +140,7 @@ async function mutate(context, view, ops, payload) {
     if (payload.action === "remove" && state(view).edits) delete state(view).edits[payload.id];
     state(view).sourceSelection = null;
     state(view).section = "overview";
+    state(view).stage = "program";
     view.tubeDesignerOwnMutation = true;
     view.notice = payload.action === "analyze" ? "已生成独立 CamPath。请核对识别提示；修改不会影响原 CAD。" : payload.action === "save-paths" ? "刀路编辑已保存。" : payload.action === "remove" ? "已移出加工清单，下料数据未改动。" : "加工数据已就绪，可分析刀路或直接绘制。";
     await context.actions?.refreshActiveSceneState?.();
@@ -149,9 +165,11 @@ export async function handleTubeMachiningRibbonCommand(context, view, commandId,
   try {
     const command = commandId.replace("machining.", "");
     if (command === "analyze" || command === "analyze-all") {
+      state(view).stage = "program";
       const jobs = command === "analyze-all" ? machiningJobs(view) : [selectedMachiningJob(view)].filter(Boolean);
       await analyzeMachiningJobs(context, view, jobs, ops);
     } else if (command === "edit") {
+      state(view).stage = "program";
       const job = selectedMachiningJob(view);
       if (!job) throw new Error("请先选择加工数据。");
       pathEditor(view, job).space = "2d";
@@ -185,6 +203,9 @@ export async function handleTubeMachiningRibbonCommand(context, view, commandId,
       view.viewport?.fitViewToViewport?.(1.16);
     } else if (sections[command]) {
       state(view).section = command;
+      state(view).stage = command === "overview" ? "program" : command === "head" ? "machine" : "process";
+    } else if (machiningStages.some(stage => stage.id === command)) {
+      state(view).stage = command;
     }
   } catch (error) { view.error = error?.message ?? String(error); }
   ops.renderProject(context, view);
@@ -198,7 +219,16 @@ export async function handleTubeMachiningAction(context, view, action, target, o
   })) return { handled: true };
   if (!action.startsWith(PREFIX)) return { handled: false };
   if (view.pending) return { handled: true };
+  if (action === PREFIX + "command") {
+    await handleTubeMachiningRibbonCommand(context, view, `machining.${target?.dataset?.machiningCommand ?? ""}`, ops);
+    return { handled: true };
+  }
   try {
+    if (action === PREFIX + "stage" && machiningStages.some(stage => stage.id === target?.dataset?.machiningStage)) {
+      state(view).stage = target.dataset.machiningStage;
+      if (state(view).stage === "program") state(view).section = "overview";
+    }
+    if (action === PREFIX + "search") state(view).query = String(target?.value ?? "").trim();
     if (action === PREFIX + "select") {
       state(view).selectedId = String(target?.dataset?.jobId ?? "");
       const job = selectedMachiningJob(view);
@@ -231,7 +261,7 @@ export function attachTubeMachining(context, view, _mount, ops) {
   attachMachiningSideEditor(context, view, job, ops);
   const viewport = view.viewport;
   if (!viewport?.applyViewSnapshot) return;
-  if (editor?.space === "2d") { cancelNestingPlanHydration(view); currentState.preview = null; return; }
+  if (editor?.space === "2d" && machiningStage(view) === "program") { cancelNestingPlanHydration(view); currentState.preview = null; return; }
   const overlay = job ? machiningPathOverlay(view, job) : { revision: "empty", rows: [], resources: new Map() };
   view.tubeDesignerMachiningPreviewPlanId = job?.plan?.id ?? "";
   if (job?.plan?.detailsLoaded === false) {
@@ -309,5 +339,6 @@ export function attachTubeMachining(context, view, _mount, ops) {
 }
 
 export function handleTubeMachiningViewportPick(context, view, userData, hit, event, hits, ops) {
+  if (machiningStage(view) !== "program") return false;
   return handleMachiningViewportPick(context, view, userData, hit, event, hits, ops, selectedMachiningJob(view));
 }

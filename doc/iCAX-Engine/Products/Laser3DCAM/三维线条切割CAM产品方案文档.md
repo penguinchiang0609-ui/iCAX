@@ -34,8 +34,8 @@ src/apps/laser-3d-cam/
 产品后端插件目标结构：
 
 ```text
-src/iCAX-Plugins/cam/Laser3DCAM/
-  Laser3DCAM.vcxproj
+src/iCAX-Plugins/cam/CamRuntime/
+  CamRuntime.vcxproj
   Laser3DCAM.h
   Laser3DCAM.cpp
   Data/
@@ -177,10 +177,10 @@ sequenceDiagram
   },
   "backend": {
     "modules": {
-      "components": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
-      "commands": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
-      "services": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
-      "behaviours": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"]
+      "components": ["../../iCAX-Plugins/cam/CamRuntime/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "commands": ["../../iCAX-Plugins/cam/CamRuntime/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "services": ["../../iCAX-Plugins/cam/CamRuntime/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "behaviours": ["../../iCAX-Plugins/cam/CamRuntime/${Platform}/${Configuration}/Laser3DCAM.dll"]
     }
   },
   "webpage": {
@@ -1146,4 +1146,4 @@ H5 当前使用 Three.js 或等价 WebGL 渲染实现。
 - 产品方案：本文档。
 - 产品入口：`src/apps/laser-3d-cam/product.manifest.json`
 - 产品前端：`src/apps/laser-3d-cam/webpage/`
-- 产品后端目标插件：`src/iCAX-Plugins/cam/Laser3DCAM/`
+- 产品后端目标插件：`src/iCAX-Plugins/cam/CamRuntime/`

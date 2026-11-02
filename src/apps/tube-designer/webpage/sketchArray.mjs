@@ -1,4 +1,4 @@
-import { editableSegments } from "./sketchGeometry.mjs";
+import { editableSegments } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 
 const EPS = 1e-9;
 const finite = (value) => (typeof value === "number" || (typeof value === "string" && value.trim() !== ""))

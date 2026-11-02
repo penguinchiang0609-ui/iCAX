@@ -396,8 +396,7 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
-        "pairRotation": 0,
-        "allowEndOpening": false
+        "pairRotation": 0
       },
       "previewPlacement": {
         "target": "part",
@@ -502,8 +501,7 @@
         "tabWidth": "$tabWidth",
         "tabLength": "$tabLength",
         "sideClearance": "$sideClearance",
-        "pairRotation": 90,
-        "allowEndOpening": false
+        "pairRotation": 90
       },
       "previewPlacement": {
         "target": "part",

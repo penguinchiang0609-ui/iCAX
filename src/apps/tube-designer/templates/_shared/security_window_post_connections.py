@@ -130,3 +130,20 @@ def shared_post_horizontal_limits(receiver, branches, nominal_depth, clearance):
                 raise ValueError('折角立柱的正交横杆可用入榫深度不足，不能同时穿过柱壁并避开相邻杆')
             result[(branch['key'],end)] = {'depth': depth, 'node': node, 'away': away, 'extent': extent}
     return result
+
+
+def shared_receiver_insertion_limits(receiver, branches, nominal_depth, clearance):
+    """Apply the same section projection proof in any receiver orientation."""
+    origin=receiver['start']
+    section=receiver['section']['placement']
+    delta=[b-a for a,b in zip(receiver['start'],receiver['end'])]
+    length=math.sqrt(sum(v*v for v in delta))
+    axes=[section['xAxis'],section['yAxis'],[v/length for v in delta]]
+    def vector(v):return [sum(a*b for a,b in zip(v,axis)) for axis in axes]
+    def point(p):return vector([a-b for a,b in zip(p,origin)])
+    def local(item):
+        result=deepcopy(item);result['start']=point(item['start']);result['end']=point(item['end'])
+        placement=result['section']['placement'];placement['origin']=point(placement['origin'])
+        placement['xAxis']=vector(placement['xAxis']);placement['yAxis']=vector(placement['yAxis'])
+        return result
+    return shared_post_horizontal_limits(local(receiver),[local(branch) for branch in branches],nominal_depth,clearance)

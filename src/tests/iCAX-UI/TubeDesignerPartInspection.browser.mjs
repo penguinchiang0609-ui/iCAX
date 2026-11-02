@@ -7,7 +7,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const commonCss = readFileSync(new URL("../../apps/_shared/workbench/styles/laser3dcam.css", import.meta.url), "utf8");
+const commonCss = readFileSync(new URL("../../apps/_shared/workbench/styles/workbench.css", import.meta.url), "utf8");
 const browser = await chromium.launch({ headless: true, channel: process.env.ICAX_BROWSER_CHANNEL || "msedge" });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });

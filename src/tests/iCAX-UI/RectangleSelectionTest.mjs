@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import * as THREE from '../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import { polylineMatchesRectangle, meshFacesMatchingRectangle } from '../../iCAX-UI/SDK/Viewport/rectangleSelection.mjs';
+
+const camera=new THREE.OrthographicCamera(-10,10,10,-10,.1,100);
+camera.position.set(0,0,10);camera.lookAt(0,0,0);camera.updateMatrixWorld(true);
+const canvas={left:100,top:50,width:400,height:400};
+const rectangle={left:280,right:320,top:230,bottom:270,mode:'crossing'}, identity=new THREE.Matrix4();
+const hit=(points,mode='crossing',matrix=identity,cameraOverride=camera)=>polylineMatchesRectangle(points,matrix,cameraOverride,canvas,{...rectangle,mode});
+assert.ok(hit([[-2,0,0],[2,0,0]]),'crossing segment with both endpoints outside');
+assert.ok(!hit([[-2,0,0],[2,0,0]],'contain'),'partial contour is not a window selection');
+assert.ok(hit([[-.5,0,0],[.5,0,0]],'contain'));
+assert.ok(!hit([[-3,-3,0],[3,-3,0],[3,3,0],[-3,3,0],[-3,-3,0]]),'empty space inside a closed contour is not its boundary');
+assert.ok(!hit([[-.5,0,20],[.5,0,20]]),'behind camera');
+assert.ok(!hit([[-.5,0,-200],[.5,0,-200]]),'beyond far clip plane');
+assert.ok(hit([[4.5,0,0],[5.5,0,0]],'contain',new THREE.Matrix4().makeTranslation(-5,0,0)),'workpiece placement');
+const perspective=new THREE.PerspectiveCamera(60,1,.1,100);perspective.position.set(0,0,10);perspective.lookAt(0,0,0);perspective.updateMatrixWorld(true);
+assert.ok(hit([[0,0,11],[0,0,0]],'crossing',identity,perspective),'segment crosses near plane');
+assert.ok(!hit([[0,0,11],[0,0,0]],'contain',identity,perspective));
+assert.ok(!hit([[0,0,11],[.1,0,12]],'crossing',identity,perspective));
+console.log('Rectangle selection geometry: 10 cases passed.');
+
+const mesh=new THREE.BufferGeometry();mesh.setAttribute('position',new THREE.Float32BufferAttribute([-6,-6,0,6,-6,0,0,6,0, 5,5,0,6,5,0,5,6,0],3));
+mesh.setIndex([0,1,2,3,4,5]);const faceRanges=[{id:'large',triangleRanges:[{first:0,count:1}]},{id:'outside',triangleRanges:[{first:1,count:1}]}];
+const faceHits=(mode='crossing',matrix=identity,cameraOverride=camera)=>meshFacesMatchingRectangle(mesh,faceRanges,matrix,cameraOverride,canvas,{...rectangle,mode}).map(f=>f.id);
+assert.deepEqual(faceHits(),['large'],'rectangle wholly inside a filled triangle selects the face');
+assert.deepEqual(faceHits('contain'),[],'partly covered surface is not wholly contained');
+assert.deepEqual(faceHits('crossing',new THREE.Matrix4().makeTranslation(30,0,0)),[],'world transform is applied');
+assert.deepEqual(faceHits('crossing',new THREE.Matrix4().makeTranslation(0,0,20)),[],'faces behind the camera are rejected');
+assert.deepEqual(faceHits('crossing',new THREE.Matrix4().makeTranslation(0,0,-200)),[],'far-plane clipping');
+mesh.dispose();console.log('Filled face selection geometry: 5 cases passed.');

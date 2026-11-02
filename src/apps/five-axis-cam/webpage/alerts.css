@@ -1,0 +1,7 @@
+.five-workspace [data-five-alert-host]{display:contents}
+.five-workspace-alert-panel{position:fixed;z-index:145;top:var(--five-alert-top,150px);right:var(--five-alert-right,12px);width:min(370px,calc(100vw - 24px));max-height:min(440px,var(--five-alert-height,calc(100vh - 165px)));display:flex;flex-direction:column;background:#f6fafb;border:1px solid #b5cbd3;border-radius:5px;box-shadow:0 8px 28px #0003;color:#294752;pointer-events:auto;font-size:13px}
+.five-workspace-alert-panel>header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;gap:16px;border-bottom:1px solid #d7e2e7}
+.five-workspace-alert-panel>header button{background:transparent;border:0;color:#51717e;padding:5px 8px;cursor:pointer}
+.five-workspace-alert-list{overflow:auto;min-height:0;padding:6px;scrollbar-width:thin}
+.five-workspace-alert-list>button{display:flex;flex-direction:column;gap:5px;width:100%;text-align:left;border:0;border-left:3px solid #b8892d;border-bottom:1px solid #d7e2e7;background:transparent;color:#294752;padding:12px;cursor:pointer;overflow-wrap:anywhere}
+.five-workspace-alert-list>button[data-severity=error]{border-left-color:#d25353}.five-workspace-alert-list>button:hover{background:#e7f3f3}.five-workspace-alert-list>button:focus-visible{outline:2px solid #36a2a8;outline-offset:-2px}.five-workspace-alert-list>button strong{font-size:13px}.five-workspace-alert-list>button span{font-size:12px;color:#69828c}.five-workspace-alert-list>p{margin:0;padding:16px;color:#81959f}

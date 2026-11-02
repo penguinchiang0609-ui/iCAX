@@ -3,6 +3,7 @@ import { isAdvancedParameter, parameterDiagramLevelAttribute } from './parameter
 import { catalogText, getTemplateVisualAsset } from "./productCatalog.mjs";
 import { productControlFields, productStructureEditors } from "./productControls.mjs";
 import { creationOnlyParameterKeys } from "./productParameterDependencies.mjs";
+import { renderMinimalGrilleArtwork, minimalGrilleStyleLabel } from "./minimalGrilleDiagram.mjs";
 
 function escapeText(value) {
   return String(value ?? "")
@@ -28,6 +29,8 @@ function structureParameterForHostField(template, parameter) {
 }
 
 function dimensionValue(value, field) {
+  const choice=(field?.choices??field?.options??[]).find(item=>String(item.value)===String(value));
+  if(choice)return catalogText(choice.displayName,choice.label??String(value));
   const number = Number(value);
   const text = Number.isFinite(number)
     ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3 }).format(number)
@@ -212,7 +215,8 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
           ?? field?.groupKey
           ?? field?.group
           ?? "specifications"),
-        kind: String(declaration?.kind ?? anchor?.kind ?? "linear"),
+        kind: String(anchor?.kind === "parameter" && JSON.stringify(anchor.start) === JSON.stringify(anchor.end)
+          ? "parameter" : declaration?.kind ?? anchor?.kind ?? "linear"),
         label: changedLabel,
         oldValue: generatedValue,
         newValue: values[parameter],
@@ -618,7 +622,11 @@ function securityWindowArtwork(template, diagram, values, options) {
   const allowVertical = pattern !== "horizontal";
   const allowHorizontal = pattern !== "vertical";
   const spacingParameters = (maximum, start, end) => [maximum, start, end].filter(Boolean);
-  const countFromSpacing = (span, parameters, defaults) => centerSpacingCount(
+  const automaticBars = values?.[binding(diagram, "barDistribution")] === "automatic";
+  const countFromSpacing = (span, parameters, defaults) => automaticBars
+    ? Math.max(1, Math.ceil(Math.max(1, span - 2 * numberValue(values, binding(diagram, "frameWidth"), 25))
+      / numberValue(values, parameters[0], defaults[2]) - 1e-9) - 1)
+    : centerSpacingCount(
     span,
     numberValue(values, parameters[1], defaults[0]),
     numberValue(values, parameters[2], defaults[1]),
@@ -677,21 +685,27 @@ function securityWindowArtwork(template, diagram, values, options) {
     active, mode, `product-diagram-profile-frame product-diagram-profile-shape-${frameProfile.shape}`,
     frameProfile.attributes);
   const faces = [];
+  const gridIndices = {};
   if (semanticLayout === "five") {
     faces.push(face(topFace, "product-diagram-face product-diagram-face-cap"));
     faces.push(grid(topFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameters, topBottomCrossbarParameters));
     faces.push(face(bottomFace, "product-diagram-face product-diagram-face-cap"));
+    gridIndices.bottom = faces.length;
     faces.push(grid(bottomFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameters, topBottomCrossbarParameters));
   }
   if (hasLeft) {
     faces.push(face(leftFace, "product-diagram-face product-diagram-face-side"));
+    gridIndices.left = faces.length;
     faces.push(grid(leftFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameters, sideHorizontalParameters));
   }
   if (hasRight) {
     faces.push(face(rightFace, "product-diagram-face product-diagram-face-side"));
+    gridIndices.right = faces.length;
     faces.push(grid(rightFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameters, sideHorizontalParameters));
   }
   faces.push(face(front, "product-diagram-face product-diagram-face-front"));
+  const frontGridIndex = faces.length;
+  gridIndices.front = frontGridIndex;
   faces.push(grid(front, frontVerticalCount, frontHorizontalCount, frontVerticalParameters, frontHorizontalParameters));
 
   const frameLayoutParameter = binding(diagram, "frameLayout");
@@ -718,22 +732,45 @@ function securityWindowArtwork(template, diagram, values, options) {
       : doorFace === "right" ? numberValue(values, rightParameter, sharedDepth) : width;
     const doorSurfaceHeight = doorFace === "bottom" && semanticLayout === "five"
       ? numberValue(values, binding(diagram, "depth"), sharedDepth) : height;
-    const doorWidthRatio = clamp(
+    const cellPositionParameter = binding(diagram, "doorPosition");
+    const cellColumnParameter = binding(diagram, "doorColumnCount");
+    const cellRowParameter = binding(diagram, "doorRowCount");
+    const cellOpening = semanticLayout === "single" && pattern === "grid"
+      && cellPositionParameter && cellColumnParameter && cellRowParameter;
+    const positionedOpening=Boolean(cellPositionParameter);
+    const [cellHorizontal, cellVertical] = String(values[cellPositionParameter] ?? "center_middle").split("_");
+    const doorWidthRatio = cellOpening
+      ? clamp(numberValue(values, cellColumnParameter, 6) / (frontVerticalCount + 1), 0.08, 0.96)
+      : clamp(
       numberValue(values, binding(diagram, "doorWidth"), doorSurfaceLength * 0.55) / Math.max(1, doorSurfaceLength),
       0.14, 0.86,
     );
-    const doorHeightRatio = clamp(numberValue(values, binding(diagram, "doorHeight"), doorSurfaceHeight * 0.55) / Math.max(1, doorSurfaceHeight), 0.16, 0.86);
+    const doorHeightRatio = cellOpening
+      ? clamp(numberValue(values, cellRowParameter, 2) / (frontHorizontalCount + 1), 0.08, 0.96)
+      : clamp(numberValue(values, binding(diagram, "doorHeight"), doorSurfaceHeight * 0.55) / Math.max(1, doorSurfaceHeight), 0.16, 0.86);
     const doorLeftParameter = semanticLayout === "single" ? binding(diagram, "doorLeft") : binding(diagram, "doorOffsetU");
     const doorBottomParameter = semanticLayout === "single" ? binding(diagram, "doorBottom") : binding(diagram, "doorOffsetV");
-    const doorLeftRatio = clamp(
+    const horizontalOffset=numberValue(values,binding(diagram,'doorHorizontalOffset'),0)/Math.max(1,doorSurfaceLength);
+    const verticalOffset=numberValue(values,binding(diagram,'doorVerticalOffset'),0)/Math.max(1,doorSurfaceHeight);
+    const horizontalMargin=numberValue(values,binding(diagram,cellHorizontal==='left'?'doorLeftMargin':'doorRightMargin'),0)/Math.max(1,doorSurfaceLength);
+    const verticalMargin=numberValue(values,binding(diagram,cellVertical==='bottom'?'doorBottomMargin':'doorTopMargin'),0)/Math.max(1,doorSurfaceHeight);
+    const doorLeftRatio = positionedOpening
+      ? cellHorizontal==='left'?horizontalMargin:cellHorizontal==='right'?1-doorWidthRatio-horizontalMargin:(1-doorWidthRatio)/2+horizontalOffset
+      : cellOpening
+      ? cellHorizontal === "left" ? 0 : cellHorizontal === "right" ? 1 - doorWidthRatio : (1 - doorWidthRatio) / 2
+      : clamp(
       numberValue(values, doorLeftParameter, 0) / Math.max(1, doorSurfaceLength),
       0.02, 0.96 - doorWidthRatio,
     );
-    const doorBottomRatio = clamp(numberValue(values, doorBottomParameter, 0) / Math.max(1, doorSurfaceHeight), 0.02, 0.96 - doorHeightRatio);
+    const doorBottomRatio = positionedOpening
+      ? cellVertical==='bottom'?verticalMargin:cellVertical==='top'?1-doorHeightRatio-verticalMargin:(1-doorHeightRatio)/2+verticalOffset
+      : cellOpening
+      ? cellVertical === "bottom" ? 0 : cellVertical === "top" ? 1 - doorHeightRatio : (1 - doorHeightRatio) / 2
+      : clamp(numberValue(values, doorBottomParameter, 0) / Math.max(1, doorSurfaceHeight), 0.02, 0.96 - doorHeightRatio);
     const quadPoint = (u, v) => interpolate(
       interpolate(doorSurface[0], doorSurface[1], u),
       interpolate(doorSurface[3], doorSurface[2], u),
-      v,
+      doorFace === "bottom" ? 1 - v : v,
     );
     const top = 1 - doorBottomRatio - doorHeightRatio;
     const bottom = 1 - doorBottomRatio;
@@ -766,12 +803,30 @@ function securityWindowArtwork(template, diagram, values, options) {
       numberValue(values, doorHorizontalParameters[2], 400),
     ) : 0;
     const doorFrame = svgPolygon(doorOutline, "product-diagram-door");
-    const doorGrid = linkedGroup(quadGrid(doorOutline, doorVerticalCount, doorHorizontalCount, {
+    let doorGrid = linkedGroup(quadGrid(doorOutline, doorVerticalCount, doorHorizontalCount, {
       verticalParameter: doorVerticalParameters, horizontalParameter: doorHorizontalParameters, active, mode,
     }), infillParameter, active, mode, "product-diagram-opening-grid");
+    if (positionedOpening) {
+      // This is a structural schematic. Keep the original grid's axes in the
+      // moving leaf, and remove its fixed strokes inside the opening.
+      const identity = `${frontWidth}-${frontHeight}-${doorLeftRatio}-${doorBottomRatio}-${doorWidthRatio}-${doorHeightRatio}`.replace(/[^0-9-]/g, "");
+      const mask = `opening-grid-mask-${identity}`;
+      const clip = `opening-grid-leaf-${identity}`;
+      const inset = Math.min(0.015, doorWidthRatio / 8, doorHeightRatio / 8);
+      const leaf = [quadPoint(doorLeftRatio + inset, top + inset), quadPoint(doorLeftRatio + doorWidthRatio - inset, top + inset),
+        quadPoint(doorLeftRatio + doorWidthRatio - inset, bottom - inset), quadPoint(doorLeftRatio + inset, bottom - inset)];
+      const gridIndex = gridIndices[doorFace] ?? frontGridIndex;
+      const originalGrid = faces[gridIndex];
+      faces[gridIndex] = `<defs><mask id="${mask}" maskUnits="userSpaceOnUse"><rect width="320" height="150" fill="white"/><polygon points="${pointsAttribute(doorOutline)}" fill="black"/></mask><clipPath id="${clip}"><polygon points="${pointsAttribute(leaf)}"/></clipPath></defs><g mask="url(#${mask})">${originalGrid}</g>`;
+      if (semanticLayout === 'single') doorGrid = `<g class="product-diagram-opening-grid" clip-path="url(#${clip})">${originalGrid}</g>`;
+    }
     // The door frame itself is a shared visual target for size and position.
     door = linkedGroup(doorFrame + doorGrid, [
       doorEnabledParameter, doorFaceParameter, doorWidthParameter, doorHeightParameter, doorLeftParameter, doorBottomParameter,
+      cellPositionParameter, binding(diagram,'doorLeftMargin'), binding(diagram,'doorRightMargin'),
+      binding(diagram,'doorBottomMargin'), binding(diagram,'doorTopMargin'),
+      binding(diagram,'doorHorizontalOffset'), binding(diagram,'doorVerticalOffset'),
+      ...(cellOpening ? [cellColumnParameter, cellRowParameter] : []),
     ], active, mode, "product-diagram-opening-group");
   }
 
@@ -991,6 +1046,7 @@ function declaredArtwork(template, values, options) {
   if (!diagram) return "";
   if (diagram.kind === "security-window") return securityWindowArtwork(template, diagram, values, options);
   if (diagram.kind === "guardrail") return guardrailArtwork(template, diagram, values, options);
+  if (diagram.kind === "minimal-protective-grille") return renderMinimalGrilleArtwork(template, diagram, values, options);
   if (diagram.kind === "layered-svg") {
     const layers = (diagram.layers ?? []).filter(layer => matchesParameterCondition(layer.visibleWhen, values));
     const artwork = layers.map(layer => linkedGroup(String(layer.svg ?? ""), layer.parameters ?? [],
@@ -1026,13 +1082,17 @@ export function renderProductParameterDiagram(template, values = {}, options = {
   const active = String(options.activeParameter ?? "");
   const mode = options.mode === "add" ? "add" : "right";
   const compact = options.compact === true;
+  const diagram = productDiagram(template);
+  const minimalGrille = diagram?.kind === "minimal-protective-grille";
+  const description = minimalGrille ? minimalGrilleStyleLabel(template, diagram, values)
+    : compact ? "随结构选项联动" : "结构、分截及尺寸随参数联动 · 点击图中标注定位参数";
   const dynamicArtwork = declaredArtwork(template, values, { ...options, mode });
   const source = getTemplateVisualAsset(template, "schematic") || getTemplateVisualAsset(template, "icon");
   const artwork = dynamicArtwork || (source
     ? `<img src="${escapeText(source)}" alt="${escapeText(catalogText(template?.name, "产品"))}示意图" />`
     : `<svg viewBox="0 0 160 110" role="img" aria-label="产品尺寸示意图"><rect x="26" y="18" width="108" height="74" rx="5"/><path d="M20 100h120M16 96l4 4-4 4M144 96l-4 4 4 4M148 14v82M144 10l4 4 4-4M144 100l4-4 4 4"/></svg>`);
-  return `<section class="tube-designer-product-diagram ${dynamicArtwork ? "is-parameter-driven" : ""} ${compact ? "is-compact" : ""} ${hideDimensionCards ? "is-no-dimension-cards" : ""}" data-tube-designer-product-diagram>
-    <header><div><strong>${compact ? "结构示意" : "成品结构与尺寸示意"}</strong><span>${compact ? "随结构选项联动" : "结构、分截及尺寸随参数联动 · 点击图中标注定位参数"}</span></div></header>
+  return `<section class="tube-designer-product-diagram ${minimalGrille ? "is-minimal-grille" : ""} ${dynamicArtwork ? "is-parameter-driven" : ""} ${compact ? "is-compact" : ""} ${hideDimensionCards ? "is-no-dimension-cards" : ""}" data-tube-designer-product-diagram>
+    <header><div><strong>${compact ? "结构示意" : "成品结构与尺寸示意"}</strong><span>${escapeText(description)}</span></div></header>
     <div class="tube-designer-product-diagram-canvas">
       <div class="tube-designer-product-diagram-art">${presentParameterArtwork(artwork,template,values)}</div>
       ${hideDimensionCards ? "" : `<div class="tube-designer-product-dimensions">

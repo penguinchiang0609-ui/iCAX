@@ -26,15 +26,15 @@ export class ViewClient {
     }
 
     const request = normalizeDefinition(definition);
-    const handle = await this.sceneProxy.invoke(ViewSDO.getOrCreate, request, {
-      timeoutMs: options.timeoutMs ?? 10000,
-    });
+    const timeoutMs = options.timeoutMs ?? 10000;
+    const handle = await this.sceneProxy.invoke(ViewSDO.getOrCreate, request, { timeoutMs });
     if (!handle?.viewId || !handle?.resource?.url) {
       throw new Error("View.GetOrCreate returned an invalid handle");
     }
 
     const state = {
       handle,
+      timeoutMs,
       snapshot: null,
       listener: typeof options.onChange === "function" ? options.onChange : null,
       waiters: new Set(),
@@ -42,6 +42,8 @@ export class ViewClient {
       timer: null,
       closed: false,
       lastResourceVersion: "0",
+      pollIntervalMs: normalizePollInterval(options.pollIntervalMs ?? this.defaultPollIntervalMs),
+      pollingPaused: false,
     };
     const reader = {
       get viewId() {
@@ -50,7 +52,25 @@ export class ViewClient {
       get snapshot() {
         return state.snapshot;
       },
+      get pollingPaused() {
+        return state.pollingPaused;
+      },
       poll: () => this.#poll(state),
+      setPollInterval: (milliseconds, {readLatest=false}={}) => {
+        const interval=normalizePollInterval(milliseconds);
+        if(state.closed)return;
+        state.readLatest=readLatest;
+        state.pollIntervalMs=interval;
+        clearInterval(state.timer);
+        if(!state.pollingPaused)state.timer=setInterval(()=>void this.#poll(state).catch(error=>console.error("View polling failed",error)),interval);
+      },
+      // High-frequency PDO owners present their accepted transforms directly;
+      // keep the reader and its reference alive for one final explicit poll.
+      setPollingPaused: paused => {
+        if(state.closed)return;
+        state.pollingPaused=Boolean(paused);clearInterval(state.timer);
+        if(!state.pollingPaused)state.timer=setInterval(()=>void this.#poll(state).catch(error=>console.error("View polling failed",error)),state.pollIntervalMs);
+      },
       waitForSnapshot: (predicate, waitOptions = {}) =>
         this.#waitForSnapshot(state, predicate, waitOptions),
       stop: () => this.#stop(reader, state),
@@ -96,11 +116,15 @@ export class ViewClient {
     const headers = new Headers({
       Accept: "application/vnd.icax.flatbuffer",
     });
+    let latestVersion;
+    // During motion every publication is useful. A direct latest GET avoids
+    // serial HEAD + GET transport latency; idle readers retain version polling.
+    if(!state.readLatest){
     const headResponse = await this.sceneProxy.resources.head(url, { headers });
     if (!headResponse.ok) {
       throw new Error(`View resource HEAD failed: ${headResponse.status}`);
     }
-    const latestVersion = String(
+    latestVersion = String(
       headResponse.headers.get("ICAX-Resource-Version")
         ?? state.handle.resource.version
         ?? "0",
@@ -110,10 +134,12 @@ export class ViewClient {
     }
 
     headers.set("ICAX-Resource-Version", latestVersion);
+    }
     const response = await this.sceneProxy.resources.get(url, { headers });
     if (!response.ok) {
       throw new Error(`View resource GET failed: ${response.status}`);
     }
+    latestVersion=String(response.headers.get("ICAX-Resource-Version")??latestVersion??"0");
     const snapshot = parseViewResource(await response.arrayBuffer());
     if (snapshot.revision === "0"
         || snapshot.revision === state.snapshot?.revision) {
@@ -205,7 +231,9 @@ export class ViewClient {
     const response = await this.sceneProxy.invoke(
       ViewSDO.release,
       { viewId: state.handle.viewId },
-      { timeoutMs: 10000 },
+      // Release shares the scene queue with loading/generation requests, just
+      // like creation. Preserve the lifetime's configured request budget.
+      { timeoutMs: state.timeoutMs },
     );
     return Boolean(response?.released);
   }

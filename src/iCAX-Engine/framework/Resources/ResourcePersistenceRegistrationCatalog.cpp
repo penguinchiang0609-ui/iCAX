@@ -2,9 +2,15 @@
 #include "ResourcePersistenceRegistrationCatalog.h"
 
 #include "ResourceLibrary.h"
+#include <filesystem>
 
 namespace
 {
+    std::string ModulePathUTF8(const std::wstring& path)
+    {
+        const auto utf8 = std::filesystem::path(path).u8string();
+        return { utf8.begin(), utf8.end() };
+    }
     std::mutex& GetRegistrationMutex()
     {
         static std::mutex _Mutex;
@@ -18,17 +24,18 @@ namespace
             return {};
         }
 
+        const auto _WidePath = std::filesystem::path(std::u8string(strPath_.begin(), strPath_.end())).wstring();
         const auto _RequiredLength =
-            GetFullPathNameA(strPath_.c_str(), 0, nullptr, nullptr);
+            GetFullPathNameW(_WidePath.c_str(), 0, nullptr, nullptr);
         if (_RequiredLength == 0)
         {
             return strPath_;
         }
 
-        std::vector<char> _Buffer(
+        std::vector<wchar_t> _Buffer(
             static_cast<size_t>(_RequiredLength) + 1);
-        const auto _Length = GetFullPathNameA(
-            strPath_.c_str(),
+        const auto _Length = GetFullPathNameW(
+            _WidePath.c_str(),
             static_cast<DWORD>(_Buffer.size()),
             _Buffer.data(),
             nullptr);
@@ -37,15 +44,15 @@ namespace
             return strPath_;
         }
 
-        std::string _Normalized(_Buffer.data(), _Length);
+        auto _Normalized = ModulePathUTF8(std::wstring(_Buffer.data(), _Length));
         std::replace(
             _Normalized.begin(), _Normalized.end(), '/', '\\');
         std::transform(
             _Normalized.begin(),
             _Normalized.end(),
             _Normalized.begin(),
-            [](IN const unsigned char ch_) {
-                return static_cast<char>(std::tolower(ch_));
+            [](IN const char ch_) {
+                return ch_ >= 'A' && ch_ <= 'Z' ? static_cast<char>(ch_ - 'A' + 'a') : ch_;
             });
         return _Normalized;
     }
@@ -58,19 +65,19 @@ namespace
         }
 
         HMODULE _Module = nullptr;
-        if (!GetModuleHandleExA(
+        if (!GetModuleHandleExW(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            reinterpret_cast<LPCSTR>(pAddress_),
+            reinterpret_cast<LPCWSTR>(pAddress_),
             &_Module))
         {
             return {};
         }
 
-        std::vector<char> _Buffer(MAX_PATH);
+        std::vector<wchar_t> _Buffer(MAX_PATH);
         while (true)
         {
-            const auto _Length = GetModuleFileNameA(
+            const auto _Length = GetModuleFileNameW(
                 _Module,
                 _Buffer.data(),
                 static_cast<DWORD>(_Buffer.size()));
@@ -81,7 +88,7 @@ namespace
             if (_Length < _Buffer.size() - 1)
             {
                 return NormalizeModulePath(
-                    std::string(_Buffer.data(), _Length));
+                    ModulePathUTF8(std::wstring(_Buffer.data(), _Length)));
             }
             _Buffer.resize(_Buffer.size() * 2);
         }

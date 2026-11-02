@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="FiveAxisCAM">
+  <rect width="256" height="256" rx="52" fill="#06233d"/>
+  <path d="M111 69H50v55h35c20 0 29 11 29 27s-11 28-29 28H49" fill="none" stroke="#fff" stroke-width="21" stroke-linejoin="round"/>
+  <path d="m145 71 62 106m0-106-62 106" fill="none" stroke="#10bdb5" stroke-width="22"/>
+  <path d="M49 210h158" fill="none" stroke="#10bdb5" stroke-width="10" stroke-linecap="round"/>
+</svg>

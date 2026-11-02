@@ -336,7 +336,7 @@ namespace iCAX::TubeDesigner
         }
     }
     SSideSketchPlanarRegions BuildTubeSideSketchPlanarRegions(
-        const ObjectMap& Sketch_,double Length_,double Perimeter_,double Tolerance_)
+        const ObjectMap& Sketch_,double Length_,double Perimeter_,double Tolerance_,bool ClipToDomain_)
     {
         SSideSketchPlanarRegions Result;
         try
@@ -367,7 +367,7 @@ namespace iCAX::TubeDesigner
                 Transform.Shift=0;
                 const auto Anchor=AnchorU(Entity,Transform);
                 if(!std::isfinite(Anchor) || std::abs(Anchor)>1.0e12) throw std::runtime_error("草图坐标超出有效范围");
-                Transform.Shift=std::floor(Anchor/Perimeter_)*Perimeter_;
+                Transform.Shift=ClipToDomain_?std::floor(Anchor/Perimeter_)*Perimeter_:0.;
                 std::string FillGroup;
                 if (const auto Group=Entity.find("fillGroup"); Group!=Entity.end() && Group->second.Is<std::string>())
                 {
@@ -379,7 +379,18 @@ namespace iCAX::TubeDesigner
                         Transform.Shift=GroupShifts.try_emplace(FillGroup,Transform.Shift).first->second;
                     }
                 }
-                if(Kind(Entity)=="rectangle" && Number(Entity,"radius")<=1.0e-9)
+                ObjectMap Bevel;
+                if (const auto B=Entity.find("bevel");B!=Entity.end())
+                {
+                    if(!B->second.Is<ObjectMap>()) throw std::runtime_error("坡口设置格式无效");
+                    Bevel=B->second.To<ObjectMap>();
+                    if(const auto E=Bevel.find("enabled");E!=Bevel.end())
+                    {
+                        if(!E->second.Is<bool>()) throw std::runtime_error("坡口启用状态无效");
+                        if(!E->second.To<bool>()) Bevel.clear();
+                    }
+                }
+                if(ClipToDomain_ && Kind(Entity)=="rectangle" && Number(Entity,"radius")<=1.0e-9 && Bevel.empty())
                 {
                     const auto A=Transform.Point(Number(Entity,"x"),Number(Entity,"y"));
                     const auto B=Transform.Point(Number(Entity,"x")+Number(Entity,"width"),Number(Entity,"y")+Number(Entity,"height"));
@@ -411,6 +422,39 @@ namespace iCAX::TubeDesigner
                     Result.Approximate=Result.Approximate || Approximate;
                     if(Region.IsNull()) throw std::runtime_error("开放曲线无法生成完整切缝区域");
                 }
+                if(!Bevel.empty())
+                {
+                    SSideSketchPlanarBevel Request;Request.Parameters=Bevel;
+                    std::vector<std::size_t> Selected;
+                    if(const auto S=Bevel.find("segmentIndices");S!=Bevel.end())
+                    {
+                        if(!S->second.Is<VariantArray>()) throw std::runtime_error("坡口边段选择格式无效");
+                        for(const auto& V:S->second.To<VariantArray>())
+                        {
+                            double N=0;
+                            if(V.Is<double>()) N=V.To<double>();
+                            else if(V.Is<std::int64_t>()) N=static_cast<double>(V.To<std::int64_t>());
+                            else throw std::runtime_error("坡口边段编号无效");
+                            if(!std::isfinite(N) || N<0 || std::floor(N)!=N || N>4096) throw std::runtime_error("坡口边段编号无效");
+                            Selected.push_back(static_cast<std::size_t>(N));
+                        }
+                        if(Selected.empty()) throw std::runtime_error("至少选择一条坡口边段");
+                    }
+                    if(!Closed && !Selected.empty() && !(Selected.size()==1 && Selected.front()==0))
+                        throw std::runtime_error("暂不支持：开放复合轨迹的指定边段坡口需要先拆分轨迹");
+                    std::size_t SegmentIndex=0;
+                    if(Closed) for(BRepTools_WireExplorer X(Wire);X.More();X.Next(),++SegmentIndex)
+                    {
+                        if(Selected.empty() || std::find(Selected.begin(),Selected.end(),SegmentIndex)!=Selected.end())
+                            Request.BoundaryEdges.push_back(TopoDS::Edge(X.Current()));
+                    }
+                    else for(TopExp_Explorer X(Region,TopAbs_EDGE);X.More();X.Next()) Request.BoundaryEdges.push_back(TopoDS::Edge(X.Current()));
+                    if(Closed && std::any_of(Selected.begin(),Selected.end(),[&](auto I){return I>=SegmentIndex;}))
+                        throw std::runtime_error("坡口边段编号超出当前轮廓范围");
+                    if(ClipToDomain_)ClipPeriodic(Region,Domain,Length_,Perimeter_,Tol,Request.Faces);
+                    else AppendFaces(Region,Request.Faces);
+                    Result.Bevels.push_back(std::move(Request));
+                }
                 if (!FillGroup.empty())
                 {
                     if (!Closed) throw std::runtime_error("复合填充轮廓必须闭合");
@@ -427,10 +471,12 @@ namespace iCAX::TubeDesigner
                         Accumulated=Xor.Shape();
                     }
                 }
-                else ClipPeriodic(Region,Domain,Length_,Perimeter_,Tol,Result.Faces);
+                else if(ClipToDomain_)ClipPeriodic(Region,Domain,Length_,Perimeter_,Tol,Result.Faces);
+                else AppendFaces(Region,Result.Faces);
             }
             for (const auto& [Group,Region]:FillGroups)
-                ClipPeriodic(Region,Domain,Length_,Perimeter_,Tol,Result.Faces);
+                if(ClipToDomain_)ClipPeriodic(Region,Domain,Length_,Perimeter_,Tol,Result.Faces);
+                else AppendFaces(Region,Result.Faces);
             Result.bOK=true;Result.Diagnostic="原生曲线完整区域已按周长周期映射并按管长裁剪";
         }
         catch(const Standard_Failure& Error)

@@ -50,7 +50,7 @@ try {
         return f.result(directory);
       }
       if (method === 'TubeDesigner.PreviewNestingPartFile') return { sourcePath: payload.sourcePath, sizeBytes: 100, lastModifiedNs: '1000',
-        wireframe: { polylines: [[-100,-10,0,100,-10,0,100,10,0,-100,10,0,-100,-10,0]], edgeCount: 1, pointCount: 5 } };
+        wireframe: { polylinesJson: JSON.stringify([[-100,-10,0,100,-10,0,100,10,0,-100,10,0,-100,-10,0]]), edgeCount: 1, pointCount: 5 } };
       if (method === 'TubeDesigner.ReleaseNestingPartFilePreview') return { released: true };
       throw Error('Unexpected native method: ' + method);
     } } };
@@ -73,7 +73,7 @@ try {
   const directoryCalls = path => page.evaluate(path => folderFixture.calls.filter(call => call.method === 'TubeDesigner.ListNestingPartFiles' && call.payload.directory === path).length, path);
   await row.waitFor();
   check(await page.locator('[data-nesting-file-action="browse"]').textContent(), '浏览…', 'Browse label replaces Select Directory');
-  check(await page.locator('.tube-nesting-file-navigation-button svg').count(), 2, 'Up and Browse each have a vector icon');
+  check(await page.locator('.tube-nesting-file-navigation-button svg').count(), 1, 'Only Browse remains beside the breadcrumb address');
   check(await row.locator('svg .folder-closed').isVisible(), true, 'folder rows use a proper closed-folder icon');
   await row.click();
   check(await selected(), [target], 'single click selects a directory without navigating or importing');
@@ -149,10 +149,10 @@ try {
 
   await row.dblclick(); await at(target);
   await pathRow(target + '/parts').dblclick(); await at(target + '/parts');
-  await page.locator('[data-nesting-file-action="up"]').click(); await at(target);
+  await page.locator(`[data-nesting-file-directory-target="${target}"]`).click(); await at(target);
   check(await selected(), [target + '/parts'], 'Up selects the exact nested directory just exited');
   check(await open.isDisabled(), true, 'Up does not restore previously selected CAD files');
-  await page.locator('[data-nesting-file-action="up"]').click(); await at(root);
+  await page.locator(`[data-nesting-file-directory-target="${root}"]`).click(); await at(root);
   check(await selected(), [target], 'Up selects the exact root folder just exited');
   check(await row.evaluate(row => { const list = row.closest('.tube-nesting-file-list'), a = row.getBoundingClientRect(), b = list.getBoundingClientRect();
     return list.scrollTop > 0 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1; }), true, 'Up scrolls selected folder into view');
@@ -162,7 +162,7 @@ try {
   // A later input edit takes precedence over delayed Up focus/scroll restoration.
   await row.dblclick(); await at(target);
   await page.evaluate(() => { folderFixture.hold = folderFixture.root; });
-  await page.locator('[data-nesting-file-action="up"]').click(); await page.waitForFunction(() => !!folderFixture.pending);
+  await page.locator(`[data-nesting-file-directory-target="${root}"]`).click(); await page.waitForFunction(() => !!folderFixture.pending);
   await input.fill('D:/新的路径草稿');
   await input.evaluate(input => input.setSelectionRange(2, 7));
   await page.evaluate(() => folderFixture.finish()); await at(root);

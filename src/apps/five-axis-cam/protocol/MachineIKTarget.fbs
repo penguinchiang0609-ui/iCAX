@@ -1,0 +1,11 @@
+namespace iCAX.FiveAxisCAM;
+file_identifier "F5IT";
+table MachineIKTarget {
+  schema_version:uint = 1;
+  edit_token:string (required);
+  epoch:string (required);
+  sequence:ulong;
+  target:[double] (required); // 16 row-major world-space end-link matrix entries
+  joint_position:double = null; // FK only: selected joint, mm or radians; target is empty
+}
+root_type MachineIKTarget;

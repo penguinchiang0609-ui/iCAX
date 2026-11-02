@@ -321,6 +321,83 @@ std::string ProductProcessManufacturingIdentity(const ObjectMap& LocalInput_,
 // Aggregation changes manufacturing entities, never the physical assembly
 // inputs. Every subsequent execution restores these owned source objects before
 // applying per-member drawings or assembly cuts and proving equivalence again.
+ObjectMap IdenticalPartPlacement(const gp_Trsf& Transform_)
+{
+    ObjectMap _Result;
+    _Result["origin"] = VariantArray{Transform_.Value(1,4), Transform_.Value(2,4), Transform_.Value(3,4)};
+    for (const auto& [_Name, _Column] : std::array<std::pair<const char*, int>,3>{{{"xAxis",1},{"yAxis",2},{"zAxis",3}}})
+        _Result[_Name] = VariantArray{Transform_.Value(1,_Column), Transform_.Value(2,_Column), Transform_.Value(3,_Column)};
+    return _Result;
+}
+
+VariantArray IdenticalPartSources(VariantArray Sources_, const ObjectMap& Placement_)
+{
+    if (Placement_ == IdenticalPartPlacement(gp_Trsf{})) return Sources_;
+    const auto _Rotation = ProductProcessSpanPlacement(ObjectMap{{"placement", Placement_}});
+    const bool _Reversed = _Rotation.Value(1,1) < 0;
+    // Preserve a proper rigid stock frame. Reversal is a half-turn with
+    // x' = stockLength - x, never a reflection or an inferred world mirror.
+    if (std::abs(std::abs(_Rotation.Value(1,1))-1) > 1.e-9
+        || std::abs(_Rotation.ScaleFactor()-1) > 1.e-9 || _Rotation.IsNegative()
+        || std::abs(_Rotation.Value(2,4)) > 1.e-9 || std::abs(_Rotation.Value(3,4)) > 1.e-9
+        || (!_Reversed && std::abs(_Rotation.Value(1,4)) > 1.e-9)
+        || (_Reversed && (!std::isfinite(_Rotation.Value(1,4)) || _Rotation.Value(1,4) <= 0)))
+        throw std::runtime_error("同件合并的轴向放置无效");
+    for (auto& _Value : Sources_) {
+        auto& _Source = std::get<ObjectMap>(_Value.m_Value);
+        if (!_Source.contains("spans")) continue;
+        for (auto& _SpanValue : std::get<VariantArray>(_Source.at("spans").m_Value)) {
+            auto& _Span = std::get<ObjectMap>(_SpanValue.m_Value);
+            if (_Reversed) {
+                const auto _Start = _Span.at("start").To<VariantArray>(), _End = _Span.at("end").To<VariantArray>();
+                const double _Length = gp_Vec(gp_Pnt(ToDouble(_Start[0], "start"), ToDouble(_Start[1], "start"), ToDouble(_Start[2], "start")),
+                    gp_Pnt(ToDouble(_End[0], "end"), ToDouble(_End[1], "end"), ToDouble(_End[2], "end"))).Magnitude();
+                const double _StartReserve = GetDouble(_Span, "startReserve", 0), _EndReserve = GetDouble(_Span, "endReserve", 0);
+                const double _Low = _Rotation.Value(1,4) - (GetDouble(_Span, "stockStart", 0) + _StartReserve + _Length + _EndReserve);
+                if (!std::isfinite(_Low) || _Low < -1.e-6)
+                    throw std::runtime_error("同件翻头后的来源区间超出母材");
+                _Span["stockStart"] = std::max(0.0, _Low);
+                _Span["startReserve"] = _EndReserve;
+                _Span["endReserve"] = _StartReserve;
+                // World endpoints and sourceRange still describe the original
+                // assembly member. Only its stock interval/frame changes.
+            }
+            _Span["placement"] = IdenticalPartPlacement(_Rotation * ProductProcessSpanPlacement(_Span));
+        }
+    }
+    return Sources_;
+}
+
+bool IdenticalPartShape(const TopoDS_Shape& Canonical_, const TopoDS_Shape& Candidate_,
+    double StockLength_, bool AllowEndReversal_, gp_Trsf& Placement_)
+{
+    if (Canonical_.IsNull() || Candidate_.IsNull()) return false;
+    GProp_GProps _A, _B; BRepGProp::VolumeProperties(Canonical_, _A); BRepGProp::VolumeProperties(Candidate_, _B);
+    const double _Tolerance = 1.e-5 + std::abs(_A.Mass()) * 1.e-10;
+    if (_A.Mass() <= 0 || std::abs(_A.Mass()-_B.Mass()) > _Tolerance) return false;
+    for (const int _Orientation : {0, 1, 2, 3}) {
+        const bool _Reversed = _Orientation >= 2;
+        if (_Reversed && !AllowEndReversal_) continue;
+        const int _Sign = _Orientation % 2 ? -1 : 1;
+        gp_Trsf _Rotation;
+        _Rotation.SetValues(_Reversed ? -1 : 1,0,0,_Reversed ? StockLength_ : 0,
+            0,_Reversed ? -_Sign : _Sign,0,0, 0,0,_Sign,0);
+        const auto _Shape = Candidate_.Moved(TopLoc_Location(_Rotation));
+        BRepAlgoAPI_Common _Common;
+        NCollection_List<TopoDS_Shape> _Arguments, _Tools;
+        _Arguments.Append(Canonical_); _Tools.Append(_Shape);
+        _Common.SetArguments(_Arguments); _Common.SetTools(_Tools); _Common.SetNonDestructive(true); _Common.Build();
+        if (!_Common.IsDone() || _Common.Shape().IsNull()) continue;
+        GProp_GProps _Intersection; BRepGProp::VolumeProperties(_Common.Shape(), _Intersection);
+        if (std::abs(_A.Mass()-_Intersection.Mass()) > _Tolerance
+            || std::abs(_B.Mass()-_Intersection.Mass()) > _Tolerance) continue;
+        // Volume is checked in both directions; a solid merely inside another
+        // or a different equal-volume hole layout cannot establish sameness.
+        Placement_ = _Rotation; return true;
+    }
+    return false;
+}
+
 bool RestoreIdenticalManufacturingSourceItems(ObjectMap& Document_)
 {
     auto _Extensions = GetRequiredObject(Document_, "extensions");
@@ -329,29 +406,33 @@ bool RestoreIdenticalManufacturingSourceItems(ObjectMap& Document_)
     if (GetUInt64(_Extensions, "tubeDesigner.identicalManufacturingPartsVersion", 0) != 1)
         throw std::runtime_error("相同加工零件缺少有效的来源协议");
     const auto _Source = _Found->second.To<ObjectMap>();
-    const auto _NativeBefore = GetRequiredObject(_Extensions, kProductAssemblyProcessNative);
-    const auto _FrozenBefore = GetRequiredObject(_NativeBefore, "stocks");
+    const auto _NativeBefore = _Extensions.contains(kProductAssemblyProcessNative)
+        ? GetRequiredObject(_Extensions, kProductAssemblyProcessNative) : ObjectMap{};
+    const auto _FrozenBefore = _NativeBefore.empty() ? ObjectMap{} : GetRequiredObject(_NativeBefore, "stocks");
+    const auto _Placements = GetRequiredObject(_Source, "stockPlacements");
     std::map<std::string, ObjectMap> _OriginalProperties;
     for (const auto& _Value : _Source.at("items").To<VariantArray>()) {
         const auto _Item = _Value.To<ObjectMap>(); const auto _Properties = GetRequiredObject(_Item, "properties");
-        const auto _ID = GetString(_Properties, "tubeDesigner.assemblyProcessStockId");
-        if (!_ID.empty() && !_OriginalProperties.emplace(_ID, _Properties).second)
+        const auto _ID = GetString(_Properties, "tubeDesigner.assemblyProcessStockId", GetString(_Item, "key"));
+        if (!_OriginalProperties.emplace(_ID, _Properties).second)
             throw std::runtime_error("相同加工零件的来源包含重复母材");
     }
     std::set<std::string> _CoverageBefore;
     for (const auto& _Value : Document_.at("items").To<VariantArray>()) {
         const auto _Item = _Value.To<ObjectMap>(); const auto _Properties = GetRequiredObject(_Item, "properties");
-        if (GetString(_Properties, "tubeDesigner.assemblyProcessStockId").empty()) continue;
+        if (!_Properties.contains("manufacturing.sourceStockIds")) continue;
         const auto _IDs = _Properties.at("manufacturing.sourceStockIds").To<VariantArray>();
         VariantArray _Sources; std::uint64_t _Quantity = 0;
         for (const auto& _IDValue : _IDs) {
             const auto _ID = _IDValue.To<std::string>();
-            if (!_OriginalProperties.contains(_ID) || !_FrozenBefore.contains(_ID)
+            if (!_OriginalProperties.contains(_ID) || !_Placements.contains(_ID)
                 || !_CoverageBefore.insert(_ID).second
-                || GetString(_FrozenBefore.at(_ID).To<ObjectMap>(), "itemKey") != GetRequiredText(_Item, "key"))
+                || (!_FrozenBefore.empty() && (!_FrozenBefore.contains(_ID)
+                    || GetString(_FrozenBefore.at(_ID).To<ObjectMap>(), "itemKey") != GetRequiredText(_Item, "key"))))
                 throw std::runtime_error("相同加工零件的来源母材映射无效");
             const auto& _Original = _OriginalProperties.at(_ID);
-            const auto _Added = _Original.at("manufacturing.sourceMembers").To<VariantArray>();
+            const auto _Added = IdenticalPartSources(_Original.at("manufacturing.sourceMembers").To<VariantArray>(),
+                _Placements.at(_ID).To<ObjectMap>());
             _Sources.insert(_Sources.end(), _Added.begin(), _Added.end());
             const auto _AddedQuantity = GetUInt64(_Original, "quantity", 1);
             if (_AddedQuantity == 0 || _AddedQuantity > 9007199254740991ull - _Quantity)
@@ -362,7 +443,8 @@ bool RestoreIdenticalManufacturingSourceItems(ObjectMap& Document_)
             || _Properties.at("manufacturing.sourceMembers") != Variant(_Sources))
             throw std::runtime_error("相同加工零件的数量或构件来源与制造快照不一致");
     }
-    if (_CoverageBefore.size() != _FrozenBefore.size() || _OriginalProperties.size() != _FrozenBefore.size())
+    if (_CoverageBefore.size() != _OriginalProperties.size() || _Placements.size() != _OriginalProperties.size()
+        || (!_FrozenBefore.empty() && _OriginalProperties.size() != _FrozenBefore.size()))
         throw std::runtime_error("相同加工零件的制造快照未完整覆盖原始母材");
     for (const auto* _Key : {"items", "outputs"})
         Document_[_Key] = _Source.at(_Key);
@@ -373,8 +455,8 @@ bool RestoreIdenticalManufacturingSourceItems(ObjectMap& Document_)
     _Extensions["tubeDesigner.manufacturingPartCount"] = _Source.at("partCount");
     if (_Source.contains("assemblyOutputSets"))
         _Extensions["tubeDesigner.assemblyOutputSets"] = _Source.at("assemblyOutputSets");
-    auto _Native = GetRequiredObject(_Extensions, kProductAssemblyProcessNative);
-    auto _Stocks = GetRequiredObject(_Native, "stocks");
+    auto _Native = _NativeBefore;
+    auto _Stocks = _FrozenBefore;
     std::set<std::string> _Restored;
     for (const auto& _Value : Document_.at("items").To<VariantArray>()) {
         const auto _Item = _Value.To<ObjectMap>();
@@ -389,15 +471,18 @@ bool RestoreIdenticalManufacturingSourceItems(ObjectMap& Document_)
     }
     if (_Restored.size() != _Stocks.size())
         throw std::runtime_error("相同加工零件的原始母材映射不完整");
-    _Native["stocks"] = std::move(_Stocks);
-    _Extensions[kProductAssemblyProcessNative] = std::move(_Native);
+    if (!_Native.empty()) {
+        _Native["stocks"] = std::move(_Stocks);
+        _Extensions[kProductAssemblyProcessNative] = std::move(_Native);
+    }
     _Extensions.erase("tubeDesigner.identicalManufacturingSource");
     Document_["extensions"] = std::move(_Extensions);
     return true;
 }
 
 std::vector<std::size_t> MergeIdenticalManufacturingParts(
-    SPreparedProductDisassembly& Prepared_, const SProductAssemblyProcessGeometry& Geometry_)
+    SPreparedProductDisassembly& Prepared_, const SProductAssemblyProcessGeometry& Geometry_,
+    const std::map<std::string, TopoDS_Shape>& FinalShapes_)
 {
     const char* _Phase = "input";
     try {
@@ -407,7 +492,8 @@ std::vector<std::size_t> MergeIdenticalManufacturingParts(
     auto _Extensions = GetRequiredObject(_Document, "extensions");
     if (GetUInt64(_Extensions, "tubeDesigner.identicalManufacturingPartsVersion", 0) != 1)
         return _Indices;
-    std::map<std::string, std::size_t> _ByIdentity;
+    std::map<std::string, std::vector<std::size_t>> _ByIdentity;
+    ObjectMap _StockPlacements;
     std::map<std::string, std::string> _Replacement;
     std::vector<SPreparedManufacturingPart> _Parts;
     _Parts.reserve(Prepared_.Parts.size());
@@ -417,34 +503,54 @@ std::vector<std::size_t> MergeIdenticalManufacturingParts(
         const auto _Identity = Geometry_.ManufacturingIdentities.find(_Part.StableKey);
         // Per-member editing has its own geometry after the template recipe.
         // Keep it independent until a complete edited recipe proves sameness.
-        const bool _Eligible = _Identity != Geometry_.ManufacturingIdentities.end()
-            && !_Part.ItemProperties.contains("tubeDesigner.sideSketch");
+        const bool _Eligible = ManufacturingPartKind(_Part.ItemProperties) == "tube"
+            && FinalShapes_.contains(_Part.StableKey)
+            && !_Part.ItemProperties.contains("tubeDesigner.sideSketch")
+            && !_Part.ItemProperties.contains("tubeDesigner.assemblyBindingsRevision");
         std::size_t _Target = _Parts.size();
+        gp_Trsf _Placement;
         if (_Eligible) {
+            ObjectMap _Facts;
+            for (const auto& [_Name, _Value] : _Part.ItemProperties)
+                if ((_Name.starts_with("manufacturing.material") && _Name != "manufacturing.materialDatum")
+                    || _Name == "material" || _Name == "materialGrade"
+                    || _Name == "surfaceFinish" || _Name == "finish") _Facts[_Name] = _Value;
+            // Bent parts require their complete forming recipe as well as the
+            // finished solid. A straight unfolded BRep cannot prove the folds.
+            Variant _Forming = VariantArray{};
+            if (_Identity != Geometry_.ManufacturingIdentities.end()) {
+                const auto _Recipe = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_Identity->second).To<ObjectMap>();
+                _Forming = _Recipe.at("forming");
+            }
             const auto _Key = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(ObjectMap{
-                {"recipe", _Identity->second}, {"profile", _Part.TubeProfile},
-                {"length", _Part.Length}});
-            const auto [_Found, _Inserted] = _ByIdentity.emplace(_Key, _Target);
-            _Target = _Found->second;
+                {"material", _Facts}, {"profile", _Part.TubeProfile}, {"forming", _Forming}});
+            auto& _Candidates = _ByIdentity[_Key];
+            for (const auto _Candidate : _Candidates)
+                if (std::abs(_Parts[_Candidate].Length - _Part.Length) < .001
+                    && IdenticalPartShape(FinalShapes_.at(_Parts[_Candidate].StableKey),
+                        FinalShapes_.at(_Part.StableKey), _Parts[_Candidate].Length,
+                        _Forming.To<VariantArray>().empty(), _Placement)) { _Target = _Candidate; break; }
+            if (_Target == _Parts.size()) _Candidates.push_back(_Target);
         }
+        const auto _StockID = GetString(_Part.ItemProperties, "tubeDesigner.assemblyProcessStockId", _Part.StableKey);
+        _StockPlacements[_StockID] = IdenticalPartPlacement(_Placement);
         _Indices[_Index] = _Target;
         if (_Target == _Parts.size()) {
             _Parts.push_back(std::move(_Part));
             auto& _Properties = _Parts.back().ItemProperties;
-            if (_Properties.contains("tubeDesigner.assemblyProcessStockId"))
-                _Properties["manufacturing.sourceStockIds"] = VariantArray{
-                    GetRequiredText(_Properties, "tubeDesigner.assemblyProcessStockId")};
+            _Properties["manufacturing.sourceStockIds"] = VariantArray{_StockID};
         } else {
             auto& _Canonical = _Parts.at(_Target);
             if (_Part.Quantity > 9007199254740991ull - _Canonical.Quantity)
                 throw std::invalid_argument("相同加工零件合并数量超出有效范围");
             _Canonical.Quantity += _Part.Quantity;
             auto _Sources = _Canonical.ItemProperties.at("manufacturing.sourceMembers").To<VariantArray>();
-            const auto _Added = _Part.ItemProperties.at("manufacturing.sourceMembers").To<VariantArray>();
+            const auto _Added = IdenticalPartSources(_Part.ItemProperties.at("manufacturing.sourceMembers").To<VariantArray>(),
+                IdenticalPartPlacement(_Placement));
             _Sources.insert(_Sources.end(), _Added.begin(), _Added.end());
             _Canonical.ItemProperties["manufacturing.sourceMembers"] = std::move(_Sources);
             auto _IDs = _Canonical.ItemProperties.at("manufacturing.sourceStockIds").To<VariantArray>();
-            _IDs.emplace_back(GetRequiredText(_Part.ItemProperties, "tubeDesigner.assemblyProcessStockId"));
+            _IDs.emplace_back(_StockID);
             _Canonical.ItemProperties["manufacturing.sourceStockIds"] = std::move(_IDs);
             _Canonical.ItemProperties["quantity"] = _Canonical.Quantity;
         }
@@ -462,6 +568,7 @@ std::vector<std::size_t> MergeIdenticalManufacturingParts(
     _Phase = "source-snapshot";
     ObjectMap _Source{{"items", _Document.at("items")},
         {"outputs", _Document.at("outputs")},
+        {"stockPlacements", _StockPlacements},
         {"partCount", static_cast<unsigned long long>(_Indices.size())}};
     if (_Document.contains("roots")) _Source["roots"] = _Document.at("roots");
     if (_Document.contains("tables")) _Source["tables"] = _Document.at("tables");
@@ -535,20 +642,25 @@ std::vector<std::size_t> MergeIdenticalManufacturingParts(
         _Extensions["tubeDesigner.assemblyOutputSets"] = std::move(_Sets);
     }
     _Phase = "stock-coverage";
-    auto _Native = GetRequiredObject(_Extensions, kProductAssemblyProcessNative);
-    auto _Stocks = GetRequiredObject(_Native, "stocks");
+    auto _Native = _Extensions.contains(kProductAssemblyProcessNative)
+        ? GetRequiredObject(_Extensions, kProductAssemblyProcessNative) : ObjectMap{};
+    auto _Stocks = _Native.empty() ? ObjectMap{} : GetRequiredObject(_Native, "stocks");
     std::set<std::string> _Coverage;
     for (const auto& _Part : _Parts)
         if (const auto _It = _Part.ItemProperties.find("manufacturing.sourceStockIds"); _It != _Part.ItemProperties.end())
             for (const auto& _Value : _It->second.To<VariantArray>()) {
                 const auto _ID = _Value.To<std::string>();
-                if (!_Stocks.contains(_ID) || !_Coverage.insert(_ID).second)
+                if ((!_Native.empty() && !_Stocks.contains(_ID)) || !_Coverage.insert(_ID).second)
                     throw std::logic_error("相同加工零件没有唯一覆盖原始工艺母材");
-                auto _Stock = _Stocks.at(_ID).To<ObjectMap>(); _Stock["itemKey"] = _Part.StableKey;
-                _Stocks[_ID] = std::move(_Stock);
+                if (!_Native.empty()) {
+                    auto _Stock = _Stocks.at(_ID).To<ObjectMap>(); _Stock["itemKey"] = _Part.StableKey;
+                    _Stocks[_ID] = std::move(_Stock);
+                }
             }
-    if (_Coverage.size() != _Stocks.size()) throw std::logic_error("相同加工零件未完整覆盖原始工艺母材");
-    _Native["stocks"] = std::move(_Stocks); _Extensions[kProductAssemblyProcessNative] = std::move(_Native);
+    if (_Coverage.size() != _Indices.size()) throw std::logic_error("相同加工零件未完整覆盖原始工艺母材");
+    if (!_Native.empty()) {
+        _Native["stocks"] = std::move(_Stocks); _Extensions[kProductAssemblyProcessNative] = std::move(_Native);
+    }
     _Extensions["tubeDesigner.manufacturingPartCount"] = static_cast<unsigned long long>(_Parts.size());
     if (_Parts.size() != _Indices.size()) _Extensions["tubeDesigner.identicalManufacturingSource"] = std::move(_Source);
     _Document["extensions"] = std::move(_Extensions);

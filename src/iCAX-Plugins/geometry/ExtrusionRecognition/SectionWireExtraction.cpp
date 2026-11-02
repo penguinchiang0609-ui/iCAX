@@ -1,30 +1,81 @@
 #include "pch.h"
+#include <OpenCascadeResourceImport/OpenCascadeTaskExecution.h>
+#include <exception>
 #include "ExtrudeRecognizesService.h"
+#include "SectionExactClassifier.h"
+#include "SectionProjectionMultiplicity.h"
+#include "SectionMaterialProjection.h"
+#include "SectionFaceSubset.h"
 
 #include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
+#include "OpenCascadeResourceImport/OpenCascadeBRepReader.h"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Curve2d.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepClass_FaceClassifier.hxx>
+#include <BRepClass_FaceExplorer.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_GTransform.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Section.hxx>
+#include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <GeomLib_IsPlanarSurface.hxx>
+#include <gp_GTrsf.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepTopAdaptor_FClass2d.hxx>
 #include <BRepFeat_SplitShape.hxx>
 #include <BRepLib.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <Bnd_Box.hxx>
+#include <Bnd_Box2d.hxx>
+#include <BndLib_Add2dCurve.hxx>
 #include <BOPTools_AlgoTools2D.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <Geom2d_Line.hxx>
+#include <Geom2dAdaptor_Curve.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <Geom2d_BezierCurve.hxx>
+#include <Geom2dConvert.hxx>
+#include <GeomAPI.hxx>
+#include <gp_Pln.hxx>
 #include <GeomAPI_ExtremaCurveCurve.hxx>
+#include <Geom2dAPI_InterCurveCurve.hxx>
+#include <Geom2dAPI_ProjectPointOnCurve.hxx>
+#include <Geom2d_TrimmedCurve.hxx>
 #include <Geom_Line.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <Geom_Circle.hxx>
+#include <GeomConvert_CurveToAnaCurve.hxx>
+#include <GeomConvert.hxx>
+#include <BSplCLib.hxx>
+#include <GeomConvert_SurfToAnaSurf.hxx>
+#include <GeomAdaptor_Surface.hxx>
+#include <Geom_SurfaceOfLinearExtrusion.hxx>
+#include <ElCLib.hxx>
 #include <GCPnts_UniformAbscissa.hxx>
 #include <NCollection_HSequence.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
+#include <ShapeAnalysis.hxx>
+#include <ShapeExtend_WireData.hxx>
+#include <ShapeAnalysis_Wire.hxx>
 #include <ShapeUpgrade_ShapeDivideContinuity.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <TopExp.hxx>
@@ -32,13 +83,22 @@
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Iterator.hxx>
+#include <TopoDS_Vertex.hxx>
 
 #include <array>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <limits>
+#include <map>
+#include <set>
+#include <sstream>
+#include <iomanip>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <type_traits>
 #include <tuple>
@@ -49,6 +109,9 @@ namespace iCAX::ExtrusionRecognition
 {
 namespace toolpath_detail
 {
+    SSectionFaceClassificationResult ClassifySectionFaces(
+        const iCAX::GeometryData::BRepModel&, const SSectionWiresResult&,
+        const SFeatureToolpathOptions&);
     SFeatureToolpathResult AnalyzeFeatureToolpaths(
         IN const iCAX::GeometryData::BRepModel& Geometry_,
         IN const SSectionWiresResult& Section_,
@@ -376,8 +439,58 @@ namespace
                     Surface_.Placement.ZDirection,
                     Options_.dFaceParallelToleranceRadians);
             }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::ExtrusionSurface3>)
+            {
+                return IsParallelToX(Surface_.Direction, Options_.dFaceParallelToleranceRadians);
+            }
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::RevolutionSurface3>)
+            {
+                // IGES can store a cylindrical wall as a revolved axial line.
+                // Tessellation normals at trimmed ends do not establish its
+                // analytic generator direction and used to drop whole corners.
+                if (!IsParallelToX(Surface_.Axis.Direction, Options_.dFaceParallelToleranceRadians)) return false;
+                return std::visit([&](const auto& basis) {
+                    using C = std::decay_t<decltype(basis)>;
+                    if constexpr (std::is_same_v<C, iCAX::GeometryData::Line3>
+                        || std::is_same_v<C, iCAX::GeometryData::Ray3>)
+                        return IsParallelToX(basis.Axis.Direction, Options_.dFaceParallelToleranceRadians);
+                    else if constexpr (std::is_same_v<C, iCAX::GeometryData::Segment3>) {
+                        Direction3 direction;
+                        return TryNormalize(Difference(basis.End, basis.Start), direction)
+                            && IsParallelToX(direction, Options_.dFaceParallelToleranceRadians);
+                    }
+                    else if constexpr (std::is_same_v<C, iCAX::GeometryData::BSpline3>
+                        || std::is_same_v<C, iCAX::GeometryData::NURBS3>
+                        || std::is_same_v<C, iCAX::GeometryData::Bezier3>) {
+                        if (basis.Poles.size() < 2) return false;
+                        bool hasLength = false;
+                        for (const auto& pole : basis.Poles) {
+                            Direction3 direction;
+                            if (!TryNormalize(Difference(pole, basis.Poles.front()), direction)) continue;
+                            if (!IsParallelToX(direction, Options_.dFaceParallelToleranceRadians)) return false;
+                            hasLength = true;
+                        }
+                        return hasLength;
+                    }
+                    else return false;
+                }, Surface_.Basis);
+            }
             else if constexpr (std::is_same_v<T, iCAX::GeometryData::BSplineSurface3>)
             {
+                // A planar spline can use oblique U/V directions (or higher
+                // degrees). Neither parameter direction has to be the extrusion
+                // direction. Classify the geometric support plane first.
+                const auto _Native = iCAX::OpenCascade::BuildOpenCascadeSurface(*_Surface);
+                if (!_Native.IsNull())
+                {
+                    const GeomLib_IsPlanarSurface _Planar(_Native, Options_.dConnectionTolerance);
+                    if (_Planar.IsPlanar())
+                    {
+                        const auto _Normal = _Planar.Plan().Axis().Direction();
+                        return std::abs(_Normal.X())
+                            <= std::sin(Options_.dFaceParallelToleranceRadians);
+                    }
+                }
                 Direction3 _Generator;
                 return (TryBSplineGenerator(
                     Surface_,
@@ -784,6 +897,194 @@ namespace
         }, Curve_);
     }
 
+    std::optional<SSectionWireEdge> ProjectAxialSurfaceBoundary(
+        const TopoDS_Edge& Edge_, const TopoDS_Face& Face_, std::uint64_t SourceId_,
+        const SSectionWireOptions& Options_,
+        const iCAX::GeometryData::BSplineSurface3* Spline_ = nullptr,
+        bool* IsPoint_ = nullptr)
+    {
+        // The caller has established an axial side surface. On cylinders
+        // (including revolved lines) U is an angle; spline extrusions may
+        // have a general transverse profile. The face pcurve is authoritative;
+        // separately approximated 3D intersection splines must not create
+        // duplicate almost-coincident tracks in the planar graph.
+        double first, last;
+        const auto pc = BRep_Tool::CurveOnSurface(Edge_, Face_, first, last);
+        if (pc.IsNull()) return std::nullopt;
+        Bnd_Box2d bounds;
+        BndLib_Add2dCurve::AddOptimal(pc, first, last, 0.0, bounds);
+        if (bounds.IsVoid()) return std::nullopt;
+        // The box's safety gap is not part of the pcurve's parameter image.
+        // Turning it into extra angular coverage extends fillets past their
+        // tangent vertices and changes half-edge ordering at those vertices.
+        bounds.SetGap(0.0);
+        double u0, v0, u1, v1; bounds.Get(u0, v0, u1, v1);
+        const auto surface = BRep_Tool::Surface(Face_);
+        const bool linearExtrusion=GeomAdaptor_Surface(surface).GetType()==GeomAbs_SurfaceOfExtrusion;
+        if (Spline_ || linearExtrusion)
+        {
+            // Recover the transverse isocurve of a proven linear extrusion.
+            // Keep exact circular support when available, otherwise preserve
+            // the general spline. All boundaries on this face consequently
+            // use one support, including independently approximated ends.
+            Direction3 generator;
+            const auto axial = [&](bool alongV) {
+                return TryBSplineGenerator(*Spline_, alongV,
+                    Options_.dFaceParallelToleranceRadians, generator)
+                    && std::abs(generator.X) >= std::cos(Options_.dFaceParallelToleranceRadians);
+            };
+            const bool alongV = linearExtrusion || axial(true);
+            if (!alongV && !axial(false)) return std::nullopt;
+            const auto iso = alongV ? surface->VIso((v0 + v1) * 0.5)
+                : surface->UIso((u0 + u1) * 0.5);
+            if(Options_.Progress)Options_.Progress("axial support source="+std::to_string(SourceId_)
+                +" type="+iso->DynamicType()->Name()+" u=["+std::to_string(u0)+","+std::to_string(u1)
+                +"] v=["+std::to_string(v0)+","+std::to_string(v1)+"]");
+            double circleFirst = 0, circleLast = 0, gap = 0;
+            const auto analytical = GeomConvert_CurveToAnaCurve::ComputeCircle(iso,
+                Options_.dConnectionTolerance, iso->FirstParameter(), iso->LastParameter(),
+                circleFirst, circleLast, gap);
+            const auto exactCircle = Handle(Geom_Circle)::DownCast(analytical);
+            if (exactCircle.IsNull() || gap > Options_.dConnectionTolerance
+                || std::abs(exactCircle->Axis().Direction().X())
+                    < std::cos(Options_.dFaceParallelToleranceRadians))
+            {
+                // General spline extrusions need the same surface-based
+                // support as cylinders. Imported 3D trimming curves are
+                // independently approximated and may differ from this exact
+                // isocurve by the source edge tolerance. Preserve the spline
+                // and its actual UV coverage instead of fitting that error.
+                const auto spline = Handle(Geom_BSplineCurve)::DownCast(iso);
+                const double t0 = alongV ? u0 : v0, t1 = alongV ? u1 : v1;
+                if (spline.IsNull()) return std::nullopt;
+                if (t1 <= t0) { if(IsPoint_)*IsPoint_=true;return std::nullopt; }
+                const auto trimmed = Handle(Geom_BSplineCurve)::DownCast(spline->Copy());
+                trimmed->Segment(t0, t1);
+                iCAX::GeometryData::NURBS2 projected;
+                projected.Degree = trimmed->Degree();
+                projected.Periodic = trimmed->IsPeriodic();
+                for (int i = 1; i <= trimmed->NbPoles(); ++i)
+                {
+                    const auto p = trimmed->Pole(i);
+                    projected.Poles.push_back({p.Y(), p.Z()});
+                    projected.Weights.push_back(trimmed->Weight(i));
+                }
+                for (int i = 1; i <= trimmed->NbKnots(); ++i)
+                {
+                    projected.Knots.push_back(trimmed->Knot(i));
+                    projected.Multiplicities.push_back(trimmed->Multiplicity(i));
+                }
+                SSectionWireEdge result;
+                result.SourceEdgeId = SourceId_;
+                result.Curve = std::move(projected);
+                result.Range = {trimmed->FirstParameter(), trimmed->LastParameter()};
+                for (std::size_t i = 0; i <= Options_.nCurveSampleCount; ++i)
+                {
+                    const auto p = trimmed->Value(result.Range.First
+                        + (result.Range.Last - result.Range.First) * i / Options_.nCurveSampleCount);
+                    result.Samples.push_back({p.Y(), p.Z()});
+                }
+                result.Start = result.Samples.front(); result.End = result.Samples.back();
+                if (std::all_of(std::get<iCAX::GeometryData::NURBS2>(result.Curve).Poles.begin(),
+                        std::get<iCAX::GeometryData::NURBS2>(result.Curve).Poles.end(), [&](const auto& p) {
+                        return Distance(p, result.Start) <= Options_.dConnectionTolerance;
+                    })) { if(IsPoint_)*IsPoint_=true;return std::nullopt; }
+                const double chord = Distance(result.Start, result.End);
+                if (chord > Options_.dConnectionTolerance)
+                {
+                    const Point2 direction{(result.End.X - result.Start.X) / chord,
+                        (result.End.Y - result.Start.Y) / chord};
+                    const auto& value = std::get<iCAX::GeometryData::NURBS2>(result.Curve);
+                    if (std::all_of(value.Poles.begin(), value.Poles.end(), [&](const auto& p) {
+                            const Point2 delta{p.X - result.Start.X, p.Y - result.Start.Y};
+                            const double along = Dot2(delta, direction);
+                            return std::abs(delta.X * direction.Y - delta.Y * direction.X)
+                                    <= Options_.dConnectionTolerance
+                                && along >= -Options_.dConnectionTolerance
+                                && along <= chord + Options_.dConnectionTolerance;
+                        }))
+                    {
+                        result.Curve = iCAX::GeometryData::Line2{{result.Start, {direction.X, direction.Y}}};
+                        result.Range = {0.0, chord};
+                    }
+                }
+                return result;
+            }
+            const auto circle = exactCircle->Circ();
+            const double t0 = alongV ? u0 : v0, t1 = alongV ? u1 : v1;
+            if (t1 <= t0) { if(IsPoint_)*IsPoint_=true;return std::nullopt; }
+            double angle = ElCLib::Parameter(circle, iso->Value(t0));
+            const double start = angle;
+            int sense = 0;
+            for (std::size_t i = 1; i <= Options_.nCurveSampleCount; ++i)
+            {
+                const auto next = ElCLib::Parameter(circle, iso->Value(t0
+                    + (t1 - t0) * i / Options_.nCurveSampleCount));
+                const auto delta = std::remainder(next - angle, 2.0 * kPi);
+                if (std::abs(delta) * circle.Radius() > Options_.dConnectionTolerance)
+                {
+                    const int current = delta > 0 ? 1 : -1;
+                    if (sense && sense != current) return std::nullopt;
+                    sense = current;
+                }
+                angle += delta;
+            }
+            if (std::abs(angle - start) * circle.Radius() <= Options_.dConnectionTolerance)
+                { if(IsPoint_)*IsPoint_=true;return std::nullopt; }
+            const auto x = circle.Position().XDirection(), y = circle.Position().YDirection();
+            const iCAX::GeometryData::Circle2 projected{{{circle.Location().Y(), circle.Location().Z()},
+                {x.Y(), x.Z()}, {y.Y(), y.Z()}}, circle.Radius()};
+            SSectionWireEdge result;
+            result.SourceEdgeId = SourceId_;
+            const double lo = std::min(start, angle), hi = std::max(start, angle);
+            if (hi - lo >= 2.0 * kPi - Options_.dConnectionTolerance / circle.Radius())
+            {
+                result.Curve = projected;
+                result.Range = {0, 2.0 * kPi};
+            }
+            else
+            {
+                result.Curve = iCAX::GeometryData::Arc2{projected, lo, hi, true};
+                result.Range = {lo, hi};
+            }
+            result.Samples = SampleCurve(result.Curve, Options_.nCurveSampleCount);
+            result.Start = result.Samples.front();result.End = result.Samples.back();
+            return result;
+        }
+        const double v = (v0 + v1) * 0.5;
+        const auto p0 = surface->Value(0.0, v);
+        const auto p90 = surface->Value(0.5 * kPi, v);
+        const auto p180 = surface->Value(kPi, v);
+        const Point2 center{0.5 * (p0.Y() + p180.Y()), 0.5 * (p0.Z() + p180.Z())};
+        const Point2 a{p0.Y() - center.X, p0.Z() - center.Y};
+        const Point2 b{p90.Y() - center.X, p90.Z() - center.Y};
+        const double radius = std::hypot(a.X, a.Y), otherRadius = std::hypot(b.X, b.Y);
+        if (radius <= Options_.dConnectionTolerance || otherRadius <= Options_.dConnectionTolerance
+            || std::abs(p0.X() - p180.X()) > Options_.dConnectionTolerance
+            || std::abs(p90.X() - p0.X()) > Options_.dConnectionTolerance
+            || std::abs(radius - otherRadius) > Options_.dConnectionTolerance
+            || std::abs(Dot2(a, b)) / radius > Options_.dConnectionTolerance)
+            return std::nullopt;
+        if ((u1 - u0) * radius <= Options_.dConnectionTolerance) { if(IsPoint_)*IsPoint_=true;return std::nullopt; }
+        const iCAX::GeometryData::Circle2 circle{{center,
+            {a.X / radius, a.Y / radius}, {b.X / otherRadius, b.Y / otherRadius}}, radius};
+        SSectionWireEdge result;
+        result.SourceEdgeId = SourceId_;
+        if (u1 - u0 >= 2.0 * kPi - Options_.dConnectionTolerance / radius)
+        {
+            result.Curve = circle;
+            result.Range = {0.0, 2.0 * kPi};
+        }
+        else
+        {
+            result.Curve = iCAX::GeometryData::Arc2{circle, u0, u1, true};
+            result.Range = {u0, u1};
+        }
+        result.Samples = SampleCurve(result.Curve, Options_.nCurveSampleCount);
+        result.Start = result.Samples.front(); result.End = result.Samples.back();
+        return result;
+    }
+
     std::optional<SSectionWireEdge> MakeProjectedEdge(
         IN const BRepEdge& Edge_,
         IN std::uint64_t StartVertexID_,
@@ -805,6 +1106,67 @@ namespace
             return std::nullopt;
         }
 
+        // A conic in a plane containing the extrusion axis projects to a
+        // finite line interval, not a point. Its endpoints alone need not
+        // bound that interval (a semicircle can return to the same point).
+        // Evaluate the sinusoid's stationary parameters as well as the trim
+        // endpoints to retain the complete, exact projected coverage.
+        const bool _Conic = std::holds_alternative<iCAX::GeometryData::Circle3>(Curve_)
+            || std::holds_alternative<iCAX::GeometryData::Arc3>(Curve_)
+            || std::holds_alternative<iCAX::GeometryData::Ellipse3>(Curve_)
+            || std::holds_alternative<iCAX::GeometryData::EllipseArc3>(Curve_);
+        if (_Conic)
+        {
+            const auto _Exact = iCAX::OpenCascade::BuildOpenCascadeCurve(Curve_);
+            if (!_Exact.IsNull())
+            {
+                const auto _P0 = _Exact->Value(0.0);
+                const auto _P90 = _Exact->Value(0.5 * kPi);
+                const auto _P180 = _Exact->Value(kPi);
+                const Point2 _Center{0.5 * (_P0.Y() + _P180.Y()), 0.5 * (_P0.Z() + _P180.Z())};
+                const Point2 _A{_P0.Y() - _Center.X, _P0.Z() - _Center.Y};
+                const Point2 _B{_P90.Y() - _Center.X, _P90.Z() - _Center.Y};
+                const double _ALength = std::hypot(_A.X, _A.Y), _BLength = std::hypot(_B.X, _B.Y);
+                const auto _Basis = _ALength >= _BLength ? _A : _B;
+                const double _Length = std::max(_ALength, _BLength);
+                if (_Length > Options_.dConnectionTolerance)
+                {
+                    const Point2 _Direction{_Basis.X / _Length, _Basis.Y / _Length};
+                    // Bound the transverse amplitude over the whole conic,
+                    // rather than deciding collinearity from sampled chords.
+                    if (std::hypot(Cross2(_Direction, _A), Cross2(_Direction, _B))
+                        <= Options_.dConnectionTolerance)
+                    {
+                        const double _Cos = Dot2(_Direction, _A), _Sin = Dot2(_Direction, _B);
+                        const double _First = std::min(Edge_.Range.First, Edge_.Range.Last);
+                        const double _Last = std::max(Edge_.Range.First, Edge_.Range.Last);
+                        const auto _Value = [&](double t) { return _Cos * std::cos(t) + _Sin * std::sin(t); };
+                        double _Min = std::min(_Value(_First), _Value(_Last));
+                        double _Max = std::max(_Value(_First), _Value(_Last));
+                        const double _Stationary = std::atan2(_Sin, _Cos);
+                        for (int i = 0; i < 2; ++i)
+                        {
+                            const double _Base = _Stationary + i * kPi;
+                            const double _T = _Base + std::ceil((_First - _Base) / (2.0 * kPi)) * (2.0 * kPi);
+                            if (_T <= _Last + kEpsilon)
+                            {
+                                _Min = std::min(_Min, _Value(_T));
+                                _Max = std::max(_Max, _Value(_T));
+                            }
+                        }
+                        if (_Max - _Min <= Options_.dConnectionTolerance) return std::nullopt;
+                        SSectionWireEdge _Line;
+                        _Line.SourceEdgeId = Edge_.Id;
+                        _Line.Start = {_Center.X + _Min * _Direction.X, _Center.Y + _Min * _Direction.Y};
+                        _Line.End = {_Center.X + _Max * _Direction.X, _Center.Y + _Max * _Direction.Y};
+                        _Line.Curve = iCAX::GeometryData::Line2{{_Line.Start, {_Direction.X, _Direction.Y}}};
+                        _Line.Range = {0.0, _Max - _Min};
+                        _Line.Samples = {_Line.Start, _Line.End};
+                        return _Line;
+                    }
+                }
+            }
+        }
         const auto _Curve2 = FlattenCurve(Curve_);
         if (!_Curve2)
         {
@@ -834,47 +1196,87 @@ namespace
         // that control-polygon bound (not a sampled chord fit) to give them
         // the same representation as coincident analytic line edges.
         const auto _ChordLength = Distance(_Result.Start, _Result.End);
-        if (_ChordLength > Options_.dConnectionTolerance)
+        // Projection shortens an oblique line. FlattenCurve normalizes its 2D
+        // direction, so retaining the 3D parameter range extends the projected
+        // edge beyond its vertices and introduces false planar intersections.
+        // Reparameterize the finite straight edge by its projected chord.
+        if (std::holds_alternative<iCAX::GeometryData::Line2>(_Result.Curve)
+            || std::holds_alternative<iCAX::GeometryData::Ray2>(_Result.Curve)
+            || std::holds_alternative<iCAX::GeometryData::Segment2>(_Result.Curve))
         {
-            const Point2 _Direction{ (_Result.End.X - _Result.Start.X) / _ChordLength,
-                (_Result.End.Y - _Result.Start.Y) / _ChordLength };
-            const bool _Straight = std::visit([&](const auto& Value_) {
+            if (_ChordLength <= Options_.dConnectionTolerance) return std::nullopt;
+            _Result.Curve = iCAX::GeometryData::Line2{{_Result.Start,
+                {(_Result.End.X - _Result.Start.X) / _ChordLength,
+                 (_Result.End.Y - _Result.Start.Y) / _ChordLength}}};
+            _Result.Range = {0.0, _ChordLength};
+        }
+        const auto _StraightCoverage = std::visit([&](const auto& Value_)
+            -> std::optional<std::pair<Point2,Point2>> {
                 using T = std::decay_t<decltype(Value_)>;
                 if constexpr (std::is_same_v<T, iCAX::GeometryData::Bezier2>
                     || std::is_same_v<T, iCAX::GeometryData::BSpline2>
                     || std::is_same_v<T, iCAX::GeometryData::NURBS2>)
                 {
-                    if (Value_.Poles.size() < 2) return false;
+                    if (Value_.Poles.size() < 2) return std::nullopt;
                     if constexpr (std::is_same_v<T, iCAX::GeometryData::NURBS2>)
                         if (std::any_of(Value_.Weights.begin(), Value_.Weights.end(),
-                                [](double Weight_) { return Weight_ <= 0.0; })) return false;
-                    int _MonotoneSign = 0;
-                    std::optional<double> _Previous;
+                                [](double Weight_) { return !std::isfinite(Weight_) || Weight_ <= 0.0; })) return std::nullopt;
+                    const auto origin=Value_.Poles.front();
+                    Point2 direction{};double length=0;
+                    for(const auto& pole:Value_.Poles){
+                        const auto distance=Distance(origin,pole);
+                        if(distance>length){length=distance;direction={pole.X-origin.X,pole.Y-origin.Y};}
+                    }
+                    if(length<=Options_.dConnectionTolerance)return std::nullopt;
+                    direction={direction.X/length,direction.Y/length};
                     for (const auto& _Pole : Value_.Poles)
                     {
-                        const Point2 _Delta{ _Pole.X - _Result.Start.X, _Pole.Y - _Result.Start.Y };
-                        if (std::abs(_Delta.X * _Direction.Y - _Delta.Y * _Direction.X)
-                            > Options_.dConnectionTolerance) return false;
-                        const auto _Along = _Delta.X * _Direction.X + _Delta.Y * _Direction.Y;
-                        if (_Previous && std::abs(_Along - *_Previous) > Options_.dConnectionTolerance)
-                        {
-                            const auto _Sign = _Along > *_Previous ? 1 : -1;
-                            if (_MonotoneSign != 0 && _Sign != _MonotoneSign) return false;
-                            _MonotoneSign = _Sign;
-                        }
-                        _Previous = _Along;
+                        const Point2 delta{_Pole.X-origin.X,_Pole.Y-origin.Y};
+                        if(std::abs(delta.X*direction.Y-delta.Y*direction.X)>Options_.dConnectionTolerance)
+                            return std::nullopt;
                     }
-                    return _MonotoneSign != 0;
+                    // A curved 3D cut can fold back after projection, including
+                    // identical projected endpoints. Its coverage is the exact
+                    // trimmed scalar interval, not a U-turn in the section.
+                    Bnd_Box2d bounds;
+                    BndLib_Add2dCurve::AddOptimal(iCAX::OpenCascade::BuildOpenCascadeCurve2(_Result.Curve),
+                        _Result.Range.First,_Result.Range.Last,0.0,bounds);
+                    if(bounds.IsVoid())return std::nullopt;
+                    // AddOptimal's safety gap is not part of the exact finite
+                    // projected image. Keeping it extends a straight span past
+                    // its adjoining arc/line vertices and opens the section.
+                    bounds.SetGap(0.0);
+                    double x0,y0,x1,y1;bounds.Get(x0,y0,x1,y1);
+                    const bool useX=std::abs(direction.X)>=std::abs(direction.Y);
+                    double a=((useX?x0:y0)-(useX?origin.X:origin.Y))/(useX?direction.X:direction.Y);
+                    double b=((useX?x1:y1)-(useX?origin.X:origin.Y))/(useX?direction.X:direction.Y);
+                    if(a>b)std::swap(a,b);
+                    if(b-a<=Options_.dConnectionTolerance)return std::nullopt;
+                    return std::pair<Point2,Point2>{{origin.X+a*direction.X,origin.Y+a*direction.Y},
+                        {origin.X+b*direction.X,origin.Y+b*direction.Y}};
                 }
-                return false;
+                return std::nullopt;
             }, _Result.Curve);
-            if (_Straight)
+        if(_StraightCoverage){
+                _Result.Start=_StraightCoverage->first;_Result.End=_StraightCoverage->second;
+                const auto length=Distance(_Result.Start,_Result.End);
+                _Result.Curve = iCAX::GeometryData::Line2{{_Result.Start,
+                    {(_Result.End.X - _Result.Start.X) / length,
+                     (_Result.End.Y - _Result.Start.Y) / length}}};
+                _Result.Range = {0.0,length};
+        }
+        // Samples must lie on the trimmed curve, never on a spline control
+        // polygon or on the untrimmed supporting curve.
+        if (const auto exact = iCAX::OpenCascade::BuildOpenCascadeCurve2(_Result.Curve); !exact.IsNull())
+        {
+            for (std::size_t i = 0; i <= Options_.nCurveSampleCount; ++i)
             {
-                _Result.Curve = iCAX::GeometryData::Segment2{ _Result.Start, _Result.End };
-                _Result.Range = { 0.0, 1.0 };
+                const auto p = exact->Value(_Result.Range.First
+                    + (_Result.Range.Last - _Result.Range.First) * i / Options_.nCurveSampleCount);
+                _Result.Samples.push_back({p.X(), p.Y()});
             }
         }
-        _Result.Samples = SampleCurve(_Result.Curve, Options_.nCurveSampleCount);
+        else _Result.Samples = SampleCurve(_Result.Curve, Options_.nCurveSampleCount);
         if (_Result.Samples.empty())
         {
             _Result.Samples = { _Result.Start, _Result.End };
@@ -944,8 +1346,29 @@ namespace
         {
             return false;
         }
-        return SameSamples(Left_.Samples, Right_.Samples, false, Tolerance_)
-            || SameSamples(Left_.Samples, Right_.Samples, true, Tolerance_);
+        const auto left = iCAX::OpenCascade::BuildOpenCascadeCurve2(Left_.Curve);
+        const auto right = iCAX::OpenCascade::BuildOpenCascadeCurve2(Right_.Curve);
+        if (left.IsNull() || right.IsNull()) return false;
+        const auto covered = [&](const SSectionWireEdge& edge, const Handle(Geom2d_Curve)& curve,
+            const SSectionWireEdge& other, const Handle(Geom2d_Curve)& target) {
+            for (int i=0;i<=32;++i) {
+                const auto p=curve->Value(edge.Range.First+(edge.Range.Last-edge.Range.First)*i/32.0);
+                // An actual point on the target is sufficient coverage
+                // evidence. Restricted spline extrema can omit a minimum on
+                // nearly coincident short intervals; do not turn that solver
+                // omission into a different projected edge.
+                const auto u=i/32.0,span=other.Range.Last-other.Range.First;
+                if(p.Distance(target->Value(other.Range.First+span*u))<=Tolerance_
+                    ||p.Distance(target->Value(other.Range.Last-span*u))<=Tolerance_)continue;
+                Geom2dAPI_ProjectPointOnCurve projection(p,target,
+                    std::min(other.Range.First,other.Range.Last),std::max(other.Range.First,other.Range.Last));
+                // Projection extrema can omit interval endpoints.
+                const auto distance=std::min(p.Distance(target->Value(other.Range.First)),p.Distance(target->Value(other.Range.Last)));
+                if(distance>Tolerance_ && (projection.NbPoints()==0||projection.LowerDistance()>Tolerance_))return false;
+            }
+            return true;
+        };
+        return covered(Left_,left,Right_,right)&&covered(Right_,right,Left_,left);
     }
 
     struct SConicInterval final
@@ -1497,67 +1920,11 @@ namespace
         IN const SSectionWireEdge& Edge_,
         IN double Parameter_)
     {
-        const auto _U = std::clamp(Parameter_, 0.0, 1.0);
-        std::optional<Point2> _Result;
-        std::visit([&](IN const auto& Value_)
-        {
-            using T = std::decay_t<decltype(Value_)>;
-            if constexpr (std::is_same_v<T, iCAX::GeometryData::Segment2>)
-            {
-                _Result = Lerp(Value_.Start, Value_.End, _U);
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Circle2>)
-            {
-                const auto _Angle = 2.0 * kPi * _U;
-                _Result = Point2{
-                    Value_.Placement.Location.X
-                        + Value_.Radius * (Value_.Placement.XDirection.X * std::cos(_Angle)
-                            + Value_.Placement.YDirection.X * std::sin(_Angle)),
-                    Value_.Placement.Location.Y
-                        + Value_.Radius * (Value_.Placement.XDirection.Y * std::cos(_Angle)
-                            + Value_.Placement.YDirection.Y * std::sin(_Angle)) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Arc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                const auto _Angle = Value_.StartAngle + _Delta * _U;
-                _Result = Point2{
-                    Value_.Basis.Placement.Location.X
-                        + Value_.Basis.Radius * (Value_.Basis.Placement.XDirection.X * std::cos(_Angle)
-                            + Value_.Basis.Placement.YDirection.X * std::sin(_Angle)),
-                    Value_.Basis.Placement.Location.Y
-                        + Value_.Basis.Radius * (Value_.Basis.Placement.XDirection.Y * std::cos(_Angle)
-                            + Value_.Basis.Placement.YDirection.Y * std::sin(_Angle)) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Ellipse2>)
-            {
-                const auto _Angle = 2.0 * kPi * _U;
-                _Result = Point2{
-                    Value_.Placement.Location.X
-                        + Value_.MajorRadius * Value_.Placement.XDirection.X * std::cos(_Angle)
-                        + Value_.MinorRadius * Value_.Placement.YDirection.X * std::sin(_Angle),
-                    Value_.Placement.Location.Y
-                        + Value_.MajorRadius * Value_.Placement.XDirection.Y * std::cos(_Angle)
-                        + Value_.MinorRadius * Value_.Placement.YDirection.Y * std::sin(_Angle) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::EllipseArc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                const auto _Angle = Value_.StartAngle + _Delta * _U;
-                _Result = Point2{
-                    Value_.Basis.Placement.Location.X
-                        + Value_.Basis.MajorRadius * Value_.Basis.Placement.XDirection.X * std::cos(_Angle)
-                        + Value_.Basis.MinorRadius * Value_.Basis.Placement.YDirection.X * std::sin(_Angle),
-                    Value_.Basis.Placement.Location.Y
-                        + Value_.Basis.MajorRadius * Value_.Basis.Placement.XDirection.Y * std::cos(_Angle)
-                        + Value_.Basis.MinorRadius * Value_.Basis.Placement.YDirection.Y * std::sin(_Angle) };
-            }
-        }, Edge_.Curve);
-        return _Result ? _Result : std::optional<Point2>(PointOnSamples(Edge_.Samples, _U));
+        const auto curve = iCAX::OpenCascade::BuildOpenCascadeCurve2(Edge_.Curve);
+        if (curve.IsNull()) return std::nullopt;
+        const auto u = std::clamp(Parameter_, 0.0, 1.0);
+        const auto p = curve->Value(Edge_.Range.First + (Edge_.Range.Last - Edge_.Range.First) * u);
+        return Point2{p.X(), p.Y()};
     }
 
     Point2 NormalizePoint2(IN const Point2& Value_)
@@ -1572,81 +1939,12 @@ namespace
         IN const SSectionWireEdge& Edge_,
         IN double Parameter_)
     {
-        const auto _U = std::clamp(Parameter_, 0.0, 1.0);
-        std::optional<Point2> _Result;
-        std::visit([&](IN const auto& Value_)
-        {
-            using T = std::decay_t<decltype(Value_)>;
-            if constexpr (std::is_same_v<T, iCAX::GeometryData::Segment2>)
-            {
-                _Result = Point2{
-                    Value_.End.X - Value_.Start.X,
-                    Value_.End.Y - Value_.Start.Y };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Circle2>)
-            {
-                const auto _Angle = 2.0 * kPi * _U;
-                _Result = Point2{
-                    2.0 * kPi * Value_.Radius * (
-                        -Value_.Placement.XDirection.X * std::sin(_Angle)
-                        + Value_.Placement.YDirection.X * std::cos(_Angle)),
-                    2.0 * kPi * Value_.Radius * (
-                        -Value_.Placement.XDirection.Y * std::sin(_Angle)
-                        + Value_.Placement.YDirection.Y * std::cos(_Angle)) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Arc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                const auto _Angle = Value_.StartAngle + _Delta * _U;
-                _Result = Point2{
-                    _Delta * Value_.Basis.Radius * (
-                        -Value_.Basis.Placement.XDirection.X * std::sin(_Angle)
-                        + Value_.Basis.Placement.YDirection.X * std::cos(_Angle)),
-                    _Delta * Value_.Basis.Radius * (
-                        -Value_.Basis.Placement.XDirection.Y * std::sin(_Angle)
-                        + Value_.Basis.Placement.YDirection.Y * std::cos(_Angle)) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Ellipse2>)
-            {
-                const auto _Angle = 2.0 * kPi * _U;
-                _Result = Point2{
-                    2.0 * kPi * (
-                        -Value_.MajorRadius * Value_.Placement.XDirection.X * std::sin(_Angle)
-                        + Value_.MinorRadius * Value_.Placement.YDirection.X * std::cos(_Angle)),
-                    2.0 * kPi * (
-                        -Value_.MajorRadius * Value_.Placement.XDirection.Y * std::sin(_Angle)
-                        + Value_.MinorRadius * Value_.Placement.YDirection.Y * std::cos(_Angle)) };
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::EllipseArc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                const auto _Angle = Value_.StartAngle + _Delta * _U;
-                _Result = Point2{
-                    _Delta * (
-                        -Value_.Basis.MajorRadius * Value_.Basis.Placement.XDirection.X * std::sin(_Angle)
-                        + Value_.Basis.MinorRadius * Value_.Basis.Placement.YDirection.X * std::cos(_Angle)),
-                    _Delta * (
-                        -Value_.Basis.MajorRadius * Value_.Basis.Placement.XDirection.Y * std::sin(_Angle)
-                        + Value_.Basis.MinorRadius * Value_.Basis.Placement.YDirection.Y * std::cos(_Angle)) };
-            }
-        }, Edge_.Curve);
-        if (_Result)
-        {
-            return NormalizePoint2(*_Result);
-        }
-
-        const auto _Step = 1.0e-4;
-        const auto _Left = std::max(0.0, _U - _Step);
-        const auto _Right = std::min(1.0, _U + _Step);
-        const auto _LeftPoint = EvaluateProjectedCurvePoint(Edge_, _Left).value_or(Edge_.Start);
-        const auto _RightPoint = EvaluateProjectedCurvePoint(Edge_, _Right).value_or(Edge_.End);
-        return NormalizePoint2({
-            _RightPoint.X - _LeftPoint.X,
-            _RightPoint.Y - _LeftPoint.Y });
+        const auto curve = iCAX::OpenCascade::BuildOpenCascadeCurve2(Edge_.Curve);
+        if (curve.IsNull()) return NormalizePoint2({Edge_.End.X - Edge_.Start.X, Edge_.End.Y - Edge_.Start.Y});
+        const auto delta = Edge_.Range.Last - Edge_.Range.First;
+        gp_Pnt2d p; gp_Vec2d tangent;
+        curve->D1(Edge_.Range.First + delta * std::clamp(Parameter_, 0.0, 1.0), p, tangent);
+        return NormalizePoint2({tangent.X() * delta, tangent.Y() * delta});
     }
 
     struct SLowestCurvePoint final
@@ -1778,12 +2076,18 @@ namespace
         IN const Point2& Point_,
         IN double Tolerance_)
     {
-        if (const auto _Analytic = ProjectPointToAnalyticCurve(Edge_, Point_, Tolerance_))
-        {
-            return _Analytic;
-        }
-        auto _Result = ProjectPointToSamples(Edge_, Point_);
-        return _Result.dDistance <= Tolerance_ ? std::optional<SProjectionResult>(_Result) : std::nullopt;
+        const auto curve = iCAX::OpenCascade::BuildOpenCascadeCurve2(Edge_.Curve);
+        if (curve.IsNull()) return std::nullopt;
+        const auto delta = Edge_.Range.Last - Edge_.Range.First;
+        if (std::abs(delta) <= kEpsilon) return std::nullopt;
+        Geom2dAPI_ProjectPointOnCurve projection(gp_Pnt2d(Point_.X, Point_.Y), curve,
+            std::min(Edge_.Range.First, Edge_.Range.Last), std::max(Edge_.Range.First, Edge_.Range.Last));
+        if (projection.NbPoints() == 0 || projection.LowerDistance() > Tolerance_) return std::nullopt;
+        SProjectionResult result;
+        result.U = (projection.LowerDistanceParameter() - Edge_.Range.First) / delta;
+        const auto p = projection.NearestPoint(); result.Point = {p.X(), p.Y()};
+        result.dDistance = projection.LowerDistance();
+        return result;
     }
 
     struct SProjectedEdgeBounds final
@@ -1796,6 +2100,27 @@ namespace
 
     SProjectedEdgeBounds GetBounds(IN const SSectionWireEdge& Edge_)
     {
+        const auto exact=iCAX::OpenCascade::BuildOpenCascadeCurve2(Edge_.Curve);
+        if(!exact.IsNull()) {
+            Bnd_Box2d box;
+            const auto first=std::min(Edge_.Range.First,Edge_.Range.Last),last=std::max(Edge_.Range.First,Edge_.Range.Last);
+            if(first==last)box.Add(exact->Value(first));
+            else if(const auto spline=Handle(Geom2d_BSplineCurve)::DownCast(exact);!spline.IsNull()) {
+                // Restrict the control hull to this actual split interval.
+                // The parent's hull can retain a point-sized self-loop as a
+                // large directed edge and corrupt the planar rotation order.
+                const auto trimmed=Handle(Geom2d_BSplineCurve)::DownCast(spline->Copy());
+                trimmed->Segment(first,last,0.0);
+                for(int i=1;i<=trimmed->NbPoles();++i)box.Add(trimmed->Pole(i));
+            } else if(const auto bezier=Handle(Geom2d_BezierCurve)::DownCast(exact);!bezier.IsNull()) {
+                const auto trimmed=Handle(Geom2d_BezierCurve)::DownCast(bezier->Copy());trimmed->Segment(first,last);
+                for(int i=1;i<=trimmed->NbPoles();++i)box.Add(trimmed->Pole(i));
+            } else BndLib_Add2dCurve::AddOptimal(exact,first,last,0.0,box);
+            if(box.IsVoid())throw std::runtime_error("Cannot bound projected source edge "+std::to_string(Edge_.SourceEdgeId));
+            SProjectedEdgeBounds bounds;
+            box.Get(bounds.MinimumX,bounds.MinimumY,bounds.MaximumX,bounds.MaximumY);
+            return bounds;
+        }
         const auto& _Samples = Edge_.Samples;
         const auto _First = _Samples.empty() ? Edge_.Start : _Samples.front();
         SProjectedEdgeBounds _Result{
@@ -1989,80 +2314,18 @@ namespace
         bool bActive = true;
     };
 
-    double SignedCurvatureAtNode(
-        IN const SGraphEdge& Edge_,
-        IN std::size_t Node_)
+    double DirectedCurvature(const SGraphEdge& edge,bool forward)
     {
-        std::optional<double> _Curvature;
-        std::visit([&](IN const auto& Value_)
-        {
-            using T = std::decay_t<decltype(Value_)>;
-            const auto _BasisOrientation = [&](IN const auto& Placement_) {
-                return Placement_.XDirection.X * Placement_.YDirection.Y
-                    - Placement_.XDirection.Y * Placement_.YDirection.X;
-            };
-            if constexpr (std::is_same_v<T, iCAX::GeometryData::Circle2>)
-            {
-                _Curvature = _BasisOrientation(Value_.Placement)
-                    / std::max(Value_.Radius, kEpsilon);
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Arc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                _Curvature = _BasisOrientation(Value_.Basis.Placement)
-                    * (_Delta < 0.0 ? -1.0 : 1.0)
-                    / std::max(Value_.Basis.Radius, kEpsilon);
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Ellipse2>)
-            {
-                _Curvature = _BasisOrientation(Value_.Placement)
-                    / std::max(Value_.MajorRadius * Value_.MinorRadius, kEpsilon);
-            }
-            else if constexpr (std::is_same_v<T, iCAX::GeometryData::EllipseArc2>)
-            {
-                const auto _Delta = Value_.CounterClockwise
-                    ? Value_.EndAngle - Value_.StartAngle
-                    : Value_.StartAngle - Value_.EndAngle;
-                _Curvature = _BasisOrientation(Value_.Basis.Placement)
-                    * (_Delta < 0.0 ? -1.0 : 1.0)
-                    / std::max(
-                        Value_.Basis.MajorRadius * Value_.Basis.MinorRadius,
-                        kEpsilon);
-            }
-        }, Edge_.Projected.Curve);
-
-        if (_Curvature)
-        {
-            return Node_ == Edge_.StartNode ? *_Curvature : -*_Curvature;
-        }
-
-        // Fallback for free-form curves: estimate the signed change of the
-        // tangent using the first two directed sample segments.  This is only
-        // used when an analytic curvature is unavailable; line edges return
-        // zero exactly.
-        auto _Samples = Edge_.Projected.Samples;
-        if (Node_ != Edge_.StartNode)
-        {
-            std::reverse(_Samples.begin(), _Samples.end());
-        }
-        if (_Samples.size() < 3)
-        {
-            return 0.0;
-        }
-        const Point2 _First{
-            _Samples[1].X - _Samples[0].X,
-            _Samples[1].Y - _Samples[0].Y };
-        const Point2 _Second{
-            _Samples[2].X - _Samples[1].X,
-            _Samples[2].Y - _Samples[1].Y };
-        if (std::hypot(_First.X, _First.Y) <= kEpsilon
-            || std::hypot(_Second.X, _Second.Y) <= kEpsilon)
-        {
-            return 0.0;
-        }
-        return std::atan2(Cross2(_First, _Second), Dot2(_First, _Second));
+        const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Projected.Curve);
+        if(curve.IsNull())return 0;
+        const auto& range=edge.Projected.Range;
+        const double parameter=forward?range.First:range.Last;
+        Geom2dAdaptor_Curve trimmed(curve,std::min(range.First,range.Last),std::max(range.First,range.Last));
+        gp_Pnt2d point;gp_Vec2d first,second;trimmed.D2(parameter,point,first,second);
+        const double speed=first.Magnitude();if(speed<=kEpsilon)return 0;
+        const double orientation=(range.Last>=range.First?1.0:-1.0)*(forward?1.0:-1.0);
+        const double curvature=orientation*first.Crossed(second)/(speed*speed*speed);
+        return std::isfinite(curvature)?curvature:0;
     }
 
     struct SHalfEdge final
@@ -2171,29 +2434,9 @@ namespace
         IN const std::vector<SGraphEdge>& GraphEdges_,
         IN const std::vector<SGraphNode>& Nodes_)
     {
-        auto _Samples = GraphEdges_[HalfEdge_.GraphEdge].Projected.Samples;
-        if (!HalfEdge_.bForward)
-        {
-            std::reverse(_Samples.begin(), _Samples.end());
-        }
-        for (std::size_t _Index = 1; _Index < _Samples.size(); ++_Index)
-        {
-            const Point2 _Delta{
-                _Samples[_Index].X - _Samples[0].X,
-                _Samples[_Index].Y - _Samples[0].Y };
-            const auto _Length = std::hypot(_Delta.X, _Delta.Y);
-            if (_Length > kEpsilon)
-            {
-                return { _Delta.X / _Length, _Delta.Y / _Length };
-            }
-        }
-        const auto& _From = Nodes_[HalfEdge_.FromNode].Position;
-        const auto& _To = Nodes_[HalfEdge_.ToNode].Position;
-        const Point2 _Delta{ _To.X - _From.X, _To.Y - _From.Y };
-        const auto _Length = std::hypot(_Delta.X, _Delta.Y);
-        return _Length <= kEpsilon
-            ? Point2{ 1.0, 0.0 }
-            : Point2{ _Delta.X / _Length, _Delta.Y / _Length };
+        (void)Nodes_;
+        const auto tangent=CurveTangentAt(GraphEdges_[HalfEdge_.GraphEdge].Projected,HalfEdge_.bForward?0.0:1.0);
+        return HalfEdge_.bForward?tangent:Point2{-tangent.X,-tangent.Y};
     }
 
     std::size_t NextLeftFaceHalfEdge(
@@ -2238,6 +2481,7 @@ namespace
         std::vector<std::size_t> GraphEdgeIndices;
         std::vector<Point2> Points;
         double dSignedArea = 0.0;
+        mutable TopoDS_Face ExactFace;
     };
 
     void AppendSamples(
@@ -2246,64 +2490,58 @@ namespace
 
     double SignedArea(IN const std::vector<Point2>& Points_);
 
-    std::optional<SLoopCandidate> TraceFace(
-        IN std::size_t StartHalfEdge_,
-        IN OUT std::vector<SHalfEdge>& HalfEdges_,
-        IN const SSectionWireOptions& Options_,
-        IN const std::vector<SGraphNode>& Nodes_,
-        IN const std::vector<SGraphEdge>& GraphEdges_,
-        IN bool bLeftFace_)
+    std::vector<SLoopCandidate> TraceFace(
+        std::size_t startHalfEdge, std::vector<SHalfEdge>& halfEdges,
+        const SSectionWireOptions& options, const std::vector<SGraphNode>& nodes,
+        const std::vector<SGraphEdge>& graphEdges, bool leftFace)
     {
-        SLoopCandidate _Result;
-        auto _Current = StartHalfEdge_;
-        for (std::size_t _Step = 0; _Step <= HalfEdges_.size(); ++_Step)
+        std::vector<SLoopCandidate> loops;
+        std::vector<std::size_t> path;
+        std::unordered_map<std::size_t, std::size_t> nodePosition;
+        nodePosition.emplace(halfEdges[startHalfEdge].FromNode, 0);
+        auto current = startHalfEdge;
+        while (current < halfEdges.size() && !halfEdges[current].bVisited)
         {
-            if (_Current >= HalfEdges_.size() || HalfEdges_[_Current].bVisited)
+            auto& half = halfEdges[current];
+            half.bVisited = true;
+            path.push_back(current);
+            const auto existing = nodePosition.find(half.ToNode);
+            if (existing != nodePosition.end())
             {
-                return std::nullopt;
-            }
-            auto& _HalfEdge = HalfEdges_[_Current];
-            _HalfEdge.bVisited = true;
-            const auto& _GraphEdge = GraphEdges_[_HalfEdge.GraphEdge];
-            auto _Projected = _GraphEdge.Projected;
-            if (!_HalfEdge.bForward)
-            {
-                std::swap(_Projected.Start, _Projected.End);
-                std::reverse(_Projected.Samples.begin(), _Projected.Samples.end());
-            }
-            _Projected.bReversed = !_HalfEdge.bForward;
-            _Result.Edges.push_back(std::move(_Projected));
-            _Result.GraphEdgeIndices.push_back(_HalfEdge.GraphEdge);
-            AppendSamples(_Result.Edges.back(), _Result.Points);
-
-            _Current = NextLeftFaceHalfEdge(
-                _Current,
-                HalfEdges_,
-                Nodes_,
-                GraphEdges_,
-                bLeftFace_);
-            if (_Current == (std::numeric_limits<std::size_t>::max)())
-            {
-                return std::nullopt;
-            }
-            if (_Current == StartHalfEdge_)
-            {
-                if (_Result.Points.size() > 1
-                    && SamePoint(
-                        _Result.Points.front(),
-                        _Result.Points.back(),
-                        Options_.dConnectionTolerance))
+                // Any repeated node closes a loop. Retain only the closed
+                // suffix; a lead-in or a previous excursion is not its boundary.
+                const auto first = existing->second;
+                SLoopCandidate loop;
+                std::unordered_set<std::size_t> usedEdges;
+                bool simple = true;
+                for (std::size_t i = first; i < path.size(); ++i)
                 {
-                    _Result.Points.pop_back();
+                    const auto& step = halfEdges[path[i]];
+                    simple = usedEdges.insert(step.GraphEdge).second && simple;
+                    auto edge = graphEdges[step.GraphEdge].Projected;
+                    if (!step.bForward)
+                    {
+                        std::swap(edge.Start, edge.End);
+                        std::reverse(edge.Samples.begin(), edge.Samples.end());
+                    }
+                    edge.bReversed = !step.bForward;
+                    loop.Edges.push_back(std::move(edge));
+                    loop.GraphEdgeIndices.push_back(step.GraphEdge);
+                    AppendSamples(loop.Edges.back(), loop.Points);
                 }
-                _Result.dSignedArea = SignedArea(_Result.Points);
-                return std::abs(_Result.dSignedArea)
-                        > Options_.dConnectionTolerance * Options_.dConnectionTolerance
-                    ? std::optional<SLoopCandidate>(std::move(_Result))
-                    : std::nullopt;
+                if (loop.Points.size() > 1 && SamePoint(loop.Points.front(), loop.Points.back(), options.dConnectionTolerance))
+                    loop.Points.pop_back();
+                loop.dSignedArea = SignedArea(loop.Points);
+                if (simple && std::abs(loop.dSignedArea) > options.dConnectionTolerance * options.dConnectionTolerance)
+                    loops.push_back(std::move(loop));
+                for (std::size_t i = first + 1; i < path.size(); ++i)
+                    nodePosition.erase(halfEdges[path[i]].FromNode);
+                path.resize(first);
             }
+            else nodePosition.emplace(half.ToNode, path.size());
+            current = NextLeftFaceHalfEdge(current, halfEdges, nodes, graphEdges, leftFace);
         }
-        return std::nullopt;
+        return loops;
     }
 
     std::size_t Degree(
@@ -2398,6 +2636,40 @@ namespace
         return _RemovedEdges;
     }
 
+    // A bridge can join two otherwise closed boundaries without either end
+    // having degree one. It belongs to no contour and would be walked twice
+    // by the unbounded face, splicing an inner loop into the outer loop.
+    std::size_t PruneBridgeEdges(const std::vector<SGraphNode>& nodes,
+        std::vector<SGraphEdge>& edges)
+    {
+        const auto none=(std::numeric_limits<std::size_t>::max)();
+        std::vector<std::size_t> order(nodes.size(),none),low(nodes.size()),parentEdge(nodes.size(),none),next(nodes.size());
+        std::vector<std::size_t> stack,bridges;std::size_t clock=0;
+        for(std::size_t root=0;root<nodes.size();++root){
+            if(order[root]!=none)continue;
+            order[root]=low[root]=clock++;stack.push_back(root);
+            while(!stack.empty()){
+                const auto node=stack.back();
+                if(next[node]<nodes[node].IncidentEdges.size()){
+                    const auto edgeId=nodes[node].IncidentEdges[next[node]++];
+                    if(!edges[edgeId].bActive||edgeId==parentEdge[node])continue;
+                    const auto other=OtherNode(edges[edgeId],node);
+                    if(order[other]==none){parentEdge[other]=edgeId;order[other]=low[other]=clock++;stack.push_back(other);}
+                    else low[node]=std::min(low[node],order[other]);
+                }else{
+                    stack.pop_back();
+                    if(parentEdge[node]!=none){
+                        const auto parent=OtherNode(edges[parentEdge[node]],node);
+                        if(low[node]>order[parent])bridges.push_back(parentEdge[node]);
+                        low[parent]=std::min(low[parent],low[node]);
+                    }
+                }
+            }
+        }
+        for(const auto edge:bridges)edges[edge].bActive=false;
+        return bridges.size();
+    }
+
     void BuildHalfEdges(
         IN const std::vector<SGraphEdge>& GraphEdges_,
         IN OUT std::vector<SGraphNode>& Nodes_,
@@ -2454,10 +2726,20 @@ namespace
                     auto _RightAngle = std::atan2(_RightDirection.Y, _RightDirection.X);
                     if (_LeftAngle < 0.0) _LeftAngle += 2.0 * kPi;
                     if (_RightAngle < 0.0) _RightAngle += 2.0 * kPi;
-                    if (std::abs(_LeftAngle - _RightAngle) > 1.0e-12)
-                    {
-                        return _LeftAngle < _RightAngle;
-                    }
+                    // Tangential branches have the same endpoint tangent.
+                    // Their cyclic order is determined by signed curvature,
+                    // not source edge IDs or the spacing of preview samples.
+                    const auto angleKey=[](double angle){
+                        constexpr double tolerance=1.0e-8;
+                        if(angle< tolerance||2.0*kPi-angle<tolerance)return std::int64_t{0};
+                        return static_cast<std::int64_t>(std::llround(angle/tolerance));
+                    };
+                    const auto leftKey=angleKey(_LeftAngle),rightKey=angleKey(_RightAngle);
+                    if(leftKey!=rightKey)return leftKey<rightKey;
+                    const auto& leftHalf=HalfEdges_[Left_];const auto& rightHalf=HalfEdges_[Right_];
+                    const auto leftCurvature=DirectedCurvature(GraphEdges_[leftHalf.GraphEdge],leftHalf.bForward);
+                    const auto rightCurvature=DirectedCurvature(GraphEdges_[rightHalf.GraphEdge],rightHalf.bForward);
+                    if(leftCurvature!=rightCurvature)return leftCurvature<rightCurvature;
                     return Left_ < Right_;
                 });
         }
@@ -2489,17 +2771,16 @@ namespace
             {
                 continue;
             }
-            const auto _Face = TraceFace(
+            const auto _Faces = TraceFace(
                 _HalfEdgeIndex,
                 HalfEdges_,
                 Options_,
                 Nodes_,
                 GraphEdges_,
                 bLeftFace_);
-            if (!_Face)
+            for (const auto& _FaceValue : _Faces)
             {
-                continue;
-            }
+            const auto* _Face = &_FaceValue;
             auto _Key = _Face->GraphEdgeIndices;
             std::sort(_Key.begin(), _Key.end());
             const auto _Existing = std::find(
@@ -2520,6 +2801,7 @@ namespace
                 _Loops[_ExistingIndex] = std::move(*_Face);
             }
         }
+        }
         return _Loops;
     }
 
@@ -2537,12 +2819,8 @@ namespace
         return Distance(Point_, Lerp(A_, B_, _U));
     }
 
-    enum class EPointRelation
-    {
-        Outside,
-        Boundary,
-        Inside
-    };
+    using section_detail::EPointRelation;
+    using section_detail::SExactCandidateClassifier;
 
     EPointRelation ClassifyPoint(
         IN const Point2& Point_,
@@ -2603,44 +2881,99 @@ namespace
         return { Edge_.Projected.Start, Edge_.Projected.End };
     }
 
+    TopoDS_Face CandidateFace(const SLoopCandidate& candidate, double tolerance)
+    {
+        if(!candidate.ExactFace.IsNull())return candidate.ExactFace;
+        BRepBuilderAPI_MakeWire wire;
+        const gp_Pln plane(gp_Pnt(0,0,0),gp_Dir(0,0,1));
+        for(const auto& edge:candidate.Edges) {
+            const auto c=iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Curve);
+            if(c.IsNull())return {};
+            BRepBuilderAPI_MakeEdge maker(GeomAPI::To3d(c,plane),edge.Range.First,edge.Range.Last);
+            if(!maker.IsDone())return {};
+            auto shape=maker.Edge();
+            BRep_Builder builder;
+            for(TopExp_Explorer v(shape,TopAbs_VERTEX);v.More();v.Next())
+                builder.UpdateVertex(TopoDS::Vertex(v.Current()),tolerance);
+            if(edge.bReversed)shape.Reverse();wire.Add(shape);
+        }
+        if(!wire.IsDone())return {};
+        // A candidate denotes a finite region. Use the native infinite-point
+        // classification to orient it independently of traversal direction.
+        auto boundary=wire.Wire();BRepBuilderAPI_MakeFace face(plane,boundary,false);
+        if(!face.IsDone())return {};
+        if(BRepTopAdaptor_FClass2d(face.Face(),tolerance).PerformInfinitePoint()==TopAbs_IN) {
+            boundary.Reverse();BRepBuilderAPI_MakeFace bounded(plane,boundary,false);
+            if(!bounded.IsDone())return {};candidate.ExactFace=bounded.Face();
+        } else candidate.ExactFace=face.Face();
+        return candidate.ExactFace;
+    }
+
     bool CandidateContainsAllActiveEdges(
         IN const SLoopCandidate& Candidate_,
         IN const std::vector<SGraphEdge>& GraphEdges_,
-        IN double Tolerance_)
+        IN double Tolerance_,
+        OUT std::string* Rejection_ = nullptr,
+        const std::function<void(const std::string&)>& Progress_ = {},
+        std::shared_ptr<SExactCandidateClassifier>* Cache_ = nullptr)
     {
+        if(Progress_)Progress_("outer candidate face edges="+std::to_string(Candidate_.Edges.size())
+            +" area="+std::to_string(Candidate_.dSignedArea));
         const auto _BoundaryEdges = MakeBoundaryEdgeSet(Candidate_);
+        auto cached=Cache_?*Cache_:std::shared_ptr<SExactCandidateClassifier>{};
+        if(!cached) {
+            const auto face=CandidateFace(Candidate_,Tolerance_);
+            if(face.IsNull()) { if(Rejection_)*Rejection_="Cannot build the closed candidate face"; return false; }
+            cached=std::make_shared<SExactCandidateClassifier>(face,Tolerance_);
+            if(Cache_)*Cache_=cached;
+        }
+        auto& classifier=*cached;
+        Bnd_Box enclosingBounds;
+        for(const auto& boundary:classifier.Boundary)enclosingBounds.Add(boundary.Bounds);
         for (std::size_t _Index = 0; _Index < GraphEdges_.size(); ++_Index)
         {
             if (!GraphEdges_[_Index].bActive || _BoundaryEdges.contains(_Index))
             {
                 continue;
             }
-            const auto _Points = EdgeSupportPoints(GraphEdges_[_Index]);
+            std::vector<Point2> _Points;
+            if(Progress_)Progress_("outer containment source-edge="+std::to_string(GraphEdges_[_Index].Projected.SourceEdgeId));
+            const auto& projected=GraphEdges_[_Index].Projected;
+            const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(projected.Curve);
+            for(int sample=0;sample<=64;++sample) {
+                const auto p=curve->Value(projected.Range.First+(projected.Range.Last-projected.Range.First)*(sample/64.0));
+                _Points.push_back({p.X(),p.Y()});
+            }
             for (std::size_t _PointIndex = 0; _PointIndex < _Points.size(); ++_PointIndex)
             {
-                const auto _Relation = ClassifyPoint(
-                    _Points[_PointIndex],
-                    Candidate_.Points,
-                    Tolerance_);
-                if (_Relation == EPointRelation::Outside)
-                {
+                if(!enclosingBounds.IsVoid()&&enclosingBounds.IsOut(gp_Pnt(_Points[_PointIndex].X,_Points[_PointIndex].Y,0))) {
+                    if(Rejection_)*Rejection_="Projected source edge "+std::to_string(GraphEdges_[_Index].Projected.SourceEdgeId)
+                        +" is outside the finite candidate bounds";
                     return false;
                 }
-                if (_PointIndex + 1 < _Points.size())
+                // This is the existing finite-boundary OUT fallback, tested
+                // first to avoid a redundant whole-wire ray on boundary points.
+                if(classifier.OnFiniteBoundary(_Points[_PointIndex]))continue;
+                const auto _Relation = classifier.Classify(_Points[_PointIndex]);
+                if (_Relation == EPointRelation::Outside)
                 {
-                    const auto _Middle = Lerp(
-                        _Points[_PointIndex],
-                        _Points[_PointIndex + 1],
-                        0.5);
-                    if (ClassifyPoint(
-                            _Middle,
-                            Candidate_.Points,
-                            Tolerance_)
-                        == EPointRelation::Outside)
-                    {
-                        return false;
+                    double nearest=std::numeric_limits<double>::infinity();
+                    const gp_Pnt p(_Points[_PointIndex].X,_Points[_PointIndex].Y,0);
+                    for(const auto& boundary:classifier.Boundary) {
+                        nearest=std::min({nearest,p.Distance(boundary.Curve->Value(boundary.First)),p.Distance(boundary.Curve->Value(boundary.Last))});
+                        GeomAPI_ProjectPointOnCurve projection(p,boundary.Curve,boundary.First,boundary.Last);
+                        if(projection.NbPoints())nearest=std::min(nearest,projection.LowerDistance());
                     }
+                    // The ray may miss an ON classification at a junction.
+                    // Distance to the finite exact boundary is the same
+                    // geometric boundary test used for IN classifications.
+                    if(nearest<=Tolerance_)continue;
+                    if(Rejection_)*Rejection_="Projected source edge "
+                        +std::to_string(GraphEdges_[_Index].Projected.SourceEdgeId)+" lies outside at ("
+                        +std::to_string(_Points[_PointIndex].X)+","+std::to_string(_Points[_PointIndex].Y)+") boundary-distance="+std::to_string(nearest);
+                    return false;
                 }
+
             }
         }
         return true;
@@ -2649,42 +2982,328 @@ namespace
     bool CandidateInteriorHasLine(
         IN const SLoopCandidate& Candidate_,
         IN const std::vector<SGraphEdge>& GraphEdges_,
-        IN double Tolerance_)
+        IN double Tolerance_,
+        OUT std::string& Rejection_)
     {
         const auto _BoundaryEdges = MakeBoundaryEdgeSet(Candidate_);
+        const auto face=CandidateFace(Candidate_,Tolerance_);
+        if(face.IsNull()){Rejection_="Cannot build candidate face";return true;}
+        SExactCandidateClassifier classifier(face,Tolerance_);
         for (std::size_t _Index = 0; _Index < GraphEdges_.size(); ++_Index)
         {
-            if (!GraphEdges_[_Index].bActive || _BoundaryEdges.contains(_Index))
+            if (_BoundaryEdges.contains(_Index))
             {
                 continue;
             }
-            const auto _Points = EdgeSupportPoints(GraphEdges_[_Index]);
+            std::vector<Point2> _Points;
+            const auto& projected=GraphEdges_[_Index].Projected;
+            const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(projected.Curve);
+            for(int sample=0;sample<=64;++sample) {
+                const auto p=curve->Value(projected.Range.First+(projected.Range.Last-projected.Range.First)*(sample/64.0));
+                _Points.push_back({p.X(),p.Y()});
+            }
             for (std::size_t _PointIndex = 0; _PointIndex < _Points.size(); ++_PointIndex)
             {
-                if (ClassifyPoint(
-                        _Points[_PointIndex],
-                        Candidate_.Points,
-                        Tolerance_)
+                if (classifier.Classify(_Points[_PointIndex])
                     == EPointRelation::Inside)
                 {
+                    Rejection_="Interior projected edge " + std::to_string(_Index)
+                        + " source=" + std::to_string(GraphEdges_[_Index].Projected.SourceEdgeId)
+                        + " at (" + std::to_string(_Points[_PointIndex].X) + ","
+                        + std::to_string(_Points[_PointIndex].Y) + ") active="
+                        + std::to_string(GraphEdges_[_Index].bActive);
+                    double boundaryDistance=(std::numeric_limits<double>::max)();
+                    const gp_Pnt point(_Points[_PointIndex].X,_Points[_PointIndex].Y,0);
+                    for(const auto& boundary:classifier.Boundary) {
+                        boundaryDistance=std::min({boundaryDistance,point.Distance(boundary.Curve->Value(boundary.First)),
+                            point.Distance(boundary.Curve->Value(boundary.Last))});
+                        GeomAPI_ProjectPointOnCurve projection(point,boundary.Curve,boundary.First,boundary.Last);
+                        if(projection.NbPoints())boundaryDistance=std::min(boundaryDistance,projection.LowerDistance());
+                    }
+                    Rejection_+=" boundary-distance="+std::to_string(boundaryDistance);
                     return true;
                 }
-                if (_PointIndex + 1 < _Points.size())
-                {
-                    const auto _Middle = Lerp(
-                        _Points[_PointIndex],
-                        _Points[_PointIndex + 1],
-                        0.5);
-                    if (ClassifyPoint(
-                            _Middle,
-                            Candidate_.Points,
-                            Tolerance_)
-                        == EPointRelation::Inside)
-                    {
-                        return true;
-                    }
+
+            }
+        }
+        return false;
+    }
+
+    struct SMaterialFaceProjection
+    {
+        std::uint64_t SourceFaceId;
+        TopoDS_Face Face;
+        double FirstX, LastX;
+        bool Spatial = false;
+        double PlanarAreaScale = 0;
+        TopoDS_Face Footprint;
+        Bnd_Box ProjectedBounds;
+    };
+
+    // Retain the filled, trimmed regions of source faces, including their
+    // holes. Boundary curves alone cannot distinguish material from a void.
+    // No sewing or material union is performed here. For curved source faces,
+    // intersect their original trimmed region with a candidate's axial prism.
+    std::vector<SMaterialFaceProjection> ProjectMaterialFaces(
+        const BRepModel& geometry, const SSectionWireOptions& options,
+        std::vector<std::string>& diagnostics,
+        const iCAX::OpenCascade::SOpenCascadeBRepBuildResult* prepared=nullptr)
+    {
+        std::vector<SMaterialFaceProjection> result;
+        iCAX::OpenCascade::SOpenCascadeBRepBuildResult local;
+        if(!prepared){local=iCAX::OpenCascade::ReconstructOpenCascadeShape(geometry);prepared=&local;}
+        const auto& built=*prepared;
+        if(!built.bOK)throw std::runtime_error("Cannot reconstruct source faces for material classification");
+        std::size_t nonPlanar=0;
+        const SGeometryIndex index(geometry);
+        struct SProjectionWork {std::uint64_t Id;TopoDS_Face Face;double PlanarAreaScale;};
+        std::vector<SProjectionWork> privateFaces;
+        for(const auto& [id,face]:built.Faces){
+            if(options.Progress)options.Progress("material support face="+std::to_string(id));
+            // Test read-only supports before making task-private geometry.
+            // Axial walls supply no projected material area and never enter
+            // the Boolean tests, so copying all their trims is wasted work.
+            const auto surface=BRep_Tool::Surface(face);if(surface.IsNull())continue;
+            const GeomLib_IsPlanarSurface planar(surface,options.dConnectionTolerance);
+            double scale=0;
+            if(planar.IsPlanar()){
+                scale=std::abs(planar.Plan().Axis().Direction().X());
+                if(scale<=std::sin(options.dFaceParallelToleranceRadians))continue;
+            }else{
+                const auto source=std::find_if(geometry.Faces.begin(),geometry.Faces.end(),[&](const auto& value){return value.Id==id;});
+                if(source!=geometry.Faces.end()&&IsSideFace(*source,index,options))continue;
+            }
+            privateFaces.push_back({id,TopoDS::Face(BRepBuilderAPI_Copy(face,true,false).Shape()),scale});
+        }
+        std::vector<std::optional<SMaterialFaceProjection>> regions(privateFaces.size());
+        const auto workers=iCAX::OpenCascade::detail::ForGeometryIndices(privateFaces.size(),options.nMaximumConcurrency,[&](std::size_t at){
+            const auto& [id,face,scale]=privateFaces[at];
+            // These boxes only reject disjoint material or enclose its prism;
+            // no dimensions or coverage are measured from them. A conservative
+            // native bound (without display triangulation) is sufficient. All
+            // surviving intersections still use the original precise trims.
+            Bnd_Box box;BRepBndLib::Add(face,box,false);
+            double x,y,z,X,Y,Z;box.Get(x,y,z,X,Y,Z);
+            SMaterialFaceProjection region{id,face,x,X,true,scale};
+            if(scale>0){
+                region.Footprint=section_detail::ProjectSingleValuedFace(face,options.dConnectionTolerance);
+            }
+            // Reuse the spatial box calculated above. Only a derived
+            // planar footprint needs another bound calculation.
+            if(region.Footprint.IsNull())region.ProjectedBounds=box;
+            else BRepBndLib::Add(region.Footprint,region.ProjectedBounds,false);
+            if(region.Spatial&&region.Footprint.IsNull()){
+                double x,y,z,X,Y,Z;region.ProjectedBounds.Get(x,y,z,X,Y,Z);region.ProjectedBounds.SetVoid();
+                region.ProjectedBounds.Add(gp_Pnt(y,z,0));region.ProjectedBounds.Add(gp_Pnt(Y,Z,0));
+            }
+            regions[at]=std::move(region);
+        });
+        for(auto& region:regions)if(region){if(region->PlanarAreaScale==0)++nonPlanar;result.push_back(std::move(*region));}
+        diagnostics.push_back("Projected independent material faces with CAD Task workers="+std::to_string(workers));
+        diagnostics.push_back("Copied "+std::to_string(privateFaces.size())+" material-support faces after filtering "+std::to_string(built.Faces.size()-privateFaces.size())+" non-projecting faces");
+        std::stable_sort(result.begin(),result.end(),[](const auto& a,const auto& b){return a.PlanarAreaScale>b.PlanarAreaScale;});
+        diagnostics.push_back("Retained trimmed material regions from " + std::to_string(result.size()-nonPlanar)
+            + " planar source faces and " + std::to_string(nonPlanar)
+            + " curved source faces for axial-prism intersection");
+        return result;
+    }
+
+    using section_detail::ProjectionMultiplicityBound;
+    using section_detail::SingleValuedMaterialPatches;
+
+    bool CandidateIsMaterialRegion(const SLoopCandidate& candidate,
+        const std::vector<SMaterialFaceProjection>& material,double tolerance,std::string& reason,
+        const std::function<void(const std::string&)>& progress,std::size_t maximumConcurrency=0)
+    {
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 2
+        // MSVC checked containers serialize their iterator bookkeeping. These
+        // allocation-heavy Booleans lose throughput under that global lock:
+        // keep this stage serial, while face projection, normalization and
+        // skin classification continue to use the geometry Task pool.
+        maximumConcurrency=1;
+#endif
+        const auto face=CandidateFace(candidate,tolerance);
+        if(face.IsNull())throw std::runtime_error("Cannot build inner candidate for material classification");
+        GProp_GProps candidateProperties;BRepGProp::SurfaceProperties(face,candidateProperties,1e-9);
+        const auto candidateArea=std::abs(candidateProperties.Mass());
+        GProp_GProps perimeter;BRepGProp::LinearProperties(face,perimeter);
+        // Permit only a boundary strip at the configured geometric precision;
+        // this is an area uncertainty, not a small-cavity size filter.
+        const double areaUncertainty=tolerance*std::max(tolerance,perimeter.Mass());
+        const bool belowAreaPrecision=candidateArea<=areaUncertainty;
+        Bnd_Box bounds;BRepBndLib::AddOptimal(face,bounds,false,false);
+        TopoDS_Shape prism;
+        if(std::any_of(material.begin(),material.end(),[](const auto& region){return region.Spatial;})){
+            double first=(std::numeric_limits<double>::max)(),last=(std::numeric_limits<double>::lowest)();
+            for(const auto& region:material){first=std::min(first,region.FirstX);last=std::max(last,region.LastX);}
+            // P is in the projected material region iff the line parallel to
+            // X through P meets the original face. Intersecting the filled
+            // candidate prism with that face tests this over the whole region,
+            // including trimming and holes, without replacing it by a polygon.
+            gp_Trsf tr;tr.SetValues(0,0,1,first-tolerance, 1,0,0,0, 0,1,0,0);
+            const auto section=BRepBuilderAPI_Transform(face,tr,true).Shape();
+            prism=BRepPrimAPI_MakePrism(section,gp_Vec(last-first+2*tolerance,0,0)).Shape();
+        }
+        double possibleCoverage=0;
+        bool hasMaterialFaceIntersection=false;
+        std::string coverageEvidence;
+        std::vector<const SMaterialFaceProjection*> coveringRegions;
+        struct SIntersection {
+            bool Overlaps=false,Evaluated=false,Valid=false;
+            TopoDS_Shape Argument,Tool,Shape;
+            double Area=0;
+            std::exception_ptr Error;
+        };
+        std::vector<SIntersection> intersections(material.size());
+        for(std::size_t i=0;i<material.size();++i){
+            intersections[i].Overlaps=!bounds.IsOut(material[i].ProjectedBounds);
+        }
+        const auto workers=iCAX::OpenCascade::detail::GeometryConcurrency(maximumConcurrency);
+        bool evaluatedAny=false;
+        // First try one support: a single end face often proves a filled cell.
+        // Only unresolved cells need bounded parallel batches. Preparing every
+        // Boolean up front defeats early acceptance on repeated profiles.
+        for(std::size_t i=0;i<material.size();++i) {
+            if(!intersections[i].Overlaps)continue;
+            if(!intersections[i].Evaluated){
+                std::vector<std::size_t> batch;
+                const auto batchSize=evaluatedAny?workers:std::size_t{1};
+                for(std::size_t j=i;j<material.size()&&batch.size()<batchSize;++j){
+                    auto& job=intersections[j];if(!job.Overlaps)continue;
+                    const auto& region=material[j];
+                    if(progress)progress("material common face="+std::to_string(region.SourceFaceId)+" candidate-area="+std::to_string(candidateArea));
+                    job.Argument=BRepBuilderAPI_Copy(region.Spatial&&region.Footprint.IsNull()?prism:TopoDS_Shape(face),true,false).Shape();
+                    job.Tool=BRepBuilderAPI_Copy(region.Footprint.IsNull()?region.Face:region.Footprint,true,false).Shape();
+                    batch.push_back(j);
+                }
+                iCAX::OpenCascade::detail::ForGeometryIndices(batch.size(),maximumConcurrency,[&](std::size_t at){
+                    auto& job=intersections[batch[at]];
+                    try{
+                        TopTools_ListOfShape arguments,tools;arguments.Append(job.Argument);tools.Append(job.Tool);
+                        BRepAlgoAPI_Common common;common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
+                        job.Valid=common.IsDone();if(job.Valid){job.Shape=common.Shape();job.Valid=BRepCheck_Analyzer(job.Shape).IsValid();}
+                        if(job.Valid){GProp_GProps properties;BRepGProp::SurfaceProperties(job.Shape,properties,1e-9);job.Area=properties.Mass();}
+                    }catch(...){job.Error=std::current_exception();}
+                    job.Evaluated=true;
+                });
+                evaluatedAny=true;
+            }
+            // Consume in source order; later speculative failures cannot
+            // override an earlier complete material-coverage proof.
+            const auto& region=material[i];const auto& intersection=intersections[i];
+            if(intersection.Error)std::rethrow_exception(intersection.Error);
+            const bool footprint=!region.Footprint.IsNull();
+            if(!intersection.Valid) {
+                // An invalid Boolean has no positive coverage evidence. The
+                // entire original face area remains a conservative upper
+                // bound, so a small failed intersection cannot fill a large
+                // cavity and a potentially covering face still needs proof.
+                GProp_GProps sourceArea;BRepGProp::SurfaceProperties(region.Face,sourceArea,1e-9);
+                possibleCoverage+=std::abs(sourceArea.Mass())*(region.PlanarAreaScale>0?region.PlanarAreaScale:1.);
+                coveringRegions.push_back(&region);
+                coverageEvidence+=" invalid-common source-face="+std::to_string(region.SourceFaceId);
+                continue;
+            }
+            hasMaterialFaceIntersection=hasMaterialFaceIntersection||TopExp_Explorer(intersection.Shape,TopAbs_FACE).More();
+            if(intersection.Area<0)throw std::runtime_error("Candidate/source-face intersection has negative material area: source-face="+std::to_string(region.SourceFaceId));
+            const auto spatialArea=intersection.Area;
+            double upper=spatialArea,lower=region.Spatial?0.0:spatialArea;
+            if(region.PlanarAreaScale>0) {
+                upper=lower=spatialArea*(footprint?1.:region.PlanarAreaScale);
+            }
+            else if(region.Spatial&&spatialArea>areaUncertainty){
+                // Orthogonal footprint area is integral |normal.X| dA, not
+                // the original 3D area. Invertible compression X*=e measures
+                // sqrt(nx^2+e^2*(ny^2+nz^2)) dA, an upper bound whose error
+                // is at most e*spatialArea. Preserve the actual face trims.
+                const auto errorBudget=areaUncertainty/16.0;
+                const auto compression=errorBudget/spatialArea;
+                gp_GTrsf project;project.SetVectorialPart(gp_Mat(compression,0,0, 0,1,0, 0,0,1));
+                BRepBuilderAPI_GTransform projected(intersection.Shape,project,true);
+                if(!projected.IsDone())throw std::runtime_error("Cannot measure projected material coverage");
+                GProp_GProps p;BRepGProp::SurfaceProperties(projected.Shape(),p,1e-9);
+                upper=std::abs(p.Mass());lower=std::max(0.0,upper-errorBudget);
+            }
+            possibleCoverage+=upper;
+            if(upper>0)coveringRegions.push_back(&region);
+            if(upper>0)coverageEvidence+=" face="+std::to_string(region.SourceFaceId)
+                +" coverage=["+std::to_string(lower)+","+std::to_string(upper)+"]";
+            int multiplicity=1;
+            if(region.Spatial&&upper>=candidateArea-areaUncertainty){
+                const auto bound=ProjectionMultiplicityBound(region.Face,tolerance);
+                if(!bound)continue;
+                multiplicity=*bound;
+            }
+            // A footprint can cover the same point repeatedly (a sphere has
+            // front and back sheets). Dividing by a proven maximum fiber
+            // multiplicity gives a lower bound on covered area. Reject only
+            // when that lower bound fills the cell, within its precision.
+            if(!belowAreaPrecision&&lower/multiplicity>=candidateArea-areaUncertainty) {
+                reason="source face " + std::to_string(region.SourceFaceId)
+                    + " fills candidate cell: covered-area lower bound "
+                    + std::to_string(lower/multiplicity) + " of " + std::to_string(candidateArea)
+                    + " mm2; axial range ["
+                    + std::to_string(region.FirstX) + "," + std::to_string(region.LastX) + "]";
+                return true;
+            }
+        }
+        if(!hasMaterialFaceIntersection&&possibleCoverage<candidateArea-areaUncertainty)return false;
+        // Resolve overlapping footprints by subtracting their exact axial
+        // sweeps from the candidate section. A sweep of a single-valued face
+        // is a solid whose section is precisely its footprint. This retains
+        // the original trims/pcurves and avoids a singular flattening transform.
+        // Never fuse source solids or count overlapping areas twice.
+        if(possibleCoverage>=candidateArea-areaUncertainty) {
+            // Already planar footprints share the exact candidate plane.
+            // Subtract there directly: an artificial very thin swept solid
+            // can be swallowed by Boolean tolerances on otherwise exact caps.
+            const bool planarFootprints=std::all_of(coveringRegions.begin(),coveringRegions.end(),
+                [](const auto* region){return !region->Footprint.IsNull();});
+            gp_Trsf toYZ;toYZ.SetValues(0,0,1,0, 1,0,0,0, 0,1,0,0);
+            TopoDS_Shape uncovered=planarFootprints?TopoDS_Shape(face):BRepBuilderAPI_Transform(face,toYZ,true).Shape();
+            for(const auto* region:coveringRegions) {
+                const auto patches=planarFootprints?std::vector<TopoDS_Face>{region->Footprint}
+                    :!region->Footprint.IsNull()?std::vector<TopoDS_Face>{TopoDS::Face(BRepBuilderAPI_Transform(region->Footprint,toYZ,true).Shape())}
+                    :region->PlanarAreaScale>0?std::vector<TopoDS_Face>{region->Face}
+                    :SingleValuedMaterialPatches(region->Face,tolerance);
+                for(const auto& patch:patches) {
+                if(progress)progress("material footprint subtraction face="+std::to_string(region->SourceFaceId));
+                gp_Trsf shift;shift.SetTranslation(gp_Vec(region->Footprint.IsNull()?-region->LastX-tolerance:-tolerance,0,0));
+                const auto start=BRepBuilderAPI_Transform(patch,shift,true).Shape();
+                auto sweep=planarFootprints?TopoDS_Shape(patch):BRepPrimAPI_MakePrism(start,gp_Vec(region->LastX-region->FirstX+2*tolerance,0,0)).Shape();
+                if(sweep.IsNull()||!BRepCheck_Analyzer(sweep).IsValid())continue;
+                if(!planarFootprints){GProp_GProps volume;BRepGProp::VolumeProperties(sweep,volume);
+                    if(volume.Mass()<0)sweep.Reverse();}
+                TopTools_ListOfShape subtractArguments,subtractTools;
+                subtractArguments.Append(uncovered);subtractTools.Append(sweep);
+                BRepAlgoAPI_Cut subtract;subtract.SetArguments(subtractArguments);subtract.SetTools(subtractTools);
+                subtract.SetNonDestructive(true);subtract.Build();
+                if(!subtract.IsDone()||!BRepCheck_Analyzer(subtract.Shape()).IsValid()) {
+                    // An unusable redundant support supplies no coverage
+                    // evidence. Keep the previous exact remainder; another
+                    // valid support may still prove the complete union.
+                    if(progress)progress("material footprint subtraction supplied no proof face="
+                        +std::to_string(region->SourceFaceId));
+                    continue;
+                }
+                uncovered=subtract.Shape();
+                GProp_GProps remaining;BRepGProp::SurfaceProperties(uncovered,remaining,1e-9);
+                const auto remainingArea=std::abs(remaining.Mass());
+                if(progress)progress("material footprint uncovered-area="+std::to_string(remainingArea));
+                const bool empty= !TopExp_Explorer(uncovered,TopAbs_FACE).More();
+                // Below boundary-area precision an area comparison cannot
+                // classify anything. Require an exactly empty topological
+                // remainder instead; never discard a small cell by its size.
+                if(empty||(!belowAreaPrecision&&remainingArea<=areaUncertainty)) {
+                    reason="exact union of source-face footprints fills candidate cell; uncovered-area="
+                        +std::to_string(remainingArea)+" of "+std::to_string(candidateArea)+" mm2";
+                    return true;
+                }
                 }
             }
+            throw std::runtime_error("Material projection coverage is ambiguous for a candidate cell; exact footprint subdivision is required; candidate-area="
+                +std::to_string(candidateArea)+" area-uncertainty="+std::to_string(areaUncertainty)
+                +" summed-upper="+std::to_string(possibleCoverage)+coverageEvidence);
         }
         return false;
     }
@@ -2852,9 +3471,9 @@ namespace
                 // curvature, not a fixed-distance look-ahead.  Curvature is
                 // scale independent and does not disappear merely because
                 // the edge is sampled at a small physical interval.
-                const auto _LocalTurn = SignedCurvatureAtNode(
+                const auto _LocalTurn = DirectedCurvature(
                     GraphEdges_[_Candidate],
-                    _NextNode);
+                    _NextNode==GraphEdges_[_Candidate].StartNode);
 
                 constexpr auto _TurnTieTolerance = 1.0e-4;
                 const auto _PrimaryTurnIsBetter = _Turn
@@ -2968,11 +3587,13 @@ namespace
     }
 }
 
-SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
+static SSectionWiresResult ExtractAxialSectionWires(
     IN const iCAX::GeometryData::BRepModel& Geometry_,
-    IN const SSectionWireOptions& Options_) const
+    IN const SSectionWireOptions& Options_)
 {
     SSectionWiresResult _Result;
+    const auto progress=[&](const std::string& message){if(Options_.Progress)Options_.Progress(message);};
+    progress("build source");
     if (Options_.dFaceParallelToleranceRadians <= 0.0
         || Options_.dFaceParallelToleranceRadians >= 0.5 * kPi
         || Options_.dConnectionTolerance <= 0.0
@@ -2994,14 +3615,40 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     }
     const auto _PartAxialSpan = _PartLastX - _PartFirstX;
     std::size_t _SkippedLocalCutWires = 0;
+    std::size_t _TransverseFaces = 0;
+    const auto _SourceShape = iCAX::OpenCascade::ReconstructOpenCascadeShape(Geometry_);
+    if (!_SourceShape.bOK)
+    {
+        _Result.Diagnostics.push_back("Cannot reconstruct source faces for section boundaries");
+        return _Result;
+    }
     std::unordered_map<std::uint64_t, std::tuple<const BRepEdge*, std::uint64_t, std::uint64_t>> _Sources;
+    decltype(_Sources) _TransverseSources;
+    std::unordered_map<std::uint64_t, std::uint64_t> _AxialSourceFaces;
     for (const auto& _Face : Geometry_.Faces)
     {
-        if (!IsSideFace(_Face, _Index, Options_))
+        const bool _SideFace = IsSideFace(_Face, _Index, Options_);
+        bool _TransverseFace = false;
+        if (!_SideFace)
+        {
+            const auto _Found = _SourceShape.Faces.find(_Face.Id);
+            if (_Found != _SourceShape.Faces.end())
+            {
+                const auto _Surface = BRep_Tool::Surface(_Found->second);
+                if (!_Surface.IsNull())
+                {
+                    const GeomLib_IsPlanarSurface _Planar(_Surface, Options_.dConnectionTolerance);
+                    _TransverseFace = _Planar.IsPlanar()
+                        && std::abs(_Planar.Plan().Axis().Direction().X())
+                            >= std::cos(Options_.dFaceParallelToleranceRadians);
+                }
+            }
+        }
+        if (!_SideFace && !_TransverseFace)
         {
             continue;
         }
-        _Result.SideFaceIds.push_back(_Face.Id);
+        if (_TransverseFace) ++_TransverseFaces;
         std::vector<double> _WireAxialSpans;
         _WireAxialSpans.reserve(_Face.WireIds.size());
         for (const auto _WireID : _Face.WireIds)
@@ -3026,11 +3673,17 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         }
         const auto _LargestWireSpan = _WireAxialSpans.empty() ? 0.0
             : *std::max_element(_WireAxialSpans.begin(), _WireAxialSpans.end());
+        if (_SideFace) _Result.SideFaceIds.push_back(_Face.Id);
+        // Transverse faces supply real boundary edges that need not belong to
+        // a longitudinal side face (for example, an end lip next to a chamfer).
+        // Without them the projection has dangling sides, which graph pruning
+        // incorrectly shortens to an interior cross-edge. Keep their trimmed
+        // wires; material-region classification still excludes filled loops.
         // A hole drilled through a side wall adds local inner wires to that
         // wall. Their intersection curves are machining boundaries, not the
         // profile at a clean axial station. Only filter them when a separate
         // wire on the same face demonstrably spans most of the tube length.
-        const bool _HasSpanningBoundary = _PartAxialSpan > Options_.dConnectionTolerance
+        const bool _HasSpanningBoundary = _SideFace && _PartAxialSpan > Options_.dConnectionTolerance
             && _LargestWireSpan >= 0.9 * _PartAxialSpan;
         for (std::size_t _WireIndex = 0; _WireIndex < _Face.WireIds.size(); ++_WireIndex)
         {
@@ -3054,7 +3707,15 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
                 {
                     continue;
                 }
-                auto [_Iter, _Inserted] = _Sources.emplace(
+                auto& _FaceSources = _SideFace ? _Sources : _TransverseSources;
+                const auto* _Surface = FindSurface(_Index, _Face.Surface3Id);
+                if (_SideFace && _Surface
+                    && (std::holds_alternative<iCAX::GeometryData::CylindricalSurface3>(*_Surface)
+                        || std::holds_alternative<iCAX::GeometryData::RevolutionSurface3>(*_Surface)
+                        || std::holds_alternative<iCAX::GeometryData::ExtrusionSurface3>(*_Surface)
+                        || std::holds_alternative<iCAX::GeometryData::BSplineSurface3>(*_Surface)))
+                    _AxialSourceFaces.emplace(_Edge->Id, _Face.Id);
+                auto [_Iter, _Inserted] = _FaceSources.emplace(
                     _Edge->Id,
                     std::make_tuple(
                         _Edge,
@@ -3076,6 +3737,8 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             "Ignored " + std::to_string(_SkippedLocalCutWires)
             + " local side-face cut wires outside the spanning extrusion boundary");
     }
+    _Result.Diagnostics.push_back("Retained boundary evidence from " + std::to_string(_TransverseFaces)
+        + " transverse planar faces");
     if (_Result.SideFaceIds.empty())
     {
         _Result.Diagnostics.push_back("No face parallel to the X axis was found");
@@ -3086,6 +3749,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     _ProjectedEdges.reserve(_Sources.size());
     for (const auto& [_EdgeID, _Source] : _Sources)
     {
+        progress("project edge="+std::to_string(_EdgeID));
         const auto* _Curve = [&]() -> const Curve3* {
             const auto _Iter = _Index.Curves.find(std::get<0>(_Source)->Curve3Id);
             return _Iter == _Index.Curves.end() ? nullptr : _Iter->second;
@@ -3094,13 +3758,38 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         {
             continue;
         }
-        const auto _Projected = MakeProjectedEdge(
+        auto _Projected = MakeProjectedEdge(
             *std::get<0>(_Source),
             std::get<1>(_Source),
             std::get<2>(_Source),
             *_Curve,
             _Index,
             Options_);
+        // Preserve analytically straight source edges: an axial generator
+        // projects to a point. A short curved spline may have been simplified
+        // to a line within tolerance, so use its original source type here;
+        // it must still receive the exact circular surface projection.
+        if (_Projected
+            && !std::holds_alternative<iCAX::GeometryData::Line3>(*_Curve)
+            && !std::holds_alternative<iCAX::GeometryData::Ray3>(*_Curve)
+            && !std::holds_alternative<iCAX::GeometryData::Segment3>(*_Curve))
+        {
+            if (const auto face = _AxialSourceFaces.find(_EdgeID); face != _AxialSourceFaces.end())
+            {
+                const auto* sourceFace = [&]() -> const BRepFace* {
+                    const auto found = std::find_if(Geometry_.Faces.begin(), Geometry_.Faces.end(),
+                        [&](const auto& f) { return f.Id == face->second; });
+                    return found == Geometry_.Faces.end() ? nullptr : &*found;
+                }();
+                const auto* surface = sourceFace ? FindSurface(_Index, sourceFace->Surface3Id) : nullptr;
+                const auto* spline = surface ? std::get_if<iCAX::GeometryData::BSplineSurface3>(surface) : nullptr;
+                bool pointProjection=false;
+                if (const auto boundary = ProjectAxialSurfaceBoundary(_SourceShape.Edges.at(_EdgeID),
+                        _SourceShape.Faces.at(face->second), _EdgeID, Options_, spline,&pointProjection))
+                    _Projected = boundary;
+                else if(pointProjection) { progress("authoritative axial boundary projects to a point: source="+std::to_string(_EdgeID));continue; }
+            }
+        }
         if (!_Projected)
         {
             continue;
@@ -3112,11 +3801,20 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         _Result.Diagnostics.push_back("Side faces produced no non-degenerate projected edges");
         return _Result;
     }
+    const auto traceProjection=[&](const char* stage,const auto& edges) {
+        if(!Options_.Progress)return;
+        for(const auto& edge:edges)progress(std::string("projection ")+stage+" source="+std::to_string(edge.SourceEdgeId)
+            +" start=("+std::to_string(edge.Start.X)+","+std::to_string(edge.Start.Y)
+            +") end=("+std::to_string(edge.End.X)+","+std::to_string(edge.End.Y)+")");
+    };
+    traceProjection("source",_ProjectedEdges);
 
     // 1. Merge coincident coverage, including contained and partially
     // overlapping edges. Only surviving endpoints participate in step 2.
     const auto _UnmergedCount = _ProjectedEdges.size();
+    progress("merge projected edges count="+std::to_string(_UnmergedCount));
     _ProjectedEdges = MergeProjectedEdges(std::move(_ProjectedEdges), Options_);
+    traceProjection("merged",_ProjectedEdges);
     _Result.Diagnostics.push_back("Merged " + std::to_string(_UnmergedCount - _ProjectedEdges.size())
         + " overlapping projected edges before endpoint-on-edge splitting");
 
@@ -3128,6 +3826,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         Options_.dConnectionTolerance);
     std::vector<std::vector<double>> _SplitParameters(_ProjectedEdges.size());
     std::size_t _InteriorSplitCount = 0;
+    progress("split endpoint contacts");
     for (std::size_t _EdgeIndex = 0; _EdgeIndex < _ProjectedEdges.size(); ++_EdgeIndex)
     {
         const auto& _Edge = _ProjectedEdges[_EdgeIndex];
@@ -3164,6 +3863,28 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         }
     }
 
+    // Projection can introduce crossings in the interiors of both edges.
+    // Endpoint-on-edge tests alone do not produce a planar embedding.
+    std::vector<Handle(Geom2d_Curve)> intersectionCurves;
+    for(const auto& edge:_ProjectedEdges){
+        const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Curve);
+        intersectionCurves.push_back(curve.IsNull()?curve:Handle(Geom2d_Curve)(new Geom2d_TrimmedCurve(curve,edge.Range.First,edge.Range.Last)));
+    }
+    for(std::size_t i=0;i<_ProjectedEdges.size();++i)for(std::size_t j=i+1;j<_ProjectedEdges.size();++j){
+        if(intersectionCurves[i].IsNull()||intersectionCurves[j].IsNull())continue;
+        const auto& a=_ProjectedEdgeIndex.Bounds[i];const auto& b=_ProjectedEdgeIndex.Bounds[j];
+        const double tolerance=Options_.dConnectionTolerance;
+        if(a.MaximumX+tolerance<b.MinimumX||b.MaximumX+tolerance<a.MinimumX
+            ||a.MaximumY+tolerance<b.MinimumY||b.MaximumY+tolerance<a.MinimumY)continue;
+        if(Options_.Progress)progress("intersect projected edges="+std::to_string(_ProjectedEdges[i].SourceEdgeId)
+            +","+std::to_string(_ProjectedEdges[j].SourceEdgeId));
+        Geom2dAPI_InterCurveCurve intersection(intersectionCurves[i],intersectionCurves[j],tolerance);
+        for(int k=1;k<=intersection.NbPoints();++k){
+            const auto p=intersection.Point(k);const Point2 point{p.X(),p.Y()};
+            for(const auto index:{i,j})if(const auto projection=ProjectPointToEdge(_ProjectedEdges[index],point,tolerance))
+                if(projection->U>1e-8&&projection->U<1.0-1e-8)_SplitParameters[index].push_back(projection->U);
+        }
+    }
     std::vector<SSectionWireEdge> _PlanarizedEdges;
     _PlanarizedEdges.reserve(_ProjectedEdges.size() + _InteriorSplitCount);
     for (std::size_t _EdgeIndex = 0; _EdgeIndex < _ProjectedEdges.size(); ++_EdgeIndex)
@@ -3192,6 +3913,20 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             + " projected edges at endpoint-on-edge interior contacts");
     }
 
+    // Splitting may expose coincident arcs represented by different source
+    // curve types (e.g. an analytic circle and an IGES/STEP spline). Collapse
+    // only equal complete pieces here; never merge across a newly split node.
+    std::vector<SSectionWireEdge> uniquePieces;
+    for(auto& piece:_PlanarizedEdges) {
+        auto found=std::find_if(uniquePieces.begin(),uniquePieces.end(),[&](const auto& other){
+            return SameProjectedEdge(piece,other,Options_.dConnectionTolerance);
+        });
+        if(found==uniquePieces.end())uniquePieces.push_back(std::move(piece));
+        else if(ConicInterval(piece.Curve)&&!ConicInterval(found->Curve))*found=std::move(piece);
+    }
+    _PlanarizedEdges=std::move(uniquePieces);
+    traceProjection("split",_PlanarizedEdges);
+
     // 3. Merge points only after all remaining endpoint-on-edge contacts have
     // split their hosts. Do not merge edges again: these splits define nodes.
     std::vector<SGraphNode> _Nodes;
@@ -3201,16 +3936,18 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     _GraphEdges.reserve(_PlanarizedEdges.size());
     for (const auto& _Projected : _PlanarizedEdges)
     {
-        const auto _StartNode = FindOrAddNode(
-            _Projected.Start,
-            Options_.dConnectionTolerance,
-            _Nodes,
-            _Grid);
-        const auto _EndNode = FindOrAddNode(
-            _Projected.End,
-            Options_.dConnectionTolerance,
-            _Nodes,
-            _Grid);
+        const auto _StartNode=FindOrAddNode(_Projected.Start,Options_.dConnectionTolerance,_Nodes,_Grid);
+        const auto _EndNode=FindOrAddNode(_Projected.End,Options_.dConnectionTolerance,_Nodes,_Grid);
+        // Endpoint clustering contracts sub-tolerance pieces to a single
+        // vertex. Such a piece must not remain a directed graph self-loop.
+        // Test the entire exact-curve bounding box: a genuine closed circle
+        // also shares an endpoint but has non-degenerate spatial extent.
+        if (_StartNode == _EndNode) {
+            const auto bounds = GetBounds(_Projected);
+            if (std::hypot(bounds.MaximumX-bounds.MinimumX,
+                           bounds.MaximumY-bounds.MinimumY) <= Options_.dConnectionTolerance)
+                continue;
+        }
         const auto _GraphIndex = _GraphEdges.size();
         _GraphEdges.push_back({ _Projected, _StartNode, _EndNode, false });
         _Nodes[_StartNode].IncidentEdges.push_back(_GraphIndex);
@@ -3220,6 +3957,204 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         }
     }
 
+
+    // Complete dangling side boundaries only with actual transverse BRep
+    // edges. Importers may encode the same corner differently on an end face
+    // and its side face; injecting every end-face curve would duplicate those
+    // already connected boundaries. A completion must connect a free end to
+    // an existing node (which may already be a branch), without crossing the
+    // graph or duplicating an existing edge.
+    struct SBoundaryCompletion { SSectionWireEdge Edge; std::size_t Start, End; };
+    std::vector<SBoundaryCompletion> completions;
+    std::vector<SSectionWireEdge> completionEdges;
+    std::vector<std::uint64_t> transverseIds;
+    for (const auto& [id, source] : _TransverseSources) transverseIds.push_back(id);
+    std::sort(transverseIds.begin(), transverseIds.end());
+    for (const auto id : transverseIds)
+    {
+        const auto& source = _TransverseSources.at(id);
+        const auto found = _Index.Curves.find(std::get<0>(source)->Curve3Id);
+        if (found == _Index.Curves.end()) continue;
+        const auto* curve = found->second;
+        const auto edge = MakeProjectedEdge(*std::get<0>(source), std::get<1>(source),
+            std::get<2>(source), *curve, _Index, Options_);
+        if (edge) completionEdges.push_back(*edge);
+    }
+    // A rounded end can have no topological edge at the extreme of the
+    // projection. On a cylinder its silhouette satisfies n dot X = 0: cut
+    // the original trimmed face by the plane through its axis with normal
+    // X - (X dot axis) axis. Only genuine face-clipped generators can close
+    // free endpoints; this never draws an arbitrary segment across a gap.
+    if (std::count_if(_Nodes.begin(), _Nodes.end(), [&](const auto& node) {
+        return Degree(static_cast<std::size_t>(&node - _Nodes.data()), _Nodes, _GraphEdges) == 1;
+    }) >= 2)
+    {
+        for (const auto& face : Geometry_.Faces)
+        {
+            const auto* surface = FindSurface(_Index, face.Surface3Id);
+            if (!surface || IsSideFace(face, _Index, Options_)) continue;
+            std::optional<gp_Ax1> axis;
+            std::visit([&](const auto& s) {
+                using T = std::decay_t<decltype(s)>;
+                if constexpr (std::is_same_v<T, iCAX::GeometryData::CylindricalSurface3>)
+                    axis = gp_Ax1(gp_Pnt(s.Placement.Location.X,s.Placement.Location.Y,s.Placement.Location.Z),
+                        gp_Dir(s.Placement.ZDirection.X,s.Placement.ZDirection.Y,s.Placement.ZDirection.Z));
+                else if constexpr (std::is_same_v<T, iCAX::GeometryData::RevolutionSurface3>)
+                {
+                    const bool axial = std::visit([&](const auto& basis) {
+                        using C = std::decay_t<decltype(basis)>;
+                        if constexpr (std::is_same_v<C,iCAX::GeometryData::Line3>)
+                            return std::abs(Dot(ToVector(basis.Axis.Direction),ToVector(s.Axis.Direction))) >= 1.0-1.0e-12;
+                        else return false;
+                    },s.Basis);
+                    if(axial)axis=gp_Ax1(gp_Pnt(s.Axis.Location.X,s.Axis.Location.Y,s.Axis.Location.Z),
+                        gp_Dir(s.Axis.Direction.X,s.Axis.Direction.Y,s.Axis.Direction.Z));
+                }
+            },*surface);
+            if (!axis) continue;
+            progress("silhouette source-face="+std::to_string(face.Id));
+            const gp_Vec a(axis->Direction()), projection(1,0,0);
+            const gp_Vec normal = projection - a * projection.Dot(a);
+            if (normal.SquareMagnitude() < 1.0e-20) continue;
+            BRepAlgoAPI_Section cut(_SourceShape.Faces.at(face.Id),gp_Pln(axis->Location(),gp_Dir(normal)),false);
+            cut.SetNonDestructive(true);cut.Build();
+            if (!cut.IsDone()) continue;
+            const auto silhouette = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(cut.Shape(),"","",Options_.dConnectionTolerance);
+            const SGeometryIndex silhouetteIndex(silhouette);
+            for (const auto& source : silhouette.Edges)
+            {
+                const auto found = silhouetteIndex.Curves.find(source.Curve3Id);
+                if (found == silhouetteIndex.Curves.end()) continue;
+                auto edge = MakeProjectedEdge(source,source.StartVertexId,source.EndVertexId,*found->second,silhouetteIndex,Options_);
+                if (!edge) continue;
+                edge->SourceEdgeId=0;edge->SourceFaceId=face.Id;
+                completionEdges.push_back(std::move(*edge));
+            }
+        }
+    }
+    if(std::any_of(_Nodes.begin(),_Nodes.end(),[&](const auto& node) {
+        return Degree(static_cast<std::size_t>(&node-_Nodes.data()),_Nodes,_GraphEdges)==1;
+    })) {
+    // End-face evidence can meet a side boundary in its interior or contain
+    // intermediate vertices. Planarize those actual contacts before finding
+    // a completion; requiring one end-face edge to join two existing free
+    // nodes misses valid channel flanges.
+    completionEdges=MergeProjectedEdges(std::move(completionEdges),Options_);
+    std::vector<SGraphEdge> sidePieces;
+    for(const auto& existing:_GraphEdges) {
+        std::vector<double> cuts;
+        for(const auto& cap:completionEdges)for(const auto point:{cap.Start,cap.End})
+            if(const auto projected=ProjectPointToEdge(existing.Projected,point,Options_.dConnectionTolerance))
+                if(projected->U>1e-8&&projected->U<1-1e-8)cuts.push_back(projected->U);
+        for(const auto& piece:SplitProjectedEdge(existing.Projected,cuts,Options_)) {
+            const auto start=FindOrAddNode(piece.Start,Options_.dConnectionTolerance,_Nodes,_Grid);
+            const auto end=FindOrAddNode(piece.End,Options_.dConnectionTolerance,_Nodes,_Grid);
+            if(start!=end)sidePieces.push_back({piece,start,end,false});
+            else if(existing.StartNode==existing.EndNode)sidePieces.push_back(existing);
+        }
+    }
+    _GraphEdges=std::move(sidePieces);
+    for(auto& node:_Nodes)node.IncidentEdges.clear();
+    for(std::size_t i=0;i<_GraphEdges.size();++i) {
+        const auto& edge=_GraphEdges[i];_Nodes[edge.StartNode].IncidentEdges.push_back(i);
+        if(edge.EndNode!=edge.StartNode)_Nodes[edge.EndNode].IncidentEdges.push_back(i);
+    }
+    const auto sideNodeCount=_Nodes.size();
+    std::vector<SSectionWireEdge> capPieces;
+    std::vector<Point2> capContacts;
+    for(const auto& node:_Nodes)capContacts.push_back(node.Position);
+    for(const auto& cap:completionEdges){capContacts.push_back(cap.Start);capContacts.push_back(cap.End);}
+    for(const auto& cap:completionEdges) {
+        std::vector<double> cuts;
+        for(const auto& point:capContacts)
+            if(const auto projected=ProjectPointToEdge(cap,point,Options_.dConnectionTolerance))
+                if(projected->U>1e-8&&projected->U<1-1e-8)cuts.push_back(projected->U);
+        const auto pieces=SplitProjectedEdge(cap,cuts,Options_);
+        capPieces.insert(capPieces.end(),pieces.begin(),pieces.end());
+    }
+    for (const auto& value : capPieces)
+    {
+        const auto* edge = &value;
+        const auto start=FindOrAddNode(edge->Start,Options_.dConnectionTolerance,_Nodes,_Grid);
+        const auto end=FindOrAddNode(edge->End,Options_.dConnectionTolerance,_Nodes,_Grid);
+        if(start==end)continue;
+        if(start<sideNodeCount&&end<sideNodeCount
+            &&Degree(start,_Nodes,_GraphEdges)!=1&&Degree(end,_Nodes,_GraphEdges)!=1)continue;
+        if (std::any_of(completions.begin(), completions.end(), [&](const auto& other) {
+            return SameProjectedEdge(*edge, other.Edge, Options_.dConnectionTolerance);
+        })) continue;
+        bool clear = true;
+        const Handle(Geom2d_Curve) candidate = new Geom2d_TrimmedCurve(
+            iCAX::OpenCascade::BuildOpenCascadeCurve2(edge->Curve), edge->Range.First, edge->Range.Last);
+        for (const auto& existing : _GraphEdges)
+        {
+            if (!existing.bActive) continue;
+            if (SameProjectedEdge(*edge, existing.Projected, Options_.dConnectionTolerance)) { clear = false; break; }
+            const auto& other = existing.Projected;
+            const Handle(Geom2d_Curve) host = new Geom2d_TrimmedCurve(
+                iCAX::OpenCascade::BuildOpenCascadeCurve2(other.Curve), other.Range.First, other.Range.Last);
+            Geom2dAPI_InterCurveCurve intersection(candidate, host, Options_.dConnectionTolerance);
+            if (intersection.NbSegments() > 0) { clear = false; break; }
+            for (int k = 1; k <= intersection.NbPoints(); ++k)
+            {
+                const auto p = intersection.Point(k);
+                if (!SamePoint({p.X(), p.Y()}, edge->Start, Options_.dConnectionTolerance)
+                    && !SamePoint({p.X(), p.Y()}, edge->End, Options_.dConnectionTolerance)) clear = false;
+            }
+            if (!clear) break;
+        }
+        if (clear) completions.push_back({*edge, start, end});
+    }
+    std::sort(completions.begin(), completions.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.Edge.SourceEdgeId,a.Edge.SourceFaceId) < std::tie(b.Edge.SourceEdgeId,b.Edge.SourceFaceId);
+    });
+    std::vector<std::vector<std::size_t>> capAdjacency(_Nodes.size());
+    for(std::size_t i=0;i<completions.size();++i) {
+        capAdjacency[completions[i].Start].push_back(i);
+        capAdjacency[completions[i].End].push_back(i);
+    }
+    std::unordered_set<std::size_t> selectedCompletions;
+    for(std::size_t start=0;start<sideNodeCount;++start)
+    {
+        if(Degree(start,_Nodes,_GraphEdges)!=1)continue;
+        std::vector<std::vector<std::size_t>> paths;
+        std::vector<std::size_t> path;std::vector<bool> visited(_Nodes.size());
+        std::function<void(std::size_t)> walk=[&](std::size_t node) {
+            if(paths.size()>1)return;
+            if(node!=start&&node<sideNodeCount&&Degree(node,_Nodes,_GraphEdges)>0){paths.push_back(path);return;}
+            visited[node]=true;
+            for(const auto index:capAdjacency[node]) {
+                const auto& edge=completions[index];const auto next=edge.Start==node?edge.End:edge.Start;
+                if(visited[next])continue;
+                path.push_back(index);walk(next);path.pop_back();
+                if(paths.size()>1)break;
+            }
+            visited[node]=false;
+        };
+        walk(start);
+        if(paths.size()==1)selectedCompletions.insert(paths.front().begin(),paths.front().end());
+        else if(paths.size()>1)_Result.Diagnostics.push_back("Ambiguous transverse boundary chain was not used");
+    }
+    for(std::size_t i=0;i<completions.size();++i)if(selectedCompletions.contains(i))
+    {
+        const auto& completion=completions[i];
+        const auto index = _GraphEdges.size();
+        _GraphEdges.push_back({completion.Edge, completion.Start, completion.End, false});
+        _Nodes[completion.Start].IncidentEdges.push_back(index);
+        _Nodes[completion.End].IncidentEdges.push_back(index);
+        _Result.Diagnostics.push_back(completion.Edge.SourceFaceId
+            ? "Completed dangling projection with exact silhouette of source face " + std::to_string(completion.Edge.SourceFaceId)
+            : "Completed dangling projection with transverse source edge " + std::to_string(completion.Edge.SourceEdgeId));
+    }
+    }
+
+    const auto _BoundaryEvidence = _GraphEdges;
+    if(Options_.Progress)for(std::size_t node=0;node<_Nodes.size();++node)if(Degree(node,_Nodes,_GraphEdges)==1) {
+        for(const auto edge:_Nodes[node].IncidentEdges)
+            progress("projection dangling node="+std::to_string(node)+" source="+std::to_string(_GraphEdges[edge].Projected.SourceEdgeId)
+                +" point=("+std::to_string(_Nodes[node].Position.X)+","+std::to_string(_Nodes[node].Position.Y)+")");
+    }
+    progress("trace outer graph edges="+std::to_string(_GraphEdges.size()));
     const auto _RemovedBeforeOuter = PruneDegreeOneEdges(_Nodes, _GraphEdges);
     if (_RemovedBeforeOuter > 0)
     {
@@ -3228,8 +4163,12 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             + " degree-one edges before contour detection");
     }
 
+    const auto _Bridges=PruneBridgeEdges(_Nodes,_GraphEdges);
+    if(_Bridges)_Result.Diagnostics.push_back("Removed " + std::to_string(_Bridges) + " non-cyclic bridge edges before contour detection");
     std::vector<SHalfEdge> _HalfEdges;
+    progress("sort graph half edges");
     BuildHalfEdges(_GraphEdges, _Nodes, _HalfEdges);
+    progress("collect outer faces");
     auto _OuterCandidates = CollectFaces(
         _HalfEdges,
         Options_,
@@ -3238,39 +4177,45 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         true);
 
     std::optional<SLoopCandidate> _Outer;
-    std::optional<SLoopCandidate> _ExteriorFallback;
+    std::shared_ptr<SExactCandidateClassifier> outerClassifier;
+    std::vector<std::string> _OuterRejections;
+    struct SOuterCheck {bool Contains;std::string Reason;std::shared_ptr<SExactCandidateClassifier> Classifier;};
+    std::map<std::vector<std::size_t>,SOuterCheck> outerChecks;
+    const auto testOuter=[&](const SLoopCandidate& candidate,std::string& reason,
+            std::shared_ptr<SExactCandidateClassifier>& classifier) {
+        if(candidate.GraphEdgeIndices.empty())return CandidateContainsAllActiveEdges(candidate,_GraphEdges,
+            Options_.dConnectionTolerance,&reason,Options_.Progress,&classifier);
+        auto key=candidate.GraphEdgeIndices;std::sort(key.begin(),key.end());
+        auto known=outerChecks.find(key);
+        if(known==outerChecks.end()) {
+            const bool contains=CandidateContainsAllActiveEdges(candidate,_GraphEdges,
+                Options_.dConnectionTolerance,&reason,Options_.Progress,&classifier);
+            known=outerChecks.emplace(std::move(key),SOuterCheck{contains,reason,classifier}).first;
+        }
+        reason=known->second.Reason;classifier=known->second.Classifier;return known->second.Contains;
+    };
+
+    std::stable_sort(_OuterCandidates.begin(),_OuterCandidates.end(),[](const auto& a,const auto& b){
+        return std::abs(a.dSignedArea)>std::abs(b.dSignedArea);
+    });
+
     for (auto& _Candidate : _OuterCandidates)
     {
-        const auto _ContainsAll = CandidateContainsAllActiveEdges(
-            _Candidate,
-            _GraphEdges,
-            Options_.dConnectionTolerance);
+        std::string rejection;
+        std::shared_ptr<SExactCandidateClassifier> candidateClassifier;
+        const auto _ContainsAll = testOuter(_Candidate,rejection,candidateClassifier);
+        if(!_ContainsAll&&_OuterRejections.size()<8)
+            _OuterRejections.push_back("Rejected enclosing contour area="+std::to_string(_Candidate.dSignedArea)+": "+rejection);
         if (_ContainsAll)
         {
             if (!_Outer || std::abs(_Candidate.dSignedArea)
                     > std::abs(_Outer->dSignedArea))
             {
                 _Outer = std::move(_Candidate);
+                outerClassifier=std::move(candidateClassifier);
+                break; // No later candidate can exceed this enclosing area.
             }
         }
-        // With a concave boundary, a supplied auxiliary connection may run
-        // through the re-entrant notch.  It is not part of the section
-        // boundary, but it also means the containment test cannot be used as
-        // a hard rejection.  The unbounded face is the clockwise (negative)
-        // face in this traversal, so retain it as a topology-only fallback.
-        if (!_ContainsAll && _Candidate.dSignedArea < 0.0
-            && (!_ExteriorFallback
-                || std::abs(_Candidate.dSignedArea)
-                    > std::abs(_ExteriorFallback->dSignedArea)))
-        {
-            _ExteriorFallback = std::move(_Candidate);
-        }
-    }
-    if (!_Outer && _ExteriorFallback)
-    {
-        _Outer = std::move(*_ExteriorFallback);
-        _Result.Diagnostics.push_back(
-            "Outer contour selected from the unbounded planar face because auxiliary edges crossed the boundary interior test");
     }
     // A chord/connection inside a concave section splits the planar embedding
     // into bounded faces.  The actual outside boundary is then no longer one
@@ -3289,17 +4234,18 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
                 Options_,
                 _Nodes,
                 _GraphEdges);
-            if (!_Candidate || !CandidateContainsAllActiveEdges(
-                    *_Candidate,
-                    _GraphEdges,
-                    Options_.dConnectionTolerance))
+            std::shared_ptr<SExactCandidateClassifier> candidateClassifier;
+            std::string seedRejection;
+            if (!_Candidate || !testOuter(*_Candidate,seedRejection,candidateClassifier))
             {
+                if(_Candidate&&Options_.Progress)progress("outer seed rejected area="+std::to_string(_Candidate->dSignedArea)+": "+seedRejection);
                 continue;
             }
             if (!_Outer || std::abs(_Candidate->dSignedArea)
                     > std::abs(_Outer->dSignedArea))
             {
                 _Outer = std::move(*_Candidate);
+                outerClassifier=std::move(candidateClassifier);
             }
         }
     }
@@ -3307,9 +4253,29 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     {
         _Result.Diagnostics.push_back(
             "No closed contour contains all remaining projected edges as the outer contour");
+        _Result.Diagnostics.insert(_Result.Diagnostics.end(),_OuterRejections.begin(),_OuterRejections.end());
+        for (const auto& edge : _BoundaryEvidence)
+        {
+            for (const auto node : {edge.StartNode, edge.EndNode})
+            {
+                if (std::count_if(_BoundaryEvidence.begin(), _BoundaryEvidence.end(), [&](const auto& other) {
+                    return other.StartNode == node || other.EndNode == node;
+                }) != 1) continue;
+                const auto point = node == edge.StartNode ? edge.Projected.Start : edge.Projected.End;
+                _Result.Diagnostics.push_back("Unconnected source boundary edge " + std::to_string(edge.Projected.SourceEdgeId)
+                    + " at (" + std::to_string(point.X) + "," + std::to_string(point.Y) + ")");
+            }
+        }
         return _Result;
     }
 
+    std::string prunedBoundaryRejection;
+    if (!CandidateContainsAllActiveEdges(*_Outer, _BoundaryEvidence, Options_.dConnectionTolerance,&prunedBoundaryRejection,Options_.Progress,&outerClassifier))
+    {
+        _Result.Diagnostics.push_back("Outer contour does not enclose source boundary evidence removed by graph pruning: "
+            +prunedBoundaryRejection);
+        return _Result;
+    }
     std::vector<SLoopCandidate> _Loops;
     _Loops.push_back(std::move(*_Outer));
     for (const auto _GraphEdgeIndex : _Loops.front().GraphEdgeIndices)
@@ -3325,22 +4291,68 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             + " degree-one edges after removing the outer contour");
     }
 
-    BuildHalfEdges(_GraphEdges, _Nodes, _HalfEdges);
-    auto _InnerCandidates = CollectFaces(
-        _HalfEdges,
-        Options_,
-        _Nodes,
-        _GraphEdges,
-        false);
-    for (auto& _Candidate : _InnerCandidates)
-    {
-        if (!CandidateInteriorHasLine(
-                _Candidate,
-                _GraphEdges,
-                Options_.dConnectionTolerance))
-        {
-            _Loops.push_back(std::move(_Candidate));
+    try {
+        const auto material=ProjectMaterialFaces(Geometry_,Options_,_Result.Diagnostics,&_SourceShape);
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL == 2
+        _Result.Diagnostics.push_back("Material Boolean intersections use one worker to avoid MSVC checked-iterator global-lock contention; independent face stages retain CAD Task parallelism");
+#endif
+        std::unordered_set<std::string> rejected;
+        struct SCellClassification { bool HasLine, IsMaterial; std::string Reason; };
+        std::map<std::vector<std::size_t>,SCellClassification> cellClassifications;
+        for (;;) {
+            PruneDegreeOneEdges(_Nodes,_GraphEdges);
+            PruneBridgeEdges(_Nodes,_GraphEdges);
+            BuildHalfEdges(_GraphEdges,_Nodes,_HalfEdges);
+            auto candidates=CollectFaces(_HalfEdges,Options_,_Nodes,_GraphEdges,false);
+            if(!candidates.empty()&&material.empty()) {
+                _Result.Diagnostics.push_back("Cannot classify closed regions as cavities: no usable source material-face region evidence");
+                return _Result;
+            }
+            std::sort(candidates.begin(),candidates.end(),[](const auto& a,const auto& b){
+                return std::abs(a.dSignedArea)>std::abs(b.dSignedArea);
+            });
+            std::optional<std::size_t> accepted;
+            std::size_t candidateIndex=0;
+            for(auto& candidate:candidates) {
+                const auto index=candidateIndex++;
+                std::string reason;
+                auto key=candidate.GraphEdgeIndices;std::sort(key.begin(),key.end());
+                auto known=cellClassifications.find(key);
+                if(known==cellClassifications.end()) {
+                    const bool hasLine=CandidateInteriorHasLine(candidate,_GraphEdges,
+                        Options_.dConnectionTolerance,reason);
+                    const bool isMaterial=!hasLine&&CandidateIsMaterialRegion(candidate,material,
+                        Options_.dConnectionTolerance,reason,Options_.Progress,Options_.nMaximumConcurrency);
+                    known=cellClassifications.emplace(std::move(key),SCellClassification{hasLine,isMaterial,reason}).first;
+                }
+                // Interior tests deliberately include inactive edges as well;
+                // their geometry and source material do not change on rebuild.
+                const auto [hasLine,isMaterial,cachedReason]=known->second;reason=cachedReason;
+                if(hasLine||isMaterial) {
+                    if(Options_.CandidateAudit)Options_.CandidateAudit(
+                        isMaterial?"material":"interior-source-edge",candidate.Edges);
+                    const auto message=std::string(isMaterial?"Rejected material region as cavity: ":"Rejected non-minimal inner loop: ")
+                        + "area="+std::to_string(candidate.dSignedArea)+"; "+reason;
+                    if(rejected.insert(message).second)_Result.Diagnostics.push_back(message);
+                    continue;
+                }
+                // Acceptance, not merely closure, consumes the undirected
+                // edges. Rebuild the half-edge graph before finding another
+                // cavity; rejected material regions never consume edges.
+                accepted=index;
+                break; // Remaining results would be discarded on graph rebuild.
+            }
+            if(!accepted)break;
+            auto& candidate=candidates[*accepted];
+            for(const auto index:candidate.GraphEdgeIndices)_GraphEdges[index].bActive=false;
+            _Loops.push_back(std::move(candidate));
         }
+    } catch(const Standard_Failure& error) {
+        _Result.Diagnostics.push_back(std::string("Material region classification failed: ")+error.GetMessageString());
+        return _Result;
+    } catch(const std::exception& error) {
+        _Result.Diagnostics.push_back(std::string("Material region classification failed: ")+error.what());
+        return _Result;
     }
 
     if (_Loops.empty())
@@ -3370,6 +4382,29 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         {
             ReverseWire(_Wire);
         }
+        SLoopCandidate validation;
+        validation.Edges = _Wire.Edges;
+        validation.ExactFace=_Loops[_IndexLoop].ExactFace;
+        const auto face = CandidateFace(validation, Options_.dConnectionTolerance);
+        bool valid = !face.IsNull() && BRepCheck_Analyzer(face).IsValid();
+        if (valid) {
+            ShapeAnalysis_Wire analysis(BRepTools::OuterWire(face), face, Options_.dConnectionTolerance);
+            valid = !analysis.CheckSelfIntersection();
+        }
+        for (std::size_t i=0;i<_Wire.Edges.size() && valid;++i) {
+            const auto& edge=_Wire.Edges[i];
+            const auto& next=_Wire.Edges[(i+1)%_Wire.Edges.size()];
+            const auto start=EvaluateProjectedCurvePoint(edge,edge.bReversed?1.0:0.0);
+            const auto end=EvaluateProjectedCurvePoint(edge,edge.bReversed?0.0:1.0);
+            valid=start&&end&&Distance(*start,edge.Start)<=Options_.dConnectionTolerance
+                &&Distance(*end,edge.End)<=Options_.dConnectionTolerance
+                &&Distance(edge.End,next.Start)<=Options_.dConnectionTolerance;
+        }
+        if (!valid) {
+            _Result.Wires.clear();
+            _Result.Diagnostics.push_back("Rejected contour with invalid closure, self intersection, or inconsistent exact endpoints");
+            return _Result;
+        }
         StartWireAtLowestEdge(_Wire, Options_.dConnectionTolerance);
         _Result.Wires.push_back(std::move(_Wire));
     }
@@ -3379,10 +4414,139 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         + " unique edges from " + std::to_string(_Result.SideFaceIds.size())
         + " X-parallel side faces into the YOZ plane");
     _Result.Diagnostics.push_back(
-        "Selected the maximum-area closed contour as outer and the remaining closed contours as inner");
+        "Selected enclosing outer loop and edge-disjoint minimal inner loops, excluding projected source material regions");
     _Result.Diagnostics.push_back(
         "Contours were recovered by planar half-edge face traversal");
     return _Result;
+}
+
+namespace {
+#include "SectionMaterialRecovery.inc"
+#include "SectionNominalReference.inc"
+}
+
+SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
+    const iCAX::GeometryData::BRepModel& geometry,const SSectionWireOptions& options) const
+{
+    auto axial=ExtractAxialSectionWires(geometry,options);
+    if(options.dConnectionTolerance>0&&options.dFaceParallelToleranceRadians>0
+        &&options.dFaceParallelToleranceRadians<.5*kPi&&options.nCurveSampleCount>=8
+        &&options.dUTurnAngleToleranceRadians>0&&options.dUTurnAngleToleranceRadians<.5*kPi
+        &&axial.bSuccess&&HasLocalizedSectionEvidence(geometry,axial,options)) {
+        try {
+            auto nominal=ExtractCertifiedNominalSection(geometry,options,axial);
+            if(nominal.bSuccess)return nominal;
+        } catch(const Standard_Failure&) {
+            // A station without a complete source-supported perimeter cannot
+            // establish a nominal stock reference. The projected evidence
+            // below still has to pass all of its own geometric checks.
+        } catch(const std::exception& error) {
+            if(options.Progress)options.Progress(std::string("Nominal section evidence unavailable: ")+error.what());
+        }
+    }
+    if(axial.bSuccess||axial.SideFaceIds.empty()
+        ||options.dFaceParallelToleranceRadians<=0||options.dFaceParallelToleranceRadians>=0.5*kPi
+        ||options.dConnectionTolerance<=0||options.nCurveSampleCount<8
+        ||options.dUTurnAngleToleranceRadians<=0||options.dUTurnAngleToleranceRadians>=0.5*kPi)return axial;
+    try {
+        auto recovered=RecoverMaterialSection(geometry,options,axial.SideFaceIds);
+        if(recovered.bSuccess) {
+            recovered.Diagnostics.insert(recovered.Diagnostics.begin(),axial.Diagnostics.begin(),axial.Diagnostics.end());
+            return recovered;
+        }
+        axial.Diagnostics.insert(axial.Diagnostics.end(),recovered.Diagnostics.begin(),recovered.Diagnostics.end());
+    } catch(const Standard_Failure& error) {
+        axial.Diagnostics.push_back(std::string("Material projection recovery failed: ")+error.GetMessageString());
+    } catch(const std::exception& error) {
+        axial.Diagnostics.push_back(std::string("Material projection recovery failed: ")+error.what());
+    }
+    return axial;
+}
+
+namespace direction_detail
+{
+SSectionWiresResult ExtractCandidateSection(const iCAX::GeometryData::BRepModel& geometry,
+    const SSectionWireOptions& options)
+{
+    // Direction ranking tests the extrusion assumption itself. A complete
+    // arbitrary-view projection must not turn a rejected direction into a vote.
+    return ExtractAxialSectionWires(geometry,options);
+}
+
+bool TryContainingExtrusionVolume(const iCAX::GeometryData::BRepModel& geometry,
+    const SSectionWiresResult& section, const SSectionWireOptions& options,
+    double& volume, double& uncertainty)
+{
+    try
+    {
+        if (!section.bSuccess || section.Wires.empty()) return false;
+        const gp_Pln plane(gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0), gp_Dir(0, 1, 0)));
+        TopoDS_Wire outer;
+        std::vector<TopoDS_Wire> holes;
+        for (const auto& wire : section.Wires)
+        {
+            BRepBuilderAPI_MakeWire boundary;
+            for (const auto& edge : wire.Edges)
+            {
+                const auto projected = iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Curve);
+                if (projected.IsNull()) return false;
+                BRepBuilderAPI_MakeEdge maker(GeomAPI::To3d(projected, plane), edge.Range.First, edge.Range.Last);
+                if (!maker.IsDone()) return false;
+                auto native = maker.Edge();
+                if (edge.bReversed) native.Reverse();
+                boundary.Add(native);
+            }
+            if (!boundary.IsDone()) return false;
+            if (wire.bInner) holes.push_back(boundary.Wire());
+            else if (!outer.IsNull()) return false;
+            else outer = boundary.Wire();
+        }
+        if (outer.IsNull()) return false;
+        BRepBuilderAPI_MakeFace face(plane, outer, true);
+        for (const auto& hole : holes) face.Add(hole);
+        if (!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid()) return false;
+        const auto source = iCAX::OpenCascade::ReconstructOpenCascadeShape(geometry);
+        if (!source.bOK || source.Shape.IsNull()) return false;
+        Bnd_Box bounds; BRepBndLib::AddOptimal(source.Shape, bounds, false, false); bounds.SetGap(0);
+        if (bounds.IsVoid()) return false;
+        double x, y, z, X, Y, Z; bounds.Get(x, y, z, X, Y, Z);
+        const double span = X - x, tolerance = options.dConnectionTolerance;
+        if (span <= tolerance) return false;
+        GProp_GProps area, perimeter, sourceArea, sourceLength;
+        BRepGProp::SurfaceProperties(face.Face(), area, 1e-9);
+        BRepGProp::LinearProperties(face.Face(), perimeter);
+        BRepGProp::SurfaceProperties(source.Shape, sourceArea, 1e-9);
+        BRepGProp::LinearProperties(source.Shape, sourceLength);
+        volume = std::abs(area.Mass()) * span;
+        uncertainty = tolerance * (std::abs(area.Mass()) + perimeter.Mass() * span);
+        gp_Trsf pose; pose.SetTranslation(gp_Vec(x - tolerance, 0, 0));
+        const auto base = BRepBuilderAPI_Transform(face.Face(), pose, true).Shape();
+        const auto envelope = BRepPrimAPI_MakePrism(base, gp_Vec(span + 2 * tolerance, 0, 0)).Shape();
+        TopTools_ListOfShape arguments, tools;
+        arguments.Append(source.Shape); tools.Append(envelope);
+        BRepAlgoAPI_Cut outside;
+        outside.SetArguments(arguments); outside.SetTools(tools);
+        outside.SetNonDestructive(true); outside.SetFuzzyValue(tolerance); outside.Build();
+        if (!outside.IsDone() || outside.Shape().IsNull()) return false;
+        GProp_GProps remainder;
+        if (TopExp_Explorer(source.Shape, TopAbs_SOLID).More())
+        {
+            BRepGProp::VolumeProperties(outside.Shape(), remainder);
+            return std::abs(remainder.Mass()) <= tolerance * std::abs(sourceArea.Mass());
+        }
+        BRepGProp::SurfaceProperties(outside.Shape(), remainder, 1e-9);
+        return std::abs(remainder.Mass()) <= tolerance * sourceLength.Mass();
+    }
+    catch (const Standard_Failure&) { return false; }
+    catch (const std::exception&) { return false; }
+}
+}
+
+SSectionFaceClassificationResult CExtrudeRecognizesService::ClassifySectionFaces(
+    const iCAX::GeometryData::BRepModel& geometry, const SSectionWiresResult& section,
+    const SFeatureToolpathOptions& options) const
+{
+    return toolpath_detail::ClassifySectionFaces(geometry, section, options);
 }
 
 SFeatureToolpathResult CExtrudeRecognizesService::AnalyzeFeatureToolpaths(
@@ -3398,6 +4562,13 @@ namespace iCAX::ExtrusionRecognition::toolpath_detail
 {
 namespace
 {
+    #include "SectionZeroAreaTrimFace.inc"
+
+    std::string ZeroTrimNumber(double value)
+    {
+        std::ostringstream text;text<<std::setprecision(17)<<value;return text.str();
+    }
+
     constexpr double kEpsilon = 1.0e-12;
     constexpr double kHalfPi = 1.57079632679489661923;
 
@@ -3468,7 +4639,15 @@ namespace
 
     struct SSectionSupport final
     {
+        struct STrimmedCurve final
+        {
+            Handle(Geom2d_Curve) Curve;
+            double First = 0.0;
+            double Last = 0.0;
+        };
         std::vector<std::pair<Point2, Point2>> Segments;
+        std::vector<STrimmedCurve> Curves;
+        TopoDS_Face MaterialSection;
     };
 
     SSectionSupport BuildSectionSupport(IN const SSectionWiresResult& Section_)
@@ -3478,25 +4657,53 @@ namespace
         {
             for (const auto& _Edge : _Wire.Edges)
             {
-                if (_Edge.Samples.size() >= 2)
+                if (IsStraightProjectedEdge(_Edge))
                 {
-                    for (std::size_t _Index = 1;
-                        _Index < _Edge.Samples.size();
-                        ++_Index)
-                    {
-                        _Result.Segments.emplace_back(
-                            _Edge.Samples[_Index - 1],
-                            _Edge.Samples[_Index]);
-                    }
+                    _Result.Segments.emplace_back(_Edge.Start, _Edge.End);
+                    continue;
                 }
-                else
+                const auto _Curve = iCAX::OpenCascade::BuildOpenCascadeCurve2(_Edge.Curve);
+                if (!_Curve.IsNull())
                 {
-                    _Result.Segments.emplace_back(
-                        _Edge.Start,
-                        _Edge.End);
+                    _Result.Curves.push_back({ _Curve,
+                        std::min(_Edge.Range.First, _Edge.Range.Last),
+                        std::max(_Edge.Range.First, _Edge.Range.Last) });
                 }
             }
         }
+        // Keep the exact fixed section for proving covered internal portions
+        // of a contributing stock wall. No source faces are sewn or fused.
+        try {
+            const gp_Pln plane(gp_Ax3(gp_Pnt(0,0,0),gp_Dir(1,0,0),gp_Dir(0,1,0)));
+            TopoDS_Wire outer;std::vector<TopoDS_Wire> holes;
+            for(const auto& wire:Section_.Wires){
+                BRepBuilderAPI_MakeWire boundary;
+                double joinTolerance=Precision::Confusion();
+                for(std::size_t i=0;i<wire.Edges.size();++i){
+                    const auto& a=wire.Edges[i];const auto& b=wire.Edges[(i+1)%wire.Edges.size()];
+                    const auto ac=iCAX::OpenCascade::BuildOpenCascadeCurve2(a.Curve);
+                    const auto bc=iCAX::OpenCascade::BuildOpenCascadeCurve2(b.Curve);
+                    const auto end=ac->Value(a.bReversed?a.Range.First:a.Range.Last);
+                    const auto start=bc->Value(b.bReversed?b.Range.Last:b.Range.First);
+                    joinTolerance=std::max(joinTolerance,end.Distance(start)+Precision::Confusion());
+                }
+                for(const auto& edge:wire.Edges){
+                    const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Curve);
+                    BRepBuilderAPI_MakeEdge maker(GeomAPI::To3d(curve,plane),edge.Range.First,edge.Range.Last);
+                    if(!maker.IsDone())return _Result;
+                    auto native=maker.Edge();BRep_Builder builder;
+                    for(TopExp_Explorer v(native,TopAbs_VERTEX);v.More();v.Next())
+                        builder.UpdateVertex(TopoDS::Vertex(v.Current()),joinTolerance);
+                    if(edge.bReversed)native.Reverse();boundary.Add(native);
+                }
+                if(!boundary.IsDone())return _Result;
+                if(wire.bInner)holes.push_back(boundary.Wire());else outer=boundary.Wire();
+            }
+            if(!outer.IsNull()){
+                BRepBuilderAPI_MakeFace face(plane,outer,true);for(const auto& hole:holes)face.Add(hole);
+                if(face.IsDone()&&BRepCheck_Analyzer(face.Face()).IsValid())_Result.MaterialSection=face.Face();
+            }
+        } catch(const Standard_Failure&) {}
         return _Result;
     }
 
@@ -3506,21 +4713,40 @@ namespace
         IN const double Tolerance_)
     {
         const Point2 _Projected{ Point_.Y(), Point_.Z() };
-        return std::any_of(
-            Support_.Segments.begin(),
-            Support_.Segments.end(),
-            [&](IN const auto& _Segment) {
-                return DistancePointSegment2(
-                    _Projected,
-                    _Segment.first,
-                    _Segment.second) <= Tolerance_;
-            });
+        if (std::any_of(Support_.Segments.begin(), Support_.Segments.end(),
+            [&](const auto& _Segment) {
+                return DistancePointSegment2(_Projected, _Segment.first, _Segment.second)
+                    <= Tolerance_;
+            }))
+        {
+            return true;
+        }
+        // Display chords have an independent approximation error. Use the
+        // exact trimmed contour so original longitudinal fillets do not
+        // become machining faces merely because they lie between samples.
+        const gp_Pnt2d _Point(Point_.Y(), Point_.Z());
+        for (const auto& _Support : Support_.Curves)
+        {
+            if (_Point.Distance(_Support.Curve->Value(_Support.First)) <= Tolerance_
+                || _Point.Distance(_Support.Curve->Value(_Support.Last)) <= Tolerance_)
+            {
+                return true;
+            }
+            Geom2dAPI_ProjectPointOnCurve _Projection(
+                _Point, _Support.Curve, _Support.First, _Support.Last);
+            if (_Projection.NbPoints() > 0 && _Projection.LowerDistance() <= Tolerance_)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     std::vector<gp_Pnt> SampleEdge(
         IN const TopoDS_Edge& Edge_,
         IN const std::size_t Count_,
-        IN const double Tolerance_)
+        IN const double Tolerance_,
+        IN const TopoDS_Face& Face_ = TopoDS_Face())
     {
         std::vector<gp_Pnt> _Result;
         if (Edge_.IsNull() || BRep_Tool::Degenerated(Edge_))
@@ -3528,7 +4754,12 @@ namespace
             return _Result;
         }
 
-        BRepAdaptor_Curve _Curve(Edge_);
+        BRepAdaptor_Curve _Curve;
+        if (Face_.IsNull()) _Curve.Initialize(Edge_);
+        // When classifying a face, use its trimmed surface boundary. The
+        // separately stored 3D edge can have a much looser import tolerance;
+        // that approximation is not a physical offset of the side surface.
+        else _Curve.Initialize(Edge_, Face_);
         const auto _Count = static_cast<int>(std::max<std::size_t>(2, Count_));
         const auto _First = _Curve.FirstParameter();
         const auto _Last = _Curve.LastParameter();
@@ -4477,6 +5708,14 @@ namespace
     {
         try
         {
+            // FaceClassifier's 3D overload classifies the nearest UV
+            // projection even when the point is far from the surface.
+            // A cut must lie on the surface as well as inside its trim.
+            const auto surface = BRep_Tool::Surface(Face_);
+            if (surface.IsNull()) return false;
+            GeomAPI_ProjectPointOnSurf projection(Point_, surface);
+            if (projection.NbPoints() == 0 || projection.LowerDistance() > Tolerance_)
+                return false;
             BRepClass_FaceClassifier _Classifier(
                 Face_,
                 Point_,
@@ -4523,8 +5762,120 @@ namespace
         return true;
     }
 
+    bool IsSplineOnLine(const TopoDS_Edge& edge, const gp_Lin& line,
+        double tolerance)
+    {
+        try
+        {
+            double first = 0.0, last = 0.0;
+            auto curve = BRep_Tool::Curve(edge, first, last);
+            while (const auto trimmed = Handle(Geom_TrimmedCurve)::DownCast(curve))
+                curve = trimmed->BasisCurve();
+            const auto spline = Handle(Geom_BSplineCurve)::DownCast(curve);
+            if (spline.IsNull() || !IsFinite(first) || !IsFinite(last) || last <= first)
+                return false;
+            auto segment = Handle(Geom_BSplineCurve)::DownCast(spline->Copy());
+            segment->Segment(first, last);
+            // Positive rational B-spline weights give the convex-hull property.
+            // The trimmed curve stays in the tolerance tube around this line;
+            // continuity covers the projected interval between its endpoints.
+            for (int i = 1; i <= segment->NbPoles(); ++i)
+                if (segment->Weight(i) <= 0.0 || line.Distance(segment->Pole(i)) > tolerance)
+                    return false;
+            return true;
+        }
+        catch (const Standard_Failure&)
+        {
+            // Failure to prove coincidence must retain normal intersection handling.
+            return false;
+        }
+    }
+
+    std::optional<SLineParameterSpan> SurfaceBoundaryLineSpan(
+        const TopoDS_Edge& edge, const TopoDS_Face& face, const gp_Lin& line,
+        const SFeatureToolpathOptions& options)
+    {
+        try
+        {
+            double first, last;
+            const auto pc = BRep_Tool::CurveOnSurface(edge, face, first, last);
+            const auto surface = BRep_Tool::Surface(face);
+            if (pc.IsNull() || surface.IsNull()) return std::nullopt;
+            Bnd_Box2d bounds;
+            BndLib_Add2dCurve::AddOptimal(pc, first, last, 0.0, bounds);
+            if (bounds.IsVoid()) return std::nullopt;
+            bounds.SetGap(0);
+            double u0, v0, u1, v1; bounds.Get(u0, v0, u1, v1);
+            // Require an isoparametric boundary, to roundoff in its native
+            // parameter units. This is not a geometric near-line fit.
+            const double roundoff = 64 * std::numeric_limits<double>::epsilon()
+                * std::max({1.0, std::abs(u0), std::abs(u1), std::abs(v0), std::abs(v1)});
+            const bool fixedU = u1 - u0 <= roundoff;
+            const bool fixedV = v1 - v0 <= roundoff;
+            if (fixedU == fixedV) return std::nullopt;
+            const auto iso = fixedU ? surface->UIso((u0 + u1) * 0.5)
+                : surface->VIso((v0 + v1) * 0.5);
+            const double lo = fixedU ? v0 : u0, hi = fixedU ? v1 : u1;
+            BRepBuilderAPI_MakeEdge maker(iso, lo, hi);
+            if (!maker.IsDone()) return std::nullopt;
+            const auto exact = maker.Edge();
+            const BRepAdaptor_Curve curve(exact);
+            const double tolerance = std::max(options.dLinearTolerance, options.dSkinDistanceTolerance);
+            const bool onLine = curve.GetType() == GeomAbs_Line
+                ? curve.Line().Direction().IsParallel(line.Direction(), options.dAngularToleranceRadians)
+                    && line.Distance(iso->Value(lo)) <= tolerance
+                    && line.Distance(iso->Value(hi)) <= tolerance
+                : curve.GetType() == GeomAbs_BSplineCurve && IsSplineOnLine(exact, line, tolerance);
+            if (!onLine) return std::nullopt;
+            const double a = LineParameter(line, iso->Value(lo)), b = LineParameter(line, iso->Value(hi));
+            return SLineParameterSpan{std::min(a, b), std::max(a, b)};
+        }
+        catch (const Standard_Failure&)
+        {
+            return std::nullopt;
+        }
+    }
+
+    struct SFaceBoundaryCurve
+    {
+        TopoDS_Edge Edge;
+        TopoDS_Edge AnalysisEdge;
+        Handle(Geom_Curve) Curve;
+        double First=0,Last=0;
+        Bnd_Box Bounds;
+    };
+
+    std::vector<SFaceBoundaryCurve> FaceBoundaryCurves(const TopoDS_Face& face)
+    {
+        std::vector<SFaceBoundaryCurve> result;
+        for(TopExp_Explorer it(face,TopAbs_EDGE);it.More();it.Next()) {
+            SFaceBoundaryCurve boundary;boundary.Edge=TopoDS::Edge(it.Current());
+            boundary.AnalysisEdge=boundary.Edge;
+            if(BRep_Tool::Degenerated(boundary.Edge))continue;
+            double first,last;const auto pc=BRep_Tool::CurveOnSurface(boundary.Edge,face,first,last);
+            if(!pc.IsNull()) {
+                // Lift each finite trim once. Projecting every complete X line
+                // onto a surface that cannot contain it can fail to terminate.
+                BRep_Builder builder;TopoDS_Edge lifted;builder.MakeEdge(lifted);
+                builder.UpdateEdge(lifted,pc,face,Precision::Confusion());builder.Range(lifted,face,first,last);
+                try { if(BRepLib::BuildCurve3d(lifted,1e-8)) {
+                    boundary.AnalysisEdge=lifted;
+                    boundary.Curve=BRep_Tool::Curve(lifted,boundary.First,boundary.Last);
+                    BRepBndLib::AddOptimal(lifted,boundary.Bounds,false,false);
+                } } catch(const Standard_Failure&) {}
+            }
+            if(boundary.Curve.IsNull()) {
+                boundary.Curve=BRep_Tool::Curve(boundary.Edge,boundary.First,boundary.Last);
+                BRepBndLib::AddOptimal(boundary.Edge,boundary.Bounds,false,false);
+            }
+            result.push_back(std::move(boundary));
+        }
+        return result;
+    }
+
     void CollectFaceLineBreaks(
         IN const TopoDS_Face& Face_,
+        IN const std::vector<SFaceBoundaryCurve>& Boundaries_,
         IN const gp_Lin& Line_,
         IN const double LineMin_,
         IN const double LineMax_,
@@ -4536,23 +5887,33 @@ namespace
             Options_.dLinearTolerance,
             Options_.dSkinDistanceTolerance);
         Handle(Geom_Line) _LineCurve = new Geom_Line(Line_);
-
-        for (TopExp_Explorer _Explorer(Face_, TopAbs_EDGE);
-            _Explorer.More();
-            _Explorer.Next())
+        Bnd_Box finiteBounds;BRepBndLib::AddOptimal(Face_,finiteBounds,false,false);
+        double xmin,ymin,zmin,xmax,ymax,zmax;finiteBounds.Get(xmin,ymin,zmin,xmax,ymax,zmax);
+        finiteBounds.Enlarge(_Tolerance);
+        if(finiteBounds.IsOut(Line_))return;
+        for (const auto& boundary:Boundaries_)
         {
-            const auto _Edge = TopoDS::Edge(_Explorer.Current());
+            const auto _Edge = boundary.AnalysisEdge;
             try
             {
+                if (const auto span = SurfaceBoundaryLineSpan(boundary.Edge, Face_, Line_, Options_))
+                {
+                    AddLineParameter(Line_, LinePoint(Line_, span->First), LineMin_, LineMax_, _Tolerance, Parameters_);
+                    AddLineParameter(Line_, LinePoint(Line_, span->Last), LineMin_, LineMax_, _Tolerance, Parameters_);
+                    ExistingEdgeSpans_.push_back({std::max(LineMin_, span->First), std::min(LineMax_, span->Last)});
+                    continue;
+                }
                 BRepAdaptor_Curve _Adaptor(_Edge);
                 const auto _EdgeType = _Adaptor.GetType();
-                if (_EdgeType == GeomAbs_Line)
+                const bool _StraightSpline = _EdgeType == GeomAbs_BSplineCurve
+                    && IsSplineOnLine(_Edge, Line_, _Tolerance);
+                if (_EdgeType == GeomAbs_Line || _StraightSpline)
                 {
-                    const auto _EdgeLine = _Adaptor.Line();
-                    if (_EdgeLine.Direction().IsParallel(
+                    if (_StraightSpline || (_Adaptor.Line().Direction().IsParallel(
                             Line_.Direction(),
                             Options_.dAngularToleranceRadians)
-                        && _EdgeLine.Distance(Line_) <= _Tolerance)
+                        && Line_.Distance(_Adaptor.Value(_Adaptor.FirstParameter())) <= _Tolerance
+                        && Line_.Distance(_Adaptor.Value(_Adaptor.LastParameter())) <= _Tolerance))
                     {
                         const auto _FirstVertex = TopExp::FirstVertex(_Edge, true);
                         const auto _LastVertex = TopExp::LastVertex(_Edge, true);
@@ -4588,12 +5949,8 @@ namespace
                     }
                 }
 
-                double _CurveFirst = 0.0;
-                double _CurveLast = 0.0;
-                const auto _Curve = BRep_Tool::Curve(
-                    _Edge,
-                    _CurveFirst,
-                    _CurveLast);
+                const double _CurveFirst=boundary.First,_CurveLast=boundary.Last;
+                const auto _Curve=boundary.Curve;
                 if (_Curve.IsNull()
                     || !IsFinite(_CurveFirst)
                     || !IsFinite(_CurveLast)
@@ -4617,6 +5974,15 @@ namespace
                     _Tolerance,
                     Parameters_);
 
+                // Reject a provably disjoint 3D edge before the global spline
+                // extrema solver. UV intersections and exact surface boundary
+                // spans above are retained even when the independent 3D
+                // approximation is farther from the line.
+                Bnd_Box curveBounds=boundary.Bounds;
+                if(!curveBounds.IsVoid()) {
+                    curveBounds.Enlarge(_Tolerance);
+                    if(curveBounds.IsOut(Line_))continue;
+                }
                 GeomAPI_ExtremaCurveCurve _Extrema(
                     _LineCurve,
                     _Curve,
@@ -4662,13 +6028,288 @@ namespace
         IN const std::vector<SLineParameterSpan>& ExistingEdgeSpans_,
         IN const double Tolerance_)
     {
-        return std::any_of(
-            ExistingEdgeSpans_.begin(),
-            ExistingEdgeSpans_.end(),
-            [&](IN const auto& _Span) {
-                return First_ >= _Span.First - Tolerance_
-                    && Last_ <= _Span.Last + Tolerance_;
-            });
+        // A boundary can consist of several consecutive source edges. Its
+        // union already covers the cut even when no single edge spans it.
+        // Inserting that cut again can create a duplicate wire in the face.
+        auto spans=ExistingEdgeSpans_;
+        std::sort(spans.begin(),spans.end(),[](const auto& a,const auto& b){return a.First<b.First;});
+        double covered=First_;
+        for(const auto& span:spans) {
+            if(span.Last<covered-Tolerance_)continue;
+            if(span.First>covered+Tolerance_)return false;
+            covered=std::max(covered,span.Last);
+            if(covered>=Last_-Tolerance_)return true;
+        }
+        return false;
+    }
+
+    bool IsSkinFace(const TopoDS_Face&, const SSectionSupport&, const SFeatureToolpathOptions&,
+        std::vector<std::string>* = nullptr);
+
+    SSectionSupport PrivateSectionSupport(const SSectionSupport& source) {
+        SSectionSupport result;result.Segments=source.Segments;
+        for(const auto& curve:source.Curves)result.Curves.push_back({Handle(Geom2d_Curve)::DownCast(curve.Curve->Copy()),curve.First,curve.Last});
+        if(!source.MaterialSection.IsNull())result.MaterialSection=TopoDS::Face(BRepBuilderAPI_Copy(source.MaterialSection,true,false).Shape());
+        return result;
+    }
+
+    bool CoincidentBoundaryControlHulls(const Handle(Geom_BSplineCurve)& sourceA,
+        const Handle(Geom_BSplineCurve)& sourceB,double tolerance,int depth=0) {
+        auto a=Handle(Geom_BSplineCurve)::DownCast(sourceA->Copy()),b=Handle(Geom_BSplineCurve)::DownCast(sourceB->Copy());
+        const auto normalize=[](const auto& curve){NCollection_Array1<double> knots(1,curve->NbKnots());curve->Knots(knots);
+            BSplCLib::Reparametrize(0.,1.,knots);curve->SetKnots(knots);};
+        normalize(a);normalize(b);const int degree=std::max(a->Degree(),b->Degree());a->IncreaseDegree(degree);b->IncreaseDegree(degree);
+        std::map<double,int> knots;
+        for(const auto& curve:{a,b})for(int i=1;i<=curve->NbKnots();++i)knots[curve->Knot(i)]=std::max(knots[curve->Knot(i)],curve->Multiplicity(i));
+        for(const auto& [knot,multiplicity]:knots)if(knot>0&&knot<1){a->InsertKnot(knot,multiplicity,0,false);b->InsertKnot(knot,multiplicity,0,false);}
+        bool common=a->NbPoles()==b->NbPoles()&&a->NbKnots()==b->NbKnots();
+        for(int i=1;i<=a->NbKnots()&&common;++i)common=a->Knot(i)==b->Knot(i)&&a->Multiplicity(i)==b->Multiplicity(i);
+        if(common) {
+            double poleError=0,radius=0,minimum=std::numeric_limits<double>::max(),maximum=0;
+            const auto origin=b->Pole(1);
+            for(int i=1;i<=a->NbPoles();++i) {
+                if(a->Weight(i)<=0||b->Weight(i)<=0){common=false;break;}
+                poleError=std::max(poleError,a->Pole(i).Distance(b->Pole(i)));radius=std::max(radius,origin.Distance(b->Pole(i)));
+                const double ratio=a->Weight(i)/b->Weight(i);minimum=std::min(minimum,ratio);maximum=std::max(maximum,ratio);
+            }
+            // Equal bases with positive weights admit a global convex-hull
+            // bound, including different homogeneous weight normalizations.
+            if(common&&poleError+radius*(maximum-minimum)/minimum<=tolerance)return true;
+        }
+        if(depth>=12)return false;
+        const auto point=sourceA->Value((sourceA->FirstParameter()+sourceA->LastParameter())/2);
+        GeomAPI_ProjectPointOnCurve projection(point,sourceB,sourceB->FirstParameter(),sourceB->LastParameter());
+        if(!projection.NbPoints()||projection.LowerDistance()>tolerance)return false;
+        const double midA=(sourceA->FirstParameter()+sourceA->LastParameter())/2,midB=projection.LowerDistanceParameter();
+        if(midB<=sourceB->FirstParameter()+Precision::PConfusion()||midB>=sourceB->LastParameter()-Precision::PConfusion())return false;
+        auto a0=Handle(Geom_BSplineCurve)::DownCast(sourceA->Copy()),a1=Handle(Geom_BSplineCurve)::DownCast(sourceA->Copy());
+        auto b0=Handle(Geom_BSplineCurve)::DownCast(sourceB->Copy()),b1=Handle(Geom_BSplineCurve)::DownCast(sourceB->Copy());
+        a0->Segment(sourceA->FirstParameter(),midA);a1->Segment(midA,sourceA->LastParameter());
+        b0->Segment(sourceB->FirstParameter(),midB);b1->Segment(midB,sourceB->LastParameter());
+        return CoincidentBoundaryControlHulls(a0,b0,tolerance,depth+1)&&CoincidentBoundaryControlHulls(a1,b1,tolerance,depth+1);
+    }
+
+    std::vector<std::uint8_t> ProvenStockWallFaces(const TopTools_IndexedMapOfShape& faces,
+        const SFeatureToolpathOptions& options,std::vector<std::string>& diagnostics) {
+        std::vector<std::uint8_t> stock(faces.Extent()+1);
+        if(!options.bSingleExtrudedStock||faces.IsEmpty())return stock;
+        struct Face {std::set<int> Outer,All;double NormalX=0,First=0,Last=0,Budget=0;};
+        struct Plane {gp_Pln Support;gp_Dir Normal;std::vector<int> Faces;std::set<int> Outer;bool Oriented=true;};
+        std::vector<Face> context(faces.Extent()+1);std::vector<Plane> planes;TopTools_IndexedMapOfShape edgeIds;
+        for(int i=1;i<=faces.Extent();++i) {
+            const auto face=TopoDS::Face(faces(i));auto& item=context[i];
+            for(TopExp_Explorer it(face,TopAbs_EDGE);it.More();it.Next())item.All.insert(edgeIds.Add(it.Current()));
+            item.Budget=std::max(options.dLinearTolerance,BRep_Tool::Tolerance(face));
+            for(TopExp_Explorer it(face,TopAbs_EDGE);it.More();it.Next())item.Budget=std::max(item.Budget,BRep_Tool::Tolerance(TopoDS::Edge(it.Current())));
+            for(TopExp_Explorer it(face,TopAbs_VERTEX);it.More();it.Next())item.Budget=std::max(item.Budget,BRep_Tool::Tolerance(TopoDS::Vertex(it.Current())));
+            const auto outer=BRepTools::OuterWire(face);
+            if(!outer.IsNull())for(TopExp_Explorer it(outer,TopAbs_EDGE);it.More();it.Next())item.Outer.insert(edgeIds.Add(it.Current()));
+            Bnd_Box box;BRepBndLib::AddOptimal(face,box,false,false);if(box.IsVoid())continue;
+            double x,y,z,X,Y,Z;box.Get(x,y,z,X,Y,Z);item.First=x;item.Last=X;
+            BRepAdaptor_Surface surface(face,true);double u,U,v,V;BRepTools::UVBounds(face,u,U,v,V);
+            for(int a=0;a<3;++a)for(int b=0;b<3;++b){gp_Pnt p;gp_Vec du,dv;
+                surface.D1(u+(U-u)*(a+.5)/3,v+(V-v)*(b+.5)/3,p,du,dv);const auto n=du.Crossed(dv);
+                if(n.Magnitude()>kEpsilon)item.NormalX=std::max(item.NormalX,std::abs(n.X())/n.Magnitude());}
+            if(surface.GetType()!=GeomAbs_Plane)continue;
+            const auto plane=surface.Plane();auto normal=plane.Axis().Direction();if(face.Orientation()==TopAbs_REVERSED)normal.Reverse();
+            int at=-1;
+            for(std::size_t p=0;p<planes.size();++p)if(plane.Axis().Direction().IsParallel(planes[p].Support.Axis().Direction(),1e-10)
+                &&plane.Distance(planes[p].Support.Location())<=options.dLinearTolerance){at=static_cast<int>(p);break;}
+            if(at<0){at=static_cast<int>(planes.size());planes.push_back({plane,normal,{},{},true});}
+            auto& group=planes[at];group.Oriented=group.Oriented&&normal.Dot(group.Normal)>0;
+            group.Faces.push_back(i);group.Outer.insert(item.Outer.begin(),item.Outer.end());
+        }
+        std::vector<std::vector<int>> neighbors(faces.Extent()+1);
+        // Opposite occurrences on the same support can be local contacting
+        // cutting faces. Their end connections do not prove that the whole
+        // face is stock; retain section splitting and interface checks there.
+        std::vector<std::uint8_t> conflictingSupports(faces.Extent()+1);
+        for(const auto& plane:planes)if(!plane.Oriented)for(const auto f:plane.Faces)conflictingSupports[f]=1;
+        std::map<int,std::vector<int>> uses;double firstX=std::numeric_limits<double>::max(),lastX=std::numeric_limits<double>::lowest();
+        for(int i=1;i<=faces.Extent();++i){firstX=std::min(firstX,context[i].First);lastX=std::max(lastX,context[i].Last);
+            for(const auto edge:context[i].All)uses[edge].push_back(i);}
+        for(const auto& [edge,adjacent]:uses)for(const auto a:adjacent)for(const auto b:adjacent)if(a!=b)neighbors[a].push_back(b);
+        // IGES commonly represents adjacent faces with distinct free edge
+        // records. Retain those records; prove finite boundary coincidence
+        // separately instead of sewing or changing source topology.
+        struct Boundary {TopoDS_Edge Edge;Handle(Geom_Curve) Curve;double First=0,Last=0;Bnd_Box Bounds;bool Line=false;gp_Pnt A,B;};
+        std::vector<Boundary> boundary(edgeIds.Extent()+1);std::vector<int> freeEdges;
+        for(int id=1;id<=edgeIds.Extent();++id)if(uses[id].size()==1) {
+            auto& edge=boundary[id];edge.Edge=TopoDS::Edge(edgeIds(id));if(BRep_Tool::Degenerated(edge.Edge))continue;
+            edge.Curve=BRep_Tool::Curve(edge.Edge,edge.First,edge.Last);if(edge.Curve.IsNull())continue;
+            edge.A=edge.Curve->Value(edge.First);edge.B=edge.Curve->Value(edge.Last);
+            if(edge.A.Distance(edge.B)>options.dLinearTolerance) {
+                const gp_Lin line(edge.A,gp_Dir(gp_Vec(edge.A,edge.B)));
+                edge.Line=BRepAdaptor_Curve(edge.Edge).GetType()==GeomAbs_Line||IsSplineOnLine(edge.Edge,line,options.dLinearTolerance);
+            }
+            BRepBndLib::Add(edge.Edge,edge.Bounds,false);edge.Bounds.Enlarge(options.dLinearTolerance);freeEdges.push_back(id);
+        }
+        std::map<int,std::set<int>> coincident;std::size_t matched=0;
+        for(std::size_t i=0;i<freeEdges.size();++i)for(std::size_t j=i+1;j<freeEdges.size();++j) {
+            const int left=freeEdges[i],right=freeEdges[j];const auto& a=boundary[left];const auto& b=boundary[right];
+            if(uses[left].front()==uses[right].front()||a.Bounds.IsOut(b.Bounds))continue;
+            bool same=false;
+            if(a.Line&&b.Line) {
+                const gp_Vec along(a.A,a.B);const double length=along.Magnitude();const auto direction=along/length;
+                const gp_Lin line(a.A,gp_Dir(direction));
+                if(line.Distance(b.A)<=options.dLinearTolerance&&line.Distance(b.B)<=options.dLinearTolerance) {
+                    const double first=gp_Vec(a.A,b.A).Dot(direction),last=gp_Vec(a.A,b.B).Dot(direction);
+                    same=std::min(length,std::max(first,last))-std::max(0.,std::min(first,last))>options.dLinearTolerance;
+                }
+            } else if((a.A.Distance(b.A)<=options.dLinearTolerance&&a.B.Distance(b.B)<=options.dLinearTolerance)
+                ||(a.A.Distance(b.B)<=options.dLinearTolerance&&a.B.Distance(b.A)<=options.dLinearTolerance)) {
+                try {
+                    const auto ca=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(a.Curve,a.First,a.Last));
+                    auto cb=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(b.Curve,b.First,b.Last));
+                    if(a.A.Distance(b.B)<a.A.Distance(b.A))cb->Reverse();
+                    same=CoincidentBoundaryControlHulls(ca,cb,options.dLinearTolerance);
+                }catch(const Standard_Failure&) {}
+            }
+            if(!same&&(!a.Line||!b.Line)) {
+                // Adjacent IGES faces may divide the same curved boundary at
+                // different parameters. Match finite overlapping intervals,
+                // then prove the complete overlap with control-hull bounds.
+                // End-point proximity alone never establishes adjacency.
+                try {
+                    struct Match {double A,B;gp_Pnt Point;};std::vector<Match> matches;
+                    for(const double parameter:{a.First,a.Last}) {
+                        const auto point=a.Curve->Value(parameter);
+                        GeomAPI_ProjectPointOnCurve projection(point,b.Curve,b.First,b.Last);
+                        if(projection.NbPoints()&&projection.LowerDistance()<=options.dLinearTolerance)
+                            matches.push_back({parameter,projection.LowerDistanceParameter(),point});
+                    }
+                    for(const double parameter:{b.First,b.Last}) {
+                        const auto point=b.Curve->Value(parameter);
+                        GeomAPI_ProjectPointOnCurve projection(point,a.Curve,a.First,a.Last);
+                        if(projection.NbPoints()&&projection.LowerDistance()<=options.dLinearTolerance)
+                            matches.push_back({projection.LowerDistanceParameter(),parameter,point});
+                    }
+                    for(std::size_t p=0;p<matches.size()&&!same;++p)for(std::size_t q=p+1;q<matches.size()&&!same;++q) {
+                        auto first=matches[p],last=matches[q];if(first.A>last.A)std::swap(first,last);
+                        if(first.Point.Distance(last.Point)<=options.dLinearTolerance
+                            ||last.A-first.A<=Precision::PConfusion()||std::abs(last.B-first.B)<=Precision::PConfusion())continue;
+                        const auto ca=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(a.Curve,first.A,last.A));
+                        auto cb=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(b.Curve,std::min(first.B,last.B),std::max(first.B,last.B)));
+                        if(first.B>last.B)cb->Reverse();
+                        same=CoincidentBoundaryControlHulls(ca,cb,options.dLinearTolerance);
+                    }
+                }catch(const Standard_Failure&) {}
+            }
+            if(!same)continue;
+            coincident[left].insert(right);coincident[right].insert(left);++matched;
+            for(const auto f:uses[left])for(const auto g:uses[right]){neighbors[f].push_back(g);neighbors[g].push_back(f);}
+        }
+        const auto shares=[&](const auto& a,const auto& b){for(const auto edge:a){if(b.contains(edge))return true;
+            if(const auto found=coincident.find(edge);found!=coincident.end())for(const auto other:found->second)if(b.contains(other))return true;}return false;};
+        if(matched)diagnostics.push_back("Proved "+std::to_string(matched)+" coincident free-edge intervals without changing source faces");
+        struct Terminals {std::set<int> First,Last;double NormalX=0;};
+        std::vector<Terminals> terminals;
+        for(std::size_t i=0;i<planes.size();++i)for(std::size_t j=i+1;j<planes.size();++j) {
+            const auto& a=planes[i];const auto& b=planes[j];
+            // Face-only IGES sheets need not carry outward material normals.
+            // The independent terminal bridges establish this wall relation.
+            if(!a.Oriented||!b.Oriented||!a.Support.Axis().Direction().IsParallel(b.Support.Axis().Direction(),1e-10)
+                ||a.Support.Distance(b.Support.Location())<=options.dLinearTolerance)continue;
+            const double wallNormalX=std::max(std::abs(a.Normal.X()),std::abs(b.Normal.X()));
+            const double transverse=wallNormalX+std::sin(options.dAngularToleranceRadians);
+            std::vector<int> component(faces.Extent()+1,-1);std::vector<std::pair<bool,bool>> reaches;
+            for(int seed=1;seed<=faces.Extent();++seed)if(component[seed]<0&&context[seed].NormalX>transverse) {
+                const int id=static_cast<int>(reaches.size());reaches.push_back({false,false});std::vector<int> queue{seed};component[seed]=id;
+                for(std::size_t at=0;at<queue.size();++at){const int f=queue[at];
+                    reaches[id].first=reaches[id].first||context[f].First<=firstX+context[f].Budget;
+                    reaches[id].second=reaches[id].second||context[f].Last>=lastX-context[f].Budget;
+                    for(const auto neighbor:neighbors[f])if(component[neighbor]<0&&context[neighbor].NormalX>transverse){component[neighbor]=id;queue.push_back(neighbor);}
+                }
+            }
+            std::vector<int> bridges;
+            for(int k=1;k<=faces.Extent();++k) {
+                if(context[k].NormalX<=transverse)continue;
+                // Hole/countersink walls belong to inner wires. They cannot
+                // certify a stock wall's connection to its two axial ends.
+                if(shares(a.Outer,context[k].All)&&shares(b.Outer,context[k].All))bridges.push_back(k);
+            }
+            std::optional<std::pair<int,int>> ends;double separation=-1;
+            for(std::size_t p=0;p<bridges.size();++p)for(std::size_t q=p+1;q<bridges.size();++q) {
+                int first=bridges[p],last=bridges[q];if(context[first].First>context[last].First)std::swap(first,last);
+                const int left=component[first],right=component[last];
+                // Local pocket end walls cannot certify stock skins. Their
+                // transverse components must independently reach opposite
+                // terminals of the whole part, without crossing a wall.
+                if(left<0||right<0||left==right||!reaches[left].first||reaches[left].second
+                    ||!reaches[right].second||reaches[right].first)continue;
+                const double gap=context[last].First-context[first].Last;
+                if(gap>options.dLinearTolerance&&gap>separation){separation=gap;ends={{first,last}};}
+            }
+            if(!ends)continue;
+            Terminals terminal;terminal.NormalX=std::min(context[ends->first].NormalX,context[ends->second].NormalX);
+            for(int f=1;f<=faces.Extent();++f){if(component[f]==component[ends->first])terminal.First.insert(f);
+                if(component[f]==component[ends->second])terminal.Last.insert(f);}
+            terminals.push_back(std::move(terminal));for(const auto f:a.Faces)stock[f]=1;for(const auto f:b.Faces)stock[f]=1;
+            diagnostics.push_back("Stock wall pair proved by opposite parallel supports and common outer-wire end faces="
+                +std::to_string(ends->first)+","+std::to_string(ends->second)+"; wall faces="
+                +std::to_string(a.Faces.front())+","+std::to_string(b.Faces.front()));
+        }
+        // Curved or slightly drafted continuations can be stock skins too.
+        // Require both already certified end faces and an outer-wire join to
+        // an established wall; merely being adjacent to a hole is insufficient.
+        bool changed=true;
+        while(changed){changed=false;for(int i=1;i<=faces.Extent();++i)if(!stock[i]&&!conflictingSupports[i]) {
+            for(const auto& terminal:terminals) {
+                if(terminal.First.contains(i)||terminal.Last.contains(i)
+                    ||context[i].NormalX+std::sin(options.dAngularToleranceRadians)>=terminal.NormalX)continue;
+                bool first=false,last=false;
+                for(const auto face:terminal.First)first=first||shares(context[i].Outer,context[face].All);
+                for(const auto face:terminal.Last)last=last||shares(context[i].Outer,context[face].All);
+                if(!first||!last)continue;
+                bool joinsWall=false;for(int j=1;j<=faces.Extent()&&!joinsWall;++j)
+                    if(stock[j]&&shares(context[i].Outer,context[j].Outer))joinsWall=true;
+                if(!joinsWall)continue;
+                stock[i]=1;changed=true;diagnostics.push_back("Stock skin continuation joins both certified end faces: face="+std::to_string(i));break;
+            }
+        }}
+        return stock;
+    }
+
+    bool WallProofHasVaryingSection(const TopoDS_Face& face,const SFeatureToolpathOptions& options) {
+        const BRepAdaptor_Surface surface(face,true);
+        if(surface.GetType()!=GeomAbs_Plane||std::abs(surface.Plane().Axis().Direction().X())>1e-10)return true;
+        // A paired draft can carry nominally X-parallel top/bottom planes
+        // whose longitudinal boundary itself changes transverse position.
+        // Constant-section planar walls still require finite skin coverage.
+        for(const auto& boundary:FaceBoundaryCurves(face)) {
+            const auto a=boundary.Curve->Value(boundary.First),b=boundary.Curve->Value(boundary.Last);
+            if(std::abs(a.X()-b.X())>options.dLinearTolerance
+                &&std::hypot(a.Y()-b.Y(),a.Z()-b.Z())>options.dLinearTolerance)return true;
+        }
+        return false;
+    }
+
+    std::vector<std::uint8_t> ClassifyStockSkin(const TopTools_IndexedMapOfShape& faces,
+        const SSectionSupport& support,const SFeatureToolpathOptions& options,std::vector<std::string>& diagnostics,
+        std::vector<Bnd_Box>* exactBounds=nullptr) {
+        const auto wallFlags=ProvenStockWallFaces(faces,options,diagnostics);
+        std::vector<TopoDS_Face> privateFaces;
+        for(int i=1;i<=faces.Extent();++i)privateFaces.push_back(TopoDS::Face(BRepBuilderAPI_Copy(faces(i),true,false).Shape()));
+        std::vector<std::uint8_t> flags(faces.Extent()+1);
+        std::vector<std::vector<std::string>> messages(faces.Extent());
+        if(exactBounds)exactBounds->resize(faces.Extent()+1);
+        const auto count=std::min(privateFaces.size(),iCAX::OpenCascade::detail::GeometryConcurrency(options.nMaximumConcurrency));
+        std::vector<SSectionSupport> supports;for(std::size_t i=0;i<count;++i)supports.push_back(PrivateSectionSupport(support));
+        std::atomic<std::size_t> nextFace{0};
+        const auto workers=iCAX::OpenCascade::detail::ForGeometryIndices(count,count,[&](std::size_t slot){
+            const auto& local=supports[slot];
+            for(auto i=nextFace.fetch_add(1);i<privateFaces.size();i=nextFace.fetch_add(1)) {
+                if(exactBounds)BRepBndLib::AddOptimal(privateFaces[i],(*exactBounds)[i+1],false,false);
+                // Terminal bridges certify a wall support, not every finite
+                // region on that plane. A coplanar cut ledge can extend into
+                // the web's missing material and must retain section splits.
+                const bool extends=wallFlags[i+1]&&WallProofHasVaryingSection(privateFaces[i],options);
+                flags[i+1]=(wallFlags[i+1]&&extends)||IsSkinFace(privateFaces[i],local,options,&messages[i]);
+            }
+        });
+        for(const auto& message:messages)diagnostics.insert(diagnostics.end(),message.begin(),message.end());
+        diagnostics.push_back("Classified independent stock-skin faces with CAD Task workers="+std::to_string(workers));
+        return flags;
     }
 
     TopoDS_Shape SplitTargetBySectionVertices(
@@ -4714,6 +6355,7 @@ namespace
         struct SFaceSplitWork final
         {
             TopoDS_Face SourceFace;
+            int SourceIndex=0;
             std::vector<TopoDS_Edge> Edges;
             bool bFailed = false;
         };
@@ -4721,39 +6363,59 @@ namespace
         std::vector<SFaceSplitWork> _FaceWorks;
         std::size_t _ValidSegmentCount = 0;
         std::size_t _ExistingEdgeCount = 0;
+        std::size_t _StockFaceCount = 0, _TransversePlaneCount = 0;
+        const auto _Support = BuildSectionSupport(Section_);
 
         TopTools_IndexedMapOfShape _TargetFaces;
         TopExp::MapShapes(Target_, TopAbs_FACE, _TargetFaces);
-        for (int _FaceIndex = 1;
-            _FaceIndex <= _TargetFaces.Extent();
-            ++_FaceIndex)
-        {
-            const auto _Face = TopoDS::Face(_TargetFaces(_FaceIndex));
-            SFaceSplitWork _Work;
+        const auto wallFlags=ProvenStockWallFaces(_TargetFaces,Options_,Diagnostics_);
+        struct SPreparedFace {TopoDS_Face Face;std::vector<std::string> Diagnostics;bool Skin=false,Transverse=false;};
+        std::vector<SPreparedFace> prepared(_TargetFaces.Extent());
+        for(int i=1;i<=_TargetFaces.Extent();++i)
+            prepared[i-1].Face=TopoDS::Face(BRepBuilderAPI_Copy(_TargetFaces(i),true,false).Shape());
+        const auto slots=std::min(prepared.size(),iCAX::OpenCascade::detail::GeometryConcurrency(Options_.nMaximumConcurrency));
+        std::vector<SSectionSupport> supports;for(std::size_t i=0;i<slots;++i)supports.push_back(PrivateSectionSupport(_Support));
+        std::atomic<std::size_t> nextPreparedFace{0};
+        const auto preparationWorkers=iCAX::OpenCascade::detail::ForGeometryIndices(slots,slots,[&](std::size_t slot){
+            const auto& support=supports[slot];
+            for(auto i=nextPreparedFace.fetch_add(1);i<prepared.size();i=nextPreparedFace.fetch_add(1)){
+                auto& job=prepared[i];auto& face=job.Face;const auto index=std::to_string(i+1);
+                const auto planar=section_detail::CanonicalPlanarTrimFace(face);
+                if(!planar.IsNull()){face=planar;job.Diagnostics.push_back("Exact planar support with unchanged surface trims: face="+index);}
+                if(section_detail::NeedsPreciseTrimTopology(face,Options_.dLinearTolerance)){
+                    std::string reason;const auto exact=section_detail::PreciseTrimAnalysisFace(face,Options_.dLinearTolerance,reason);
+                    if(!exact.IsNull()){face=exact;job.Diagnostics.push_back("Reconstructed original face trims for splitting: face="+index);}
+                    else job.Diagnostics.push_back("Original trim reconstruction unavailable: face="+index+" "+reason);
+                }
+                const BRepAdaptor_Surface surface(face);
+                job.Skin=wallFlags[i+1]&&WallProofHasVaryingSection(face,Options_);
+                job.Transverse=!job.Skin&&surface.GetType()==GeomAbs_Plane
+                    &&std::abs(surface.Plane().Axis().Direction().X())>std::sin(Options_.dAngularToleranceRadians);
+                if(!job.Transverse&&!job.Skin)job.Skin=IsSkinFace(face,support,Options_);
+            }
+        });
+        Diagnostics_.push_back("Prepared independent split faces with CAD Task workers="+std::to_string(preparationWorkers));
+        std::vector<SFaceSplitWork> splitWorks(prepared.size());
+        std::vector<std::size_t> validSegments(prepared.size()),existingEdges(prepared.size());
+        // Each task owns its face, trims and generated tools. Serialize
+        // callbacks and collect outputs in source order after joining.
+        std::mutex progressMutex;
+        const auto splitWorkers=iCAX::OpenCascade::detail::ForGeometryIndices(prepared.size(),Options_.nMaximumConcurrency,[&](std::size_t at) {
+            const int _FaceIndex=static_cast<int>(at)+1;
+            auto& job=prepared[_FaceIndex-1];auto _Face=job.Face;
+            if(job.Transverse||job.Skin)return;
+            auto& _Work=splitWorks[at];
             _Work.SourceFace = _Face;
+            _Work.SourceIndex = _FaceIndex;
+
+            Bnd_Box _FaceBounds;BRepBndLib::AddOptimal(_Face,_FaceBounds,false,false);
+            if(_FaceBounds.IsVoid())return;
+            double _FaceXMin,_FaceYMin,_FaceZMin,_FaceXMax,_FaceYMax,_FaceZMax;
+            _FaceBounds.Get(_FaceXMin,_FaceYMin,_FaceZMin,_FaceXMax,_FaceYMax,_FaceZMax);
+            const auto _BoundaryCurves=FaceBoundaryCurves(_Face);
 
             for (const auto& _Vertex : _Vertices)
             {
-                Bnd_Box _FaceBounds;
-                BRepBndLib::Add(_Face, _FaceBounds);
-                if (_FaceBounds.IsVoid())
-                {
-                    continue;
-                }
-
-                double _FaceXMin = 0.0;
-                double _FaceYMin = 0.0;
-                double _FaceZMin = 0.0;
-                double _FaceXMax = 0.0;
-                double _FaceYMax = 0.0;
-                double _FaceZMax = 0.0;
-                _FaceBounds.Get(
-                    _FaceXMin,
-                    _FaceYMin,
-                    _FaceZMin,
-                    _FaceXMax,
-                    _FaceYMax,
-                    _FaceZMax);
                 if (_Vertex.X < _FaceYMin - Options_.dSkinDistanceTolerance
                     || _Vertex.X > _FaceYMax + Options_.dSkinDistanceTolerance
                     || _Vertex.Y < _FaceZMin - Options_.dSkinDistanceTolerance
@@ -4767,8 +6429,13 @@ namespace
                     gp_Dir(1.0, 0.0, 0.0));
                 std::vector<double> _Parameters;
                 std::vector<SLineParameterSpan> _ExistingEdgeSpans;
+                if(Options_.Progress) {
+                    std::lock_guard lock(progressMutex);
+                    Options_.Progress("split face="+std::to_string(_FaceIndex)+" line=("+std::to_string(_Vertex.X)+","+std::to_string(_Vertex.Y)+") collect trims");
+                }
                 CollectFaceLineBreaks(
                     _Face,
+                    _BoundaryCurves,
                     _Line,
                     _XMin,
                     _XMax,
@@ -4790,6 +6457,7 @@ namespace
                     continue;
                 }
 
+                TopoDS_Edge _LineEdge;
                 for (std::size_t _Index = 1;
                     _Index < _Parameters.size();
                     ++_Index)
@@ -4810,21 +6478,41 @@ namespace
                         continue;
                     }
 
-                    ++_ValidSegmentCount;
+                    ++validSegments[at];
                     if (IsCoveredByExistingEdge(
                         _First,
                         _Last,
                         _ExistingEdgeSpans,
                         Options_.dLinearTolerance))
                     {
-                        ++_ExistingEdgeCount;
+                        ++existingEdges[at];
                         continue;
                     }
 
                     try
                     {
-                        const auto _FirstPoint = LinePoint(_Line, _First);
-                        const auto _LastPoint = LinePoint(_Line, _Last);
+                        // Measure the reached tolerance only where the line
+                        // actually lies on this trimmed face. In particular a
+                        // spline's 3D and UV representations need not agree to
+                        // the default tolerance of a freshly made line edge.
+                        auto _Segment = BRepBuilderAPI_MakeEdge(_Line, _First, _Last).Edge();
+                        BOPTools_AlgoTools2D::BuildPCurveForEdgeOnFace(_Segment, _Face);
+                        BRepLib::SameParameter(_Segment, Options_.dLinearTolerance, true);
+                        const double _ReachedTolerance = BRep_Tool::Tolerance(_Segment);
+                        BRep_Builder _ToolBuilder;
+                        if (!_LineEdge.IsNull()) {
+                            _ToolBuilder.UpdateEdge(_LineEdge,
+                                std::max(BRep_Tool::Tolerance(_LineEdge), _ReachedTolerance));
+                            continue;
+                        }
+                        // Break parameters prove that this generator crosses
+                        // the trimmed face. They can come from independent
+                        // edge approximations, so they must not also clip the
+                        // Boolean tool: a tiny endpoint gap can leave a mixed
+                        // stock/cut face unsplit. Let the splitter intersect
+                        // the complete generator with the original trims.
+                        const auto _FirstPoint = LinePoint(_Line, _FaceXMin - Options_.dLinearTolerance);
+                        const auto _LastPoint = LinePoint(_Line, _FaceXMax + Options_.dLinearTolerance);
                         BRepBuilderAPI_MakeEdge _Maker(
                             _Line,
                             _FirstPoint,
@@ -4836,54 +6524,52 @@ namespace
                         }
 
                         auto _Edge = _Maker.Edge();
-                        BRep_Builder _EdgeBuilder;
-                        _EdgeBuilder.UpdateEdge(
-                            _Edge,
-                            std::max(
-                                Options_.dLinearTolerance,
-                                Options_.dSkinDistanceTolerance));
-                        BOPTools_AlgoTools2D::BuildPCurveForEdgeOnFace(
-                            _Edge,
-                            _Face);
-                        BRepLib::SameParameter(
-                            _Edge,
-                            Options_.dLinearTolerance,
-                            true);
-                        if (!BOPTools_AlgoTools2D::HasCurveOnSurface(
-                            _Edge,
-                            _Face))
-                        {
-                            _Work.bFailed = true;
-                            continue;
-                        }
-
+                        _ToolBuilder.UpdateEdge(_Edge, _ReachedTolerance);
+                        // The complete tool can leave a finite spline support.
+                        // The Boolean splitter constructs pcurves on its actual
+                        // intersection segments; projecting the untrimmed tool
+                        // here would fail or extrapolate the source surface.
                         _Work.Edges.push_back(_Edge);
+                        _LineEdge = _Edge;
                     }
                     catch (const Standard_Failure& _Error_)
                     {
                         _Work.bFailed = true;
-                        Diagnostics_.push_back(
-                            std::string("Failed to add face-local split edge: ")
+                        job.Diagnostics.push_back(
+                            std::string("Failed to add face-local split edge on face ")+std::to_string(_FaceIndex)
+                            +" (surface "+std::to_string(BRepAdaptor_Surface(_Face).GetType())+"): "
                             + _Error_.GetMessageString());
                     }
                 }
             }
 
-            if (!_Work.Edges.empty() || _Work.bFailed)
-            {
-                _FaceWorks.push_back(std::move(_Work));
-            }
+        });
+        Diagnostics_.push_back("Collected independent face-local split tools with CAD Task workers="+std::to_string(splitWorkers));
+        for(std::size_t at=0;at<prepared.size();++at) {
+            const auto& job=prepared[at];
+            Diagnostics_.insert(Diagnostics_.end(),job.Diagnostics.begin(),job.Diagnostics.end());
+            _TransversePlaneCount+=job.Transverse;_StockFaceCount+=job.Skin;
+            _ValidSegmentCount+=validSegments[at];_ExistingEdgeCount+=existingEdges[at];
+            auto& work=splitWorks[at];
+            if(!work.Edges.empty()||work.bFailed)_FaceWorks.push_back(std::move(work));
         }
 
+        if(_TransversePlaneCount)Diagnostics_.push_back("Retained "+std::to_string(_TransversePlaneCount)
+            +" transverse/oblique planar cutting faces without axial split searches; original geometry unchanged");
         if (_ValidSegmentCount == 0)
         {
             Diagnostics_.push_back(
-                "No section-vertex line segment belongs to a target face");
+                "No section-vertex split is needed outside " + std::to_string(_StockFaceCount)
+                + " faces already on the nominal extrusion skin");
             return Target_;
         }
 
         std::size_t _AddedEdgeCount = 0;
-        TopoDS_Shape _Result = Target_;
+        // Intersect all surface-qualified cuts with the original topology in
+        // one operation. The Boolean splitter creates shared boundary vertices
+        // itself; BRepFeat requires them to be shared before registering cuts.
+        TopTools_ListOfShape _Arguments, _Tools;
+        _Arguments.Append(Target_);
         for (const auto& _Work : _FaceWorks)
         {
             if (_Work.bFailed || _Work.Edges.empty())
@@ -4893,74 +6579,62 @@ namespace
                 continue;
             }
 
-            TopoDS_Face _CurrentFace;
-            for (TopExp_Explorer _FaceExplorer(_Result, TopAbs_FACE);
-                _FaceExplorer.More();
-                _FaceExplorer.Next())
-            {
-                if (_FaceExplorer.Current().IsSame(_Work.SourceFace))
-                {
-                    _CurrentFace = TopoDS::Face(_FaceExplorer.Current());
-                    break;
-                }
-            }
-            if (_CurrentFace.IsNull())
-            {
-                Diagnostics_.push_back(
-                    "Cannot locate the original face after a previous split; keep the original face");
-                continue;
-            }
-
             try
             {
-                BRepFeat_SplitShape _FaceSplitter(_Result);
-                bool _AddFailed = false;
                 for (const auto& _Edge : _Work.Edges)
                 {
-                    try
-                    {
-                        _FaceSplitter.Add(_Edge, _CurrentFace);
-                    }
-                    catch (const Standard_Failure& _Error_)
-                    {
-                        _AddFailed = true;
-                        Diagnostics_.push_back(
-                            std::string("Failed to register face-local split edge; keep the original face: ")
-                            + _Error_.GetMessageString());
-                        break;
-                    }
+                    _Tools.Append(_Edge);
                 }
-                if (_AddFailed)
-                {
-                    continue;
-                }
-
-                _FaceSplitter.Build();
-                if (!_FaceSplitter.IsDone() || _FaceSplitter.Shape().IsNull())
-                {
-                    Diagnostics_.push_back(
-                        "OCC face split failed; keep the original face");
-                    continue;
-                }
-
-                _Result = _FaceSplitter.Shape();
                 _AddedEdgeCount += _Work.Edges.size();
             }
             catch (const Standard_Failure& _Error_)
             {
-                Diagnostics_.push_back(
-                    std::string("OCC face split raised an exception; keep the original face: ")
+                Diagnostics_.push_back(std::string("OCC face split raised an exception; keep the original face: ")
                     + _Error_.GetMessageString());
+                return {};
             }
         }
-
         if (_AddedEdgeCount == 0)
         {
-            Diagnostics_.push_back(
-                _ExistingEdgeCount == _ValidSegmentCount
-                    ? "All section-vertex segments already exist as target edges"
-                    : "No face was split successfully; keep the original target faces");
+            Diagnostics_.push_back(_ExistingEdgeCount == _ValidSegmentCount
+                ? "All section-vertex segments already exist as target edges"
+                : "No face was split successfully; keep the original target faces");
             return Target_;
+        }
+
+        BRep_Builder resultBuilder;TopoDS_Compound independentFaces;resultBuilder.MakeCompound(independentFaces);
+        try
+        {
+            for(int i=1;i<=_TargetFaces.Extent();++i) {
+                const auto face=TopoDS::Face(_TargetFaces(i));
+                const auto work=std::find_if(_FaceWorks.begin(),_FaceWorks.end(),[&](const auto& item){return item.SourceIndex==i;});
+                if(work==_FaceWorks.end()||work->Edges.empty()) {resultBuilder.Add(independentFaces,face);continue;}
+                if(work->bFailed)return {};
+                if(Options_.Progress)Options_.Progress("boolean split original face="+std::to_string(i)+" tools="+std::to_string(work->Edges.size()));
+                TopTools_ListOfShape arguments,tools;arguments.Append(work->SourceFace);for(const auto& edge:work->Edges)tools.Append(edge);
+                BRepAlgoAPI_Splitter splitter;splitter.SetArguments(arguments);splitter.SetTools(tools);
+                splitter.SetNonDestructive(true);splitter.SetFuzzyValue(0.0);splitter.Build();
+                if(!splitter.IsDone()||splitter.Shape().IsNull()) {
+                    Diagnostics_.push_back("OCC face-local split failed: face="+std::to_string(i));return {};
+                }
+                GProp_GProps beforeArea,afterArea;BRepGProp::SurfaceProperties(work->SourceFace,beforeArea,1e-9);
+                BRepGProp::SurfaceProperties(splitter.Shape(),afterArea,1e-9);
+                const double localError=std::abs(beforeArea.Mass()-afterArea.Mass())/std::max(1.,std::abs(beforeArea.Mass()));
+                if(localError>1e-6)Diagnostics_.push_back("Face split area changed: source-face="+std::to_string(i)
+                    +" before="+std::to_string(beforeArea.Mass())+" after="+std::to_string(afterArea.Mass()));
+                if(localError>1e-6) {
+                    double refinedAfter=0;for(TopExp_Explorer it(splitter.Shape(),TopAbs_FACE);it.More();it.Next())refinedAfter+=iCAX::OpenCascade::integration_detail::RefinedArea(TopoDS::Face(it.Current()));
+                    Diagnostics_.push_back("Independent trim-domain split area: source-face="+std::to_string(i)
+                        +" before="+std::to_string(iCAX::OpenCascade::integration_detail::RefinedArea(work->SourceFace))+" after="+std::to_string(refinedAfter));
+                }
+                for(TopExp_Explorer it(splitter.Shape(),TopAbs_FACE);it.More();it.Next())resultBuilder.Add(independentFaces,it.Current());
+            }
+        }
+        catch (const Standard_Failure& error)
+        {
+            Diagnostics_.push_back(std::string("OCC batched face split raised an exception: ")
+                + error.GetMessageString());
+            return {};
         }
 
         Diagnostics_.push_back(
@@ -4971,8 +6645,8 @@ namespace
             + std::to_string(_ExistingEdgeCount)
             + " already present)");
         Diagnostics_.push_back(
-            "Target faces were split independently by exact X-directed face-local edges");
-        return _Result;
+            "Each original face was split only by its own surface-qualified X-directed edges; independent source faces and opposite occurrences retained");
+        return independentFaces;
     }
 
     bool IsPerpendicularToX(
@@ -5057,7 +6731,8 @@ namespace
     bool IsSkinFace(
         IN const TopoDS_Face& Face_,
         IN const SSectionSupport& Support_,
-        IN const SFeatureToolpathOptions& Options_)
+        IN const SFeatureToolpathOptions& Options_,
+        std::vector<std::string>* Diagnostics_)
     {
         // Do not classify by "end face" or by a machining direction.  The
         // only geometric prerequisite is the same X-directed side-face rule
@@ -5067,9 +6742,13 @@ namespace
             return false;
         }
 
-        bool _HasBoundarySample = false;
+        bool _HasBoundarySample = false, outsideTrim = false, nearTrim = true;
+        double sourceTolerance=BRep_Tool::Tolerance(Face_);
+        for(TopExp_Explorer e(Face_,TopAbs_EDGE);e.More();e.Next())
+            sourceTolerance=std::max(sourceTolerance,BRep_Tool::Tolerance(TopoDS::Edge(e.Current())));
         try
         {
+            const bool planar=BRepAdaptor_Surface(Face_,true).GetType()==GeomAbs_Plane;
             for (TopExp_Explorer _Explorer(Face_, TopAbs_EDGE);
                 _Explorer.More();
                 _Explorer.Next())
@@ -5077,7 +6756,8 @@ namespace
                 const auto _Samples = SampleEdge(
                     TopoDS::Edge(_Explorer.Current()),
                     Options_.nCurveClassificationSampleCount,
-                    Options_.dLinearTolerance);
+                    Options_.dLinearTolerance,
+                    Face_);
                 for (const auto& _Point : _Samples)
                 {
                     _HasBoundarySample = true;
@@ -5086,7 +6766,14 @@ namespace
                         Support_,
                         Options_.dSkinDistanceTolerance))
                     {
-                        return false;
+                        outsideTrim=true;
+                        if(!IsOnSkin(_Point,Support_,Options_.dSkinDistanceTolerance+2*sourceTolerance)) {
+                            // The planar proof below unconditionally rejects
+                            // !nearTrim. Once proved, remaining samples and
+                            // area integrals cannot change that result.
+                            if(planar)return false;
+                            nearTrim=false;
+                        }
                     }
                 }
             }
@@ -5095,7 +6782,288 @@ namespace
         {
             return false;
         }
-        return _HasBoundarySample;
+        if(!outsideTrim)return _HasBoundarySample;
+        // A tolerant imported planar trim can contain a tiny endpoint loop
+        // outside an otherwise exact stock plane. Prove area coverage within
+        // the source's own boundary uncertainty; do not raise skin distance
+        // tolerance or discard a precise, positive-area machining overhang.
+        try {
+            BRepAdaptor_Surface surface(Face_,true);
+            Bnd_Box box;BRepBndLib::AddOptimal(Face_,box,false,false);double x,y,z,X,Y,Z;box.Get(x,y,z,X,Y,Z);
+            GProp_GProps area,perimeter;BRepGProp::SurfaceProperties(Face_,area,1e-9);BRepGProp::LinearProperties(Face_,perimeter);
+            const double uncertainty=2*sourceTolerance*perimeter.Mass()+kPi*sourceTolerance*sourceTolerance;
+            const auto commonArea=[&](const TopoDS_Shape& other){
+                BRepAlgoAPI_Common common;TopTools_ListOfShape args,tools;args.Append(Face_);tools.Append(other);
+                common.SetArguments(args);common.SetTools(tools);common.SetNonDestructive(true);
+                common.SetFuzzyValue(Options_.dLinearTolerance);common.Build();
+                if(!common.IsDone()||common.Shape().IsNull())return 0.;
+                GProp_GProps covered;BRepGProp::SurfaceProperties(common.Shape(),covered,1e-9);return covered.Mass();
+            };
+            if(surface.GetType()!=GeomAbs_Plane){
+                // An imported fillet can overlap its adjacent web. Its
+                // visible part contributes to the nominal contour, while
+                // the hidden continuation lies inside the same material.
+                // Require positive exact skin overlap AND complete area
+                // containment. A separate shallow groove has no stock-skin
+                // overlap and cannot pass this proof.
+                if(Support_.MaterialSection.IsNull()){
+                    if(Diagnostics_)Diagnostics_->push_back("Curved stock coverage unavailable: fixed material section could not be built");
+                    return false;
+                }
+                bool contributes=false;
+                const gp_Pln plane(gp_Ax3(gp_Pnt(x-1,0,0),gp_Dir(1,0,0),gp_Dir(0,1,0)));
+                for(const auto& curve:Support_.Curves){
+                    BRepBuilderAPI_MakeEdge edge(GeomAPI::To3d(curve.Curve,plane),curve.First,curve.Last);
+                    if(!edge.IsDone())continue;
+                    const auto skin=BRepPrimAPI_MakePrism(edge.Edge(),gp_Vec(X-x+2,0,0)).Shape();
+                    if(commonArea(skin)>uncertainty){contributes=true;break;}
+                }
+                if(!contributes){
+                    if(Diagnostics_)Diagnostics_->push_back("Curved side face has no positive stock-skin overlap: area="+std::to_string(area.Mass()));
+                    return false;
+                }
+                gp_Trsf pose;pose.SetTranslation(gp_Vec(x-1,0,0));
+                const auto base=BRepBuilderAPI_Transform(Support_.MaterialSection,pose,true).Shape();
+                const auto stock=BRepPrimAPI_MakePrism(base,gp_Vec(X-x+2,0,0)).Shape();
+                const double covered=commonArea(stock);
+                if(Diagnostics_)Diagnostics_->push_back("Curved stock continuation coverage: area="+std::to_string(area.Mass())
+                    +" covered="+std::to_string(covered)+" boundary uncertainty="+std::to_string(uncertainty));
+                return covered>0&&std::abs(area.Mass()-covered)<=uncertainty;
+            }
+            if(!nearTrim)return false;
+            for(const auto& segment:Support_.Segments){
+                const gp_Pnt a(x-1,segment.first.X,segment.first.Y),b(x-1,segment.second.X,segment.second.Y);
+                const auto plane=surface.Plane();
+                if(plane.Distance(a)>Options_.dLinearTolerance||plane.Distance(b)>Options_.dLinearTolerance)continue;
+                const auto edge=BRepBuilderAPI_MakeEdge(a,b).Edge();
+                const auto skin=BRepPrimAPI_MakePrism(edge,gp_Vec(X-x+2,0,0)).Shape();
+                const double covered=commonArea(skin);
+                if(covered>0&&std::abs(area.Mass()-covered)<=uncertainty)return true;
+            }
+        } catch(const Standard_Failure&) {}
+        return false;
+    }
+
+    std::unordered_set<int> InternalStockInterfaceFaces(
+        const TopTools_IndexedMapOfShape& faces,const SSectionSupport& support,
+        const SFeatureToolpathOptions& options,std::vector<std::string>& diagnostics,const std::vector<std::uint8_t>* skinFlags=nullptr,
+        const std::vector<Bnd_Box>* exactBounds=nullptr)
+    {
+        std::unordered_set<int> result;
+        if(!options.bSingleExtrudedStock||support.MaterialSection.IsNull()||faces.IsEmpty())return result;
+        Bnd_Box bounds;for(int i=1;i<=faces.Extent();++i) {
+            if(exactBounds)bounds.Add((*exactBounds)[i]);else BRepBndLib::AddOptimal(faces(i),bounds,false,false);
+        }
+        if(bounds.IsVoid())return result;double x,y,z,X,Y,Z;bounds.Get(x,y,z,X,Y,Z);
+        if(X-x<=options.dLinearTolerance)return result;
+        TopoDS_Shape stock;
+        for(int i=1;i<=faces.Extent();++i) {
+          try {
+            const auto face=TopoDS::Face(faces(i));const BRepAdaptor_Surface surface(face);
+            if(surface.GetType()!=GeomAbs_Plane||std::abs(surface.Plane().Axis().Direction().X())>1e-12)continue;
+            Bnd_Box own;if(exactBounds)own=(*exactBounds)[i];else BRepBndLib::AddOptimal(face,own,false,false);double a,b,c,A,B,C;own.Get(a,b,c,A,B,C);
+            // A local cut is not a permanent extrusion interface. Require
+            // both axial terminals of this input, using the existing linear
+            // tolerance, rather than a length or aspect-ratio threshold.
+            if(std::abs(a-x)>options.dLinearTolerance||std::abs(A-X)>options.dLinearTolerance)continue;
+            // Local cutting faces cannot satisfy this proof. Reject them before
+            // repeating the much more expensive exact stock-skin predicate.
+            if(skinFlags?(*skinFlags)[i]!=0:IsSkinFace(face,support,options))continue;
+            GProp_GProps sourceMass;BRepGProp::SurfaceProperties(face,sourceMass,1e-9);const double sourceArea=std::abs(sourceMass.Mass());
+            if(sourceArea<=0)continue;
+            auto orientedNormal=gp_Vec(surface.Plane().Axis().Direction());if(face.Orientation()==TopAbs_REVERSED)orientedNormal.Reverse();
+            int opposite=0;
+            for(int j=1;j<=faces.Extent()&&!opposite;++j) {
+                if(i==j)continue;const auto other=TopoDS::Face(faces(j));const BRepAdaptor_Surface otherSurface(other);
+                if(otherSurface.GetType()!=GeomAbs_Plane||surface.Plane().Distance(otherSurface.Plane().Location())>Precision::Confusion())continue;
+                auto otherNormal=gp_Vec(otherSurface.Plane().Axis().Direction());if(other.Orientation()==TopAbs_REVERSED)otherNormal.Reverse();
+                if(orientedNormal.Dot(otherNormal)>-1+1e-12)continue;
+                Bnd_Box otherBounds;if(exactBounds)otherBounds=(*exactBounds)[j];else BRepBndLib::AddOptimal(other,otherBounds,false,false);double ox,oy,oz,oX,oY,oZ;otherBounds.Get(ox,oy,oz,oX,oY,oZ);
+                if(ox>a+options.dLinearTolerance||oX<A-options.dLinearTolerance)continue;
+                BRepAlgoAPI_Common common;TopTools_ListOfShape arguments,tools;arguments.Append(face);tools.Append(other);
+                common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
+                if(!common.IsDone()||!BRepCheck_Analyzer(common.Shape(),true).IsValid())continue;
+                GProp_GProps overlap;BRepGProp::SurfaceProperties(common.Shape(),overlap,1e-9);
+                if(std::abs(std::abs(overlap.Mass())-sourceArea)<=1e-6*std::max(1.,sourceArea))opposite=j;
+            }
+            // Coincidence alone is insufficient: retain isolated pocket floors.
+            if(!opposite)continue;
+            if(stock.IsNull()) {
+                gp_Trsf pose;pose.SetTranslation(gp_Vec(x-options.dLinearTolerance,0,0));
+                const auto base=BRepBuilderAPI_Transform(support.MaterialSection,pose,true).Shape();
+                stock=BRepPrimAPI_MakePrism(base,gp_Vec(X-x+2*options.dLinearTolerance,0,0)).Shape();
+                if(stock.IsNull()||!BRepCheck_Analyzer(stock,true).IsValid())return result;
+            }
+            GProp_GProps mass;BRepGProp::SurfaceProperties(face,mass,1e-9);const double area=std::abs(mass.Mass());
+            if(area<=0)continue;bool internal=true;double covered[2]={0,0};
+            const gp_Vec normal(surface.Plane().Axis().Direction());
+            for(int side=0;side<2;++side) {
+                gp_Trsf shift;shift.SetTranslation(normal*((side?1.:-1.)*options.dSkinDistanceTolerance));
+                const auto offset=BRepBuilderAPI_Transform(face,shift,true).Shape();
+                BRepAlgoAPI_Common common;TopTools_ListOfShape arguments,tools;arguments.Append(offset);tools.Append(stock);
+                common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
+                if(!common.IsDone()||!BRepCheck_Analyzer(common.Shape(),true).IsValid()){internal=false;break;}
+                GProp_GProps overlap;BRepGProp::SurfaceProperties(common.Shape(),overlap,1e-9);covered[side]=std::abs(overlap.Mass());
+                if(std::abs(covered[side]-area)>1e-6*std::max(1.,area)){internal=false;break;}
+            }
+            if(internal) {
+                result.insert(i);diagnostics.push_back("Internal fixed-stock interface face="+std::to_string(i)
+                    +" opposite face="+std::to_string(opposite)+" spans both axial terminals; area="+std::to_string(area)+" material coverage on both normal sides="
+                    +std::to_string(covered[0])+","+std::to_string(covered[1]));
+            }
+          } catch(const Standard_Failure&) {
+            diagnostics.push_back("Internal stock interface proof incomplete for face="+std::to_string(i)+"; original machining classification retained");
+          }
+        }
+        return result;
+    }
+
+    struct SInternalInterfacePiece final
+    {
+        TopoDS_Face Face;
+        int ParentIndex=0;
+        bool Internal=false;
+        bool Derived=false;
+        std::set<int> AnchorIndices;
+        std::set<std::uint64_t> SourceFaceIds,AnchorSourceFaceIds,SourceEdgeIds,SourceCurveIds;
+    };
+
+    double InterfaceArea(const TopoDS_Shape& shape)
+    {
+        GProp_GProps mass;BRepGProp::SurfaceProperties(shape,mass,1e-9);return std::abs(mass.Mass());
+    }
+
+    std::string InterfaceIds(const auto& ids)
+    {
+        std::string text;for(const auto id:ids){if(!text.empty())text+=",";text+=std::to_string(id);}return text;
+    }
+
+    // The anchor already passed the complete, two-sided fixed-stock proof.
+    // Only its actual finite domain may be inherited by an opposite face.
+    std::vector<SInternalInterfacePiece> RefineInternalInterfaceDomains(
+        const TopTools_IndexedMapOfShape& faces,const std::unordered_set<int>& interfaces,
+        const std::vector<bool>& machining,std::vector<std::string>& diagnostics,bool& changed)
+    {
+        std::vector<SInternalInterfacePiece> output;changed=false;if(interfaces.empty())return output;
+        std::vector<int> anchors(interfaces.begin(),interfaces.end());std::sort(anchors.begin(),anchors.end());
+        const auto collect=[](const TopoDS_Shape& shape,const TopoDS_Face& source) {
+            std::vector<TopoDS_Face> result;TopTools_IndexedMapOfShape fragments;TopExp::MapShapes(shape,TopAbs_FACE,fragments);
+            TopLoc_Location sourceLocation;const auto sourceSupport=BRep_Tool::Surface(source,sourceLocation);
+            for(int k=1;k<=fragments.Extent();++k){auto face=TopoDS::Face(fragments(k));face.Orientation(source.Orientation());
+                TopLoc_Location location;const auto support=BRep_Tool::Surface(face,location);
+                if(support!=sourceSupport||location!=sourceLocation||!BRepCheck_Analyzer(face,true).IsValid())
+                    throw std::runtime_error("Internal-interface partition did not retain the unchanged valid source support");
+                // Each source occurrence remains independent even if Common
+                // reuses the opposite anchor's coincident native face.
+                const auto independent=BRepBuilderAPI_Copy(face,false,false).Shape();
+                result.push_back(TopoDS::Face(independent));
+            }return result;
+        };
+        for(int i=1;i<=faces.Extent();++i){
+            const auto source=TopoDS::Face(faces(i));std::vector<SInternalInterfacePiece> retained{{source,i,false,false}};
+            std::vector<SInternalInterfacePiece> internal;
+            if(machining[i]&&!interfaces.empty()){
+                const BRepAdaptor_Surface surface(source,true);
+                if(surface.GetType()==GeomAbs_Plane){
+                    auto normal=gp_Vec(surface.Plane().Axis().Direction());if(source.Orientation()==TopAbs_REVERSED)normal.Reverse();
+                    for(const int anchorIndex:anchors){
+                        const auto anchor=TopoDS::Face(faces(anchorIndex));const BRepAdaptor_Surface other(anchor,true);
+                        if(other.GetType()!=GeomAbs_Plane||surface.Plane().Distance(other.Plane().Location())>Precision::Confusion())continue;
+                        auto otherNormal=gp_Vec(other.Plane().Axis().Direction());if(anchor.Orientation()==TopAbs_REVERSED)otherNormal.Reverse();
+                        if(normal.Dot(otherNormal)>-1+1e-12)continue;
+                        std::vector<SInternalInterfacePiece> remainder;
+                        for(const auto& piece:retained){
+                            TopTools_ListOfShape arguments,tools;arguments.Append(piece.Face);tools.Append(anchor);
+                            BRepAlgoAPI_Common common;common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
+                            if(!common.IsDone()||!BRepCheck_Analyzer(common.Shape(),true).IsValid())throw std::runtime_error("Internal-interface finite-domain intersection failed");
+                            const double area=InterfaceArea(piece.Face),overlap=InterfaceArea(common.Shape());const double budget=1e-6*std::max(1.,area);
+                            if(overlap<=0){remainder.push_back(piece);continue;}
+                            BRepAlgoAPI_Cut cut;cut.SetArguments(arguments);cut.SetTools(tools);cut.SetNonDestructive(true);cut.Build();
+                            if(!cut.IsDone()||!BRepCheck_Analyzer(cut.Shape(),true).IsValid())throw std::runtime_error("Internal-interface finite-domain remainder failed");
+                            const auto overlapFaces=collect(common.Shape(),source),outsideFaces=collect(cut.Shape(),source);
+                            const double outside=InterfaceArea(cut.Shape());
+                            // Area tolerances verify the result; they never erase
+                            // a valid positive remainder or authorize a whole-face reclassification.
+                            if(!piece.Derived&&outsideFaces.empty()){remainder.push_back(piece);continue;}
+                            if(overlapFaces.empty()||std::abs(area-overlap-outside)>budget)
+                                throw std::runtime_error("Internal-interface partition does not conserve the complete parent-face area");
+                            BRepAlgoAPI_Common duplicate;TopTools_ListOfShape overlapArguments,overlapTools;overlapArguments.Append(common.Shape());overlapTools.Append(cut.Shape());
+                            duplicate.SetArguments(overlapArguments);duplicate.SetTools(overlapTools);duplicate.SetNonDestructive(true);duplicate.Build();
+                            if(!duplicate.IsDone()||InterfaceArea(duplicate.Shape())>budget)throw std::runtime_error("Internal-interface partition contains overlapping fragment interiors");
+                            auto anchors=piece.AnchorIndices;anchors.insert(anchorIndex);
+                            for(const auto& face:overlapFaces)internal.push_back({face,i,true,true,anchors});
+                            for(const auto& face:outsideFaces)remainder.push_back({face,i,false,true,anchors});
+                            changed=true;
+                        }retained=std::move(remainder);
+                    }
+                }
+            }
+            if(!internal.empty()){
+                const double sourceArea=InterfaceArea(source),budget=1e-6*std::max(1.,sourceArea);double area=0;
+                BRep_Builder builder;TopoDS_Compound domains;builder.MakeCompound(domains);
+                for(const auto& piece:internal){area+=InterfaceArea(piece.Face);builder.Add(domains,piece.Face);}
+                for(const auto& piece:retained){area+=InterfaceArea(piece.Face);builder.Add(domains,piece.Face);}
+                if(std::abs(area-sourceArea)>budget)throw std::runtime_error("Internal-interface accumulated pieces lost parent-face area");
+                for(int direction=0;direction<2;++direction){TopTools_ListOfShape arguments,tools;
+                    arguments.Append(direction?TopoDS_Shape(domains):TopoDS_Shape(source));tools.Append(direction?TopoDS_Shape(source):TopoDS_Shape(domains));
+                    BRepAlgoAPI_Cut difference;difference.SetArguments(arguments);difference.SetTools(tools);difference.SetNonDestructive(true);difference.Build();
+                    if(!difference.IsDone()||InterfaceArea(difference.Shape())>budget)throw std::runtime_error("Internal-interface fragment union differs from its complete original domain");
+                }
+                diagnostics.push_back("Materialized partial internal-stock interface split face="+std::to_string(i)
+                +" parent area="+std::to_string(InterfaceArea(source))+" internal area="+std::to_string([&]{double a=0;for(const auto& p:internal)a+=InterfaceArea(p.Face);return a;}())
+                +" machining remainder area="+std::to_string([&]{double a=0;for(const auto& p:retained)a+=InterfaceArea(p.Face);return a;}())
+                +"; unchanged supports, exact finite-domain Boolean partition, bidirectional domain coverage and complete area conservation verified");
+            }
+            output.insert(output.end(),internal.begin(),internal.end());output.insert(output.end(),retained.begin(),retained.end());
+        }return output;
+    }
+
+    void TraceInternalInterfacePieces(std::vector<SInternalInterfacePiece>& pieces,
+        const TopTools_IndexedMapOfShape& parentFaces,const iCAX::GeometryData::BRepModel& source,
+        std::vector<std::string>& diagnostics)
+    {
+        if(std::none_of(pieces.begin(),pieces.end(),[](const auto& p){return p.Derived;}))return;
+        const auto built=iCAX::OpenCascade::ReconstructOpenCascadeShape(source);
+        if(!built.bOK)throw std::runtime_error("Cannot reconstruct original interface lineage");
+        std::map<int,std::set<std::uint64_t>> sourceFaces;
+        const auto identify=[&](int parent)->const std::set<std::uint64_t>& {
+            if(sourceFaces.contains(parent))return sourceFaces.at(parent);
+            auto& result=sourceFaces[parent];const auto face=TopoDS::Face(parentFaces(parent));const BRepAdaptor_Surface surface(face,true);
+            auto normal=gp_Vec(surface.Plane().Axis().Direction());if(face.Orientation()==TopAbs_REVERSED)normal.Reverse();const double area=InterfaceArea(face);
+            for(const auto& record:source.Faces){const auto original=built.Faces.at(record.Id);const BRepAdaptor_Surface support(original,true);
+                if(support.GetType()!=GeomAbs_Plane||surface.Plane().Distance(support.Plane().Location())>Precision::Confusion())continue;
+                auto other=gp_Vec(support.Plane().Axis().Direction());if(record.Orientation==iCAX::GeometryData::ETopologyOrientation::Reversed)other.Reverse();if(normal.Dot(other)<1-1e-12)continue;
+                BRepAlgoAPI_Common common;TopTools_ListOfShape arguments,tools;arguments.Append(face);tools.Append(original);common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
+                if(common.IsDone()&&BRepCheck_Analyzer(common.Shape(),true).IsValid()&&std::abs(InterfaceArea(common.Shape())-area)<=1e-6*std::max(1.,area))result.insert(record.Id);
+            }
+            if(result.empty())throw std::runtime_error("Derived internal-interface domain has no complete oriented original-face lineage");return result;
+        };
+        struct SourceEdge {std::uint64_t Id=0,Curve=0;TopoDS_Edge Edge;Bnd_Box Bounds;};std::vector<SourceEdge> sourceEdges;
+        for(const auto& record:source.Edges)if(!record.Degenerated){SourceEdge edge;edge.Id=record.Id;edge.Curve=record.Curve3Id;edge.Edge=built.Edges.at(record.Id);BRepBndLib::AddOptimal(edge.Edge,edge.Bounds,false,false);sourceEdges.push_back(std::move(edge));}
+        std::map<std::uint64_t,const iCAX::GeometryData::BRepWire*> originalWires;for(const auto& wire:source.Wires)originalWires[wire.Id]=&wire;
+        std::map<std::uint64_t,std::set<std::uint64_t>> originalFaceEdges;
+        for(const auto& face:source.Faces)for(const auto wire:face.WireIds)for(const auto& use:originalWires.at(wire)->Coedges)originalFaceEdges[face.Id].insert(use.EdgeId);
+        for(auto& piece:pieces)if(piece.Derived){
+            piece.SourceFaceIds=identify(piece.ParentIndex);for(const int anchor:piece.AnchorIndices){const auto& ids=identify(anchor);piece.AnchorSourceFaceIds.insert(ids.begin(),ids.end());}
+            std::set<std::uint64_t> allowedEdges;for(const auto face:piece.SourceFaceIds)allowedEdges.insert(originalFaceEdges.at(face).begin(),originalFaceEdges.at(face).end());
+            for(const auto face:piece.AnchorSourceFaceIds)allowedEdges.insert(originalFaceEdges.at(face).begin(),originalFaceEdges.at(face).end());
+            for(TopExp_Explorer it(piece.Face,TopAbs_EDGE);it.More();it.Next()){
+                const auto edge=TopoDS::Edge(it.Current());if(BRep_Tool::Degenerated(edge))continue;Bnd_Box box;BRepBndLib::AddOptimal(edge,box,false,false);
+                GProp_GProps length;BRepGProp::LinearProperties(edge,length);const double budget=1e-6*std::max(1.,std::abs(length.Mass()));TopTools_ListOfShape coverage;
+                for(const auto& original:sourceEdges){if(!allowedEdges.contains(original.Id)||box.IsOut(original.Bounds))continue;TopTools_ListOfShape arguments,tools;arguments.Append(edge);tools.Append(original.Edge);
+                    BRepAlgoAPI_Common common;common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();if(!common.IsDone())continue;
+                    GProp_GProps overlap;BRepGProp::LinearProperties(common.Shape(),overlap);if(std::abs(overlap.Mass())<=1e-10)continue;
+                    coverage.Append(original.Edge);piece.SourceEdgeIds.insert(original.Id);if(original.Curve)piece.SourceCurveIds.insert(original.Curve);
+                }
+                if(coverage.IsEmpty())throw std::runtime_error("Derived interface boundary has no original-curve lineage");
+                TopTools_ListOfShape arguments;arguments.Append(edge);BRepAlgoAPI_Cut uncovered;uncovered.SetArguments(arguments);uncovered.SetTools(coverage);uncovered.SetNonDestructive(true);uncovered.Build();
+                if(!uncovered.IsDone())throw std::runtime_error("Cannot verify original-curve coverage of the complete interface boundary");
+                GProp_GProps remainder;BRepGProp::LinearProperties(uncovered.Shape(),remainder);if(std::abs(remainder.Mass())>budget)throw std::runtime_error("Derived interface boundary is not completely covered by original curves");
+            }
+            diagnostics.push_back("Internal-interface piece source split face="+std::to_string(piece.ParentIndex)+" source face IDs="+InterfaceIds(piece.SourceFaceIds)
+                +" anchor source face IDs="+InterfaceIds(piece.AnchorSourceFaceIds)+" original edge IDs="+InterfaceIds(piece.SourceEdgeIds)+" original curve3 IDs="+InterfaceIds(piece.SourceCurveIds)
+                +" area="+std::to_string(InterfaceArea(piece.Face))+" classification="+(piece.Internal?"NonMachining":"Machining"));
+        }
     }
 
     TopoDS_Shape CollectMachiningFaces(
@@ -5117,12 +7085,16 @@ namespace
         TopoDS_Compound _MachiningFaces;
         _Builder.MakeCompound(_MachiningFaces);
 
+        const auto skinFlags=ClassifyStockSkin(_Faces,Support_,Options_,Diagnostics_);
+        const auto interfaces=InternalStockInterfaceFaces(_Faces,Support_,Options_,Diagnostics_,&skinFlags);
         std::size_t _SkinFaceCount = 0;
         std::size_t _MachiningFaceCount = 0;
         for (int _Index = 1; _Index <= _Faces.Extent(); ++_Index)
         {
             const auto _Face = TopoDS::Face(_Faces(_Index));
-            if (IsSkinFace(_Face, Support_, Options_))
+            // Geometric boundaries include every positive-area non-stock face,
+            // including blind-pocket floors. Tool accessibility is a CAM rule.
+            if (interfaces.contains(_Index) || skinFlags[_Index] || IsZeroAreaTrimFace(_Face))
             {
                 ++_SkinFaceCount;
                 continue;
@@ -5151,68 +7123,21 @@ namespace
         IN const SFeatureToolpathOptions& Options_,
         OUT std::vector<std::string>& Diagnostics_)
     {
-        ShapeFix_Shape _Fixer(Source_);
-        _Fixer.SetPrecision(Options_.dLinearTolerance);
-        _Fixer.Perform();
-        auto _Shape = _Fixer.Shape();
-        if (_Shape.IsNull())
-        {
-            return {};
-        }
-
-        BRepLib::SameParameter(
-            _Shape,
-            Options_.dLinearTolerance,
-            true);
-
-        BRepBuilderAPI_Sewing _Sewing(Options_.dLinearTolerance);
-        _Sewing.Add(_Shape);
-        _Sewing.Perform();
-        if (!_Sewing.SewedShape().IsNull())
-        {
-            _Shape = _Sewing.SewedShape();
-        }
-
-        ShapeUpgrade_UnifySameDomain _Unifier(
-            _Shape,
-            true,
-            true,
-            false);
-        _Unifier.SetLinearTolerance(Options_.dLinearTolerance);
-        _Unifier.SetAngularTolerance(Options_.dAngularToleranceRadians);
-        _Unifier.Build();
-        if (!_Unifier.Shape().IsNull())
-        {
-            _Shape = _Unifier.Shape();
-        }
-
-        ShapeUpgrade_ShapeDivideContinuity _Divider(_Shape);
-        _Divider.SetPrecision(Options_.dLinearTolerance);
-        _Divider.SetMinTolerance(Options_.dLinearTolerance * 0.1);
-        _Divider.SetMaxTolerance(Options_.dLinearTolerance * 10.0);
-        _Divider.SetEdgeMode(2);
-        _Divider.SetSurfaceSegmentMode(true);
-        _Divider.SetBoundaryCriterion(GeomAbs_C2);
-        _Divider.SetPCurveCriterion(GeomAbs_C2);
-        _Divider.SetSurfaceCriterion(GeomAbs_C2);
-        if (_Divider.Perform() && !_Divider.Result().IsNull())
-        {
-            _Shape = _Divider.Result();
-        }
-        else
+        if (Source_.IsNull()) return {};
+        // Classification consumes the original trimmed faces. Sewing, healing
+        // and same-domain unification can change their boundaries and can
+        // crash on otherwise readable IGES faces. They are not prerequisites
+        // for introducing section seams. Work on an independent copy so the
+        // splitter cannot change the caller's original edge tolerances.
+        auto _Shape = iCAX::OpenCascade::ConvertOpenCascadeSweptToElementary(
+            BRepBuilderAPI_Copy(Source_, true, false).Shape());
+        // A revolved line/circle may be exactly a cylinder, sphere or torus.
+        // Canonicalizing that support preserves its trims and avoids generic
+        // revolution projection failures. No faces are joined or sewn.
+        if (!BRepCheck_Analyzer(_Shape, true, true).IsValid())
         {
             Diagnostics_.push_back(
-                "ShapeDivideContinuity did not produce a replacement shape");
-        }
-
-        BRepLib::SameParameter(
-            _Shape,
-            Options_.dLinearTolerance,
-            true);
-        if (!BRepCheck_Analyzer(_Shape, true).IsValid())
-        {
-            Diagnostics_.push_back(
-                "Prepared OCC target shape is not fully valid");
+                "Source OCC target shape is not fully valid before face splitting");
         }
         return _Shape;
     }
@@ -5220,25 +7145,83 @@ namespace
     TopoDS_Shape ValidateSplitShape(
         IN const TopoDS_Shape& Source_,
         IN const SFeatureToolpathOptions& Options_,
-        OUT std::vector<std::string>& Diagnostics_)
+        OUT std::vector<std::string>& Diagnostics_, bool* validity=nullptr)
     {
+        if(validity)*validity=false;
         if (Source_.IsNull())
         {
             return {};
         }
         auto _Shape = Source_;
-        // Do not run UnifySameDomain or ShapeDivideContinuity here.  They may
-        // erase the very seams introduced by BRepFeat_SplitShape.
-        BRepLib::SameParameter(
-            _Shape,
-            Options_.dLinearTolerance,
-            true);
-        if (!BRepCheck_Analyzer(_Shape, true).IsValid())
+        // Validate without changing original pcurves or tolerance flags.
+        // SameParameter(force=true) can invalidate a source face even when
+        // no split was required. Newly created edges are parameterized where
+        // they are constructed, rather than rewriting every source edge here.
+        const bool valid=BRepCheck_Analyzer(_Shape, true, true).IsValid();
+        if(validity)*validity=valid;
+        if (!valid)
         {
             Diagnostics_.push_back(
                 "OCC split result is not fully valid");
         }
         return _Shape;
+    }
+
+    TopoDS_Shape PrepareSectionSplit(const iCAX::GeometryData::BRepModel& Geometry_,
+        const SSectionWiresResult& Section_, const SFeatureToolpathOptions& Options_,
+        std::vector<std::string>& diagnostics,bool* validity=nullptr)
+    {
+    if(validity)*validity=false;
+    if(Options_.Progress)Options_.Progress("classify build neutral source");
+    const auto _Built = iCAX::OpenCascade::ReconstructOpenCascadeShape(Geometry_);
+    if (!_Built.bOK || _Built.Shape.IsNull())
+    {
+        diagnostics.insert(
+            diagnostics.end(),
+            _Built.Diagnostics.begin(),
+            _Built.Diagnostics.end());
+        diagnostics.push_back(
+            "Neutral BRep could not be translated to an OCC shape");
+        return {};
+    }
+
+        // Preserve the source boundaries before introducing contour seams.
+    if(Options_.Progress)Options_.Progress("classify prepare source topology");
+    const auto _PreparedTarget = PrepareShape(
+        _Built.Shape,
+        Options_,
+        diagnostics);
+    if (_PreparedTarget.IsNull())
+    {
+        diagnostics.push_back(
+            "Neutral target BRep could not be prepared for face splitting");
+        return {};
+    }
+
+    if(Options_.Progress)Options_.Progress("classify split source faces");
+    const auto _SplitTarget = SplitTargetBySectionVertices(
+        _PreparedTarget,
+        Section_,
+        Options_,
+        diagnostics);
+    if (_SplitTarget.IsNull())
+    {
+        return {};
+    }
+
+    if(Options_.Progress)Options_.Progress("classify validate split topology");
+    const auto _SplitShape = ValidateSplitShape(
+        _SplitTarget,
+        Options_,
+        diagnostics,validity);
+    if (_SplitShape.IsNull())
+    {
+        diagnostics.push_back(
+            "OCC face-split result is null");
+        return {};
+    }
+
+        return _SplitShape;
     }
 
     struct STask final
@@ -5421,6 +7404,120 @@ namespace
     }
 }
 
+SSectionFaceClassificationResult ClassifySectionFaces(
+    const iCAX::GeometryData::BRepModel& geometry, const SSectionWiresResult& section,
+    const SFeatureToolpathOptions& options)
+{
+    SSectionFaceClassificationResult result;
+    if (!IsValidOptions(options) || !section.bSuccess || section.Wires.empty()) {
+        result.Diagnostics.push_back("Valid options and section contours are required");
+        return result;
+    }
+    bool splitValid=false;
+    auto split = PrepareSectionSplit(geometry, section, options, result.Diagnostics,&splitValid);
+    if (split.IsNull()) return result;
+    const auto support = BuildSectionSupport(section);
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(split, TopAbs_FACE, faces);
+    std::map<int,SZeroAreaTrimEvidence> zeroTrimEvidence;
+    std::map<int,std::array<double,4>> zeroTrimDomains;
+    for(int i=1;i<=faces.Extent();++i){SZeroAreaTrimEvidence evidence;
+        if(!IsZeroAreaTrimFace(TopoDS::Face(faces(i)),&evidence))continue;
+        double u,U,v,V;BRepTools::UVBounds(TopoDS::Face(faces(i)),u,U,v,V);zeroTrimEvidence[i]=evidence;zeroTrimDomains[i]={u,U,v,V};
+        result.Diagnostics.push_back("Non-machining zero-area trim source split face="+std::to_string(i)+" proof="+evidence.Proof
+            +" UV=["+ZeroTrimNumber(u)+","+ZeroTrimNumber(U)+","+ZeroTrimNumber(v)+","+ZeroTrimNumber(V)+"] wires="+std::to_string(evidence.nWireCount)
+            +" coedge uses="+std::to_string(evidence.nEdgeUseCount)+" UV roundoff budget="+ZeroTrimNumber(evidence.dUVRoundoffBudget)
+            +" maximum UV endpoint gap="+ZeroTrimNumber(evidence.dMaximumEndpointUVGap)+" UV area representation bound="+ZeroTrimNumber(evidence.dUVAreaRepresentationBound)
+            +"; original face, support and trims retained in SplitGeometry");
+    }
+    if(options.Progress)options.Progress("classify geometric stock skin");
+    std::vector<Bnd_Box> exactBounds;
+    const auto skinFlags=ClassifyStockSkin(faces,support,options,result.Diagnostics,&exactBounds);
+    if(options.Progress)options.Progress("classify stock skin and exact bounds ready");
+    const auto interfaces=InternalStockInterfaceFaces(faces,support,options,result.Diagnostics,&skinFlags,&exactBounds);
+    std::vector<bool> parentMachining(faces.Extent()+1,false);
+    // "Machining" denotes all real boundary geometry not recoverable from the
+    // nominal extrusion skin; it does not encode laser/milling accessibility.
+    for(int i=1;i<=faces.Extent();++i)parentMachining[i]=!interfaces.contains(i)&&!skinFlags[i]&&!zeroTrimEvidence.contains(i);
+    std::vector<SInternalInterfacePiece> interfacePieces;
+    std::vector<bool> refinedMachining;
+    std::map<int,std::size_t> refinedPieces;
+    std::map<int,int> refinedParents;
+    bool interfacesRefined=false;
+    try {
+        const auto parents=faces;
+        interfacePieces=RefineInternalInterfaceDomains(parents,interfaces,parentMachining,result.Diagnostics,interfacesRefined);
+        if(interfacesRefined){
+            TraceInternalInterfacePieces(interfacePieces,parents,geometry,result.Diagnostics);
+            BRep_Builder refinedBuilder;TopoDS_Compound refined;refinedBuilder.MakeCompound(refined);
+            for(const auto& piece:interfacePieces)refinedBuilder.Add(refined,piece.Face);
+            TopTools_IndexedMapOfShape refinedFaces;TopExp::MapShapes(refined,TopAbs_FACE,refinedFaces);
+            if(refinedFaces.Extent()!=int(interfacePieces.size())||!BRepCheck_Analyzer(refined,true).IsValid()
+                ||std::abs(InterfaceArea(refined)-InterfaceArea(split))>1e-6*std::max(1.,InterfaceArea(split)))
+                throw std::runtime_error("Internal-interface refinement lost an original occurrence, validity or complete model area");
+            refinedMachining.resize(refinedFaces.Extent()+1,false);
+            for(std::size_t k=0;k<interfacePieces.size();++k){const auto& piece=interfacePieces[k];const int index=refinedFaces.FindIndex(piece.Face);
+                refinedParents[index]=piece.ParentIndex;refinedMachining[index]=!piece.Internal&&parentMachining[piece.ParentIndex];if(piece.Derived)refinedPieces[index]=k;
+            }
+            split=refined;faces=refinedFaces;
+        }
+    }catch(const Standard_Failure& error){result.Diagnostics.push_back(std::string("Internal-interface refinement failed: ")+error.GetMessageString());return result;}
+    catch(const std::exception& error){result.Diagnostics.push_back(std::string("Internal-interface refinement failed: ")+error.what());return result;}
+    BRep_Builder builder;
+    TopoDS_Compound machining, skin;
+    builder.MakeCompound(machining); builder.MakeCompound(skin);
+    int machiningCount = 0, skinCount = 0;
+    std::unordered_set<int> machiningIndices;
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        if(options.Progress)options.Progress("classify assign face="+std::to_string(i));
+        const auto face = TopoDS::Face(faces(i));
+        if (!(interfacesRefined?refinedMachining[i]:parentMachining[i])) { builder.Add(skin, face); ++skinCount; }
+        else { builder.Add(machining, face); machiningIndices.insert(i); ++machiningCount; }
+    }
+    // Convert each exact split surface/trim once. The two partitions select
+    // the same neutral records and IDs instead of converting all faces again.
+    std::map<std::uint64_t,std::size_t> derivedLineage;
+    std::map<std::uint64_t,int> zeroTrimLineage;
+    result.SplitGeometry=iCAX::OpenCascade::ConvertOpenCascadeShapeToBRepWithDisplay(
+        split,"","",[&](const TopoDS_Face& face,std::uint64_t id) {
+            const int index=faces.FindIndex(face);
+            if(!index)throw std::runtime_error("Converted classification face is absent from the split topology");
+            if(refinedPieces.contains(index))derivedLineage[id]=refinedPieces.at(index);
+            const int parent=interfacesRefined?refinedParents.at(index):index;if(zeroTrimEvidence.contains(parent))zeroTrimLineage[id]=parent;
+            (machiningIndices.contains(index)?result.MachiningFaceIds:result.NonMachiningFaceIds).push_back(id);
+            return iCAX::GeometryData::Triangulation3{};
+        });
+    for(auto& face:result.SplitGeometry.Faces)if(derivedLineage.contains(face.Id)){
+        const auto& piece=interfacePieces[derivedLineage.at(face.Id)];face.Metadata.SourceId=InterfaceIds(piece.SourceFaceIds);
+        face.Metadata.Tags.push_back("classify.sourceFaceIds="+InterfaceIds(piece.SourceFaceIds));
+        face.Metadata.Tags.push_back("classify.interfaceAnchorSourceFaceIds="+InterfaceIds(piece.AnchorSourceFaceIds));
+        face.Metadata.Tags.push_back("classify.sourceEdgeIds="+InterfaceIds(piece.SourceEdgeIds));
+        face.Metadata.Tags.push_back("classify.sourceCurve3Ids="+InterfaceIds(piece.SourceCurveIds));
+        face.Metadata.Tags.push_back(std::string("classify.interfaceDomain=")+(piece.Internal?"internal":"machining-remainder"));
+    }
+    for(auto& face:result.SplitGeometry.Faces)if(zeroTrimLineage.contains(face.Id)){
+        const int parent=zeroTrimLineage.at(face.Id);const auto& evidence=zeroTrimEvidence.at(parent);const auto& uv=zeroTrimDomains.at(parent);
+        face.Metadata.Tags.push_back("classify.zeroAreaTrim=true");
+        face.Metadata.Tags.push_back("classify.zeroAreaSourceFaceId="+std::to_string(face.Id));
+        face.Metadata.Tags.push_back("classify.zeroAreaSourceSplitFaceIndex="+std::to_string(parent));
+        face.Metadata.Tags.push_back("classify.zeroAreaProof="+evidence.Proof);
+        face.Metadata.Tags.push_back("classify.zeroAreaUVBounds="+ZeroTrimNumber(uv[0])+","+ZeroTrimNumber(uv[1])+","+ZeroTrimNumber(uv[2])+","+ZeroTrimNumber(uv[3]));
+        face.Metadata.Tags.push_back("classify.zeroAreaWireCount="+std::to_string(evidence.nWireCount));
+        face.Metadata.Tags.push_back("classify.zeroAreaCoedgeUseCount="+std::to_string(evidence.nEdgeUseCount));
+        face.Metadata.Tags.push_back("classify.zeroAreaUVRoundoffBudget="+ZeroTrimNumber(evidence.dUVRoundoffBudget));
+        face.Metadata.Tags.push_back("classify.zeroAreaMaximumEndpointUVGap="+ZeroTrimNumber(evidence.dMaximumEndpointUVGap));
+        face.Metadata.Tags.push_back("classify.zeroAreaUVAreaRepresentationBound="+ZeroTrimNumber(evidence.dUVAreaRepresentationBound));
+    }
+    if(machiningCount)result.MachiningGeometry=detail::SectionFaceSubset(result.SplitGeometry,result.MachiningFaceIds);
+    if(skinCount)result.NonMachiningGeometry=detail::SectionFaceSubset(result.SplitGeometry,result.NonMachiningFaceIds);
+    result.Diagnostics.push_back("Classified " + std::to_string(machiningCount)
+        + " machining faces and " + std::to_string(skinCount) + " non-machining faces");
+    // The optional interface refinement additionally verifies every new trim,
+    // unchanged supporting surface, occurrence and complete area partition.
+    result.bSuccess = !faces.IsEmpty() && splitValid;
+    return result;
+}
+
 SFeatureToolpathResult AnalyzeFeatureToolpaths(
     IN const iCAX::GeometryData::BRepModel& Geometry_,
     IN const SSectionWiresResult& Section_,
@@ -5439,51 +7536,8 @@ SFeatureToolpathResult AnalyzeFeatureToolpaths(
         return _Result;
     }
 
-    const auto _Built = iCAX::OpenCascade::BuildOpenCascadeShape(Geometry_);
-    if (!_Built.bOK || _Built.Shape.IsNull())
-    {
-        _Result.Diagnostics.insert(
-            _Result.Diagnostics.end(),
-            _Built.Diagnostics.begin(),
-            _Built.Diagnostics.end());
-        _Result.Diagnostics.push_back(
-            "Neutral BRep could not be translated to an OCC shape");
-        return _Result;
-    }
-
-    // Merge and heal before introducing contour seams.  Running domain
-    // unification after splitting would erase the seams we need below.
-    const auto _PreparedTarget = PrepareShape(
-        _Built.Shape,
-        Options_,
-        _Result.Diagnostics);
-    if (_PreparedTarget.IsNull())
-    {
-        _Result.Diagnostics.push_back(
-            "Neutral target BRep could not be prepared for face splitting");
-        return _Result;
-    }
-
-    const auto _SplitTarget = SplitTargetBySectionVertices(
-        _PreparedTarget,
-        Section_,
-        Options_,
-        _Result.Diagnostics);
-    if (_SplitTarget.IsNull())
-    {
-        return _Result;
-    }
-
-    const auto _SplitShape = ValidateSplitShape(
-        _SplitTarget,
-        Options_,
-        _Result.Diagnostics);
-    if (_SplitShape.IsNull())
-    {
-        _Result.Diagnostics.push_back(
-            "OCC face-split result is null");
-        return _Result;
-    }
+    const auto _SplitShape = PrepareSectionSplit(Geometry_, Section_, Options_, _Result.Diagnostics);
+    if (_SplitShape.IsNull()) return _Result;
 
     const auto _Support = BuildSectionSupport(Section_);
     const auto _Shape = CollectMachiningFaces(

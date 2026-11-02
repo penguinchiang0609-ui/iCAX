@@ -7,7 +7,9 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace iCAX
@@ -131,6 +133,11 @@ namespace iCAX
         * @return 仅包含 Transactional 值字段和结构性操作的批次。
         */
         COperationBatch _DATABASE_EXP FilterTransactionalOperationBatch(IN const COperationBatch& Batch_, IN const IMetaRegistry& Meta_);
+        using UndoObservableProperties = std::set<std::tuple<iCAX::Data::uuid, std::string, std::string>>;
+        // Explicit command-local Observable Modify facts, in original order.
+        COperationBatch _DATABASE_EXP FilterUndoCommandOperationBatch(
+            const COperationBatch& Batch_, const IMetaRegistry& Meta_,
+            const UndoObservableProperties& Included_);
         // Exclusive batches can discard excluded fields in place and transfer
         // the retained owning snapshots into the completed undo step.
         COperationBatch _DATABASE_EXP FilterTransactionalOperationBatch(
@@ -232,6 +239,7 @@ namespace iCAX
             * @param [in] Batch_ 待写入批次；空批次会被忽略。
             */
             void Append(IN const COperationBatch& Batch_);
+            bool Flush();
 
             /*
             * @brief 读取日志文件中的所有完整操作批次。

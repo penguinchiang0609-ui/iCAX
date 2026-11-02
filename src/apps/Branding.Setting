@@ -2,3 +2,4 @@
 # Exactly one enabled product: use its icon; otherwise use platformIcon.
 platformIcon=branding/icax.ico
 product.icax.tube-designer=tube-designer/webpage/assets/tube-designer.ico
+product.icax.five-axis-cam=five-axis-cam/webpage/assets/five-axis-cam.ico

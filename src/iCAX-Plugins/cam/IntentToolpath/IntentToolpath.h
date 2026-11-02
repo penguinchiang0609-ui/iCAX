@@ -3,7 +3,7 @@
 #include "IntentToolpathComponents.h"
 #include "IntentGeometryResources.h"
 #include "IntentToolpathRelations.h"
-#include "TubeMachiningIntent.h"
+#include "EditableToolpath.h"
 #include "IntentToolpathExport.h"
 
 #include <cstdint>

@@ -1,0 +1,19 @@
+namespace iCAX.FiveAxisCAM;
+file_identifier "F5JR";
+table MachineJogResult {
+  schema_version:uint = 1;
+  token:string (required);
+  epoch:string (required);
+  result_sequence:ulong;
+  processed_sequence:ulong;
+  mutation_sequence:ulong;
+  status:string (required);
+  reason:string;
+  positions:[double]; // All nodes in Start jointIds order, fixed nodes included.
+  world_matrices:[double]; // 16 row-major entries for each Start worldId.
+  ticks:ulong;
+  collision_ms:double;
+  tick_ms:double;
+  interval_ms:double;
+}
+root_type MachineJogResult;

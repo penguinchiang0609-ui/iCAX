@@ -1,12 +1,19 @@
 #include "pch.h"
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include "OpenCascadeTubeCSGConverter.h"
 #include "OpenCascadeCancellation.h"
+#include "OpenCascadeBooleanPreparation.h"
+#include "OpenCascadeTaskExecution.h"
+#include "CadBevelService.h"
+#include "OpenCascadeTubeWrapped.h"
 #include "Task/TaskStatus.h"
 
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Section.hxx>
+#include <BOPAlgo_PaveFiller.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRep_Builder.hxx>
@@ -28,20 +35,30 @@
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_ReShape.hxx>
 #include <GCPnts_AbscissaPoint.hxx>
 #include <GProp_GProps.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <Geom_BSplineSurface.hxx>
 #include <Geom_BezierCurve.hxx>
+#include <GeomConvert.hxx>
+#include <Geom_Hyperbola.hxx>
+#include <Geom_Parabola.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <NCollection_HSequence.hxx>
 #include <NCollection_IndexedDataMap.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <NCollection_List.hxx>
+#include <NCollection_UBTree.hxx>
 #include <Precision.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
+#include <ShapeAnalysis.hxx>
+#include <ShapeExtend_WireData.hxx>
 #include <ShapeFix_Face.hxx>
 #include <TopAbs_State.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Shell.hxx>
@@ -56,6 +73,8 @@
 #include <gp_Trsf.hxx>
 
 #include <cmath>
+#include <chrono>
+#include <future>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -65,14 +84,37 @@ namespace iCAX::OpenCascade
 {
 namespace
 {
+    bool _HasLargeProofShape(const TopoDS_Shape& Shape_)
+    {
+        // Large whole-part proofs can run their two independent directions
+        // concurrently. Each Boolean stays serial, bounding the proof to two
+        // threads without changing OCCT's shared thread-pool configuration.
+        constexpr std::size_t _ParallelFaceThreshold = 8192;
+        std::size_t _FaceCount = 0;
+        for (TopExp_Explorer _Face(Shape_, TopAbs_FACE); _Face.More(); _Face.Next()) {
+            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            if (++_FaceCount >= _ParallelFaceThreshold) return true;
+        }
+        return false;
+    }
+
     void _SetBooleanOperands(BRepAlgoAPI_BooleanOperation& Operation_,
         const TopoDS_Shape& Left_, const TopoDS_Shape& Right_)
     {
         NCollection_List<TopoDS_Shape> _Arguments, _Tools;
-        _Arguments.Append(Left_);
-        _Tools.Append(Right_);
+        _Arguments.Append(PrepareOpenCascadeBooleanOperand(Left_));
+        _Tools.Append(PrepareOpenCascadeBooleanOperand(Right_));
         Operation_.SetArguments(_Arguments);
         Operation_.SetTools(_Tools);
+        Operation_.SetNonDestructive(true);
+        // Imported long profiles often have many disjoint curved faces whose
+        // axis-aligned boxes overlap. Oriented bounds prune those pairs before
+        // exact surface intersection without changing geometry or tolerance.
+        Operation_.SetUseOBB(true);
+        // These calculations consume geometry only; feature identity belongs
+        // to the neutral node graph. OCCT's optional history collector can
+        // register duplicate splits for coincident imported faces (P1033).
+        Operation_.SetToFillHistory(false);
     }
 
     using iCAX::GeometryData::Arc2;
@@ -131,6 +173,7 @@ namespace
         TopoDS_Wire Wire;
         std::vector<Point2> Points;
         double SignedArea = 0.0;
+        std::size_t NestingDepth = 0;
     };
 
     struct SSliceCandidate final
@@ -182,6 +225,7 @@ namespace
     {
         std::uint64_t SourceShapeID = 0;
         TopoDS_Face Face;
+        Bnd_Box Bounds;
         bool InheritedFromHost = false;
         GeomAbs_SurfaceType SurfaceType = GeomAbs_OtherSurface;
         std::vector<std::uint64_t> AdjacentFaceIDs;
@@ -523,6 +567,10 @@ namespace
             }
             BRepAdaptor_Surface _Surface(_Evidence.Face, true);
             _Evidence.SurfaceType = _Surface.GetType();
+            if (!_Evidence.InheritedFromHost) {
+                BRepBndLib::Add(_Evidence.Face, _Evidence.Bounds, false);
+                _Evidence.Bounds.Enlarge(Options_.Tolerance);
+            }
             std::set<std::uint64_t> _AdjacentIDs;
             for (TopExp_Explorer _EdgeExplorer(_Evidence.Face, TopAbs_EDGE);
                 _EdgeExplorer.More();
@@ -828,9 +876,34 @@ namespace
             _Extent.Direction = _TerminationStation >= _OpeningStation
                 ? Tube::EExtentDirection::Positive
                 : Tube::EExtentDirection::Negative;
+            _Extent.Depth.emplace();
+            _Extent.Depth->Value=std::abs(_TerminationStation-_OpeningStation);
+            _Extent.Depth->Observability=Tube::EParameterObservability::Observed;
         }
         _Relations.Extent = std::move(_Extent);
         return _Relations;
+    }
+
+    void _SetAggregateRemovalRelations(Tube::SSolidNode& Node_, const Tube::SFeatureRelations& Relations_)
+    {
+        auto _Aggregate = Relations_;
+        // Grouping and Boolean nodes refer to their geometric children. Only
+        // those children own a placement, interval and material-span geometry.
+        _Aggregate.Placement.reset();
+        _Aggregate.Extent.reset();
+        _Aggregate.MaterialSpans.clear();
+        if (_Aggregate.MaterialEffect)
+        {
+            auto& _Sources = _Aggregate.MaterialEffect->SourceNodeIDs;
+            _Sources.clear();
+            std::visit([&](const auto& Data_) {
+                using D = std::decay_t<decltype(Data_)>;
+                if constexpr (std::is_same_v<D, Tube::SBooleanNode>) _Sources = Data_.Children;
+                else if constexpr (std::is_same_v<D, Tube::SAlternativeNode>)
+                    for (const auto& _Candidate : Data_.Candidates) _Sources.push_back(_Candidate.CandidateNodeID);
+            }, Node_.Data);
+        }
+        Node_.Relations = std::move(_Aggregate);
     }
 
     std::optional<Tube::SMaterialBoundaryReference> _FindClosestOpening(
@@ -933,29 +1006,128 @@ namespace
         return _Evaluation;
     }
 
+    Bnd_Box _VolumeBounds(const TopoDS_Shape& Shape_, double Tolerance_)
+    {
+        Bnd_Box _Bounds;
+        BRepBndLib::Add(Shape_, _Bounds, false);
+        _Bounds.Enlarge(Tolerance_);
+        return _Bounds;
+    }
+
+    class CVolumeNeighborhood final
+    {
+    public:
+        struct SEntry { TopoDS_Shape Shape; Bnd_Box Bounds; std::uint32_t Ordinal; };
+        explicit CVolumeNeighborhood(double Tolerance_)
+            : m_Tolerance(Tolerance_)
+        {
+            BRep_Builder _Builder; _Builder.MakeCompound(m_Volumes);
+        }
+        CVolumeNeighborhood(const TopoDS_Shape& Volumes_, double Tolerance_)
+            : CVolumeNeighborhood(Tolerance_)
+        {
+            Append(Volumes_);
+            m_FallbackVolumes = Volumes_;
+        }
+        void Append(const TopoDS_Shape& Volumes_)
+        {
+            BRep_Builder _Builder;
+            for (TopExp_Explorer _Explorer(Volumes_, TopAbs_SOLID); _Explorer.More(); _Explorer.Next())
+            {
+                COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+                m_Entries.push_back({ _Explorer.Current(), _VolumeBounds(_Explorer.Current(), m_Tolerance),
+                    static_cast<std::uint32_t>(m_Entries.size() + 1) });
+                _Builder.Add(m_Volumes, _Explorer.Current());
+                const auto _Index = m_Entries.size() - 1;
+                if (m_Entries.back().Bounds.IsVoid()) m_Unbounded.push_back(_Index);
+                else m_Index.Add(_Index,m_Entries.back().Bounds);
+            }
+            m_FallbackVolumes = m_Volumes;
+        }
+        std::vector<const SEntry*> NearbyEntries(const TopoDS_Shape& Query_) const
+        {
+            return NearbyEntries(_VolumeBounds(Query_,m_Tolerance));
+        }
+        std::vector<const SEntry*> NearbyEntries(const Bnd_Box& _Bounds) const
+        {
+            std::vector<std::size_t> _Indices;
+            if (_Bounds.IsVoid()) {
+                _Indices.resize(m_Entries.size());
+                std::iota(_Indices.begin(),_Indices.end(),0);
+            } else {
+                struct SSelector final : TIndex::Selector {
+                    explicit SSelector(const Bnd_Box& Bounds_) : Bounds(Bounds_) {}
+                    bool Reject(const Bnd_Box& Candidate_) const override {
+                        COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+                        return Bounds.IsOut(Candidate_);
+                    }
+                    bool Accept(const std::size_t& Index_) override {
+                        Indices.push_back(Index_); return true;
+                    }
+                    Bnd_Box Bounds;
+                    std::vector<std::size_t> Indices;
+                } _Selector(_Bounds);
+                m_Index.Select(_Selector);
+                _Indices = std::move(_Selector.Indices);
+                _Indices.insert(_Indices.end(),m_Unbounded.begin(),m_Unbounded.end());
+                // Tree traversal order is not feature order. Preserve the
+                // original solid ordinals and deterministic evidence IDs.
+                std::sort(_Indices.begin(),_Indices.end());
+            }
+            std::vector<const SEntry*> _Entries;
+            _Entries.reserve(_Indices.size());
+            for (const auto _Index : _Indices) _Entries.push_back(&m_Entries[_Index]);
+            return _Entries;
+        }
+        TopoDS_Shape Nearby(const TopoDS_Shape& Query_) const
+        {
+            const auto _QueryBounds = _VolumeBounds(Query_, m_Tolerance);
+            if (_QueryBounds.IsVoid()) return m_FallbackVolumes;
+            BRep_Builder _Builder; TopoDS_Compound _Nearby; _Builder.MakeCompound(_Nearby);
+            bool _Any = false;
+            for (const auto* _Entry : NearbyEntries(_QueryBounds))
+            {
+                COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+                _Builder.Add(_Nearby, _Entry->Shape); _Any = true;
+            }
+            return _Any ? TopoDS_Shape(_Nearby) : TopoDS_Shape{};
+        }
+    private:
+        using TIndex = NCollection_UBTree<std::size_t,Bnd_Box>;
+        TopoDS_Compound m_Volumes;
+        TopoDS_Shape m_FallbackVolumes;
+        double m_Tolerance;
+        std::vector<SEntry> m_Entries;
+        TIndex m_Index;
+        std::vector<std::size_t> m_Unbounded;
+    };
+
     std::vector<std::uint32_t> _FindCoveredRemovalComponents(
         IN const TopoDS_Shape& CandidateInsideBase_,
         IN const TopoDS_Shape& FullRemovalShape_,
-        IN const STubeCSGConversionOptions& Options_)
+        IN const STubeCSGConversionOptions& Options_,
+        IN const CVolumeNeighborhood* pNeighborhood_ = nullptr)
     {
         std::vector<std::uint32_t> _Ordinals;
-        std::uint32_t _Ordinal = 0;
+        std::optional<CVolumeNeighborhood> _LocalNeighborhood;
+        if (!pNeighborhood_)
+        {
+            _LocalNeighborhood.emplace(FullRemovalShape_, Options_.Tolerance);
+            pNeighborhood_ = &*_LocalNeighborhood;
+        }
         const auto _VolumeTolerance = Options_.Tolerance
             * Options_.Tolerance
             * Options_.Tolerance;
-        for (TopExp_Explorer _Explorer(FullRemovalShape_, TopAbs_SOLID);
-            _Explorer.More();
-            _Explorer.Next())
+        for (const auto* _Entry : pNeighborhood_->NearbyEntries(CandidateInsideBase_))
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            ++_Ordinal;
             BRepAlgoAPI_Common _Common;
-            _SetBooleanOperands(_Common, CandidateInsideBase_, _Explorer.Current());
+            _SetBooleanOperands(_Common, CandidateInsideBase_, _Entry->Shape);
             _Common.SetFuzzyValue(Options_.Tolerance);
             COpenCascadeCancellationScope::Build(_Common);
             if (_Common.IsDone() && _ShapeVolume(_Common.Shape()) > _VolumeTolerance)
             {
-                _Ordinals.push_back(_Ordinal);
+                _Ordinals.push_back(_Entry->Ordinal);
             }
         }
         return _Ordinals;
@@ -967,7 +1139,8 @@ namespace
         IN const TopoDS_Shape& FullRemovalShape_,
         IN const gp_Dir& ConstructionAxis_,
         IN const STubeCSGConversionOptions& Options_,
-        IN OUT Tube::SFeatureRelations& Relations_)
+        IN OUT Tube::SFeatureRelations& Relations_,
+        IN const CVolumeNeighborhood* pNeighborhood_ = nullptr)
     {
         std::uint32_t _SpanIndex = 0;
         for (TopExp_Explorer _Explorer(CandidateInsideBase_, TopAbs_SOLID);
@@ -1030,7 +1203,7 @@ namespace
             _Span.RemovalComponentOrdinals = _FindCoveredRemovalComponents(
                 _Explorer.Current(),
                 FullRemovalShape_,
-                Options_);
+                Options_, pNeighborhood_);
             Relations_.MaterialSpans.push_back(std::move(_Span));
         }
         Relations_.Metadata["materialSpanCount"] = std::to_string(
@@ -1468,16 +1641,19 @@ namespace
         IN OUT Tube::SSolidNode& Node_,
         IN const SPartSurfaceEvidenceGraph& Graph_,
         IN const gp_Dir& Axis_,
-        IN const STubeCSGConversionOptions& Options_)
+        IN const STubeCSGConversionOptions& Options_,
+        IN const TopoDS_Shape& LocalMaterial_)
     {
         if (!Node_.Relations)
         {
             return;
         }
+        const auto _Bounds = _VolumeBounds(LocalMaterial_, Options_.Tolerance);
         for (const auto& _FaceEvidence : Graph_.Faces)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             if (_FaceEvidence.InheritedFromHost
+                || (!_Bounds.IsVoid() && !_FaceEvidence.Bounds.IsVoid() && _Bounds.IsOut(_FaceEvidence.Bounds))
                 || !_IsTranslationCompatible(
                     _FaceEvidence.Face,
                     Axis_,
@@ -1696,6 +1872,41 @@ namespace
         IN const TopoDS_Shape& Shape_,
         IN const STubeCSGConversionOptions& Options_)
     {
+        // A short turned part can have larger planar end caps than lateral
+        // walls. Cap area must not turn its radial direction into a stock axis.
+        // A common analytic revolution axis, with only axial planar caps, is
+        // a direct geometric relation independent of candidate reconstructions.
+        std::optional<gp_Ax1> _RevolutionAxis;
+        std::vector<gp_Dir> _CapNormals;
+        bool _Coaxial = true;
+        double _TotalArea = 0.0, _CompatibleArea = 0.0;
+        for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE); _Explorer.More(); _Explorer.Next()) {
+            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            const auto _Face = TopoDS::Face(_Explorer.Current());
+            BRepAdaptor_Surface _Surface(_Face, true);
+            const auto _Area = _FaceArea(_Face); _TotalArea += _Area;
+            std::optional<gp_Ax1> _Axis;
+            switch (_Surface.GetType()) {
+            case GeomAbs_Plane: _CapNormals.push_back(_Surface.Plane().Axis().Direction()); continue;
+            case GeomAbs_Cylinder: _Axis = _Surface.Cylinder().Axis(); _CompatibleArea += _Area; break;
+            case GeomAbs_Cone: _Axis = _Surface.Cone().Axis(); break;
+            case GeomAbs_Torus: _Axis = _Surface.Torus().Axis(); break;
+            case GeomAbs_SurfaceOfRevolution: _Axis = _Surface.AxeOfRevolution(); break;
+            default: _Coaxial = false; break;
+            }
+            if (!_Coaxial) break;
+            if (!_RevolutionAxis) _RevolutionAxis = _Axis;
+            else if (_AbsDot(_RevolutionAxis->Direction(), _Axis->Direction()) < 1.0-Options_.AngularToleranceRadians
+                || gp_Lin(*_RevolutionAxis).Distance(_Axis->Location()) > Options_.Tolerance) { _Coaxial=false; break; }
+        }
+        if (_Coaxial && _RevolutionAxis && std::all_of(_CapNormals.begin(),_CapNormals.end(),
+            [&](const auto& normal) { return _AbsDot(normal,_RevolutionAxis->Direction()) >= 1.0-Options_.AngularToleranceRadians; })) {
+            std::vector<SAxisCandidate> _Analytic;
+            _AddAxisCandidate(_Analytic,_RevolutionAxis->Direction(),_TotalArea);
+            _Analytic.front().TotalArea = _TotalArea;
+            _Analytic.front().CompatibleArea = _CompatibleArea;
+            return _Analytic.front();
+        }
         const auto _Candidates = _RecognizeAxes(Shape_, Options_);
         return _Candidates.empty()
             ? std::nullopt
@@ -1804,11 +2015,9 @@ namespace
                 _Curve.D0(_Parameter, _Point);
                 _EdgePoints.push_back(_ToPoint2(_Point, Frame_));
             }
-            const auto _StartVertex = BRep_Tool::Pnt(_Explorer.CurrentVertex());
-            const auto _Start2 = _ToPoint2(_StartVertex, Frame_);
-            const auto _DistanceToFirst = std::hypot(_EdgePoints.front().X - _Start2.X, _EdgePoints.front().Y - _Start2.Y);
-            const auto _DistanceToLast = std::hypot(_EdgePoints.back().X - _Start2.X, _EdgePoints.back().Y - _Start2.Y);
-            if (_DistanceToLast < _DistanceToFirst)
+            // Periodic edges have coincident endpoints. Their topological
+            // orientation, not an endpoint-distance comparison, defines travel.
+            if (_Edge.Orientation() == TopAbs_REVERSED)
             {
                 std::reverse(_EdgePoints.begin(), _EdgePoints.end());
             }
@@ -1836,44 +2045,122 @@ namespace
         return _Wire;
     }
 
-    std::optional<TopoDS_Face> _MakeSliceFace(IN const SSliceCandidate& Slice_)
+    bool _ClassifySliceLoops(SSliceCandidate& Slice_)
     {
-        if (Slice_.Loops.empty())
-        {
-            return std::nullopt;
-        }
-        const auto _Outer = std::max_element(
-            Slice_.Loops.begin(),
-            Slice_.Loops.end(),
-            [](IN const SSliceLoop& Left_, IN const SSliceLoop& Right_) {
-                return std::abs(Left_.SignedArea) < std::abs(Right_.SignedArea);
-            });
-        auto _Maker = BRepBuilderAPI_MakeFace(Slice_.Plane, _OrientedWire(*_Outer, true), true);
-        if (!_Maker.IsDone())
-        {
-            return std::nullopt;
-        }
-        for (auto _Iter = Slice_.Loops.begin(); _Iter != Slice_.Loops.end(); ++_Iter)
-        {
+        std::vector<TopoDS_Face> _Faces;
+        std::vector<gp_Pnt> _Points;
+        for (const auto& _Loop : Slice_.Loops) {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            if (_Iter == _Outer)
-            {
-                continue;
+            const auto _Wire = TopoDS::Wire(BRepBuilderAPI_Copy(_OrientedWire(_Loop, true), true, false).Shape());
+            BRepBuilderAPI_MakeFace _Maker(Slice_.Plane, _Wire, true);
+            if (!_Maker.IsDone()) return false;
+            ShapeFix_Face _Fixer(_Maker.Face()); _Fixer.FixOrientation();
+            if (!BRepCheck_Analyzer(_Fixer.Face()).IsValid()) return false;
+            _Faces.push_back(_Fixer.Face());
+            BRepTools_WireExplorer _Edge(_Wire);
+            if (!_Edge.More()) return false;
+            _Points.push_back(BRep_Tool::Pnt(_Edge.CurrentVertex()));
+        }
+        Slice_.MaterialArea = 0.0;
+        for (std::size_t _Child = 0; _Child < _Faces.size(); ++_Child) {
+            auto& _Loop = Slice_.Loops[_Child]; _Loop.NestingDepth = 0;
+            for (std::size_t _Parent = 0; _Parent < _Faces.size(); ++_Parent) {
+                if (_Parent == _Child) continue;
+                BRepClass_FaceClassifier _Classifier(_Faces[_Parent], _Points[_Child], Precision::Confusion());
+                if (_Classifier.State() == TopAbs_ON) return false;
+                if (_Classifier.State() == TopAbs_IN) ++_Loop.NestingDepth;
             }
-            _Maker.Add(_OrientedWire(*_Iter, false));
+            Slice_.MaterialArea += (_Loop.NestingDepth % 2 == 0 ? 1.0 : -1.0) * _FaceArea(_Faces[_Child]);
         }
-        if (!_Maker.IsDone())
-        {
+        return !Slice_.Loops.empty();
+    }
+
+    std::optional<TopoDS_Shape> _MakeSliceShape(IN const SSliceCandidate& Slice_)
+    {
+        // Nesting defines material: disconnected boundaries are material
+        // islands; only contained boundaries remove material as cavities.
+        std::vector<TopoDS_Face> _Faces;
+        for (const auto& _Outer : Slice_.Loops) {
+            if (_Outer.NestingDepth % 2 != 0) continue;
+            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            const auto _Wire = TopoDS::Wire(BRepBuilderAPI_Copy(_OrientedWire(_Outer, true), true, false).Shape());
+            BRepBuilderAPI_MakeFace _Maker(Slice_.Plane, _Wire, true);
+            if (!_Maker.IsDone()) return std::nullopt;
+            const auto _OuterFace = _Maker.Face();
+            for (const auto& _Inner : Slice_.Loops) {
+                if (_Inner.NestingDepth != _Outer.NestingDepth + 1) continue;
+                BRepTools_WireExplorer _Edge(_Inner.Wire);
+                if (!_Edge.More()) return std::nullopt;
+                BRepClass_FaceClassifier _Classifier(_OuterFace, BRep_Tool::Pnt(_Edge.CurrentVertex()), Precision::Confusion());
+                if (_Classifier.State() != TopAbs_IN) continue;
+                _Maker.Add(TopoDS::Wire(BRepBuilderAPI_Copy(_OrientedWire(_Inner, false), true, false).Shape()));
+            }
+            if (!_Maker.IsDone()) return std::nullopt;
+            ShapeFix_Face _Fixer(_Maker.Face()); _Fixer.FixOrientation();
+            if (!BRepCheck_Analyzer(_Fixer.Face()).IsValid()) return std::nullopt;
+            _Faces.push_back(_Fixer.Face());
+        }
+        if (_Faces.empty()) return std::nullopt;
+        if (_Faces.size() == 1) return _Faces.front();
+        TopoDS_Compound _Compound; BRep_Builder _Builder; _Builder.MakeCompound(_Compound);
+        for (const auto& _Face : _Faces) _Builder.Add(_Compound, _Face);
+        return _Compound;
+    }
+
+    std::optional<TopoDS_Edge> _ExactClosedTranslationalSection(
+        const TopoDS_Edge& Edge_, const BRepAdaptor_Surface& Surface_,
+        const gp_Pln& Plane_)
+    {
+        if (Surface_.GetType() != GeomAbs_BSplineSurface || !BRep_Tool::IsClosed(Edge_))
             return std::nullopt;
+        const auto _Surface = Surface_.BSpline();
+        // A degree-one, two-row rational surface with identical row weights
+        // and one constant pole translation is an exact linear sweep. Solve
+        // its plane station directly; keep the original rational iso-curve.
+        // In particular, an exact NURBS cylinder must not become the polygon
+        // emitted by OCCT's generic surface/plane intersection walker.
+        for (const bool _AlongU : {false, true}) {
+            if ((_AlongU ? _Surface->UDegree() : _Surface->VDegree()) != 1
+                || (_AlongU ? _Surface->NbUPoles() : _Surface->NbVPoles()) != 2) continue;
+            const auto _Count = _AlongU ? _Surface->NbVPoles() : _Surface->NbUPoles();
+            const auto _Pole = [&](int Index_, int Row_) {
+                return _AlongU ? _Surface->Pole(Row_, Index_) : _Surface->Pole(Index_, Row_);
+            };
+            const auto _Weight = [&](int Index_, int Row_) {
+                return _AlongU ? _Surface->Weight(Row_, Index_) : _Surface->Weight(Index_, Row_);
+            };
+            const gp_Vec _Translation(_Pole(1, 1), _Pole(1, 2));
+            const gp_Vec _Normal(Plane_.Axis().Direction());
+            if (_Translation.Magnitude() <= Precision::Confusion()
+                || _Translation.Crossed(_Normal).Magnitude() > _Translation.Magnitude() * 1e-10) continue;
+            bool _Exact = true;
+            for (int _Index = 1; _Index <= _Count; ++_Index) {
+                if (std::abs(_Weight(_Index, 1) - _Weight(_Index, 2))
+                        > 1e-12 * std::max(_Weight(_Index, 1), _Weight(_Index, 2))
+                    || (gp_Vec(_Pole(_Index, 1), _Pole(_Index, 2)) - _Translation).Magnitude()
+                        > Precision::Confusion()
+                    || std::abs(gp_Vec(_Pole(1, 1), _Pole(_Index, 1)).Dot(_Normal))
+                        > Precision::Confusion()) { _Exact = false; break; }
+            }
+            if (!_Exact) continue;
+            double _UFirst, _ULast, _VFirst, _VLast;
+            _Surface->Bounds(_UFirst, _ULast, _VFirst, _VLast);
+            const auto _Ratio = gp_Vec(_Pole(1, 1), Plane_.Location()).Dot(_Normal)
+                / _Translation.Dot(_Normal);
+            if (_Ratio < -Precision::PConfusion() || _Ratio > 1.0 + Precision::PConfusion()) continue;
+            const auto _Parameter = _AlongU ? _UFirst + _Ratio * (_ULast - _UFirst)
+                : _VFirst + _Ratio * (_VLast - _VFirst);
+            const auto _Curve = _AlongU ? _Surface->UIso(_Parameter) : _Surface->VIso(_Parameter);
+            const auto _First = _AlongU ? Surface_.FirstVParameter() : Surface_.FirstUParameter();
+            const auto _Last = _AlongU ? Surface_.LastVParameter() : Surface_.LastUParameter();
+            if (!_Curve->IsClosed() || _Last - _First
+                    < _Curve->LastParameter() - _Curve->FirstParameter() - Precision::PConfusion()) continue;
+            BRepBuilderAPI_MakeEdge _Make(_Curve, _Curve->FirstParameter(), _Curve->LastParameter());
+            if (!_Make.IsDone()) continue;
+            auto _Edge = _Make.Edge(); _Edge.Orientation(Edge_.Orientation());
+            return _Edge;
         }
-        // A section loop can consist of a single periodic edge (a full circle is
-        // the common tube case). Reversing only the wire orientation is not
-        // sufficient for every such wire: MakeFace may still classify an inner
-        // loop as another positive island. Let OCC resolve wire nesting on the
-        // finished face so circular and mixed-curve cavities remain voids.
-        ShapeFix_Face _FaceFixer(_Maker.Face());
-        _FaceFixer.FixOrientation();
-        return _FaceFixer.Face();
+        return std::nullopt;
     }
 
     std::optional<SSliceCandidate> _MakeSliceCandidate(
@@ -1888,6 +2175,8 @@ namespace
             Frame_.ZDirection.Z() * dStation_);
         const auto _Plane = gp_Pln(gp_Ax3(_PlaneOrigin, Frame_.ZDirection, Frame_.XDirection));
         BRepAlgoAPI_Section _Section(Shape_, _Plane, false);
+        _Section.SetNonDestructive(true);
+        _Section.SetToFillHistory(false);
         _Section.Approximation(false);
         COpenCascadeCancellationScope::Build(_Section);
         if (!_Section.IsDone() || _Section.Shape().IsNull())
@@ -1895,11 +2184,81 @@ namespace
             return std::nullopt;
         }
 
+        occ::handle<BRepTools_ReShape> _ExactSections = new BRepTools_ReShape;
+        for (TopExp_Explorer _Explorer(_Section.Shape(), TopAbs_EDGE); _Explorer.More(); _Explorer.Next()) {
+            const auto _Edge = TopoDS::Edge(_Explorer.Current());
+            if (BRep_Tool::Degenerated(_Edge)) continue;
+            const BRepAdaptor_Curve _Curve(_Edge);
+            if (_Curve.GetType() != GeomAbs_BSplineCurve) continue;
+            const auto _Spline = _Curve.BSpline();
+            if (_Spline->Degree() != 1 || _Spline->NbPoles() < 3) continue;
+            TopoDS_Shape _Ancestor;
+            if (!_Section.HasAncestorFaceOn1(_Edge, _Ancestor)) continue;
+            const auto _Face = TopoDS::Face(_Ancestor);
+            const BRepAdaptor_Surface _Surface(_Face);
+            if (auto _Exact = _ExactClosedTranslationalSection(_Edge, _Surface, _Plane)) {
+                _ExactSections->Replace(_Edge, *_Exact);
+                continue;
+            }
+            const auto _Type = _Surface.GetType();
+            const auto _Smooth = [](GeomAbs_Shape continuity) {
+                return continuity == GeomAbs_C1 || continuity == GeomAbs_C2
+                    || continuity == GeomAbs_C3 || continuity == GeomAbs_CN;
+            };
+            const bool _AnalyticQuadric = _Type == GeomAbs_Cylinder || _Type == GeomAbs_Cone
+                || _Type == GeomAbs_Sphere || _Type == GeomAbs_Torus;
+            // Rational circles commonly have repeated quadratic knots and
+            // report nominal C0 continuity although their geometry is smooth.
+            // Newly generated polygonal sections of higher-degree supports
+            // cannot be assumed exact across those knots either.
+            const bool _HigherDegreeSpline = _Type == GeomAbs_BSplineSurface
+                && (_Surface.BSpline()->UDegree() > 1 || _Surface.BSpline()->VDegree() > 1);
+            if (_Type == GeomAbs_Plane || (!_AnalyticQuadric
+                && !_HigherDegreeSpline
+                && (!_Smooth(_Surface.UContinuity()) || !_Smooth(_Surface.VContinuity())))) continue;
+            TopLoc_Location _Location; double _First, _Last;
+            const auto _Support = BRep_Tool::Curve(_Edge, _Location, _First, _Last);
+            bool _InheritedCurve = false;
+            for (TopExp_Explorer _SourceEdge(_Face, TopAbs_EDGE); _SourceEdge.More(); _SourceEdge.Next()) {
+                TopLoc_Location _SourceLocation; double _SourceFirst, _SourceLast;
+                if (BRep_Tool::Curve(TopoDS::Edge(_SourceEdge.Current()), _SourceLocation, _SourceFirst, _SourceLast) == _Support
+                    && _SourceLocation == _Location) { _InheritedCurve = true; break; }
+            }
+            if (_InheritedCurve) continue;
+            const auto _Start = _Spline->Pole(1), _End = _Spline->Pole(_Spline->NbPoles());
+            const gp_Vec _Chord(_Start, _End);
+            bool _Linear = _Chord.SquareMagnitude() > Precision::SquareConfusion();
+            if (_Linear) {
+                const gp_Lin _Line(_Start, gp_Dir(_Chord));
+                for (int _Pole = 2; _Pole < _Spline->NbPoles(); ++_Pole)
+                    if (_Line.Distance(_Spline->Pole(_Pole)) > Precision::Confusion()) { _Linear = false; break; }
+            }
+            // A newly generated, non-collinear degree-one spline on a smooth
+            // curved smooth support is OCCT's walking polygon. It is not an
+            // exact regular section; singular branches require other sections.
+            // Do not promote it to an editable extrusion or spend time proving
+            // large polyhedral approximations. Original STEP curves are exempt.
+            if (!_Linear) return std::nullopt;
+        }
+
+        // A coincident section can reuse input edges even in non-destructive
+        // mode. Connecting those edges and building planar pcurves must own
+        // the output topology, otherwise face fixing alters the source solid.
+        const auto _SectionShape = BRepBuilderAPI_Copy(_ExactSections->Apply(_Section.Shape()), true, false).Shape();
         occ::handle<NCollection_HSequence<TopoDS_Shape>> _Edges = new NCollection_HSequence<TopoDS_Shape>();
-        for (TopExp_Explorer _Explorer(_Section.Shape(), TopAbs_EDGE); _Explorer.More(); _Explorer.Next())
+        for (TopExp_Explorer _Explorer(_SectionShape, TopAbs_EDGE); _Explorer.More(); _Explorer.Next())
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            _Edges->Append(_Explorer.Current());
+            auto _Edge = TopoDS::Edge(_Explorer.Current());
+            if (BRep_Tool::Degenerated(_Edge)) continue;
+            // Section edges are unoriented intersection loci. FreeBounds
+            // excludes INTERNAL/EXTERNAL edges from its manifold wire data,
+            // then dereferences Edge(1) for an empty wire in OCCT 8.0.
+            // Give these geometric loci a traversal direction; loop nesting
+            // determines material orientation after connection.
+            if (_Edge.Orientation() != TopAbs_FORWARD && _Edge.Orientation() != TopAbs_REVERSED)
+                _Edge.Orientation(TopAbs_FORWARD);
+            _Edges->Append(_Edge);
         }
         if (_Edges->IsEmpty())
         {
@@ -1935,25 +2294,8 @@ namespace
         {
             return std::nullopt;
         }
-        const auto _Outer = std::max_element(
-            _Candidate.Loops.begin(),
-            _Candidate.Loops.end(),
-            [](IN const SSliceLoop& Left_, IN const SSliceLoop& Right_) {
-                return std::abs(Left_.SignedArea) < std::abs(Right_.SignedArea);
-            });
-        _Candidate.MaterialArea = std::abs(_Outer->SignedArea);
-        for (auto _Iter = _Candidate.Loops.begin(); _Iter != _Candidate.Loops.end(); ++_Iter)
-        {
-            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            if (_Iter != _Outer)
-            {
-                _Candidate.MaterialArea -= std::abs(_Iter->SignedArea);
-            }
-        }
-        if (_Candidate.MaterialArea <= dTolerance_ * dTolerance_ || !_MakeSliceFace(_Candidate))
-        {
-            return std::nullopt;
-        }
+        if (!_ClassifySliceLoops(_Candidate) || _Candidate.MaterialArea <= dTolerance_ * dTolerance_
+            || !_MakeSliceShape(_Candidate)) return std::nullopt;
         return _Candidate;
     }
 
@@ -1993,8 +2335,7 @@ namespace
 
     CurveSegment2 _MakeCurveSegment2(
         IN const TopoDS_Edge& Edge_,
-        IN const SSectionFrame& Frame_,
-        IN const Point2& OrientedStart_)
+        IN const SSectionFrame& Frame_)
     {
         BRepAdaptor_Curve _Curve(Edge_);
         const auto _First = _Curve.FirstParameter();
@@ -2005,21 +2346,29 @@ namespace
         _Curve.D0(_Last, _LastPoint3);
         const auto _FirstPoint = _ToPoint2(_FirstPoint3, Frame_);
         const auto _LastPoint = _ToPoint2(_LastPoint3, Frame_);
-        const auto _FirstDistance = std::hypot(_FirstPoint.X - OrientedStart_.X, _FirstPoint.Y - OrientedStart_.Y);
-        const auto _LastDistance = std::hypot(_LastPoint.X - OrientedStart_.X, _LastPoint.Y - OrientedStart_.Y);
-        const bool _Reversed = _LastDistance < _FirstDistance;
+        const bool _Reversed = Edge_.Orientation() == TopAbs_REVERSED;
 
         CurveSegment2 _Segment;
         _Segment.Range = { _First, _Last, _Reversed };
         switch (_Curve.GetType())
         {
         case GeomAbs_Line:
+        {
+            // Section intersection curves can extend past their connecting
+            // vertices within native edge tolerance. The finite neutral line
+            // is bounded by those shared topological vertices, retaining the
+            // contour's connectivity rather than the splitter's overrun.
+            const auto _StartVertex = TopExp::FirstVertex(Edge_, true);
+            const auto _EndVertex = TopExp::LastVertex(Edge_, true);
             _Segment.Curve = Segment2{
-                _Reversed ? _LastPoint : _FirstPoint,
-                _Reversed ? _FirstPoint : _LastPoint
+                _StartVertex.IsNull() ? (_Reversed ? _LastPoint : _FirstPoint)
+                    : _ToPoint2(BRep_Tool::Pnt(_StartVertex), Frame_),
+                _EndVertex.IsNull() ? (_Reversed ? _FirstPoint : _LastPoint)
+                    : _ToPoint2(BRep_Tool::Pnt(_EndVertex), Frame_)
             };
             _Segment.Range = { 0.0, 1.0, false };
             return _Segment;
+        }
         case GeomAbs_Circle:
         {
             const auto _Circle3 = _Curve.Circle();
@@ -2100,23 +2449,30 @@ namespace
             break;
         }
 
-        Polyline2 _Polyline;
-        constexpr int kFallbackSamples = 64;
-        _Polyline.Points.reserve(kFallbackSamples + 1);
-        for (int _Index = 0; _Index <= kFallbackSamples; ++_Index)
-        {
-            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            const auto _Parameter = _First + (_Last - _First) * (static_cast<double>(_Index) / kFallbackSamples);
-            gp_Pnt _Point;
-            _Curve.D0(_Parameter, _Point);
-            _Polyline.Points.push_back(_ToPoint2(_Point, Frame_));
+        // Finite conic sections have an exact rational B-spline expression.
+        // Display sampling must never become the authoritative section curve.
+        occ::handle<Geom_Curve> _ExactCurve;
+        if (_Curve.GetType() == GeomAbs_Hyperbola)
+            _ExactCurve = new Geom_Hyperbola(_Curve.Hyperbola());
+        else if (_Curve.GetType() == GeomAbs_Parabola)
+            _ExactCurve = new Geom_Parabola(_Curve.Parabola());
+        else if (_Curve.GetType() == GeomAbs_BezierCurve)
+            _ExactCurve = _Curve.Bezier();
+        if (_ExactCurve.IsNull())
+            throw std::invalid_argument("Tube CAD section curve has no exact neutral representation");
+        const auto _Spline = GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(_ExactCurve, _First, _Last));
+        NURBS2 _Exact;
+        _Exact.Degree = _Spline->Degree(); _Exact.Periodic = _Spline->IsPeriodic();
+        for (int index = 1; index <= _Spline->NbPoles(); ++index) {
+            _Exact.Poles.push_back(_ToPoint2(_Spline->Pole(index), Frame_));
+            _Exact.Weights.push_back(_Spline->Weight(index));
         }
-        if (_Reversed)
-        {
-            std::reverse(_Polyline.Points.begin(), _Polyline.Points.end());
+        for (int index = 1; index <= _Spline->NbKnots(); ++index) {
+            _Exact.Knots.push_back(_Spline->Knot(index));
+            _Exact.Multiplicities.push_back(_Spline->Multiplicity(index));
         }
-        _Segment.Curve = std::move(_Polyline);
-        _Segment.Range = { 0.0, 1.0, false };
+        _Segment.Curve = std::move(_Exact);
+        _Segment.Range = { _Spline->FirstParameter(), _Spline->LastParameter(), _Reversed };
         return _Segment;
     }
 
@@ -2154,7 +2510,7 @@ namespace
         for (std::size_t _Index = 0; _Index < _Edges.size(); ++_Index)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            auto _Segment = _MakeCurveSegment2(_Edges[_Index], Frame_, _Starts[_Index]);
+            auto _Segment = _MakeCurveSegment2(_Edges[_Index], Frame_);
             Tube::SRegionCurve2 _Curve;
             _Curve.ID = strLoopID_ + "/curve-" + std::to_string(_Index + 1);
             _Curve.Segment = std::move(_Segment);
@@ -2205,6 +2561,12 @@ namespace
         return _Ordered;
     }
 
+    std::string _SliceLoopID(std::size_t Index_, const SSliceLoop& Loop_)
+    {
+        if (Index_ == 0) return "outer";
+        return (Loop_.NestingDepth % 2 == 0 ? "island-" : "inner-") + std::to_string(Index_);
+    }
+
     Tube::CPlanarRegion2 _MakeNeutralRegion(
         IN const SSliceCandidate& Slice_,
         IN const SSectionFrame& Frame_)
@@ -2215,14 +2577,12 @@ namespace
         for (std::size_t _Index = 0; _Index < _Ordered.size(); ++_Index)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            const auto _LoopID = _Index == 0
-                ? std::string("outer")
-                : "inner-" + std::to_string(_Index);
+            const auto _LoopID = _SliceLoopID(_Index, *_Ordered[_Index]);
             _Region.Boundaries.push_back(_MakeNeutralLoop(
                 *_Ordered[_Index],
                 Frame_,
                 _LoopID,
-                _Index == 0));
+                _Ordered[_Index]->NestingDepth % 2 == 0));
         }
         return _Region;
     }
@@ -2302,7 +2662,8 @@ namespace
     {
         Tube::SSectionPrimitive _Primitive;
         _Primitive.ID = strOwnerNodeID_ + "/section/"
-            + (bOuter_ ? std::string("outer") : "cavity-" + std::to_string(nCavityOrdinal_));
+            + (bOuter_ ? (nCavityOrdinal_ == 0 ? std::string("outer") : "island-" + std::to_string(nCavityOrdinal_))
+                : "cavity-" + std::to_string(nCavityOrdinal_));
         _Primitive.Label = bOuter_
             ? "主体外轮廓"
             : "腔体 " + std::to_string(nCavityOrdinal_);
@@ -2396,7 +2757,8 @@ namespace
 
     std::vector<Tube::SSectionPrimitive> _MakeSectionPrimitives(
         IN const Tube::CPlanarRegion2& Section_,
-        IN const std::string& strOwnerNodeID_)
+        IN const std::string& strOwnerNodeID_,
+        IN const std::vector<bool>& OuterLoops_ = {})
     {
         std::vector<Tube::SSectionPrimitive> _Primitives;
         _Primitives.reserve(Section_.Boundaries.size());
@@ -2406,7 +2768,7 @@ namespace
             _Primitives.push_back(_MakeSectionPrimitive(
                 Section_.Boundaries[_Index],
                 strOwnerNodeID_,
-                _Index == 0,
+                OuterLoops_.empty() ? _Index == 0 : OuterLoops_.at(_Index),
                 _Index));
         }
         return _Primitives;
@@ -2416,7 +2778,7 @@ namespace
         IN const SSliceCandidate& Slice_,
         IN const SSectionFrame& Frame_)
     {
-        auto _Face = _MakeSliceFace(Slice_);
+        auto _Face = _MakeSliceShape(Slice_);
         if (!_Face)
         {
             return std::nullopt;
@@ -2470,23 +2832,23 @@ namespace
     {
         Tube::SExtrudedRegionNode _Node;
         _Node.Section = _MakeNeutralRegion(Slice_, Frame_);
+        const auto _Ordered = _OrderedSliceLoops(Slice_);
+        std::vector<bool> _OuterLoops;
+        for (const auto* _Loop : _Ordered) _OuterLoops.push_back(_Loop->NestingDepth % 2 == 0);
         _Node.SectionPrimitives = _MakeSectionPrimitives(
-            _Node.Section, strOwnerNodeID_);
+            _Node.Section, strOwnerNodeID_, _OuterLoops);
         _Node.Frame.Location = { Frame_.Origin.X(), Frame_.Origin.Y(), Frame_.Origin.Z() };
         _Node.Frame.XDirection = { Frame_.XDirection.X(), Frame_.XDirection.Y(), Frame_.XDirection.Z() };
         _Node.Frame.YDirection = { Frame_.YDirection.X(), Frame_.YDirection.Y(), Frame_.YDirection.Z() };
         _Node.Frame.ZDirection = { Frame_.ZDirection.X(), Frame_.ZDirection.Y(), Frame_.ZDirection.Z() };
         _Node.First = 0.0;
         _Node.Last = Frame_.Last - Frame_.First;
-        const auto _Ordered = _OrderedSliceLoops(Slice_);
         _Node.SideAtlases.reserve(_Ordered.size());
         for (std::size_t _Index = 0; _Index < _Ordered.size(); ++_Index)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
             Tube::SSideAtlasDefinition _Atlas;
-            _Atlas.LoopID = _Index == 0
-                ? std::string("outer")
-                : "inner-" + std::to_string(_Index);
+            _Atlas.LoopID = _SliceLoopID(_Index, *_Ordered[_Index]);
             _Atlas.ID = _Atlas.LoopID + "/side-atlas";
             _Atlas.UPeriod = _WireLength(_Ordered[_Index]->Wire);
             _Atlas.VFirst = _Node.First;
@@ -2529,10 +2891,8 @@ namespace
         for (std::size_t _LoopIndex = 0; _LoopIndex < _Ordered.size(); ++_LoopIndex)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            const auto _LoopID = _LoopIndex == 0
-                ? std::string("outer")
-                : "inner-" + std::to_string(_LoopIndex);
-            const auto _Wire = _OrientedWire(*_Ordered[_LoopIndex], _LoopIndex == 0);
+            const auto _LoopID = _SliceLoopID(_LoopIndex, *_Ordered[_LoopIndex]);
+            const auto _Wire = _OrientedWire(*_Ordered[_LoopIndex], _Ordered[_LoopIndex]->NestingDepth % 2 == 0);
             std::vector<TopoDS_Edge> _Edges;
             std::vector<gp_Pnt> _Starts;
             for (BRepTools_WireExplorer _Explorer(_Wire);
@@ -2574,12 +2934,7 @@ namespace
                 BRepAdaptor_Curve _Curve(_Edges[_EdgeIndex]);
                 const auto _First = _Curve.FirstParameter();
                 const auto _Last = _Curve.LastParameter();
-                gp_Pnt _FirstPoint;
-                gp_Pnt _LastPoint;
-                _Curve.D0(_First, _FirstPoint);
-                _Curve.D0(_Last, _LastPoint);
-                const auto _Reversed = _Starts[_EdgeIndex].Distance(_LastPoint)
-                    < _Starts[_EdgeIndex].Distance(_FirstPoint);
+                const auto _Reversed = _Edges[_EdgeIndex].Orientation() == TopAbs_REVERSED;
                 const auto _Length = _CurveLength(_Curve, _First, _Last);
                 SStableAtlasEdge _AtlasEdge;
                 _AtlasEdge.Edge = _Edges[_EdgeIndex];
@@ -2608,6 +2963,25 @@ namespace
         IN double dFirst_,
         IN double dLast_)
     {
+        if (Curve_.GetType() == GeomAbs_Circle)
+        {
+            const auto _Circle = Curve_.Circle();
+            const gp_Vec _Offset(_Circle.Location(), Point_);
+            const double _Period = 2.0 * std::acos(-1.0);
+            auto _Parameter = std::atan2(
+                _Offset.Dot(gp_Vec(_Circle.YAxis().Direction())),
+                _Offset.Dot(gp_Vec(_Circle.XAxis().Direction())));
+            _Parameter += _Period * std::ceil((dFirst_ - _Parameter) / _Period);
+            if (_Parameter > dLast_)
+            {
+                gp_Pnt _FirstPoint, _LastPoint;
+                Curve_.D0(dFirst_, _FirstPoint); Curve_.D0(dLast_, _LastPoint);
+                _Parameter = Point_.SquareDistance(_FirstPoint) <= Point_.SquareDistance(_LastPoint)
+                    ? dFirst_ : dLast_;
+            }
+            gp_Pnt _Projected; Curve_.D0(_Parameter, _Projected);
+            return { _Parameter, _Projected };
+        }
         constexpr int kCoarseSamples = 48;
         auto _BestParameter = dFirst_;
         auto _BestDistance = (std::numeric_limits<double>::max)();
@@ -2835,12 +3209,7 @@ namespace
             BRepAdaptor_Curve _Curve(_Edge);
             const auto _First = _Curve.FirstParameter();
             const auto _Last = _Curve.LastParameter();
-            const auto _Start = BRep_Tool::Pnt(_Explorer.CurrentVertex());
-            gp_Pnt _FirstPoint;
-            gp_Pnt _LastPoint;
-            _Curve.D0(_First, _FirstPoint);
-            _Curve.D0(_Last, _LastPoint);
-            const auto _Reversed = _Start.Distance(_LastPoint) < _Start.Distance(_FirstPoint);
+            const auto _Reversed = _Edge.Orientation() == TopAbs_REVERSED;
             constexpr int kSamplesPerEdge = 12;
             for (int _Index = 0; _Index <= kSamplesPerEdge; ++_Index)
             {
@@ -3581,7 +3950,7 @@ namespace
         _BeveledUnionNode.ID = strNodeID_ + "/beveled-penetration";
         _BeveledUnionNode.Label = "Straight penetration with bevel candidate";
         _BeveledUnionNode.Data = std::move(_BeveledUnion);
-        _BeveledUnionNode.Relations = _Relations;
+        _SetAggregateRemovalRelations(_BeveledUnionNode, _Relations);
         _BeveledUnionNode.RemovalSemantics = _Extent.Semantics;
         _Result.Nodes.push_back(std::move(_BeveledUnionNode));
 
@@ -3637,7 +4006,7 @@ namespace
         _AlternativeNode.ID = strNodeID_;
         _AlternativeNode.Label = "Unresolved conical removal interpretation";
         _AlternativeNode.Data = std::move(_Alternative);
-        _AlternativeNode.Relations = _Relations;
+        _SetAggregateRemovalRelations(_AlternativeNode, _Relations);
         _AlternativeNode.RemovalSemantics = _Extent.Semantics;
         _AlternativeNode.Metadata["source"] = "occ.semantic-alternatives";
         _Result.Nodes.push_back(std::move(_AlternativeNode));
@@ -3914,7 +4283,7 @@ namespace
         _RootNode.ID = strNodeID_;
         _RootNode.Label = "Recognized straight penetration with bevel";
         _RootNode.Data = std::move(_RemovalUnion);
-        _RootNode.Relations = _Relations;
+        _SetAggregateRemovalRelations(_RootNode, _Relations);
         _RootNode.RemovalSemantics = _Extent.Semantics;
         _RootNode.Metadata["source"] = "occ.explicit-bevel";
         _Result.Nodes.push_back(std::move(_RootNode));
@@ -3940,7 +4309,8 @@ namespace
         IN const gp_Dir& BaseAxis_,
         IN const STubeCSGConversionOptions& Options_,
         IN const std::string& strNodeID_,
-        OUT std::string* pRejectionReason_)
+        OUT std::string* pRejectionReason_,
+        IN const CVolumeNeighborhood& FullRemovalNeighborhood_)
     {
         const auto _RemovedVolume = _ShapeVolume(RemovedSolid_);
         if (_RemovedVolume <= Options_.Tolerance * Options_.Tolerance * Options_.Tolerance)
@@ -3949,6 +4319,7 @@ namespace
         // A shallow pocket's small side walls need not dominate the axis vote.
         // Its original planar termination supplies the exact complete region:
         // no section intersection, curve fitting or polyline fallback is used.
+        const auto _RemovedBounds = _VolumeBounds(RemovedSolid_, Options_.Tolerance);
         for (const auto& _CapEvidence : SourceEvidence_.Faces)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
@@ -3960,6 +4331,8 @@ namespace
             if (_CapEvidence.InheritedFromHost
                 || _CapEvidence.SurfaceType != GeomAbs_Plane)
                 continue;
+            if (!_RemovedBounds.IsVoid() && !_CapEvidence.Bounds.IsVoid()
+                && _RemovedBounds.IsOut(_CapEvidence.Bounds)) continue;
             const BRepAdaptor_Surface _CapSurface(_CapEvidence.Face, true);
             auto _Axis = _CapSurface.Plane().Axis().Direction();
             auto _Range = _ProjectAxialRange(RemovedSolid_, _Axis);
@@ -4046,7 +4419,7 @@ namespace
                     _Exact = false;
                 _Section.Loops.push_back(std::move(_Loop));
             }
-            if (!_Exact || _Section.Loops.empty())
+            if (!_Exact || _Section.Loops.empty() || !_ClassifySliceLoops(_Section))
             {
                 _Reject("source loops not closed/exact");
                 continue;
@@ -4100,7 +4473,7 @@ namespace
 
             _Node.Relations = _MakeRemovalRelations(_Extent, "base", 0.0, _Depth);
             _AppendMaterialSpans(RemovedSolid_, MainBase_, FullRemoval_,
-                _Axis, Options_, *_Node.Relations);
+                _Axis, Options_, *_Node.Relations, &FullRemovalNeighborhood_);
             if (_Node.Relations->MaterialSpans.size() != 1
                 || _Node.Relations->MaterialSpans.front().Start.Kind
                     != Tube::EMaterialSpanEndpointKind::HostBoundary
@@ -4171,6 +4544,13 @@ namespace
         return std::nullopt;
     }
 
+    struct SExtrusionSectionCache {
+        bool Attempted = false;
+        std::optional<Tube::SExtrudedRegionNode> Data;
+        std::optional<TopoDS_Shape> FullShape;
+        TopoDS_Shape InsideShape;
+    };
+
     std::optional<SRecognizedExtrusion> _TryRecognizeRemovalExtrusion(
         IN const TopoDS_Shape& RemovedSolid_,
         IN const TopoDS_Shape& MainBase_,
@@ -4179,19 +4559,14 @@ namespace
         IN const STubeCSGConversionOptions& Options_,
         IN const std::string& strNodeID_,
         IN bool bRequireCompleteMatch_ = true,
-        IN bool bAllowCylinderAccelerator_ = true)
+        IN bool bAllowCylinderAccelerator_ = true,
+        SExtrusionSectionCache* SectionCache_ = nullptr)
     {
         const auto _RemovedRange = _ProjectAxialRange(RemovedSolid_, Axis_.Direction);
         if (!_RemovedRange)
         {
             return std::nullopt;
         }
-        const auto _SourceExtent = _AnalyzeRemovalExtent(
-            RemovedSolid_,
-            MainBase_,
-            Axis_.Direction,
-            Options_);
-
         std::optional<Tube::SExtrudedRegionNode> _NeutralExtrusion;
         std::optional<TopoDS_Shape> _FullShape;
         auto _ConstructionRange = *_RemovedRange;
@@ -4226,6 +4601,8 @@ namespace
 
         if (_Cylinder)
         {
+            const auto _SourceExtent = _AnalyzeRemovalExtent(
+                RemovedSolid_, MainBase_, Axis_.Direction, Options_);
             if (!bRequireCompleteMatch_ && !_CylinderFace.IsNull())
             {
                 if (const auto _VisibleCylinderRange = _ProjectAxialRange(
@@ -4288,41 +4665,57 @@ namespace
 
         if (!_NeutralExtrusion || !_FullShape)
         {
-            const auto _RecognitionFrame = _MakeSectionFrame(
-                Axis_.Direction,
-                _RemovedRange->first,
-                _RemovedRange->second);
-            const auto _Section = _RecognizeSection(
-                RemovedSolid_,
-                _RecognitionFrame,
-                Options_,
-                true);
-            if (!_Section)
-            {
-                return std::nullopt;
+            if (SectionCache_ && SectionCache_->Attempted) {
+                if (!SectionCache_->Data || !SectionCache_->FullShape) return std::nullopt;
+                _NeutralExtrusion = SectionCache_->Data;
+                _NeutralExtrusion->SectionPrimitives = _MakeSectionPrimitives(
+                    _NeutralExtrusion->Section, strNodeID_);
+                _FullShape = SectionCache_->FullShape;
+            } else {
+                if (SectionCache_) SectionCache_->Attempted = true;
+                const auto _RecognitionFrame = _MakeSectionFrame(
+                    Axis_.Direction,
+                    _RemovedRange->first,
+                    _RemovedRange->second);
+                const auto _Section = _RecognizeSection(
+                    RemovedSolid_,
+                    _RecognitionFrame,
+                    Options_,
+                    true);
+                if (!_Section)
+                {
+                    return std::nullopt;
+                }
+                _FullShape = _MakeBaseShape(*_Section, _RecognitionFrame);
+                if (!_FullShape)
+                {
+                    return std::nullopt;
+                }
+                _NeutralExtrusion = _MakeExtrudedRegionNodeData(
+                    *_Section, _RecognitionFrame, strNodeID_);
+                if (SectionCache_) {
+                    SectionCache_->Data = _NeutralExtrusion;
+                    SectionCache_->FullShape = _FullShape;
+                }
             }
-            _FullShape = _MakeBaseShape(*_Section, _RecognitionFrame);
-            if (!_FullShape)
-            {
-                return std::nullopt;
-            }
-            _NeutralExtrusion = _MakeExtrudedRegionNodeData(
-                *_Section, _RecognitionFrame, strNodeID_);
         }
         if (!_NeutralExtrusion || !_FullShape)
         {
             return std::nullopt;
         }
 
-        BRepAlgoAPI_Common _InsideBase;
-        _SetBooleanOperands(_InsideBase, *_FullShape, MainBase_);
-        _InsideBase.SetFuzzyValue(Options_.Tolerance);
-        COpenCascadeCancellationScope::Build(_InsideBase);
-        if (!_InsideBase.IsDone())
-        {
-            return std::nullopt;
+        TopoDS_Shape _InsideShape;
+        if (!_Cylinder && SectionCache_ && !SectionCache_->InsideShape.IsNull())
+            _InsideShape = SectionCache_->InsideShape;
+        else {
+            BRepAlgoAPI_Common _InsideBase;
+            _SetBooleanOperands(_InsideBase, *_FullShape, MainBase_);
+            _InsideBase.SetFuzzyValue(Options_.Tolerance);
+            COpenCascadeCancellationScope::Build(_InsideBase);
+            if (!_InsideBase.IsDone()) return std::nullopt;
+            _InsideShape = _InsideBase.Shape();
+            if (!_Cylinder && SectionCache_) SectionCache_->InsideShape = _InsideShape;
         }
-        const auto _InsideShape = _InsideBase.Shape();
         const auto _RemovedVolume = _ShapeVolume(RemovedSolid_);
         if (_RemovedVolume <= Options_.Tolerance * Options_.Tolerance * Options_.Tolerance)
         {
@@ -4379,7 +4772,7 @@ namespace
             if (_Cylinder && bAllowCylinderAccelerator_)
                 return _TryRecognizeRemovalExtrusion(
                     RemovedSolid_, MainBase_, Axis_, BaseAxis_, Options_,
-                    strNodeID_, bRequireCompleteMatch_, false);
+                    strNodeID_, bRequireCompleteMatch_, false, SectionCache_);
             return std::nullopt;
         }
 
@@ -4468,6 +4861,7 @@ namespace
         IN const SPartSurfaceEvidenceGraph& Graph_,
         IN const TopoDS_Shape& MainBase_,
         IN const TopoDS_Shape& FullRemovalShape_,
+        IN const CVolumeNeighborhood& FullRemovalNeighborhood_,
         IN const gp_Dir& BaseAxis_,
         IN const STubeCSGConversionOptions& Options_,
         IN const std::string& strNodeID_,
@@ -4597,7 +4991,13 @@ namespace
             return std::nullopt;
         }
         BRepAlgoAPI_Cut _Excess;
-        _SetBooleanOperands(_Excess, _InsideShape, FullRemovalShape_);
+        const auto _LocalRemoval = FullRemovalNeighborhood_.Nearby(_InsideShape);
+        if (_LocalRemoval.IsNull())
+        {
+            _SetFailure("candidate-outside-removed-volume");
+            return std::nullopt;
+        }
+        _SetBooleanOperands(_Excess, _InsideShape, _LocalRemoval);
         _Excess.SetFuzzyValue(Options_.Tolerance);
         COpenCascadeCancellationScope::Build(_Excess);
         if (!_Excess.IsDone()
@@ -4661,7 +5061,7 @@ namespace
             FullRemovalShape_,
             _Axis,
             Options_,
-            *_SingleGeneratorNode.Relations);
+            *_SingleGeneratorNode.Relations, &FullRemovalNeighborhood_);
         _SingleGeneratorNode.Relations->Metadata["groupingBasis"] =
             "part-surface-common-generator";
         _SingleGeneratorNode.RemovalSemantics = _Extent.Semantics;
@@ -4682,7 +5082,7 @@ namespace
         _Result.CoveredRemovalComponentOrdinals = _FindCoveredRemovalComponents(
             _InsideShape,
             FullRemovalShape_,
-            Options_);
+            Options_, &FullRemovalNeighborhood_);
         _SingleGeneratorNode.Metadata["coveredRemovalComponentCount"] = std::to_string(
             _Result.CoveredRemovalComponentOrdinals.size());
         _Result.Nodes.push_back(std::move(_SingleGeneratorNode));
@@ -4794,7 +5194,7 @@ namespace
         _AlternativeNode.ID = strNodeID_;
         _AlternativeNode.Label = "Optional cross-material cylinder grouping";
         _AlternativeNode.Data = std::move(_Alternative);
-        _AlternativeNode.Relations = _Result.Nodes.front().Relations;
+        _SetAggregateRemovalRelations(_AlternativeNode, *_Result.Nodes.front().Relations);
         _AlternativeNode.RemovalSemantics = _Extent.Semantics;
         _AlternativeNode.Metadata["source"] = "occ.part-surface-group-alternative";
         _Result.Nodes.push_back(std::move(_AlternativeNode));
@@ -4941,21 +5341,109 @@ namespace
         {
             return {};
         }
-        auto _Result = Shapes_.front();
+        if (Shapes_.size() == 1) return Shapes_.front();
+        BRepAlgoAPI_Fuse _Fuse;
+        _SetBooleanOperands(_Fuse, Shapes_.front(), Shapes_[1]);
+        NCollection_List<TopoDS_Shape> _Tools;
         for (std::size_t _Index = 1; _Index < Shapes_.size(); ++_Index)
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            BRepAlgoAPI_Fuse _Fuse;
-            _SetBooleanOperands(_Fuse, _Result, Shapes_[_Index]);
-            _Fuse.SetFuzzyValue(dTolerance_);
-            COpenCascadeCancellationScope::Build(_Fuse);
-            if (!_Fuse.IsDone())
-            {
-                return {};
-            }
-            _Result = _Fuse.Shape();
+            // SetTools replaces the operands installed above. Every member
+            // must retain the exact periodic-boundary preparation; restoring
+            // an unprepared member makes coincident unions self-intersect.
+            _Tools.Append(PrepareOpenCascadeBooleanOperand(Shapes_[_Index]));
         }
-        return _Result;
+        _Fuse.SetTools(_Tools); _Fuse.SetFuzzyValue(dTolerance_);
+        COpenCascadeCancellationScope::Build(_Fuse);
+        return _Fuse.IsDone() ? _Fuse.Shape() : TopoDS_Shape{};
+    }
+
+    std::string _ValidateLocalRemovalComposition(
+        const Tube::CTubeNeutralGeometry& Geometry_,
+        const std::vector<SRecognitionHypothesis>& Hypotheses_,
+        const TopoDS_Shape& Base_, const TopoDS_Shape& Removal_,
+        const std::string& ID_, double Tolerance_,
+        const std::vector<std::string>& CommittedNodeIDs_ = {},
+        TopoDS_Shape* ProvedRemainder_ = nullptr,
+        const std::function<void(const std::string&, double)>& StageCompleted_ = {})
+    {
+        auto _PhaseStart = std::chrono::steady_clock::now();
+        const auto _Observe = [&](const std::string& Phase_) {
+            const auto _Now = std::chrono::steady_clock::now();
+            if (StageCompleted_) StageCompleted_("composition." + ID_ + "." + Phase_,
+                std::chrono::duration<double, std::milli>(_Now - _PhaseStart).count());
+            _PhaseStart = _Now;
+        };
+        // A subset can be geometrically correct while its union with the
+        // remainder creates duplicate thin faces. Test the entire local
+        // removal and the resulting stock before promoting any member.
+        auto _Geometry = Geometry_;
+        STubeCSGEvaluationOptions _Options;
+        _Options.Tolerance = Tolerance_;
+        _Options.EvaluateAllConstructionBodies = false;
+        std::vector<std::string> _Cuts;
+        const auto _ClipToStock = [&](const std::string& NodeID_) {
+            Tube::SSolidNode _Clip;
+            _Clip.ID = ID_ + "/within-stock/" + NodeID_;
+            _Clip.Data = Tube::SBooleanNode{ Tube::EBooleanOperation::Intersection,
+                { _Geometry.BaseNodeID, NodeID_ } };
+            _Cuts.push_back(_Clip.ID); _Geometry.SolidNodes.push_back(std::move(_Clip));
+        };
+        for (const auto& _Committed : CommittedNodeIDs_) _ClipToStock(_Committed);
+        for (const auto& _Hypothesis : Hypotheses_) {
+            _Geometry.SolidNodes.insert(_Geometry.SolidNodes.end(),
+                _Hypothesis.Nodes.begin(), _Hypothesis.Nodes.end());
+            _ClipToStock(_Hypothesis.RootNodeID);
+        }
+        Tube::SSolidNode _Union;
+        _Union.ID = ID_ + "/composition-cuts";
+        _Union.Data = Tube::SBooleanNode{ Tube::EBooleanOperation::Union, _Cuts };
+        _Geometry.RootNodeID = _Union.ID; _Geometry.SolidNodes.push_back(_Union);
+        const auto _Evaluated = EvaluateTubeCSG(_Geometry, _Options);
+        _Observe("union");
+        if (!_Evaluated.bOK || _Evaluated.Shape.IsNull() || !BRepCheck_Analyzer(_Evaluated.Shape).IsValid())
+            return "Local construction union is invalid";
+        BRepAlgoAPI_Cut _Rest;
+        _SetBooleanOperands(_Rest, Removal_, _Evaluated.Shape);
+        _Rest.SetFuzzyValue(Tolerance_);
+        COpenCascadeCancellationScope::Build(_Rest);
+        _Observe("remainder");
+        if (!_Rest.IsDone() || _Rest.Shape().IsNull() || !BRepCheck_Analyzer(_Rest.Shape()).IsValid())
+            return "Local construction remainder is invalid";
+        if (_ShapeVolume(_Rest.Shape()) > Tolerance_ * Tolerance_ * Tolerance_) {
+            Tube::SSolidNode _Remaining;
+            _Remaining.ID = ID_ + "/composition-remainder";
+            _Remaining.Data = Tube::SResidualBRepNode{ _Remaining.ID };
+            _Options.ExternalBRepShapes.emplace(_Remaining.ID, _Rest.Shape());
+            _Geometry.SolidNodes.push_back(_Remaining);
+            _ClipToStock(_Remaining.ID);
+            // Match the final graph: clip the remainder and fuse all operands
+            // together. A nested binary union has different coincident splits.
+            _Union.Data = Tube::SBooleanNode{ Tube::EBooleanOperation::Union, _Cuts };
+            _Union.ID = ID_ + "/composition-removal";
+            _Geometry.SolidNodes.push_back(_Union);
+            _Geometry.RootNodeID = _Union.ID;
+        }
+        const auto _RemovalProof = ValidateTubeCSGReplay(Removal_, _Geometry, _Options);
+        _Observe("removalProof");
+        if (!_RemovalProof.bEquivalent)
+            return _RemovalProof.Diagnostics.empty() ? "Local removal composition differs" : _RemovalProof.Diagnostics.front();
+        BRepAlgoAPI_Cut _Expected;
+        _SetBooleanOperands(_Expected, Base_, Removal_);
+        _Expected.SetFuzzyValue(Tolerance_);
+        COpenCascadeCancellationScope::Build(_Expected);
+        _Observe("stockReference");
+        if (!_Expected.IsDone()) return "Local stock reference could not be built";
+        Tube::SSolidNode _Part;
+        _Part.ID = ID_ + "/composition-part";
+        _Part.Data = Tube::SBooleanNode{ Tube::EBooleanOperation::Difference,
+            { _Geometry.BaseNodeID, _Union.ID } };
+        _Geometry.RootNodeID = _Part.ID; _Geometry.SolidNodes.push_back(std::move(_Part));
+        const auto _PartProof = ValidateTubeCSGReplay(_Expected.Shape(), _Geometry, _Options);
+        _Observe("stockProof");
+        if (_PartProof.bEquivalent && ProvedRemainder_) *ProvedRemainder_ = _Rest.Shape();
+        return _PartProof.bEquivalent ? std::string{}
+            : _PartProof.Diagnostics.empty() ? "Local stock composition differs" : _PartProof.Diagnostics.front();
     }
 
     Tube::SCompositeVolumeNode _MakeCompositeVolumeNode(
@@ -5121,6 +5609,14 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     COpenCascadeCancellationScope::ThrowIfCancellationRequested();
     STubeCSGConversionResult _Result;
     auto& _Geometry = _Result.Geometry;
+    auto _StageStart = std::chrono::steady_clock::now();
+    const auto _MarkStage = [&](const std::string& Name_) {
+        const auto _Now = std::chrono::steady_clock::now();
+        const auto _Elapsed = std::chrono::duration<double, std::milli>(_Now - _StageStart).count();
+        _Geometry.Metadata["elapsedMs." + Name_] = _ToString(_Elapsed);
+        if (Options_.StageCompleted) Options_.StageCompleted(Name_, _Elapsed);
+        _StageStart = _Now;
+    };
     _Geometry.Version = 5;
     _Geometry.Metadata["converter"] = "occ.projective-brep-csg.v5";
     if (Shape_.IsNull())
@@ -5132,6 +5628,49 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     {
         throw std::invalid_argument("Tube CSG conversion tolerance must be positive");
     }
+    if (!BRepCheck_Analyzer(Shape_).IsValid())
+    {
+        const std::string _Reason = "Source BRep has an invalid boundary";
+        _Geometry.RecognitionStatus = Tube::ERecognitionStatus::Failed;
+        _Geometry.Diagnostics.push_back(_MakeDiagnostic("invalid-source-boundary", _Reason, 0.0));
+        _Result.ReplayValidation.Diagnostics.push_back(_Reason);
+        return _Result;
+    }
+    // BRepCheck alone can accept a solid that fails even a self-difference
+    // (including analytic faces without pcurve warnings). Verify the source
+    // before recognition; exact-pcurve warnings alone are not a rejection.
+    {
+        const auto _SourceVolume = _ShapeVolume(Shape_);
+        const auto _AllowedDifference = std::max(
+            std::pow(Options_.Tolerance, 3.0), _SourceVolume * 1.0e-8);
+        // Both operands are exact independent copies of the same source.
+        // Reversing a second pair repeats the identical self-check; the final
+        // comparison of source and reconstructed geometry still checks both
+        // different directions independently.
+        {
+            const auto _Left = BRepBuilderAPI_Copy(Shape_, true, false).Shape();
+            const auto _Right = BRepBuilderAPI_Copy(Shape_, true, false).Shape();
+            BRepAlgoAPI_Cut _Difference;
+            _SetBooleanOperands(_Difference, _Left, _Right);
+            _Difference.SetRunParallel(false);
+            COpenCascadeCancellationScope::Build(_Difference);
+            const bool _Valid = _Difference.IsDone() && !_Difference.Shape().IsNull()
+                && BRepCheck_Analyzer(_Difference.Shape()).IsValid();
+            const auto _DifferenceVolume = _Valid ? _ShapeVolume(_Difference.Shape())
+                : std::numeric_limits<double>::infinity();
+            if (!_Valid || !std::isfinite(_SourceVolume) || _SourceVolume <= 0.0
+                || !std::isfinite(_DifferenceVolume) || _DifferenceVolume > _AllowedDifference)
+            {
+                const std::string _Reason = "Source BRep cannot be verified against an independent copy";
+                _Geometry.RecognitionStatus = Tube::ERecognitionStatus::Failed;
+                _Geometry.Diagnostics.push_back(_MakeDiagnostic("invalid-source-boundary", _Reason, 0.0));
+                _Result.ReplayValidation.Diagnostics.push_back(_Reason);
+                return _Result;
+            }
+        }
+        _Geometry.Metadata["sourceBoundaryCheck"] = "independent-copy-equivalent";
+    }
+    _MarkStage("sourceBoundaryCheck");
 
     if (KnownBlank_ && (KnownBlank_->IsNull()
         || !std::isfinite(KnownLength_) || KnownLength_ <= Options_.Tolerance
@@ -5149,6 +5688,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     const auto _Axis = KnownBlank_
         ? std::optional<SAxisCandidate>(SAxisCandidate{ gp_Dir(1.0, 0.0, 0.0), 1.0, 1.0, 1.0 })
         : _RecognizeAxis(Shape_, Options_);
+    _MarkStage("axis");
     if (!_Axis)
     {
         _Geometry.Diagnostics.push_back(_MakeDiagnostic(
@@ -5177,6 +5717,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     const auto _Section = KnownBlank_
         ? _MakeSliceCandidate(*KnownBlank_, _Frame, 0.5 * KnownLength_, Options_.Tolerance)
         : _RecognizeSection(Shape_, _Frame, Options_);
+    _MarkStage("section");
     if (!_Section)
     {
         _Geometry.Diagnostics.push_back(_MakeDiagnostic(
@@ -5195,6 +5736,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
         return _Result;
     }
     _Result.BaseShape = *_BaseShape;
+    _MarkStage("base");
     _Result.PreviewShapes["base"] = *_BaseShape;
     const auto _OrderedBaseLoops = _OrderedSliceLoops(*_Section);
     for (std::size_t _LoopIndex = 0;
@@ -5224,6 +5766,19 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     _Geometry.SolidNodes.push_back(std::move(_BaseNode));
     _Geometry.BaseNodeID = "base";
     _Geometry.RootNodeID = "base";
+    _MarkStage("atlasesAndPreviews");
+
+    STubeCSGEvaluationOptions _BaseProofOptions;
+    _BaseProofOptions.Tolerance = Options_.Tolerance;
+    _BaseProofOptions.EvaluateAllConstructionBodies = false;
+    const auto _BaseProof = ValidateTubeCSGReplay(*_BaseShape, _Geometry, _BaseProofOptions);
+    if (!_BaseProof.bEquivalent) {
+        _Geometry.RecognitionStatus = Tube::ERecognitionStatus::Failed;
+        _Geometry.Diagnostics.push_back(_MakeDiagnostic("section-expression-mismatch",
+            "The exact neutral section does not reproduce its inferred extrusion", 0.0));
+        _Result.ReplayValidation = _BaseProof;
+        return _Result;
+    }
 
     if (KnownBlank_)
     {
@@ -5275,10 +5830,13 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     const auto _RemovalVolume = _ShapeVolume(_Result.RemovalShape);
     const auto _AdditionVolume = _ShapeVolume(_Result.AdditionShape);
     const auto _FullRemovalShape = _Result.RemovalShape;
+    const CVolumeNeighborhood _FullRemovalNeighborhood(_FullRemovalShape, Options_.Tolerance);
+    _MarkStage("baseDifferences");
     const auto _PartSurfaceGraph = _BuildPartSurfaceEvidenceGraph(
         Shape_,
         *_BaseShape,
         Options_);
+    _MarkStage("surfaceEvidence");
     _Geometry.Metadata["inputVolume"] = _ToString(_InputVolume);
     _Geometry.Metadata["baseVolume"] = _ToString(_BaseVolume);
     _Geometry.Metadata["removalVolume"] = _ToString(_RemovalVolume);
@@ -5298,6 +5856,26 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
 
     std::vector<std::string> _RemovalNodeIDs;
     std::vector<TopoDS_Shape> _RecognizedRemovalShapes;
+    TopoDS_Shape _CoveredRemovalUnion;
+    std::optional<CVolumeNeighborhood> _CoveredRemovalNeighborhood;
+    std::size_t _CoveredRemovalCount = 0;
+    const auto _CoveredUnion = [&]() -> const TopoDS_Shape& {
+        // Reuse the accumulated union across missing components. Rebuilding
+        // every preceding feature union for every hole is quadratic work.
+        if (_CoveredRemovalCount < _RecognizedRemovalShapes.size())
+        {
+            std::vector<TopoDS_Shape> _Pending;
+            if (!_CoveredRemovalUnion.IsNull()) _Pending.push_back(_CoveredRemovalUnion);
+            _Pending.insert(_Pending.end(), _RecognizedRemovalShapes.begin() + _CoveredRemovalCount,
+                _RecognizedRemovalShapes.end());
+            _CoveredRemovalUnion = _FuseShapes(_Pending, Options_.Tolerance);
+            if (_CoveredRemovalUnion.IsNull() || !BRepCheck_Analyzer(_CoveredRemovalUnion).IsValid())
+                throw std::runtime_error("Recognized removal union is invalid");
+            _CoveredRemovalCount = _RecognizedRemovalShapes.size();
+            _CoveredRemovalNeighborhood.emplace(_CoveredRemovalUnion, Options_.Tolerance);
+        }
+        return _CoveredRemovalUnion;
+    };
     std::size_t _RecognizedRemovalCount = 0;
     std::size_t _AlternativeCount = 0;
     std::size_t _OverlapDecompositionCount = 0;
@@ -5310,6 +5888,27 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
             Options_);
         _Geometry.Metadata["partSurfaceGraph.cylinderGroupCount"] = std::to_string(
             _CylinderGroups.size());
+        // Each recognition owns its OCC algorithms and only reads the source,
+        // blank and evidence. Bound concurrency and collect in source order so
+        // feature IDs, alternatives and dependency ordering remain stable.
+        using SGroupResult = std::pair<std::optional<SGlobalFeatureRecognition>, std::string>;
+        const auto _Check = COpenCascadeCancellationScope::Capture();
+        const auto _WorkerCount = std::min(_CylinderGroups.size(),
+            std::max<std::size_t>(1, std::min<std::size_t>(4, Options_.FeatureWorkerCount)));
+        const auto _RecognizeGroup = [&](std::size_t Index_) -> SGroupResult {
+            COpenCascadeCancellationScope _WorkerCancellation(_Check);
+            SGroupResult _Recognition;
+            _Recognition.first = _TryRecognizeGlobalCylinderGroup(
+                _CylinderGroups[Index_], _PartSurfaceGraph, *_BaseShape,
+                _FullRemovalShape, _FullRemovalNeighborhood, _Frame.ZDirection,
+                Options_, "surface-group-cylinder-" + std::to_string(Index_ + 1),
+                &_Recognition.second);
+            return _Recognition;
+        };
+        std::vector<std::future<SGroupResult>> _PendingGroups;
+        if (_WorkerCount > 1)
+            for (std::size_t _Index = 0; _Index < _WorkerCount; ++_Index)
+                _PendingGroups.push_back(std::async(std::launch::async, _RecognizeGroup, _Index));
         std::size_t _CylinderGroupIndex = 0;
         for (const auto& _CylinderGroup : _CylinderGroups)
         {
@@ -5318,17 +5917,19 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                 "partSurfaceGraph.cylinderGroup."
                     + std::to_string(_CylinderGroupIndex + 1)
                     + ".faceCount"] = std::to_string(_CylinderGroup.LateralFaces.size());
-            std::string _FailureReason;
-            auto _GlobalFeature = _TryRecognizeGlobalCylinderGroup(
-                _CylinderGroup,
-                _PartSurfaceGraph,
-                *_BaseShape,
-                _FullRemovalShape,
-                _Frame.ZDirection,
-                Options_,
-                "surface-group-cylinder-"
-                    + std::to_string(++_CylinderGroupIndex),
-                &_FailureReason);
+            const auto _GroupIndex = _CylinderGroupIndex++;
+            SGroupResult _Recognition;
+            if (_WorkerCount > 1)
+            {
+                auto& _Pending = _PendingGroups[_GroupIndex % _WorkerCount];
+                _Recognition = _Pending.get();
+                const auto _Next = _GroupIndex + _WorkerCount;
+                if (_Next < _CylinderGroups.size())
+                    _Pending = std::async(std::launch::async, _RecognizeGroup, _Next);
+            }
+            else _Recognition = _RecognizeGroup(_GroupIndex);
+            auto& _GlobalFeature = _Recognition.first;
+            auto& _FailureReason = _Recognition.second;
             if (!_GlobalFeature)
             {
                 _Geometry.Metadata[
@@ -5368,21 +5969,51 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
             ++_RecognizedRemovalCount;
             ++_PartSurfaceGroupCount;
         }
+        _MarkStage("globalCylinderFeatures");
 
+        std::optional<CVolumeNeighborhood> _LocalCoverage;
+        std::size_t _LocalCoverageCount = 0;
+        std::size_t _LocalComponentIndex = 0;
         for (TopExp_Explorer _Explorer(_FullRemovalShape, TopAbs_SOLID);
             _Explorer.More();
             _Explorer.Next())
         {
             COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            const auto _ComponentIndex = ++_LocalComponentIndex;
+            auto _PhaseStart = std::chrono::steady_clock::now();
+            const auto _ObserveLocalPhase = [&](const std::string& Phase_) {
+                const auto _Now = std::chrono::steady_clock::now();
+                if (Options_.StageCompleted) Options_.StageCompleted("local." + std::to_string(_ComponentIndex) + "." + Phase_,
+                    std::chrono::duration<double, std::milli>(_Now - _PhaseStart).count());
+                _PhaseStart = _Now;
+            };
             if (!_RecognizedRemovalShapes.empty())
             {
-                const auto _RecognizedUnion = _FuseShapes(
-                    _RecognizedRemovalShapes,
-                    Options_.Tolerance);
-                if (!_RecognizedUnion.IsNull())
+                // Coverage of one missing component only depends on nearby
+                // candidates. Do not refusion every earlier hole when a new
+                // independent feature is found; fuse the complete set once
+                // in the final coverage check instead.
+                if (_LocalCoverageCount != _RecognizedRemovalShapes.size())
                 {
+                    if (!_LocalCoverage) _LocalCoverage.emplace(Options_.Tolerance);
+                    // Existing feature bounds do not change during recognition.
+                    // Append each accepted solid once instead of measuring every
+                    // preceding feature again for every new removal component.
+                    for (std::size_t _Index = _LocalCoverageCount;
+                        _Index < _RecognizedRemovalShapes.size(); ++_Index)
+                        _LocalCoverage->Append(_RecognizedRemovalShapes[_Index]);
+                    _LocalCoverageCount = _RecognizedRemovalShapes.size();
+                }
+                const auto _Nearby = _LocalCoverage->Nearby(_Explorer.Current());
+                if (!_Nearby.IsNull())
+                {
+                    std::vector<TopoDS_Shape> _LocalShapes;
+                    for (TopExp_Explorer _Solid(_Nearby, TopAbs_SOLID); _Solid.More(); _Solid.Next())
+                        _LocalShapes.push_back(_Solid.Current());
+                    const auto _LocalUnion = _FuseShapes(_LocalShapes, Options_.Tolerance);
+                    if (_LocalUnion.IsNull()) throw std::runtime_error("Local removal coverage union failed");
                     BRepAlgoAPI_Cut _UncoveredComponent;
-                    _SetBooleanOperands(_UncoveredComponent, _Explorer.Current(), _RecognizedUnion);
+                    _SetBooleanOperands(_UncoveredComponent, _Explorer.Current(), _LocalUnion);
                     _UncoveredComponent.SetFuzzyValue(Options_.Tolerance);
                     COpenCascadeCancellationScope::Build(_UncoveredComponent);
                     if (_UncoveredComponent.IsDone()
@@ -5398,7 +6029,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
             if (auto _PlanarCap = _TryRecognizePlanarCapRemoval(
                 _Explorer.Current(), *_BaseShape, _FullRemovalShape,
                 _PartSurfaceGraph, _Frame.ZDirection, Options_, _NodeID + "/planar-cap",
-                &_PlanarCapRejection))
+                &_PlanarCapRejection, _FullRemovalNeighborhood))
             {
                 // A complete original termination plus exact two-way replay
                 // fixes this blind feature, including all islands and depth.
@@ -5412,6 +6043,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
             if (!_PlanarCapRejection.empty())
                 _Geometry.Metadata["planarCap." + _NodeID + ".rejection"] +=
                     _PlanarCapRejection;
+            _ObserveLocalPhase("coverageAndCap");
             std::vector<SRecognitionHypothesis> _Hypotheses;
 
             if (auto _HalfSpace = _TryRecognizeHalfSpaceRemoval(
@@ -5480,18 +6112,40 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                 _Explorer.Current(),
                 Options_,
                 &*_BaseShape);
+            _ObserveLocalPhase("wrappedAndAxes");
             std::size_t _ExtrusionIndex = 0;
             bool _HasCompleteExtrusion = false;
+            const auto _AxisWorkerCount = std::min(_RemovalAxes.size(),
+                std::max<std::size_t>(1, std::min<std::size_t>(4, Options_.FeatureWorkerCount)));
+            const auto _RemovalComponent = _Explorer.Current();
+            const auto _AxisCancellation = COpenCascadeCancellationScope::Capture();
+            // Complete and overlap interpretations use the same exact section
+            // construction. Each axis owns its cache; acceptance and feature
+            // identity are evaluated separately in their deterministic order.
+            std::vector<SExtrusionSectionCache> _AxisSections(_RemovalAxes.size());
+            const auto _RecognizeExtrusion = [&](std::size_t Index_) {
+                COpenCascadeCancellationScope _Scope(_AxisCancellation);
+                return _TryRecognizeRemovalExtrusion(_RemovalComponent, *_BaseShape,
+                    _RemovalAxes[Index_], _Frame.ZDirection, Options_,
+                    _NodeID + "/extrusion-" + std::to_string(Index_ + 1), true, true,
+                    &_AxisSections[Index_]);
+            };
+            std::vector<std::future<std::optional<SRecognizedExtrusion>>> _PendingExtrusions;
+            if (_AxisWorkerCount > 1)
+                for (std::size_t _Index = 0; _Index < _AxisWorkerCount; ++_Index)
+                    _PendingExtrusions.push_back(std::async(std::launch::async, _RecognizeExtrusion, _Index));
             for (const auto& _RemovalAxis : _RemovalAxes)
             {
                 COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-                auto _Extrusion = _TryRecognizeRemovalExtrusion(
-                    _Explorer.Current(),
-                    *_BaseShape,
-                    _RemovalAxis,
-                    _Frame.ZDirection,
-                    Options_,
-                    _NodeID + "/extrusion-" + std::to_string(++_ExtrusionIndex));
+                const auto _Index = _ExtrusionIndex++;
+                std::optional<SRecognizedExtrusion> _Extrusion;
+                if (_AxisWorkerCount > 1) {
+                    auto& _Pending = _PendingExtrusions[_Index % _AxisWorkerCount];
+                    _Extrusion = _Pending.get();
+                    const auto _Next = _Index + _AxisWorkerCount;
+                    if (_Next < _RemovalAxes.size())
+                        _Pending = std::async(std::launch::async, _RecognizeExtrusion, _Next);
+                } else _Extrusion = _RecognizeExtrusion(_Index);
                 if (!_Extrusion)
                 {
                     continue;
@@ -5500,7 +6154,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                     _Extrusion->Node,
                     _PartSurfaceGraph,
                     _RemovalAxis.Direction,
-                    Options_);
+                    Options_, _Extrusion->ShapeInsideBase);
                 SRecognitionHypothesis _Hypothesis;
                 _Hypothesis.RootNodeID = _Extrusion->Node.ID;
                 _Hypothesis.ShapeInsideBase = _Extrusion->ShapeInsideBase;
@@ -5528,6 +6182,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                     _UsedApproximateBRepFit = true;
                 }
             }
+            _ObserveLocalPhase("extrusionCandidates");
 
             if (auto _Beveled = _TryRecognizeBeveledCircularRemoval(
                 _Explorer.Current(),
@@ -5645,23 +6300,31 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                     _SubsetHypotheses.push_back(std::move(_Hypothesis));
                 }
 
-                const auto _SubsetAxes = _RecognizeAxes(
-                    _Explorer.Current(),
-                    Options_,
-                    &*_BaseShape);
+                const auto& _SubsetAxes = _RemovalAxes;
                 std::size_t _SubsetExtrusionIndex = 0;
+                const auto _RecognizeSubset = [&](std::size_t Index_) {
+                    COpenCascadeCancellationScope _Scope(_AxisCancellation);
+                    return _TryRecognizeRemovalExtrusion(_RemovalComponent, *_BaseShape,
+                        _SubsetAxes[Index_], _Frame.ZDirection, Options_,
+                        _NodeID + "/subset-extrusion-" + std::to_string(Index_ + 1), false, true,
+                        &_AxisSections[Index_]);
+                };
+                std::vector<std::future<std::optional<SRecognizedExtrusion>>> _PendingSubsets;
+                if (_AxisWorkerCount > 1)
+                    for (std::size_t _Index = 0; _Index < _AxisWorkerCount; ++_Index)
+                        _PendingSubsets.push_back(std::async(std::launch::async, _RecognizeSubset, _Index));
                 for (const auto& _RemovalAxis : _SubsetAxes)
                 {
                     COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-                    auto _Extrusion = _TryRecognizeRemovalExtrusion(
-                        _Explorer.Current(),
-                        *_BaseShape,
-                        _RemovalAxis,
-                        _Frame.ZDirection,
-                        Options_,
-                        _NodeID + "/subset-extrusion-"
-                            + std::to_string(++_SubsetExtrusionIndex),
-                        false);
+                    const auto _Index = _SubsetExtrusionIndex++;
+                    std::optional<SRecognizedExtrusion> _Extrusion;
+                    if (_AxisWorkerCount > 1) {
+                        auto& _Pending = _PendingSubsets[_Index % _AxisWorkerCount];
+                        _Extrusion = _Pending.get();
+                        const auto _Next = _Index + _AxisWorkerCount;
+                        if (_Next < _SubsetAxes.size())
+                            _Pending = std::async(std::launch::async, _RecognizeSubset, _Next);
+                    } else _Extrusion = _RecognizeSubset(_Index);
                     if (!_Extrusion || _Extrusion->CoverageRatio <= 1.0e-6)
                     {
                         continue;
@@ -5700,9 +6363,7 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                             return _LeftVolume > _RightVolume;
                         return Left_.Confidence > Right_.Confidence;
                     });
-                TopoDS_Shape _SelectedUnion = _FuseShapes(
-                    _RecognizedRemovalShapes,
-                    Options_.Tolerance);
+                TopoDS_Shape _SelectedUnion = _CoveredUnion();
                 for (auto& _Hypothesis : _SubsetHypotheses)
                 {
                     COpenCascadeCancellationScope::ThrowIfCancellationRequested();
@@ -5745,38 +6406,73 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                 _IsOverlapDecomposition = !_Hypotheses.empty();
             }
 
+            _ObserveLocalPhase("overlapCandidates");
+
             if (_Hypotheses.empty())
             {
                 continue;
             }
 
-            const auto _HasIndependentlyReplayedExtrusion = std::any_of(
-                _Hypotheses.begin(), _Hypotheses.end(), [](const auto& Hypothesis_) {
-                    return std::any_of(Hypothesis_.Nodes.begin(), Hypothesis_.Nodes.end(),
-                        [](const auto& Node_) {
-                            const auto _Proof = Node_.Metadata.find("independentReplay");
-                            return _Proof != Node_.Metadata.end()
-                                && _Proof->second == "complete-removal";
-                        });
-                });
-            if (_HasIndependentlyReplayedExtrusion && !_IsOverlapDecomposition)
             {
-                // A sampled normal-column interpretation cannot outrank an exact
-                // section unless its own constructed geometry passes the same proof.
+                // Sampling or equal volume cannot prove a construction or an
+                // overlapping cut. Verify its expression and material subset.
                 _Hypotheses.erase(std::remove_if(_Hypotheses.begin(), _Hypotheses.end(),
                     [&](const auto& Hypothesis_) {
-                        if (Hypothesis_.Semantic.rfind("wrapped-normal", 0) != 0)
-                            return false;
                         auto _Independent = _Geometry;
-                        _Independent.RootNodeID = Hypothesis_.RootNodeID;
                         _Independent.SolidNodes.insert(_Independent.SolidNodes.end(),
                             Hypothesis_.Nodes.begin(), Hypothesis_.Nodes.end());
+                        Tube::SSolidNode _Host;
+                        _Host.ID = Hypothesis_.RootNodeID + "/proof-host";
+                        _Host.Data = Tube::SResidualBRepNode{"proof-host"};
+                        _Independent.SolidNodes.push_back(_Host);
+                        Tube::SSolidNode _WithinHost;
+                        _WithinHost.ID = Hypothesis_.RootNodeID + "/proof-within-host";
+                        Tube::SBooleanNode _Common;
+                        _Common.Operation = Tube::EBooleanOperation::Intersection;
+                        _Common.Children = {_Host.ID, Hypothesis_.RootNodeID};
+                        _WithinHost.Data = std::move(_Common);
+                        _Independent.RootNodeID = _WithinHost.ID;
+                        _Independent.SolidNodes.push_back(std::move(_WithinHost));
                         STubeCSGEvaluationOptions _ReplayOptions;
                         _ReplayOptions.Tolerance = Options_.Tolerance;
                         _ReplayOptions.EvaluateAllConstructionBodies = false;
-                        return !ValidateTubeCSGReplay(
-                            _Explorer.Current(), _Independent, _ReplayOptions).bEquivalent;
+                        _ReplayOptions.ExternalBRepShapes.emplace("proof-host", *_BaseShape);
+                        const auto _Proof = ValidateTubeCSGReplay(Hypothesis_.ShapeInsideBase, _Independent, _ReplayOptions);
+                        if (!_Proof.bEquivalent) {
+                            _Geometry.Metadata["construction." + Hypothesis_.RootNodeID + ".replayRejection"] =
+                                _Proof.Diagnostics.empty() ? _ToString(_Proof.RelativeVolumeError) : _Proof.Diagnostics.front();
+                            return true;
+                        }
+                        BRepAlgoAPI_Cut _Outside;
+                        const auto _LocalRemoval = _FullRemovalNeighborhood.Nearby(Hypothesis_.ShapeInsideBase);
+                        if (_LocalRemoval.IsNull()) return true;
+                        _SetBooleanOperands(_Outside,
+                            BRepBuilderAPI_Copy(Hypothesis_.ShapeInsideBase, true, false).Shape(),
+                            BRepBuilderAPI_Copy(_LocalRemoval, true, false).Shape());
+                        COpenCascadeCancellationScope::Build(_Outside);
+                        if (!_Outside.IsDone() || _Outside.Shape().IsNull()
+                            || !BRepCheck_Analyzer(_Outside.Shape()).IsValid()
+                            || _ShapeVolume(_Outside.Shape()) > _VolumeTolerance) {
+                            _Geometry.Metadata["construction." + Hypothesis_.RootNodeID + ".subsetRejection"] =
+                                "candidate-removes-source-material";
+                            return true;
+                        }
+                        return false;
                     }), _Hypotheses.end());
+            }
+
+            _ObserveLocalPhase("independentProof");
+
+            if (_Hypotheses.empty()) continue;
+
+            if (_IsOverlapDecomposition) {
+                const auto _Rejection = _ValidateLocalRemovalComposition(
+                    _Geometry, _Hypotheses, *_BaseShape, _Explorer.Current(), _NodeID, Options_.Tolerance,
+                    {}, nullptr, Options_.StageCompleted);
+                if (!_Rejection.empty()) {
+                    _Geometry.Metadata["construction." + _NodeID + ".compositionRejection"] = _Rejection;
+                    continue;
+                }
             }
 
             if (_IsOverlapDecomposition)
@@ -5889,9 +6585,10 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     }
 
     auto _ResidualRemovalVolume = _RemovalVolume;
+    _MarkStage("localFeatures");
     if (!_RecognizedRemovalShapes.empty())
     {
-        const auto _RecognizedUnion = _FuseShapes(_RecognizedRemovalShapes, Options_.Tolerance);
+        const auto& _RecognizedUnion = _CoveredUnion();
         if (!_RecognizedUnion.IsNull())
         {
             const auto _RecognizedUnionVolume = _ShapeVolume(_RecognizedUnion);
@@ -5922,64 +6619,96 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
     if (_ResidualRemovalVolume > _VolumeTolerance
         && !_Result.RemovalShape.IsNull())
     {
+        // Coverage must use the remainder of the actual neutral expressions,
+        // not a second subtraction of native recognition candidates whose
+        // coincident boundary topology can differ from their typed replay.
+        TopoDS_Shape _ProvedRemainder;
+        const auto _CoverageRejection = _RemovalNodeIDs.empty() ? std::string("no constructions")
+            : _ValidateLocalRemovalComposition(_Geometry, {}, *_BaseShape, _FullRemovalShape,
+                "committed-constructions", Options_.Tolerance, _RemovalNodeIDs, &_ProvedRemainder,
+                Options_.StageCompleted);
+        if (_CoverageRejection.empty()) {
+            _Result.RemovalShape = _ProvedRemainder;
+            _ResidualRemovalVolume = _ShapeVolume(_ProvedRemainder);
+        }
         // Intersecting cuts can leave separate constant-section pieces only
         // after the first recognized union is subtracted. Recover each such
         // piece from its exact section, once; never discard it on a volume-only
         // match or retain an approximate section as an editable feature.
         std::vector<SRecognizedExtrusion> _ResidualExtrusions;
-        std::vector<TopoDS_Shape> _ResidualExtrusionShapes;
+        std::vector<TopoDS_Shape> _ResidualComponents;
         for (TopExp_Explorer _Explorer(_Result.RemovalShape, TopAbs_SOLID);
-            _Explorer.More(); _Explorer.Next())
-        {
-            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-            const auto _NodeID = "residual-extrusion-"
-                + std::to_string(_ResidualExtrusions.size() + 1);
-            const auto _Axes = _RecognizeAxes(
-                _Explorer.Current(), Options_, &*_BaseShape);
-            for (const auto& _Axis : _Axes)
-            {
+            _Explorer.More(); _Explorer.Next()) _ResidualComponents.push_back(_Explorer.Current());
+        const auto _ResidualCancellation = COpenCascadeCancellationScope::Capture();
+        const auto _RecognizeResidual = [&](std::size_t Index_) -> std::optional<SRecognizedExtrusion> {
+            COpenCascadeCancellationScope _Scope(_ResidualCancellation);
+            const auto& _Component = _ResidualComponents[Index_];
+            const auto _NodeID = "residual-extrusion-" + std::to_string(Index_ + 1);
+            const auto _Axes = _RecognizeAxes(_Component, Options_, &*_BaseShape);
+            for (const auto& _Axis : _Axes) {
                 COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-                // The direct full-section path also handles cuts containing a
-                // cylindrical boundary, without reducing them to a round hole.
-                auto _Extrusion = _TryRecognizeRemovalExtrusion(
-                    _Explorer.Current(), *_BaseShape, _Axis,
+                auto _Extrusion = _TryRecognizeRemovalExtrusion(_Component, *_BaseShape, _Axis,
                     _Frame.ZDirection, Options_, _NodeID, true, false);
                 if (!_Extrusion) continue;
                 const auto _Proof = _Extrusion->Node.Metadata.find("independentReplay");
                 if (_Proof == _Extrusion->Node.Metadata.end()
                     || _Proof->second != "complete-removal") continue;
-
                 _Extrusion->Node.Metadata["recognitionMode"] = "exact-residual-section";
-                _AppendTranslationSurfaceEvidence(
-                    _Extrusion->Node, _PartSurfaceGraph, _Axis.Direction, Options_);
-                _ResidualExtrusionShapes.push_back(_Extrusion->ShapeInsideBase);
-                _ResidualExtrusions.push_back(std::move(*_Extrusion));
-                break;
+                _AppendTranslationSurfaceEvidence(_Extrusion->Node, _PartSurfaceGraph,
+                    _Axis.Direction, Options_, _Extrusion->ShapeInsideBase);
+                return _Extrusion;
+            }
+            return std::nullopt;
+        };
+        const auto _ResidualWorkers = std::min(_ResidualComponents.size(),
+            std::max<std::size_t>(1, std::min<std::size_t>(4, Options_.FeatureWorkerCount)));
+        std::vector<std::future<std::optional<SRecognizedExtrusion>>> _PendingResiduals;
+        if (_ResidualWorkers > 1)
+            for (std::size_t _Index = 0; _Index < _ResidualWorkers; ++_Index)
+                _PendingResiduals.push_back(std::async(std::launch::async, _RecognizeResidual, _Index));
+        for (std::size_t _Index = 0; _Index < _ResidualComponents.size(); ++_Index) {
+            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            std::optional<SRecognizedExtrusion> _Extrusion;
+            if (_ResidualWorkers > 1) {
+                auto& _Pending = _PendingResiduals[_Index % _ResidualWorkers];
+                _Extrusion = _Pending.get();
+                const auto _Next = _Index + _ResidualWorkers;
+                if (_Next < _ResidualComponents.size())
+                    _Pending = std::async(std::launch::async, _RecognizeResidual, _Next);
+            } else _Extrusion = _RecognizeResidual(_Index);
+            if (!_Extrusion) continue;
+            _ResidualExtrusions.push_back(std::move(*_Extrusion));
+        }
+        TopoDS_Shape _ProvedResidualRemainder;
+        if (!_ResidualExtrusions.empty())
+        {
+            std::vector<SRecognitionHypothesis> _ResidualHypotheses;
+            for (const auto& _Extrusion : _ResidualExtrusions) {
+                SRecognitionHypothesis _Hypothesis;
+                _Hypothesis.RootNodeID = _Extrusion.Node.ID;
+                _Hypothesis.Nodes.push_back(_Extrusion.Node);
+                _ResidualHypotheses.push_back(std::move(_Hypothesis));
+            }
+            const auto _Rejection = _ValidateLocalRemovalComposition(_Geometry,
+                _ResidualHypotheses, *_BaseShape, _FullRemovalShape,
+                "residual-constructions", Options_.Tolerance, _RemovalNodeIDs, &_ProvedResidualRemainder,
+                Options_.StageCompleted);
+            if (!_Rejection.empty()) {
+                _Geometry.Metadata["construction.residual.compositionRejection"] = _Rejection;
+                _ResidualExtrusions.clear();
             }
         }
         if (!_ResidualExtrusions.empty())
         {
-            const auto _ResidualUnion = _FuseShapes(
-                _ResidualExtrusionShapes, Options_.Tolerance);
-            if (!_ResidualUnion.IsNull())
+            _Result.RemovalShape = _ProvedResidualRemainder;
+            _ResidualRemovalVolume = _ShapeVolume(_Result.RemovalShape);
+            for (auto& _Extrusion : _ResidualExtrusions)
             {
-                BRepAlgoAPI_Cut _Remaining;
-                _SetBooleanOperands(_Remaining, _Result.RemovalShape, _ResidualUnion);
-                _Remaining.SetFuzzyValue(Options_.Tolerance);
-                COpenCascadeCancellationScope::Build(_Remaining);
-                if (_Remaining.IsDone())
-                {
-                    _Result.RemovalShape = _Remaining.Shape();
-                    _ResidualRemovalVolume = _ShapeVolume(_Result.RemovalShape);
-                    for (auto& _Extrusion : _ResidualExtrusions)
-                    {
-                        COpenCascadeCancellationScope::ThrowIfCancellationRequested();
-                        _Result.PreviewShapes[_Extrusion.Node.ID] = _Extrusion.FullShape;
-                        _RemovalNodeIDs.push_back(_Extrusion.Node.ID);
-                        _Geometry.SolidNodes.push_back(std::move(_Extrusion.Node));
-                        ++_RecognizedRemovalCount;
-                    }
-                }
+                COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+                _Result.PreviewShapes[_Extrusion.Node.ID] = _Extrusion.FullShape;
+                _RemovalNodeIDs.push_back(_Extrusion.Node.ID);
+                _Geometry.SolidNodes.push_back(std::move(_Extrusion.Node));
+                ++_RecognizedRemovalCount;
             }
         }
     }
@@ -6005,6 +6734,20 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
 
     if (!_RemovalNodeIDs.empty())
     {
+        // The construction can extend outside stock for editing and display.
+        // Union only its material inside the host: coincident extensions of
+        // several cutters otherwise destabilize the industrial cone seams.
+        for (auto& _RemovalID : _RemovalNodeIDs) {
+            Tube::SBooleanNode _Clip;
+            _Clip.Operation = Tube::EBooleanOperation::Intersection;
+            _Clip.Children = {"base", _RemovalID};
+            Tube::SSolidNode _Node;
+            _Node.ID = _RemovalID + "/within-stock";
+            _Node.Label = "Construction material within stock";
+            _Node.Data = std::move(_Clip);
+            _RemovalID = _Node.ID;
+            _Geometry.SolidNodes.push_back(std::move(_Node));
+        }
         auto _RemovalOperandID = _RemovalNodeIDs.front();
         if (_RemovalNodeIDs.size() > 1)
         {
@@ -6093,8 +6836,10 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
                 0.0));
         }
     }
+    _MarkStage("coverageAndGraph");
     _Result.ReplayValidation = ValidateTubeCSGReplay(
         Shape_, _Geometry, _ReplayOptions);
+    _MarkStage("replay");
     if (_ReplayResourceCollision)
     {
         _Result.ReplayValidation.bEvaluated = false;
@@ -6174,6 +6919,62 @@ static STubeCSGConversionResult _ConvertBRepToTubeCSG(
             _Geometry.Confidence));
     }
     return _Result;
+}
+
+std::vector<GeometryData::CurveSegment2> ExtractPlanarTubeCurves(
+    const TopoDS_Shape& Edges_,const GeometryData::Placement3& Frame_)
+{
+    SSectionFrame frame;frame.Origin=gp_Pnt(Frame_.Location.X,Frame_.Location.Y,Frame_.Location.Z);
+    frame.XDirection=gp_Dir(Frame_.XDirection.X,Frame_.XDirection.Y,Frame_.XDirection.Z);
+    frame.YDirection=gp_Dir(Frame_.YDirection.X,Frame_.YDirection.Y,Frame_.YDirection.Z);
+    frame.ZDirection=gp_Dir(Frame_.ZDirection.X,Frame_.ZDirection.Y,Frame_.ZDirection.Z);
+    std::vector<GeometryData::CurveSegment2> curves;
+    for(TopExp_Explorer edges(Edges_,TopAbs_EDGE);edges.More();edges.Next())curves.push_back(_MakeCurveSegment2(TopoDS::Edge(edges.Current()),frame));
+    return curves;
+}
+GeometryData::Tube::CPlanarRegion2 ExtractPlanarTubeRegion(
+    const TopoDS_Shape& Faces_, const GeometryData::Placement3& Frame_)
+{
+    SSectionFrame _Frame;
+    _Frame.Origin=gp_Pnt(Frame_.Location.X,Frame_.Location.Y,Frame_.Location.Z);
+    _Frame.XDirection=gp_Dir(Frame_.XDirection.X,Frame_.XDirection.Y,Frame_.XDirection.Z);
+    _Frame.YDirection=gp_Dir(Frame_.YDirection.X,Frame_.YDirection.Y,Frame_.YDirection.Z);
+    _Frame.ZDirection=gp_Dir(Frame_.ZDirection.X,Frame_.ZDirection.Y,Frame_.ZDirection.Z);
+    Tube::CPlanarRegion2 _Region;
+    std::size_t _Ordinal=0;
+    for(TopExp_Explorer _Faces(Faces_,TopAbs_FACE);_Faces.More();_Faces.Next()) {
+        const auto _Face=TopoDS::Face(_Faces.Current());
+        const auto _Outer=BRepTools::OuterWire(_Face);
+        if(_Outer.IsNull())throw std::invalid_argument("CAD planar region has no outer wire");
+        for(TopExp_Explorer _Wires(_Face,TopAbs_WIRE);_Wires.More();_Wires.Next()) {
+            SSliceLoop _Loop;_Loop.Wire=TopoDS::Wire(_Wires.Current());
+            std::vector<Point2> _Points;
+            for(BRepTools_WireExplorer _Edges(_Loop.Wire);_Edges.More();_Edges.Next()) {
+                BRepAdaptor_Curve _Curve(_Edges.Current());
+                const bool _Reverse=_Edges.Current().Orientation()==TopAbs_REVERSED;
+                for(int _Index=0;_Index<16;++_Index) {
+                    const double _T=static_cast<double>(_Index)/16;
+                    const double _Parameter=_Reverse
+                        ? _Curve.LastParameter()+(_Curve.FirstParameter()-_Curve.LastParameter())*_T
+                        : _Curve.FirstParameter()+(_Curve.LastParameter()-_Curve.FirstParameter())*_T;
+                    gp_Pnt _Point;_Curve.D0(_Parameter,_Point);
+                    if(std::abs(gp_Vec(_Frame.Origin,_Point).Dot(gp_Vec(_Frame.ZDirection)))>1e-6)
+                        throw std::invalid_argument("CAD region is not in its declared plane");
+                    _Points.push_back(_ToPoint2(_Point,_Frame));
+                }
+            }
+            for(std::size_t _Index=0;_Index<_Points.size();++_Index) {
+                const auto& _A=_Points[_Index];const auto& _B=_Points[(_Index+1)%_Points.size()];
+                _Loop.SignedArea+=(_A.X*_B.Y-_B.X*_A.Y)*.5;
+            }
+            // Samples decide orientation only; _MakeNeutralLoop retains every
+            // exact native curve, basis and parameter interval.
+            _Region.Boundaries.push_back(_MakeNeutralLoop(_Loop,_Frame,
+                "boundary-"+std::to_string(++_Ordinal),_Loop.Wire.IsSame(_Outer)));
+        }
+    }
+    if(_Region.Boundaries.empty())throw std::invalid_argument("CAD planar region is empty");
+    return _Region;
 }
 
 STubeCSGConversionResult ConvertBRepToTubeCSG(
@@ -6575,6 +7376,72 @@ namespace
         return _Fixer.Face();
     }
 
+    std::vector<EvaluationTube::CPlanarRegion2> _PartitionPlanarRegion(
+        const EvaluationTube::CPlanarRegion2& Region_)
+    {
+        if (Region_.Boundaries.size() <= 1) return {Region_};
+        // A material region can contain separate islands as well as holes.
+        // Preserve its directed fill rule instead of treating every later
+        // contour as a hole in the first contour.
+        const SEvaluationFrame _Frame(iCAX::GeometryData::Placement3{});
+        const auto _Count = Region_.Boundaries.size();
+        std::vector<TopoDS_Face> _Faces;
+        std::vector<gp_Pnt> _Points;
+        std::vector<int> _Signs;
+        for (const auto& _Loop : Region_.Boundaries) {
+            const auto _Wire = _MakeEvaluationWire(_Loop, _Frame, 0.0, 1.0, {});
+            BRepBuilderAPI_MakeFace _Face(_Frame.Plane(0.0), _Wire, true);
+            if (!_Face.IsDone()) throw std::invalid_argument("Tube CAD region boundary cannot form a face");
+            const double _Area = ShapeAnalysis::TotCross2D(new ShapeExtend_WireData(_Wire), _Face.Face());
+            if (std::abs(_Area) <= Precision::Confusion() * Precision::Confusion())
+                throw std::invalid_argument("Tube CAD region boundary has zero signed area");
+            _Signs.push_back(_Area > 0.0 ? 1 : -1);
+            ShapeFix_Face _Fix(_Face.Face()); _Fix.FixOrientation();
+            _Faces.push_back(_Fix.Face());
+            BRepTools_WireExplorer _Edges(_Wire);
+            if (!_Edges.More()) throw std::invalid_argument("Tube CAD region boundary is empty");
+            const BRepAdaptor_Curve _Curve(_Edges.Current());
+            _Points.push_back(_Curve.Value(_Curve.FirstParameter()));
+        }
+        std::vector<std::vector<std::size_t>> _Parents(_Count);
+        for (std::size_t _Child = 0; _Child < _Count; ++_Child)
+            for (std::size_t _Parent = 0; _Parent < _Count; ++_Parent) {
+                if (_Child == _Parent) continue;
+                const BRepClass_FaceClassifier _Classifier(_Faces[_Parent], _Points[_Child], Precision::Confusion());
+                if (_Classifier.State() == TopAbs_ON)
+                    throw std::invalid_argument("Tube CAD region boundaries touch or overlap");
+                if (_Classifier.State() == TopAbs_IN) _Parents[_Child].push_back(_Parent);
+            }
+        std::vector<int> _Role(_Count, 0);
+        std::map<std::size_t, std::size_t> _Component;
+        std::vector<EvaluationTube::CPlanarRegion2> _Regions;
+        for (std::size_t _Index = 0; _Index < _Count; ++_Index) {
+            int _Outside = 0;
+            for (const auto _Parent : _Parents[_Index]) _Outside += _Signs[_Parent];
+            const bool _WasFilled = Region_.FillRule == EvaluationTube::EPlanarFillRule::NonZero
+                ? _Outside != 0 : (_Parents[_Index].size() % 2) != 0;
+            const bool _Filled = Region_.FillRule == EvaluationTube::EPlanarFillRule::NonZero
+                ? _Outside + _Signs[_Index] != 0 : !_WasFilled;
+            if (!_WasFilled && _Filled) {
+                _Role[_Index] = 1; _Component[_Index] = _Regions.size();
+                EvaluationTube::CPlanarRegion2 _Region; _Region.FillRule = Region_.FillRule;
+                _Region.Boundaries.push_back(Region_.Boundaries[_Index]);
+                _Regions.push_back(std::move(_Region));
+            } else if (_WasFilled && !_Filled) _Role[_Index] = -1;
+        }
+        for (std::size_t _Index = 0; _Index < _Count; ++_Index) {
+            if (_Role[_Index] != -1) continue;
+            std::optional<std::size_t> _Outer;
+            for (const auto _Parent : _Parents[_Index])
+                if (_Role[_Parent] == 1 && (!_Outer || _Parents[_Parent].size() > _Parents[*_Outer].size()))
+                    _Outer = _Parent;
+            if (!_Outer) throw std::invalid_argument("Tube CAD hole has no material boundary");
+            _Regions[_Component.at(*_Outer)].Boundaries.push_back(Region_.Boundaries[_Index]);
+        }
+        if (_Regions.empty()) throw std::invalid_argument("Tube CAD region has no material");
+        return _Regions;
+    }
+
     TopoDS_Shape _MakePrism(
         IN const TopoDS_Face& StartFace_,
         IN const SEvaluationFrame& Frame_,
@@ -6670,13 +7537,7 @@ namespace
             BRepAdaptor_Curve _Curve(_Edge);
             const auto _First = _Curve.FirstParameter();
             const auto _Last = _Curve.LastParameter();
-            const auto _StartVertex = BRep_Tool::Pnt(_Explorer.CurrentVertex());
-            gp_Pnt _FirstPoint;
-            gp_Pnt _LastPoint;
-            _Curve.D0(_First, _FirstPoint);
-            _Curve.D0(_Last, _LastPoint);
-            const auto _Reversed = _StartVertex.Distance(_LastPoint)
-                < _StartVertex.Distance(_FirstPoint);
+            const auto _Reversed = _Edge.Orientation() == TopAbs_REVERSED;
             for (int _Index = 0; _Index <= kSamplesPerEdge; ++_Index)
             {
                 COpenCascadeCancellationScope::ThrowIfCancellationRequested();
@@ -6818,6 +7679,200 @@ namespace
         return _Face.Face();
     }
 
+    std::optional<TopoDS_Shape> _EvaluateLinearWrapped(
+        const EvaluationTube::SRegionLoop2& Support_, const SEvaluationFrame& Frame_,
+        const EvaluationTube::SWrappedVolumeNode& Wrapped_)
+    {
+        const auto* _Lower = std::get_if<double>(&Wrapped_.LowerNormalOffset);
+        const auto* _Upper = std::get_if<double>(&Wrapped_.UpperNormalOffset);
+        if (!_Lower || !_Upper) return std::nullopt;
+        const SEvaluationFrame _UVFrame(iCAX::GeometryData::Placement3{});
+        const auto _UVFace = _MakeEvaluationFace(Wrapped_.UVRegion, _UVFrame, 0.0, 1.0, {});
+        Bnd_Box _Bounds; BRepBndLib::AddOptimal(_UVFace, _Bounds, false, false);
+        double _MinU, _MinV, _MinZ, _MaxU, _MaxV, _MaxZ;
+        _Bounds.Get(_MinU, _MinV, _MinZ, _MaxU, _MaxV, _MaxZ);
+        struct SSpan { TopoDS_Edge Edge; double First, Last; };
+        std::vector<SSpan> _Spans; double _Period = 0.0;
+        const auto _Wire = _MakeEvaluationWire(Support_, Frame_, 0.0, 1.0, {});
+        for (BRepTools_WireExplorer _Edges(_Wire); _Edges.More(); _Edges.Next()) {
+            const BRepAdaptor_Curve _Curve(_Edges.Current());
+            const double _Length = GCPnts_AbscissaPoint::Length(_Curve);
+            _Spans.push_back({_Edges.Current(), _Period, _Period + _Length}); _Period += _Length;
+        }
+        if (_Period <= Precision::Confusion()) return std::nullopt;
+        const double _Shift = std::floor((_MinU + _MaxU) / (2.0 * _Period)) * _Period;
+        for (const auto& _Span : _Spans) {
+            const BRepAdaptor_Curve _Curve(_Span.Edge);
+            if (_Curve.GetType() != GeomAbs_Line || _MinU - _Shift < _Span.First - 1e-6
+                || _MaxU - _Shift > _Span.Last + 1e-6) continue;
+            const bool _Reversed = _Span.Edge.Orientation() == TopAbs_REVERSED;
+            gp_Pnt _Start; gp_Vec _Tangent;
+            _Curve.D1(_Reversed ? _Curve.LastParameter() : _Curve.FirstParameter(), _Start, _Tangent);
+            if (_Reversed) _Tangent.Reverse(); _Tangent.Normalize();
+            const gp_Vec _Axial(Frame_.Axis.Direction());
+            const auto _Normal = _Tangent.Crossed(_Axial).Normalized();
+            const auto _Origin = _Start.Translated(_Tangent * (-_Span.First - _Shift));
+            iCAX::GeometryData::Placement3 _Placement;
+            _Placement.Location = {_Origin.X(), _Origin.Y(), _Origin.Z()};
+            _Placement.XDirection = {_Tangent.X(), _Tangent.Y(), _Tangent.Z()};
+            _Placement.YDirection = {_Axial.X(), _Axial.Y(), _Axial.Z()};
+            _Placement.ZDirection = {_Normal.X(), _Normal.Y(), _Normal.Z()};
+            const SEvaluationFrame _Plane(_Placement);
+            return _MakePrism(_MakeEvaluationFace(Wrapped_.UVRegion, _Plane, *_Lower, 1.0, {}),
+                _Plane, *_Upper - *_Lower);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<TopoDS_Shape> _EvaluateCircularRectilinearWrapped(
+        const EvaluationTube::SRegionLoop2& Support_, const SEvaluationFrame& Frame_,
+        const EvaluationTube::SWrappedVolumeNode& Wrapped_)
+    {
+        const auto* _Lower = std::get_if<double>(&Wrapped_.LowerNormalOffset);
+        const auto* _Upper = std::get_if<double>(&Wrapped_.UpperNormalOffset);
+        if (!_Lower || !_Upper || Support_.Curves.size() != 1) return std::nullopt;
+        const auto& _Segment = Support_.Curves.front().Segment;
+        const auto* _Circle2 = std::get_if<Circle2>(&_Segment.Curve);
+        const double _Period = 2.0 * std::acos(-1.0);
+        if (!_Circle2 || std::abs(_Segment.Range.Last - _Segment.Range.First - _Period) > 1e-9)
+            return std::nullopt;
+
+        // A rectilinear region in physical (arc length, axial distance) space
+        // partitions into exact annular sectors. No chordal approximation is
+        // involved in either the supporting circle or the resulting surfaces.
+        constexpr double _CoordinateTolerance = 1e-8;
+        struct SEdge { Point2 A, B; };
+        std::vector<SEdge> _Edges;
+        std::vector<double> _Stations;
+        for (const auto& _Loop : Wrapped_.UVRegion.Boundaries)
+        {
+            std::vector<Point2> _Points;
+            for (const auto& _Curve : _Loop.Curves)
+            {
+                std::vector<Point2> _Part;
+                if (const auto* _Line = std::get_if<Segment2>(&_Curve.Segment.Curve))
+                    _Part = { _Line->Start, _Line->End };
+                else if (const auto* _Polyline = std::get_if<Polyline2>(&_Curve.Segment.Curve))
+                    _Part = _Polyline->Points;
+                else return std::nullopt;
+                if (_Curve.Segment.Range.Reversed) std::reverse(_Part.begin(), _Part.end());
+                for (const auto& _Point : _Part) {
+                    if (!std::isfinite(_Point.X) || !std::isfinite(_Point.Y))
+                        throw std::invalid_argument("Circular wrapped UV coordinates must be finite");
+                    if (_Points.empty() || std::hypot(_Point.X - _Points.back().X,
+                        _Point.Y - _Points.back().Y) > _CoordinateTolerance) _Points.push_back(_Point);
+                }
+            }
+            if (_Points.size() > 1 && std::hypot(_Points.front().X - _Points.back().X,
+                _Points.front().Y - _Points.back().Y) <= _CoordinateTolerance) _Points.pop_back();
+            bool _Changed = true;
+            while (_Changed && _Points.size() > 3)
+            {
+                _Changed = false;
+                for (std::size_t _Index = 0; _Index < _Points.size(); ++_Index)
+                {
+                    const auto& _A = _Points[(_Index + _Points.size() - 1) % _Points.size()];
+                    const auto& _B = _Points[_Index];
+                    const auto& _C = _Points[(_Index + 1) % _Points.size()];
+                    const bool _Horizontal = std::abs(_A.Y - _B.Y) <= _CoordinateTolerance
+                        && std::abs(_B.Y - _C.Y) <= _CoordinateTolerance;
+                    const bool _Vertical = std::abs(_A.X - _B.X) <= _CoordinateTolerance
+                        && std::abs(_B.X - _C.X) <= _CoordinateTolerance;
+                    if ((_Horizontal || _Vertical) && (_B.X - _A.X) * (_C.X - _B.X)
+                        + (_B.Y - _A.Y) * (_C.Y - _B.Y) >= 0.0)
+                    {
+                        _Points.erase(_Points.begin() + _Index); _Changed = true; break;
+                    }
+                }
+            }
+            if (_Points.size() < 4) return std::nullopt;
+            for (std::size_t _Index = 0; _Index < _Points.size(); ++_Index)
+            {
+                const auto& _A = _Points[_Index];
+                const auto& _B = _Points[(_Index + 1) % _Points.size()];
+                if (std::abs(_A.X - _B.X) > _CoordinateTolerance
+                    && std::abs(_A.Y - _B.Y) > _CoordinateTolerance) return std::nullopt;
+                _Edges.push_back({ _A, _B }); _Stations.push_back(_A.X);
+            }
+        }
+        if (_Edges.empty()) return std::nullopt;
+        std::sort(_Stations.begin(), _Stations.end());
+        _Stations.erase(std::unique(_Stations.begin(), _Stations.end(), [](double A_, double B_) {
+            return std::abs(A_ - B_) <= _CoordinateTolerance;
+        }), _Stations.end());
+
+        const auto _SupportEdges = _MakeEvaluationEdges(_Segment, Frame_, 0.0, 1.0, {});
+        const BRepAdaptor_Curve _Curve(_SupportEdges.front());
+        const auto _Circle = _Curve.Circle();
+        const auto _StartParameter = _Segment.Range.Reversed ? _Segment.Range.Last : _Segment.Range.First;
+        gp_Pnt _Start; gp_Vec _Tangent; _Curve.D1(_StartParameter, _Start, _Tangent);
+        if (_Segment.Range.Reversed) _Tangent.Reverse();
+        gp_Vec _Radial(_Circle.Location(), _Start); _Radial.Normalize();
+        const gp_Vec _Axial(Frame_.Axis.Direction());
+        const double _Direction = _Tangent.Dot(_Axial.Crossed(_Radial)) > 0.0 ? 1.0 : -1.0;
+        const double _NormalSign = _Tangent.Crossed(_Axial).Dot(_Radial) > 0.0 ? 1.0 : -1.0;
+        if (!std::isfinite(*_Lower) || !std::isfinite(*_Upper) || *_Lower >= *_Upper)
+            throw std::invalid_argument("Circular wrapped offsets must define a finite positive interval");
+        const double _Radius0 = _Circle.Radius() + _NormalSign * *_Lower;
+        const double _Radius1 = _Circle.Radius() + _NormalSign * *_Upper;
+        const auto _Radii = std::minmax(_Radius0, _Radius1);
+        if (_Radii.first < 0.0)
+            throw std::invalid_argument("Circular wrapped offset crosses the support axis");
+        const gp_Ax1 _Axis(_Circle.Location(), gp_Dir(_Axial * _Direction));
+        std::vector<TopoDS_Shape> _Pieces;
+        for (std::size_t _Index = 1; _Index < _Stations.size(); ++_Index)
+        {
+            COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+            const double _U0 = _Stations[_Index - 1], _U1 = _Stations[_Index], _U = 0.5 * (_U0 + _U1);
+            std::vector<std::pair<double, int>> _Crossings;
+            for (const auto& _Edge : _Edges)
+                if (_U > std::min(_Edge.A.X, _Edge.B.X) && _U < std::max(_Edge.A.X, _Edge.B.X))
+                    _Crossings.emplace_back(_Edge.A.Y, _Edge.B.X > _Edge.A.X ? 1 : -1);
+            std::sort(_Crossings.begin(), _Crossings.end());
+            int _Winding = 0;
+            std::optional<double> _V0;
+            for (std::size_t _Crossing = 0; _Crossing < _Crossings.size();)
+            {
+                const double _V = _Crossings[_Crossing].first;
+                const bool _WasInside = Wrapped_.UVRegion.FillRule == EvaluationTube::EPlanarFillRule::NonZero
+                    ? _Winding != 0 : (_Winding % 2) != 0;
+                do { _Winding += _Crossings[_Crossing++].second; }
+                while (_Crossing < _Crossings.size()
+                    && std::abs(_Crossings[_Crossing].first - _V) <= _CoordinateTolerance);
+                const bool _Inside = Wrapped_.UVRegion.FillRule == EvaluationTube::EPlanarFillRule::NonZero
+                    ? _Winding != 0 : (_Winding % 2) != 0;
+                if (!_WasInside && _Inside) _V0 = _V;
+                else if (_WasInside && !_Inside)
+                {
+                    gp_Trsf _Rotation; _Rotation.SetRotation(_Axis, _U0 / _Circle.Radius());
+                    const auto _Ray = _Radial.Transformed(_Rotation);
+                    const auto _Point = [&](double Radius_, double V_) {
+                        return _Circle.Location().Translated(_Ray * Radius_ + _Axial * V_);
+                    };
+                    BRepBuilderAPI_MakePolygon _Polygon;
+                    _Polygon.Add(_Point(_Radii.first, *_V0));
+                    _Polygon.Add(_Point(_Radii.second, *_V0));
+                    _Polygon.Add(_Point(_Radii.second, _V));
+                    _Polygon.Add(_Point(_Radii.first, _V)); _Polygon.Close();
+                    BRepBuilderAPI_MakeFace _Face(_Polygon.Wire());
+                    const double _Angle = (_U1 - _U0) / _Circle.Radius();
+                    if (_Angle > _Period + 1e-9)
+                        throw std::invalid_argument("Circular wrapped slab spans more than one period");
+                    BRepPrimAPI_MakeRevol _Revolve(_Face.Face(), _Axis, std::min(_Angle, _Period), true);
+                    COpenCascadeCancellationScope::Build(_Revolve);
+                    if (!_Revolve.IsDone() || !BRepCheck_Analyzer(_Revolve.Shape()).IsValid())
+                        throw std::runtime_error("Exact circular wrapped sector is invalid");
+                    _Pieces.push_back(_Revolve.Shape()); _V0.reset();
+                }
+            }
+            if (_Winding != 0) throw std::invalid_argument("Circular wrapped UV loop is not closed");
+        }
+        const auto _Solid = _FuseShapes(_Pieces, Precision::Confusion());
+        if (_Solid.IsNull() || !BRepCheck_Analyzer(_Solid).IsValid())
+            throw std::runtime_error("Exact circular wrapped union is invalid");
+        return _Solid;
+    }
+
     class CTubeCSGEvaluator final
     {
     public:
@@ -6926,15 +7981,11 @@ namespace
             if (Extrusion_.Last <= Extrusion_.First)
                 throw std::invalid_argument("Tube CSG extrusion interval is invalid");
             const SEvaluationFrame _Frame(Extrusion_.Frame);
-            const auto _Shape = _MakePrism(
-                _MakeEvaluationFace(
-                    Extrusion_.Section,
-                    _Frame,
-                    Extrusion_.First,
-                    1.0,
-                    {}),
-                _Frame,
-                Extrusion_.Last - Extrusion_.First);
+            std::vector<TopoDS_Shape> _Pieces;
+            for (const auto& _Region : _PartitionPlanarRegion(Extrusion_.Section))
+                _Pieces.push_back(_MakePrism(_MakeEvaluationFace(_Region, _Frame, Extrusion_.First, 1.0, {}),
+                    _Frame, Extrusion_.Last - Extrusion_.First));
+            const auto _Shape = _FuseShapes(_Pieces, m_Options.Tolerance);
             for (const auto& _Loop : Extrusion_.Section.Boundaries)
             {
                 COpenCascadeCancellationScope::ThrowIfCancellationRequested();
@@ -7037,6 +8088,14 @@ namespace
         {
             if (Boolean_.Children.empty())
                 throw std::invalid_argument("Tube CSG Boolean has no children");
+            if (Boolean_.Operation == EvaluationTube::EBooleanOperation::Union)
+            {
+                std::vector<TopoDS_Shape> _Operands;
+                for (const auto& _Child : Boolean_.Children) _Operands.push_back(EvaluateNode(_Child));
+                const auto _Union = _FuseShapes(_Operands, m_Options.Tolerance);
+                if (_Union.IsNull()) throw std::runtime_error("Tube CSG union failed");
+                return _Union;
+            }
             auto _Shape = EvaluateNode(Boolean_.Children.front());
             for (std::size_t _Index = 1;
                 _Index < Boolean_.Children.size();
@@ -7044,17 +8103,7 @@ namespace
             {
                 COpenCascadeCancellationScope::ThrowIfCancellationRequested();
                 const auto _Right = EvaluateNode(Boolean_.Children[_Index]);
-                if (Boolean_.Operation == EvaluationTube::EBooleanOperation::Union)
-                {
-                    BRepAlgoAPI_Fuse _Operation;
-                    _SetBooleanOperands(_Operation, _Shape, _Right);
-                    _Operation.SetFuzzyValue(m_Options.Tolerance);
-                    COpenCascadeCancellationScope::Build(_Operation);
-                    if (!_Operation.IsDone())
-                        throw std::runtime_error("Tube CSG union failed");
-                    _Shape = _Operation.Shape();
-                }
-                else if (Boolean_.Operation == EvaluationTube::EBooleanOperation::Difference)
+                if (Boolean_.Operation == EvaluationTube::EBooleanOperation::Difference)
                 {
                     BRepAlgoAPI_Cut _Operation;
                     _SetBooleanOperands(_Operation, _Shape, _Right);
@@ -7105,6 +8154,59 @@ namespace
             return _Builder.Shape();
         }
 
+        TopoDS_Shape EvaluateData(const EvaluationTube::SSolidNode&,
+            const EvaluationTube::SConnectedComponentNode& Component_)
+        {
+            const auto shape=EvaluateNode(Component_.Child);
+            const auto& anchor=Component_.Anchor;
+            if(!std::isfinite(anchor.X)||!std::isfinite(anchor.Y)||!std::isfinite(anchor.Z))
+                throw std::invalid_argument("Tube CAD component anchor must be finite");
+            TopoDS_Shape selected;std::size_t count=0;bool boundary=false;
+            for(TopExp_Explorer it(shape,TopAbs_SOLID);it.More();it.Next()) {
+                BRepClass3d_SolidClassifier classifier(TopoDS::Solid(it.Current()),
+                    gp_Pnt(anchor.X,anchor.Y,anchor.Z),m_Options.Tolerance);
+                if(classifier.State()==TopAbs_ON)boundary=true;
+                if(classifier.State()==TopAbs_IN){selected=it.Current();++count;}
+            }
+            if(boundary||count!=1)
+                throw std::invalid_argument("Tube CAD component anchor must lie strictly inside exactly one material solid");
+            return selected;
+        }
+
+        TopoDS_Shape EvaluateData(const EvaluationTube::SSolidNode&,
+            const EvaluationTube::STopologyBevelNode& Modifier_)
+        {
+            const auto shape=EvaluateNode(Modifier_.Child);
+            if(std::any_of(Modifier_.Selections.begin(),Modifier_.Selections.end(),[](const auto& s){return s.WrappedSourceNodeID.empty();})
+                &&iCAX::CAD::CadExactTopologySignature(shape)!=Modifier_.SelectionShapeSignature)
+                throw std::invalid_argument("CAD 坡口的实际拓扑已改变，请重新选择边面");
+            std::vector<iCAX::CAD::SCadBevelOperation> operations;
+            for(const auto& selection:Modifier_.Selections) {
+                if(selection.WrappedSourceNodeID.empty()) {
+                    operations.push_back({selection.EdgeID,selection.ReferenceFaceID,selection.Side,selection.AngleDegrees,selection.RootFace});continue;
+                }
+                const auto& source=std::get<EvaluationTube::SWrappedVolumeNode>(m_Nodes.at(selection.WrappedSourceNodeID)->Data);
+                const auto& stock=std::get<EvaluationTube::SExtrudedRegionNode>(m_Nodes.at(source.Support.ExtrusionNodeID)->Data);
+                iCAX::CAD::STubeWrappedHostGeometry host;host.Shape=EvaluateNode(source.Support.ExtrusionNodeID);
+                host.SectionFrame=gp_Ax3(gp_Pnt(stock.Frame.Location.X,stock.Frame.Location.Y,stock.Frame.Location.Z),
+                    gp_Dir(stock.Frame.ZDirection.X,stock.Frame.ZDirection.Y,stock.Frame.ZDirection.Z),
+                    gp_Dir(stock.Frame.XDirection.X,stock.Frame.XDirection.Y,stock.Frame.XDirection.Z));
+                host.AxialFirst=stock.First;host.AxialLast=stock.Last;
+                for(const auto& loop:stock.Section.Boundaries)host.SectionWires.push_back(_MakeEvaluationWire(loop,SEvaluationFrame(stock.Frame),stock.First,1.0,{}));
+                BRep_Builder builder;TopoDS_Compound uv;builder.MakeCompound(uv);
+                const SEvaluationFrame xy(GeometryData::Placement3{});
+                for(const auto& region:_PartitionPlanarRegion(source.UVRegion))builder.Add(uv,_MakeEvaluationFace(region,xy,0.0,1.0,{}));
+                std::vector<TopoDS_Edge> boundaries;
+                for(const auto& curve:selection.UVBoundary) {
+                    const auto edges=_MakeEvaluationEdges(curve,xy,0.0,1.0,{});boundaries.insert(boundaries.end(),edges.begin(),edges.end());
+                }
+                const auto selected=iCAX::CAD::BindTubeWrappedBevel(host,uv,boundaries,shape,EvaluateNode(selection.WrappedSourceNodeID));
+                for(const auto& edge:selected)operations.push_back({edge.EdgeID,edge.ReferenceFaceID,selection.Side,selection.AngleDegrees,selection.RootFace});
+            }
+            const auto result=iCAX::CAD::ApplyCadNativeBevel(shape,operations);
+            if(!result.bOK||result.Shape.IsNull())throw std::invalid_argument(result.Diagnostic);
+            return result.Shape;
+        }
         TopoDS_Shape EvaluateData(
             IN const EvaluationTube::SSolidNode& Node_,
             IN const EvaluationTube::SWrappedVolumeNode& Wrapped_)
@@ -7126,6 +8228,23 @@ namespace
                     "Tube CSG wrapped-volume support must be an extrusion: "
                     + Node_.ID);
             }
+            if(Wrapped_.DepthRule==EvaluationTube::EWrappedDepthRule::FirstHostWall) {
+                const SEvaluationFrame frame(_pSupport->Frame);
+                iCAX::CAD::STubeWrappedHostGeometry host;
+                host.Shape=EvaluateNode(Wrapped_.Support.ExtrusionNodeID);
+                host.SectionFrame=gp_Ax3(gp_Pnt(_pSupport->Frame.Location.X,_pSupport->Frame.Location.Y,_pSupport->Frame.Location.Z),
+                    gp_Dir(_pSupport->Frame.ZDirection.X,_pSupport->Frame.ZDirection.Y,_pSupport->Frame.ZDirection.Z),
+                    gp_Dir(_pSupport->Frame.XDirection.X,_pSupport->Frame.XDirection.Y,_pSupport->Frame.XDirection.Z));
+                host.AxialFirst=_pSupport->First;host.AxialLast=_pSupport->Last;
+                for(const auto& loop:_pSupport->Section.Boundaries)
+                    host.SectionWires.push_back(_MakeEvaluationWire(loop,frame,_pSupport->First,1.0,{}));
+                BRep_Builder builder;TopoDS_Compound faces;builder.MakeCompound(faces);
+                for(const auto& region:_PartitionPlanarRegion(Wrapped_.UVRegion))
+                    builder.Add(faces,_MakeEvaluationFace(region,SEvaluationFrame(GeometryData::Placement3{}),0.0,1.0,{}));
+                const auto wrapped=iCAX::CAD::EvaluateTubeWrappedRegion(host,faces);
+                if(wrapped.ToolPatchCount==0)throw std::invalid_argument("侧壁绘制区域没有作用于当前原材");
+                return wrapped.Shape;
+            }
             const auto _Loop = std::find_if(
                 _pSupport->Section.Boundaries.begin(),
                 _pSupport->Section.Boundaries.end(),
@@ -7139,13 +8258,27 @@ namespace
                     + Wrapped_.Support.LoopID);
             }
 
+            const auto _Regions = _PartitionPlanarRegion(Wrapped_.UVRegion);
+            if (_Regions.size() > 1) {
+                std::vector<TopoDS_Shape> _Pieces;
+                for (const auto& _Region : _Regions) {
+                    auto _Part = Wrapped_; _Part.UVRegion = _Region;
+                    _Pieces.push_back(EvaluateData(Node_, _Part));
+                }
+                return _FuseShapes(_Pieces, m_Options.Tolerance);
+            }
+            auto _Wrapped = Wrapped_; _Wrapped.UVRegion = _Regions.front();
             const SEvaluationFrame _SupportFrame(_pSupport->Frame);
+            if (const auto _Exact = _EvaluateLinearWrapped(*_Loop, _SupportFrame, _Wrapped))
+                return *_Exact;
+            if (const auto _Exact = _EvaluateCircularRectilinearWrapped(*_Loop, _SupportFrame, _Wrapped))
+                return *_Exact;
             const auto _SupportSamples = _SampleSideSupport(
                 *_Loop, _SupportFrame);
             iCAX::GeometryData::Placement3 _UVPlacement;
             const SEvaluationFrame _UVFrame(_UVPlacement);
             auto _UVFace = _MakeEvaluationFace(
-                Wrapped_.UVRegion,
+                _Wrapped.UVRegion,
                 _UVFrame,
                 0.0,
                 1.0,
@@ -7382,13 +8515,65 @@ namespace
             IN const EvaluationTube::SSolidNode& Node_,
             IN const EvaluationTube::SOpeningProfileSweepNode& Opening_)
         {
-            if (Opening_.EvaluatedVolumeNodeID.empty())
-            {
-                throw std::invalid_argument(
-                    "Tube CSG opening profile has no evaluated volume: "
-                    + Node_.ID);
+            // Reconstruct from the authoritative wall section. An imported
+            // evaluated volume is evidence/cache, never the edit evaluator.
+            const auto _Source = m_Nodes.find(Opening_.SourceCutNodeID);
+            const auto* _Extrusion = _Source == m_Nodes.end() ? nullptr
+                : std::get_if<EvaluationTube::SExtrudedRegionNode>(&_Source->second->Data);
+            if (!_Extrusion || _Extrusion->Section.Boundaries.size() != 1
+                || _Extrusion->Section.Boundaries.front().Curves.size() != 1
+                || Opening_.ProfileField.Keys.size() != 1 || !Opening_.ProfileField.Periodic)
+                throw std::invalid_argument("Tube CAD opening profile currently requires a constant circular sweep: " + Node_.ID);
+            const auto* _Circle = std::get_if<iCAX::GeometryData::Circle2>(
+                &_Extrusion->Section.Boundaries.front().Curves.front().Segment.Curve);
+            if (!_Circle || _Circle->Radius <= 0)
+                throw std::invalid_argument("Tube CAD opening profile requires a circular source section: " + Node_.ID);
+            const auto& _Profile = Opening_.ProfileField.Keys.front().Profile;
+            if (_Profile.Segments.empty()) throw std::invalid_argument("Tube CAD opening profile is empty");
+            const SEvaluationFrame _SourceFrame(_Extrusion->Frame);
+            // Profile stations belong to the source construction frame.
+            // Through-cut padding changes the extrusion interval, not the
+            // opening profile's geometric origin.
+            const auto _Center = _SourceFrame.Point(_Circle->Placement.Location, 0.0);
+            const auto _Axis = _SourceFrame.Axis.Direction();
+            const auto _Radial = _SourceFrame.Direction(_Circle->Placement.XDirection);
+            const auto _Normal = gp_Dir(gp_Vec(_Axis).Crossed(gp_Vec(_Radial)));
+            const auto _Origin = _Center.Translated(gp_Vec(_Radial) * _Circle->Radius);
+            iCAX::GeometryData::Placement3 _Placement;
+            _Placement.Location={_Origin.X(),_Origin.Y(),_Origin.Z()};
+            _Placement.XDirection={_Axis.X(),_Axis.Y(),_Axis.Z()};
+            _Placement.YDirection={_Radial.X(),_Radial.Y(),_Radial.Z()};
+            _Placement.ZDirection={_Normal.X(),_Normal.Y(),_Normal.Z()};
+            const SEvaluationFrame _Frame(_Placement);
+            BRepBuilderAPI_MakeWire _Wire;
+            std::optional<gp_Pnt> _First, _Last;
+            for(const auto& _Segment:_Profile.Segments) {
+                for(const auto& _Edge:_MakeEvaluationEdges(_Segment,_Frame,0.0,1.0,{})) {
+                    const auto _Start=BRep_Tool::Pnt(TopExp::FirstVertex(_Edge,true));
+                    const auto _End=BRep_Tool::Pnt(TopExp::LastVertex(_Edge,true));
+                    if(!_First)_First=_Start;
+                    _Last=_End;_Wire.Add(_Edge);
+                }
             }
-            return EvaluateNode(Opening_.EvaluatedVolumeNodeID);
+            if(!_First||!_Last)throw std::invalid_argument("Tube CAD opening section has no finite edges");
+            if(!_Profile.Closed) {
+                const auto nominal=[&](const gp_Pnt& point) {
+                    return point.Translated(gp_Vec(_Radial)*-gp_Vec(_Origin,point).Dot(gp_Vec(_Radial)));
+                };
+                const auto _LastNominal=nominal(*_Last),_FirstNominal=nominal(*_First);
+                const auto line=[&](const gp_Pnt& a,const gp_Pnt& b) {
+                    if(a.Distance(b)>1e-9)_Wire.Add(BRepBuilderAPI_MakeEdge(a,b).Edge());
+                };
+                line(*_Last,_LastNominal);line(_LastNominal,_FirstNominal);line(_FirstNominal,*_First);
+            }
+            if(!_Wire.IsDone())throw std::invalid_argument("Tube CAD opening section is not a continuous contour");
+            BRepBuilderAPI_MakeFace _Face(_Frame.Plane(0),_Wire.Wire(),true);
+            if(!_Face.IsDone())throw std::invalid_argument("Tube CAD opening section is not a valid region");
+            BRepPrimAPI_MakeRevol _Sweep(_Face.Face(),gp_Ax1(_Center,_Axis),2.0*std::acos(-1.0),true);
+            COpenCascadeCancellationScope::Build(_Sweep);
+            if(!_Sweep.IsDone()||!BRepCheck_Analyzer(_Sweep.Shape()).IsValid())
+                throw std::invalid_argument("Tube CAD opening profile sweep failed");
+            return _Sweep.Shape();
         }
 
         TopoDS_Shape EvaluateExternal(
@@ -7512,37 +8697,112 @@ STubeCSGReplayValidationResult ValidateTubeCSGReplay(
                 _Result.Diagnostics.push_back("Tube CSG node graph could not be replayed");
             return _Result;
         }
-        if (!BRepCheck_Analyzer(_Replay.Shape).IsValid())
+        return ValidateTubeCSGShapeReplay(SourceShape_,_Replay.Shape,Options_.Tolerance);
+    }
+    catch (const Standard_Failure& Error_)
+    {
+        _Result.Diagnostics.push_back(std::string("OCC replay validation failed: ") + Error_.what());
+    }
+    catch (const iCAX::Tasks::TaskCanceledException&) { throw; }
+    catch (const std::exception& Error_) { _Result.Diagnostics.push_back(Error_.what()); }
+    return _Result;
+}
+
+STubeCSGReplayValidationResult ValidateTubeCSGShapeReplay(
+    const TopoDS_Shape& SourceShape_, const TopoDS_Shape& ReplayedShape_, double Tolerance_)
+{
+    COpenCascadeCancellationScope _Cancellation;
+    COpenCascadeCancellationScope::ThrowIfCancellationRequested();
+    STubeCSGReplayValidationResult _Result;
+    try
+    {
+        if (!std::isfinite(Tolerance_) || Tolerance_ <= 0)
+            throw std::invalid_argument("Replay comparison tolerance must be positive and finite");
+        if (SourceShape_.IsNull() || !BRepCheck_Analyzer(SourceShape_).IsValid()) {
+            _Result.Diagnostics.push_back("Source BRep is empty or invalid"); return _Result;
+        }
+        if (ReplayedShape_.IsNull() || !BRepCheck_Analyzer(ReplayedShape_).IsValid())
         {
             _Result.Diagnostics.push_back("Replayed Tube CSG is an invalid BRep");
             return _Result;
         }
 
-        BRepAlgoAPI_Cut _Missing;
-        _SetBooleanOperands(_Missing, SourceShape_, _Replay.Shape);
-        _Missing.SetFuzzyValue(Options_.Tolerance);
-        COpenCascadeCancellationScope::Build(_Missing);
-        BRepAlgoAPI_Cut _Unexpected;
-        _SetBooleanOperands(_Unexpected, _Replay.Shape, SourceShape_);
-        _Unexpected.SetFuzzyValue(Options_.Tolerance);
-        COpenCascadeCancellationScope::Build(_Unexpected);
-        if (!_Missing.IsDone() || !_Unexpected.IsDone()
-            || _Missing.Shape().IsNull() || _Unexpected.Shape().IsNull())
-        {
-            _Result.Diagnostics.push_back("OCC could not compare replay and source in both directions");
-            return _Result;
-        }
-        if (!BRepCheck_Analyzer(_Missing.Shape()).IsValid()
-            || !BRepCheck_Analyzer(_Unexpected.Shape()).IsValid())
+        TopoDS_Shape _MissingShape, _UnexpectedShape;
+        std::string _ComparisonErrors;
+        enum class EComparisonStatus { Unavailable, Invalid, Ready };
+        const bool _RunIndependentDirectionsInParallel = _HasLargeProofShape(SourceShape_)
+            || _HasLargeProofShape(ReplayedShape_);
+        const auto _Compare = [&](double Tolerance_) {
+            // Boolean splitting may update tolerances and pcurves even for
+            // a const TopoDS_Shape. Each attempt owns its geometry so validation
+            // cannot change the source or influence a subsequent replay.
+            BRepAlgoAPI_Cut _Missing, _Unexpected;
+            // OCCT's externally supplied filler produces invalid coincident
+            // seam splits for some original industrial solids. Each directed
+            // proof owns its operands and intersection calculation.
+            _SetBooleanOperands(_Missing,
+                BRepBuilderAPI_Copy(SourceShape_, true, false).Shape(),
+                BRepBuilderAPI_Copy(ReplayedShape_, true, false).Shape());
+            _SetBooleanOperands(_Unexpected,
+                BRepBuilderAPI_Copy(ReplayedShape_, true, false).Shape(),
+                BRepBuilderAPI_Copy(SourceShape_, true, false).Shape());
+            _Missing.SetFuzzyValue(Tolerance_);
+            _Unexpected.SetFuzzyValue(Tolerance_);
+            _Missing.SetRunParallel(false);
+            _Unexpected.SetRunParallel(false);
+            if (_RunIndependentDirectionsInParallel) {
+                const auto _CancellationCheck = COpenCascadeCancellationScope::Capture();
+                auto _MissingJob = std::async(std::launch::async, [&_Missing, _CancellationCheck] {
+                    COpenCascadeCancellationScope _Scope(_CancellationCheck);
+                    COpenCascadeCancellationScope::Build(_Missing);
+                });
+                COpenCascadeCancellationScope::Build(_Unexpected);
+                _MissingJob.get();
+            } else {
+                COpenCascadeCancellationScope::Build(_Missing);
+                COpenCascadeCancellationScope::Build(_Unexpected);
+            }
+            const bool _HasMissing = _Missing.IsDone() && !_Missing.Shape().IsNull();
+            const bool _HasUnexpected = _Unexpected.IsDone() && !_Unexpected.Shape().IsNull();
+            // A completed but invalid direction remains a failure even if
+            // the opposite direction could not be built at all.
+            if ((_HasMissing && !BRepCheck_Analyzer(_Missing.Shape()).IsValid())
+                || (_HasUnexpected && !BRepCheck_Analyzer(_Unexpected.Shape()).IsValid()))
+                return EComparisonStatus::Invalid;
+            if (!_HasMissing || !_HasUnexpected)
+            {
+                std::ostringstream _Errors;
+                _Missing.DumpErrors(_Errors);
+                _Unexpected.DumpErrors(_Errors);
+                _ComparisonErrors = _Errors.str();
+                return EComparisonStatus::Unavailable;
+            }
+            _MissingShape = _Missing.Shape();
+            _UnexpectedShape = _Unexpected.Shape();
+            return EComparisonStatus::Ready;
+        };
+        // Coincident rational seams can prevent the fuzzy splitter from
+        // building a result. Retry an unavailable comparison at kernel
+        // precision; never retry away an invalid or non-equivalent result.
+        auto _Compared = _Compare(0.0);
+        if (_Compared == EComparisonStatus::Unavailable)
+            _Compared = _Compare(Precision::Confusion());
+        if (_Compared == EComparisonStatus::Invalid)
         {
             _Result.Diagnostics.push_back("Replay comparison produced an invalid BRep");
             return _Result;
         }
-
-        _Result.MissingVolume = _ShapeVolume(_Missing.Shape());
-        _Result.UnexpectedVolume = _ShapeVolume(_Unexpected.Shape());
+        if (_Compared == EComparisonStatus::Unavailable)
+        {
+            _Result.Diagnostics.push_back("OCC could not compare replay and source in both directions");
+            if (!_ComparisonErrors.empty())
+                _Result.Diagnostics.push_back(_ComparisonErrors);
+            return _Result;
+        }
+        _Result.MissingVolume = _ShapeVolume(_MissingShape);
+        _Result.UnexpectedVolume = _ShapeVolume(_UnexpectedShape);
         const auto _ScaleVolume = std::max(
-            _ShapeVolume(SourceShape_), _ShapeVolume(_Replay.Shape));
+            _ShapeVolume(SourceShape_), _ShapeVolume(ReplayedShape_));
         if (!std::isfinite(_ScaleVolume) || _ScaleVolume <= 0.0
             || !std::isfinite(_Result.MissingVolume)
             || !std::isfinite(_Result.UnexpectedVolume))
@@ -7555,7 +8815,7 @@ STubeCSGReplayValidationResult ValidateTubeCSGReplay(
         _Result.RelativeVolumeError =
             (_Result.MissingVolume + _Result.UnexpectedVolume) / _ScaleVolume;
         const auto _AllowedDifference = std::max(
-            Options_.Tolerance * Options_.Tolerance * Options_.Tolerance,
+            Tolerance_ * Tolerance_ * Tolerance_,
             _ScaleVolume * 1.0e-8);
         _Result.bEquivalent = _Result.MissingVolume + _Result.UnexpectedVolume
             <= _AllowedDifference;

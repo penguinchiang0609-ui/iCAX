@@ -1,0 +1,20 @@
+requestVerified=1
+authorizationVerified=0
+credentialAvailable=1
+signingStore=D:\penguinchinage0609\release\tubedesigner\20261019-v0.1.0-hotfix\授权签发\Signing\primary
+features=113
+featuresValid=1
+generateEnabled=1
+historyFound=1
+historyFileName=TubeDesigner-2026-10-10T13-39-00-142Z.tdact
+historyOutputPath=D:\penguinchinage0609\release\tubedesigner\授权文件\客户申请\TubeDesigner-2026-10-10T13-39-00-142Z.tdact
+historyIssuedAt=1791647930
+historyIssuedAtLocal=2026-10-10 23:58:50
+historyOutputExists=1
+historyFolderEnabled=1
+readOriginalEnabled=1
+reissueEnabled=1
+customer=TubeDesigner-2026-10-10T13-39-00-142Z
+summary=试用申请 · 验证通过
+status=该设备已有签发记录，可读取原授权或再次授权。
+上次签发：2026-10-10 23:58:50

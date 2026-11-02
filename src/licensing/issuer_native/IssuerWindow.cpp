@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cwctype>
+#include <cwchar>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -21,8 +22,20 @@ namespace tube::license::issuer_native {
 namespace {
 enum : int { Choose = 100, Issue, Options, Configuration, OpenFolder,
     SaveConfiguration, BrowseStore, FeatureBase = 200, Days = 300,
-    Customer, StorePath, Password, Remember, ProductChoice, ConvertPermanent, IncludeProduct };
+    Customer, StorePath, Password, Remember, ProductChoice, ConvertPermanent, IncludeProduct, ReadOriginal, Reissue };
 constexpr UINT Completed = WM_APP + 1;
+std::filesystem::path UiDiagnosticPath() noexcept {
+    try {
+        PWSTR local{};
+        if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) return {};
+        const std::filesystem::path base(local);
+        CoTaskMemFree(local);
+        const auto directory = base / std::filesystem::path(TubeDesignerProduct.settingsDirectory)
+            / L"Issuer" / L"diagnostics";
+        std::filesystem::create_directories(directory);
+        return directory / (L"issuer-ui-" + std::to_wstring(GetCurrentProcessId()) + L".log");
+    } catch (...) { return {}; }
+}
 void Wipe(Bytes& bytes) { SecureZeroMemory(bytes.data(), bytes.size()); bytes.clear(); }
 std::wstring ErrorText(const std::exception& error) {
     try { return Utf8ToWide(error.what()); }
@@ -34,6 +47,20 @@ std::wstring TextOf(HWND control) {
     GetWindowTextW(control, value.data(), count + 1);
     value.resize(static_cast<std::size_t>(count));
     return value;
+}
+std::wstring LocalIssuedTime(std::uint64_t epochSeconds) {
+    if (!epochSeconds) return L"旧记录未保存签发时间";
+    constexpr auto ticksPerSecond = 10000000ULL, windowsEpochSeconds = 11644473600ULL;
+    if (epochSeconds > MAXULONGLONG / ticksPerSecond - windowsEpochSeconds) return L"签发时间无法显示";
+    ULARGE_INTEGER ticks{}; ticks.QuadPart = (epochSeconds + windowsEpochSeconds) * ticksPerSecond;
+    FILETIME fileTime{ticks.LowPart, ticks.HighPart}; SYSTEMTIME utc{}, local{};
+    if (!FileTimeToSystemTime(&fileTime, &utc) || !SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local))
+        return L"签发时间无法显示";
+    wchar_t result[32]{};
+    swprintf_s(result, L"%04u-%02u-%02u %02u:%02u:%02u",
+        static_cast<unsigned>(local.wYear), static_cast<unsigned>(local.wMonth), static_cast<unsigned>(local.wDay),
+        static_cast<unsigned>(local.wHour), static_cast<unsigned>(local.wMinute), static_cast<unsigned>(local.wSecond));
+    return result;
 }
 std::filesystem::path NextOutput(const std::filesystem::path& request, bool upgrade) {
     const auto extension = L".tdact";
@@ -48,6 +75,8 @@ std::filesystem::path NextOutput(const std::filesystem::path& request, bool upgr
 }
 struct Services {
     std::function<Settings(const ProductDescriptor&)> loadSettings = LoadSettings;
+    std::function<void(const ProductDescriptor&, const std::filesystem::path&,
+        std::span<const unsigned char>, bool)> saveSettings = SaveSettings;
     std::function<bool(const std::filesystem::path&)> isBundle = [](const auto& path) {
         return IsAuthorizationBundle(ReadFileBounded(path, static_cast<DWORD>(MaxAuthorizationFileBytes)));
     };
@@ -73,20 +102,23 @@ struct Services {
 };
 struct Completion {
     std::uint64_t token{};
-    bool generation{};
+    bool generation{}, reissue{}, trialReissue{};
     std::optional<RequestInfo> request;
     std::optional<AuthorizationInfo> authorization;
     std::optional<BundleInfo> bundle;
     std::optional<GenerateResult> result;
+    std::optional<IssuanceHistory> duplicateTrial;
     std::wstring error;
 };
 class Window final {
     HINSTANCE instance_{};
     HWND window_{}, heading_{}, subtitle_{}, file_{}, summary_{}, status_{}, output_{};
     HWND choose_{}, issue_{}, options_{}, configuration_{}, folder_{}, productLabel_{}, productChoice_{}, convertPermanent_{}, included_{};
+    HWND historyLabel_{}, historyFile_{}, readOriginal_{}, reissue_{};
     HWND daysLabel_{}, days_{}, customerLabel_{}, customer_{};
     HWND storeLabel_{}, store_{}, passwordLabel_{}, password_{}, remember_{}, browse_{}, save_{};
     std::vector<HWND> features_;
+    std::vector<FeatureDescriptor> featureDescriptors_;
     const ProductDescriptor* product_{&TubeDesignerProduct};
     ProductDescriptor syntheticProduct_{TubeDesignerProduct};
     struct Draft {
@@ -103,27 +135,57 @@ class Window final {
     std::optional<std::filesystem::path> baseBundlePath_;
     HFONT normal_{}, title_{};
     Settings settings_;
+    std::filesystem::path diagnosticPath_;
+    void Trace(const char* event) const noexcept {
+        if (diagnosticPath_.empty()) return;
+        try {
+            std::ofstream diagnostic(diagnosticPath_, std::ios::app);
+            diagnostic << GetTickCount64() << " pid=" << GetCurrentProcessId() << ' ' << event
+                << " credential=" << !settings_.password.empty()
+                << " busy=" << busy_ << " generate=" << (issue_ && IsWindowEnabled(issue_))
+                << " store=" << WideToUtf8(settings_.storeDirectory.wstring())
+                << " message=" << WideToUtf8(settings_.message);
+            for (const auto& draft : drafts_)
+                diagnostic << " draft[" << draft.product->id << "]=included:" << draft.included
+                    << ",credential:" << !draft.settings.password.empty()
+                    << ",request:" << draft.request.has_value()
+                    << ",authorization:" << draft.authorization.has_value();
+            diagnostic << '\n';
+        } catch (...) {}
+    }
     Services services_;
     std::optional<RequestInfo> request_;
     std::optional<AuthorizationInfo> authorization_;
     std::filesystem::path requestPath_, outputPath_;
+    std::optional<IssuanceHistory> duplicateTrial_;
     std::jthread worker_;
     std::uint64_t token_{};
     bool busy_{}, expandedOptions_{}, expandedConfiguration_{}, testing_{}, readinessStatus_{};
     int scale_{96};
     int OptionsHeight() const {
         std::size_t parents{}, maxChildren{};
-        for (const auto& descriptor : product_->features) {
+        for (const auto& descriptor : featureDescriptors_) {
             if (descriptor.parent != 0) continue;
             ++parents;
             std::size_t children{};
-            for (const auto& child : product_->features)
+            for (const auto& child : featureDescriptors_)
                 if (child.parent == static_cast<std::uint32_t>(descriptor.feature)) ++children;
             maxChildren = std::max(maxChildren, children);
         }
         return static_cast<int>(((parents + 3) / 4) * (maxChildren + 1) * 32 + 88);
     }
     int Px(int value) const { return MulDiv(value, scale_, 96); }
+    int HistoryHeight() const { return duplicateTrial_ ? 36 : 0; }
+    std::filesystem::path OriginalAuthorizationPath() const {
+        if (!duplicateTrial_) return {};
+        std::error_code error;
+        if (!duplicateTrial_->outputPath.empty() && std::filesystem::is_regular_file(duplicateTrial_->outputPath, error))
+            return duplicateTrial_->outputPath;
+        error.clear();
+        if (!duplicateTrial_->recoveryPath.empty() && std::filesystem::is_regular_file(duplicateTrial_->recoveryPath, error))
+            return duplicateTrial_->recoveryPath;
+        return {};
+    }
     HWND Control(const wchar_t* type, const wchar_t* text, DWORD style, int id = 0) {
         auto control = CreateWindowExW(0, type, text, WS_CHILD | WS_VISIBLE | style,
             0, 0, 1, 1, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance_, nullptr);
@@ -147,17 +209,33 @@ class Window final {
         readinessStatus_ = false;
         SetWindowTextW(status_, text.c_str());
     }
+    void ShowIssuanceHistory(const IssuanceHistory& history, const std::wstring& heading) {
+        duplicateTrial_ = history; outputPath_ = history.outputPath;
+        SetWindowTextW(output_, outputPath_.c_str());
+        SetWindowTextW(historyFile_, outputPath_.empty() ? L"旧记录未保存导出文件名" : outputPath_.filename().c_str());
+        SendMessageW(historyFile_, EM_SETSEL, 0, 0); SendMessageW(output_, EM_SETSEL, 0, 0);
+        std::wstring message = heading + L"\r\n上次签发：" + LocalIssuedTime(history.issuedAt);
+        if (outputPath_.empty()) message += L"\r\n旧记录未保存导出文件名。";
+        else if (!history.outputExists) message += L"\r\n原路径下未找到授权文件。";
+        SetStatus(message);
+    }
+    void FillRecordedCustomer(const IssuanceHistory& history) {
+        const auto entered = TextOf(customer_);
+        if (!history.customer.empty() && (entered.empty() || entered == requestPath_.stem().wstring()
+            || (!CurrentDraft().source.empty() && entered == CurrentDraft().source.stem().wstring())))
+            SetWindowTextW(customer_, Utf8ToWide(history.customer).c_str());
+    }
     void EnableFeatures() {
         const auto retained = authorization_ ? authorization_->policy.features : 0;
-        for (std::size_t index = 0; index < product_->features.size(); ++index)
-            if ((retained & static_cast<std::uint32_t>(product_->features[index].feature)) != 0)
+        for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
+            if ((retained & static_cast<std::uint32_t>(featureDescriptors_[index].feature)) != 0)
                 SendMessageW(features_[index], BM_SETCHECK, BST_CHECKED, 0);
         const auto selected = Features();
-        for (std::size_t index = 0; index < product_->features.size(); ++index) {
-            const auto parent = product_->features[index].parent;
+        for (std::size_t index = 0; index < featureDescriptors_.size(); ++index) {
+            const auto parent = featureDescriptors_[index].parent;
             const bool enabled = parent == 0 || (selected & parent) == parent;
             if (!enabled) SendMessageW(features_[index], BM_SETCHECK, BST_UNCHECKED, 0);
-            const bool fixed = (retained & static_cast<std::uint32_t>(product_->features[index].feature)) != 0;
+            const bool fixed = (retained & static_cast<std::uint32_t>(featureDescriptors_[index].feature)) != 0;
             EnableWindow(features_[index], !busy_ && enabled && !fixed);
         }
     }
@@ -183,7 +261,10 @@ class Window final {
             ++count;
         }
         const auto blocker = GenerationBlocker();
-        EnableWindow(issue_, !busy_ && blocker.empty());
+        const bool retainedReplacement = std::any_of(drafts_.begin(), drafts_.end(), [](const auto& draft) {
+            return draft.included && draft.retained && draft.request.has_value();
+        });
+        EnableWindow(issue_, !busy_ && blocker.empty() && !retainedReplacement);
         if (!busy_ && (explain || readinessStatus_)) {
             if (!blocker.empty()) {
                 SetStatus(blocker); readinessStatus_ = true;
@@ -200,11 +281,22 @@ class Window final {
             EnableWindow(control, !busy_);
         EnableWindow(days_, !busy_ && request_.has_value() && request_->isTrial);
         EnableWindow(customer_, !busy_ && !authorization_ && !baseBundlePath_);
-        EnableWindow(folder_, !busy_ && !outputPath_.empty());
+        bool folderAvailable = !outputPath_.empty();
+        if (duplicateTrial_) {
+            std::error_code error;
+            folderAvailable = folderAvailable && std::filesystem::is_directory(outputPath_.parent_path(), error);
+        }
+        EnableWindow(folder_, !busy_ && folderAvailable);
+        EnableWindow(readOriginal_, !busy_ && !OriginalAuthorizationPath().empty());
+        const bool newRequest = std::any_of(drafts_.begin(), drafts_.end(), [](const auto& draft) {
+            return draft.included && draft.request.has_value();
+        });
+        EnableWindow(reissue_, !busy_ && duplicateTrial_.has_value() && newRequest && blocker.empty());
+        Trace("actions-updated");
     }
     void ResizeForOptions() {
         RECT current{}; GetClientRect(window_, &current);
-        RECT size{0, 0, current.right, Px(342 + (expandedOptions_ ? OptionsHeight() : 0) + (expandedConfiguration_ ? 140 : 0))};
+        RECT size{0, 0, current.right, Px(342 + HistoryHeight() + (expandedOptions_ ? OptionsHeight() : 0) + (expandedConfiguration_ ? 140 : 0))};
         AdjustWindowRectEx(&size, static_cast<DWORD>(GetWindowLongPtrW(window_, GWL_STYLE)), FALSE, 0);
         MONITORINFO monitor{}; monitor.cbSize = sizeof(monitor);
         GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
@@ -228,26 +320,30 @@ class Window final {
         Move(summary_, 24, 145, width - 48, 24);
         Move(issue_, 24, 185, 184, 42);
         Move(status_, 226, 182, width - 250, 65);
-        Move(output_, 24, 257, width - 48, 30, !outputPath_.empty());
-        Move(options_, 24, 304, 116, 30);
-        Move(configuration_, 150, 304, 116, 30);
-        Move(folder_, width - 140, 304, 116, 30);
-        int y = 351;
+        Move(historyLabel_, 24, 253, 84, 26, duplicateTrial_.has_value());
+        Move(historyFile_, 110, 251, width - 134, 30, duplicateTrial_.has_value());
+        Move(output_, 24, 257 + HistoryHeight(), width - 48, 30, !outputPath_.empty());
+        Move(options_, 24, 304 + HistoryHeight(), 116, 30);
+        Move(configuration_, 150, 304 + HistoryHeight(), 116, 30);
+        Move(readOriginal_, 276, 304 + HistoryHeight(), 132, 30, duplicateTrial_.has_value());
+        Move(reissue_, 418, 304 + HistoryHeight(), 116, 30, duplicateTrial_.has_value());
+        Move(folder_, width - 140, 304 + HistoryHeight(), 116, 30);
+        int y = 351 + HistoryHeight();
         const int columnWidth = (width - 48) / 4;
         int parentIndex{}, maxRows{};
-        for (const auto& parent : product_->features) {
+        for (const auto& parent : featureDescriptors_) {
             if (parent.parent != 0) continue;
             int children{};
-            for (const auto& child : product_->features)
+            for (const auto& child : featureDescriptors_)
                 if (child.parent == static_cast<std::uint32_t>(parent.feature)) ++children;
             maxRows = std::max(maxRows, children + 1);
         }
-        for (const auto& parent : product_->features) {
+        for (const auto& parent : featureDescriptors_) {
             if (parent.parent != 0) continue;
             const int column = parentIndex % 4, group = parentIndex / 4;
             int row{};
-            for (std::size_t index = 0; index < product_->features.size(); ++index) {
-                const auto& descriptor = product_->features[index];
+            for (std::size_t index = 0; index < featureDescriptors_.size(); ++index) {
+                const auto& descriptor = featureDescriptors_[index];
                 if (descriptor.feature != parent.feature && descriptor.parent != static_cast<std::uint32_t>(parent.feature)) continue;
                 const bool child = descriptor.parent != 0;
                 Move(features_[index], 24 + column * columnWidth + (child ? 12 : 0),
@@ -287,13 +383,14 @@ class Window final {
     void SelectRequestFile();
     void BrowseSigningStore();
     void SaveConfigurationNow();
-    void StartGenerate();
+    void StartGenerate(bool reissue = false);
     void Accept(std::unique_ptr<Completion> completion);
     static LRESULT CALLBACK Procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 public:
-    explicit Window(HINSTANCE instance, bool testing = false) : instance_(instance), testing_(testing) {
+    explicit Window(HINSTANCE instance, bool testing = false, std::filesystem::path diagnosticPath = {})
+        : instance_(instance), diagnosticPath_(std::move(diagnosticPath)), testing_(testing) {
         for (const auto& product : ProductCatalog) {
-            Draft draft; draft.product = &product; draft.features = KnownProductFeatures(product);
+            Draft draft; draft.product = &product; draft.features = product.issuerSelectableFeatures;
             draft.included = drafts_.empty();
             if (!testing_) draft.settings = LoadSettings(product);
             else { draft.settings.message = L"界面测试"; draft.settings.password = {'t','e','s','t'}; }
@@ -301,12 +398,16 @@ public:
         }
         if (testing_) {
             services_.loadSettings = [](const auto&) { return Settings{}; };
+            services_.saveSettings = [](const auto&, const auto&, auto, bool) {
+                throw std::runtime_error("Window test must not save production settings");
+            };
             syntheticProduct_.id = "icax.synthetic-ui"; syntheticProduct_.label = "测试产品";
-            Draft draft; draft.product = &syntheticProduct_; draft.features = KnownProductFeatures(syntheticProduct_);
+            Draft draft; draft.product = &syntheticProduct_; draft.features = syntheticProduct_.issuerSelectableFeatures;
             draft.settings.message = L"界面测试"; draft.settings.password = {'t','e','s','t'};
             drafts_.push_back(std::move(draft));
         }
         product_ = drafts_.front().product; settings_ = drafts_.front().settings;
+        Trace("constructor");
     }
     ~Window() {
         if (worker_.joinable()) worker_.join();
@@ -318,10 +419,12 @@ public:
     }
     void Create(int show);
     std::uint32_t Features() const {
-        std::uint32_t result{};
-        for (std::size_t index = 0; index < product_->features.size(); ++index)
+        // Upgrades preserve previously issued rights, including those no longer
+        // offered for new grants. Only visible choices can add permissions.
+        std::uint32_t result = authorization_ ? authorization_->policy.features : 0;
+        for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
             if (features_[index] && SendMessageW(features_[index], BM_GETCHECK, 0, 0) == BST_CHECKED)
-                result |= static_cast<std::uint32_t>(product_->features[index].feature);
+                result |= static_cast<std::uint32_t>(featureDescriptors_[index].feature);
         return result;
     }
     void InspectSelection(const std::filesystem::path& path);
@@ -336,7 +439,7 @@ public:
 namespace tube::license::issuer_native {
 namespace {
 void Window::CreateControls() {
-    heading_ = Control(L"STATIC", L"iCAX 授权签发器", SS_LEFT);
+    heading_ = Control(L"STATIC", L"iCAX 授权签发器 " ICAX_ISSUER_VERSION, SS_LEFT);
     SendMessageW(heading_, WM_SETFONT, reinterpret_cast<WPARAM>(title_), TRUE);
     productLabel_ = Control(L"STATIC", L"产品", SS_LEFT);
     productChoice_ = Control(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, ProductChoice);
@@ -353,6 +456,10 @@ void Window::CreateControls() {
     issue_ = Button(L"生成授权文件", Issue, BS_DEFPUSHBUTTON);
     status_ = Control(L"STATIC", L"", SS_LEFT);
     output_ = Edit(L"", 0, ES_READONLY);
+    historyLabel_ = Control(L"STATIC", L"上次文件", SS_LEFT);
+    historyFile_ = Edit(L"", 0, ES_READONLY);
+    readOriginal_ = Button(L"读取原授权", ReadOriginal);
+    reissue_ = Button(L"再次授权", Reissue);
     options_ = Button(L"授权选项 ▾", Options);
     configuration_ = Button(L"签发设置 ▾", Configuration);
     folder_ = Button(L"打开文件夹", OpenFolder);
@@ -379,8 +486,12 @@ void Window::CreateControls() {
 void Window::CreateFeatures() {
     for (const auto control : features_) DestroyWindow(control);
     features_.clear();
-    for (std::size_t index = 0; index < product_->features.size(); ++index) {
-        const auto label = Utf8ToWide(product_->features[index].label);
+    featureDescriptors_.clear();
+    for (const auto& descriptor : product_->features)
+        if ((product_->issuerSelectableFeatures & static_cast<std::uint32_t>(descriptor.feature)) != 0)
+            featureDescriptors_.push_back(descriptor);
+    for (std::size_t index = 0; index < featureDescriptors_.size(); ++index) {
+        const auto label = Utf8ToWide(featureDescriptors_[index].label);
         auto control = Button(label.c_str(), FeatureBase + static_cast<int>(index), BS_AUTOCHECKBOX);
         SendMessageW(control, BM_SETCHECK, BST_CHECKED, 0);
         features_.push_back(control);
@@ -397,21 +508,27 @@ void Window::SelectProduct() {
 }
 void Window::SaveDraft() {
     if (!included_) return;
+    Trace("save-draft-before");
     auto& draft = CurrentDraft();
     Wipe(draft.settings.password); draft.settings = settings_;
     draft.request = request_; draft.authorization = authorization_; draft.source = requestPath_;
     draft.features = Features(); draft.days = TextOf(days_);
     draft.included = draft.retained || SendMessageW(included_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     draft.convert = SendMessageW(convertPermanent_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    Trace("save-draft-after");
 }
 void Window::LoadDraft() {
+    Trace("load-draft-before");
     const auto& draft = CurrentDraft();
+    const bool hadHistory = duplicateTrial_.has_value();
+    duplicateTrial_.reset();
+    if (hadHistory) { outputPath_.clear(); SetWindowTextW(output_, L""); }
     Wipe(settings_.password); settings_ = draft.settings;
     request_ = draft.request; authorization_ = draft.authorization; requestPath_ = draft.source;
     CreateFeatures();
-    for (std::size_t index = 0; index < product_->features.size(); ++index)
+    for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
         SendMessageW(features_[index], BM_SETCHECK,
-            (draft.features & static_cast<std::uint32_t>(product_->features[index].feature)) ? BST_CHECKED : BST_UNCHECKED, 0);
+            (draft.features & static_cast<std::uint32_t>(featureDescriptors_[index].feature)) ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(included_, BM_SETCHECK, draft.included ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(convertPermanent_, BM_SETCHECK, draft.convert ? BST_CHECKED : BST_UNCHECKED, 0);
     SetWindowTextW(file_, draft.source.empty() ? L"尚未选择申请或授权文件" : draft.source.c_str());
@@ -420,9 +537,17 @@ void Window::LoadDraft() {
     SetWindowTextW(issue_, baseBundlePath_ || authorization_ ? L"生成升级文件" : L"生成授权文件");
     SetWindowTextW(summary_, authorization_ ? L"原授权已读取 · 已有功能保留"
         : (request_ ? L"申请已验证 · 已加入本次授权" : settings_.message.c_str()));
-    SetStatus(L""); Layout();
+    SetStatus(L"");
+    if (request_ && request_->previousIssuance) {
+        FillRecordedCustomer(*request_->previousIssuance);
+        ShowIssuanceHistory(*request_->previousIssuance, L"该设备已有签发记录，可读取原授权或再次授权。");
+    }
+    if (hadHistory || duplicateTrial_) ResizeForOptions();
+    else Layout();
+    Trace("load-draft-after");
 }
 void Window::RefreshSavedCredential() {
+    Trace("refresh-before");
     if (!settings_.password.empty()) return;
     auto saved = services_.loadSettings(*product_);
     // Only refresh the selected product's existing vault; an unrelated saved
@@ -440,6 +565,7 @@ void Window::RefreshSavedCredential() {
         SetWindowTextW(store_, settings_.storeDirectory.c_str());
     }
     Wipe(saved.password);
+    Trace("refresh-after");
 }
 void Window::Create(int show) {
     scale_ = static_cast<int>(GetDpiForSystem());
@@ -461,7 +587,7 @@ void Window::Create(int show) {
     RECT size{0, 0, Px(760), Px(342)}; AdjustWindowRectEx(&size, style, FALSE, 0);
     RECT work{}; SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     const int width = size.right - size.left, height = size.bottom - size.top;
-    window_ = CreateWindowExW(0, type.lpszClassName, L"iCAX 授权签发器", style,
+    window_ = CreateWindowExW(0, type.lpszClassName, L"iCAX 授权签发器 " ICAX_ISSUER_VERSION, style,
         work.left + (work.right - work.left - width) / 2,
         work.top + (work.bottom - work.top - height) / 2,
         width, height, nullptr, nullptr, instance_, this);
@@ -469,28 +595,38 @@ void Window::Create(int show) {
     if (show != SW_HIDE) { ShowWindow(window_, show); UpdateWindow(window_); }
 }
 void Window::SelectRequestFile() {
+    Trace("file-dialog-before");
     std::wstring buffer(32768, L'\0');
     OPENFILENAMEW dialog{}; dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_;
     dialog.lpstrTitle = L"选择客户申请或原授权文件";
     dialog.lpstrFilter = L"申请及授权文件\0*.tdreq;*.tdact\0申请文件 (*.tdreq)\0*.tdreq\0授权文件 (*.tdact)\0*.tdact\0\0";
     dialog.lpstrFile = buffer.data(); dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-    if (GetOpenFileNameW(&dialog)) InspectSelection(std::filesystem::path(buffer.c_str()));
+    const bool selected = GetOpenFileNameW(&dialog) != FALSE;
+    Trace("file-dialog-after");
+    if (selected) InspectSelection(std::filesystem::path(buffer.c_str()));
 }
 void Window::InspectSelection(const std::filesystem::path& path) {
     if (busy_) return;
     auto extension = path.extension().wstring();
     std::transform(extension.begin(), extension.end(), extension.begin(), [](wchar_t value) { return static_cast<wchar_t>(towlower(value)); });
-    Require(!CurrentDraft().retained || extension != L".tdreq", "已有产品请修改权限；新增产品请先切换产品再选择申请。");
     RefreshSavedCredential();
     SaveDraft();
-    if (authorization_) SetWindowTextW(days_, L"30");
+    const auto& draft = CurrentDraft();
+    const auto retainedDevice = draft.retained
+        ? (draft.authorization ? draft.authorization->deviceHash : (draft.request ? draft.request->deviceHash : std::string{}))
+        : std::string{};
+    if (authorization_ && !draft.retained) SetWindowTextW(days_, L"30");
+    const bool hadHistory = duplicateTrial_.has_value();
+    duplicateTrial_.reset();
     requestPath_ = path; request_.reset(); authorization_.reset(); outputPath_.clear();
     SendMessageW(convertPermanent_, BM_SETCHECK, BST_UNCHECKED, 0);
     SetWindowTextW(issue_, L"生成授权文件");
     SetWindowTextW(file_, path.c_str());
     SetWindowTextW(summary_, L"正在验证申请或授权文件…");
-    SetStatus(L""); busy_ = true; EnableActions(); Layout();
+    SetStatus(L""); busy_ = true; EnableActions();
+    if (hadHistory) ResizeForOptions();
+    else Layout();
     const auto token = ++token_;
     const auto handle = window_;
     const auto store = settings_.storeDirectory;
@@ -499,16 +635,19 @@ void Window::InspectSelection(const std::filesystem::path& path) {
     const auto inspectBundle = services_.inspectBundle;
     const auto isBundle = services_.isBundle;
     std::vector<BundleStoreRef> stores;
-    for (const auto& draft : drafts_) stores.push_back({draft.product, draft.settings.storeDirectory});
+    for (const auto& selectedDraft : drafts_) stores.push_back({selectedDraft.product, selectedDraft.settings.storeDirectory});
     const auto product = product_;
-    worker_ = std::jthread([token, handle, path, store, inspect, inspectAuthorization, inspectBundle, isBundle, stores, product] {
+    worker_ = std::jthread([token, handle, path, store, inspect, inspectAuthorization, inspectBundle, isBundle, stores, product, retainedDevice] {
         auto completion = std::make_unique<Completion>(); completion->token = token;
         try {
             auto extension = path.extension().wstring();
             std::transform(extension.begin(), extension.end(), extension.begin(),
                 [](wchar_t value) { return static_cast<wchar_t>(towlower(value)); });
-            if (extension == L".tdreq") completion->request = inspect(*product, path, store);
-            else {
+            if (extension == L".tdreq") {
+                completion->request = inspect(*product, path, store);
+                Require(retainedDevice.empty() || completion->request->deviceHash == retainedDevice,
+                    "新申请与原授权的 TPM 设备不一致，请选择原电脑导出的申请。");
+            } else {
                 Require(extension == L".tdact", "请选择 .tdreq 申请文件或 .tdact 授权文件");
                 const bool multi = isBundle(path);
                 if (multi) completion->bundle = inspectBundle(path, stores);
@@ -520,10 +659,18 @@ void Window::InspectSelection(const std::filesystem::path& path) {
         if (!PostMessageW(handle, Completed, 0, reinterpret_cast<LPARAM>(raw))) delete raw;
     });
 }
-void Window::StartGenerate() {
+void Window::StartGenerate(bool reissue) {
     if (busy_) return;
     try {
+        RefreshSavedCredential();
         SaveDraft();
+        if (!reissue) Require(std::none_of(drafts_.begin(), drafts_.end(), [](const auto& draft) {
+            return draft.included && draft.retained && draft.request.has_value();
+        }), "已为现有产品选择新的申请，请点击“再次授权”；整份文件中的其他产品将保留。");
+        if (reissue) Require(duplicateTrial_.has_value()
+            && std::any_of(drafts_.begin(), drafts_.end(), [](const auto& draft) {
+                return draft.included && draft.request.has_value();
+            }), "请先选择已有签发记录的申请，再执行再次授权");
         std::string customer;
         for (const auto& draft : drafts_)
             if (draft.included && draft.authorization) {
@@ -557,19 +704,27 @@ void Window::StartGenerate() {
                     Require(policy.days >= 1 && policy.days <= 30, "试用天数应为 1 至 30 天");
                 }
             }
-            inputs.push_back({draft.product, draft.settings.storeDirectory, draft.settings.password, draft.source, policy});
+            inputs.push_back({draft.product, draft.settings.storeDirectory, draft.settings.password, draft.source, policy,
+                reissue && draft.request.has_value()});
         }
         Require(!inputs.empty(), "请至少包含一个产品");
         const auto base = baseBundlePath_;
         const auto output = NextOutput(base ? *base : inputs.front().sourcePath, upgrade);
-        busy_ = true; EnableActions(); SetStatus(L"正在生成整份授权文件…");
+        busy_ = true; EnableActions();
+        SetStatus(reissue ? L"正在再次授权，按本次设置生成新的授权文件…" : L"正在生成整份授权文件…");
         const auto token = ++token_;
         const auto handle = window_;
         const auto generate = services_.generateBundle;
-        worker_ = std::jthread([token, handle, base, output, generate, inputs = std::move(inputs)]() mutable {
+        const bool trialReissue = reissue && std::any_of(inputs.begin(), inputs.end(), [](const auto& input) {
+            return input.allowReissue && input.policy.kind == Kind::Trial;
+        });
+        worker_ = std::jthread([token, handle, base, output, generate, reissue, trialReissue, inputs = std::move(inputs)]() mutable {
             auto completion = std::make_unique<Completion>(); completion->token = token; completion->generation = true;
+            completion->reissue = reissue; completion->trialReissue = trialReissue;
             try {
                 completion->result = generate(inputs, base, output);
+            } catch (const DuplicateTrialError& error) {
+                completion->duplicateTrial = error.History(); completion->error = ErrorText(error);
             } catch (const std::exception& error) { completion->error = ErrorText(error); }
             for (auto& input : inputs) Wipe(input.password);
             auto raw = completion.release();
@@ -580,8 +735,10 @@ void Window::StartGenerate() {
     }
 }
 void Window::Accept(std::unique_ptr<Completion> completion) {
+    Trace("accept-before");
     if (!completion || completion->token != token_) return;
     busy_ = false;
+    const bool hadHistory = duplicateTrial_.has_value();
     if (!completion->error.empty()) {
         if (!completion->generation) {
             if (CurrentDraft().retained) LoadDraft();
@@ -590,7 +747,13 @@ void Window::Accept(std::unique_ptr<Completion> completion) {
                 SetWindowTextW(summary_, L"文件尚未通过验证，请检查签发设置或选择有效文件。");
             }
         }
-        SetStatus((completion->generation ? L"生成失败：" : L"读取失败：") + completion->error);
+        if (completion->duplicateTrial) {
+            FillRecordedCustomer(*completion->duplicateTrial);
+            ShowIssuanceHistory(*completion->duplicateTrial, L"该设备已有授权签发记录，未重复签发。");
+        } else {
+            SetStatus((completion->reissue ? L"再次授权失败：" : (completion->generation ? L"生成失败：" : L"读取失败："))
+                + completion->error);
+        }
     } else if (completion->bundle) {
         const auto& info = *completion->bundle;
         Require(!info.products.empty(), "授权文件没有可用产品");
@@ -602,7 +765,7 @@ void Window::Accept(std::unique_ptr<Completion> completion) {
         for (auto& draft : drafts_) {
             draft.request.reset(); draft.authorization.reset(); draft.source.clear();
             draft.included = false; draft.retained = false; draft.convert = false;
-            draft.features = KnownProductFeatures(*draft.product); draft.days = L"30";
+            draft.features = draft.product->issuerSelectableFeatures; draft.days = L"30";
         }
         for (const auto& authorization : info.products)
             for (auto& draft : drafts_)
@@ -628,14 +791,17 @@ void Window::Accept(std::unique_ptr<Completion> completion) {
         SetWindowTextW(issue_, baseBundlePath_ ? L"生成升级文件" : L"生成授权文件");
         SetWindowTextW(summary_, request_->isTrial ? L"试用申请 · 验证通过"
             : L"正式授权申请 · 验证通过");
-        SetStatus(L"已读取申请。点击“生成授权文件”即可。");
+        if (request_->previousIssuance) {
+            FillRecordedCustomer(*request_->previousIssuance);
+            ShowIssuanceHistory(*request_->previousIssuance, L"该设备已有签发记录，可读取原授权或再次授权。");
+        } else SetStatus(L"已读取申请。点击“生成授权文件”即可。");
     } else if (completion->authorization) {
         authorization_ = completion->authorization;
         SendMessageW(included_, BM_SETCHECK, BST_CHECKED, 0);
         const auto& policy = authorization_->policy;
-        for (std::size_t index = 0; index < product_->features.size(); ++index)
+        for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
             SendMessageW(features_[index], BM_SETCHECK,
-                (policy.features & static_cast<std::uint32_t>(product_->features[index].feature)) != 0
+                (policy.features & static_cast<std::uint32_t>(featureDescriptors_[index].feature)) != 0
                     ? BST_CHECKED : BST_UNCHECKED, 0);
         SetWindowTextW(customer_, Utf8ToWide(policy.customer).c_str());
         SetWindowTextW(days_, std::to_wstring(policy.days).c_str());
@@ -648,12 +814,20 @@ void Window::Accept(std::unique_ptr<Completion> completion) {
             ? L"已有后续授权，请选择最新文件继续升级；相同选项可重新导出已有升级。"
             : L"原有功能已锁定。勾选新增功能后生成新授权文件，无需重新申请。");
     } else if (completion->result) {
+        duplicateTrial_.reset();
         outputPath_ = completion->result->outputPath;
         SetWindowTextW(output_, outputPath_.c_str());
-        SetStatus(completion->result->reexported ? L"已重新导出整份授权文件。\r\n客户在各产品的“关于”页导入同一文件。"
-            : L"整份授权文件已生成。\r\n客户在各产品的“关于”页导入同一文件。");
+        std::wstring message = completion->trialReissue ? L"已再次授权，试用期限按本次设置与签发时间重新计算。\r\n客户在各产品的“关于”页导入新文件。"
+            : (completion->reissue ? L"已再次授权，已按本次设置生成新授权文件。\r\n客户在各产品的“关于”页导入新文件。"
+            : (completion->result->reexported ? L"已重新导出整份授权文件。\r\n客户在各产品的“关于”页导入同一文件。"
+                : L"整份授权文件已生成。\r\n客户在各产品的“关于”页导入同一文件。"));
+        if (!completion->result->warning.empty()) message += L"\r\n" + Utf8ToWide(completion->result->warning);
+        SetStatus(message);
     }
-    EnableActions(completion->error.empty() && !completion->generation); Layout();
+    EnableActions(completion->error.empty() && !completion->generation);
+    if (hadHistory != duplicateTrial_.has_value()) ResizeForOptions();
+    else Layout();
+    Trace("accept-after");
 }
 void Window::BrowseSigningStore() {
     BROWSEINFOW dialog{}; dialog.hwndOwner = window_;
@@ -666,6 +840,7 @@ void Window::BrowseSigningStore() {
     CoTaskMemFree(selected);
 }
 void Window::SaveConfigurationNow() {
+    Trace("save-configuration-before");
     auto entered = TextOf(password_);
     std::string encoded;
     Bytes newPassword;
@@ -674,13 +849,14 @@ void Window::SaveConfigurationNow() {
         encoded = WideToUtf8(entered);
         if (!encoded.empty()) newPassword.assign(encoded.begin(), encoded.end());
         else {
+            RefreshSavedCredential();
             Require(std::filesystem::weakly_canonical(directory)
                 == std::filesystem::weakly_canonical(settings_.storeDirectory), "更换签发库时请填写口令");
             newPassword = settings_.password;
         }
         Require(!newPassword.empty(), "请填写签发口令");
         const bool remember = SendMessageW(remember_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        SaveSettings(*product_, directory, newPassword, remember);
+        services_.saveSettings(*product_, directory, newPassword, remember);
         Wipe(settings_.password); settings_.password = std::move(newPassword);
         settings_.storeDirectory = std::filesystem::weakly_canonical(directory);
         settings_.remembered = remember;
@@ -691,6 +867,7 @@ void Window::SaveConfigurationNow() {
     } catch (const std::exception& error) { SetStatus(L"设置未保存：" + ErrorText(error)); }
     SecureZeroMemory(entered.data(), entered.size() * sizeof(wchar_t));
     SecureZeroMemory(encoded.data(), encoded.size()); Wipe(newPassword); EnableActions();
+    Trace("save-configuration-after");
 }
 void Window::Command(int id) {
     if (busy_) return;
@@ -705,13 +882,23 @@ void Window::Command(int id) {
     case ConvertPermanent: EnableActions(true); break;
     case Choose: SelectRequestFile(); break;
     case Issue: StartGenerate(); break;
+    case Reissue: StartGenerate(true); break;
+    case ReadOriginal: {
+        const auto original = OriginalAuthorizationPath();
+        if (!original.empty()) InspectSelection(original);
+        break;
+    }
     case Options:
         expandedOptions_ = !expandedOptions_;
         if (expandedOptions_) expandedConfiguration_ = false;
         ResizeForOptions(); break;
     case Configuration:
         expandedConfiguration_ = !expandedConfiguration_;
-        if (expandedConfiguration_) expandedOptions_ = false;
+        if (expandedConfiguration_) {
+            expandedOptions_ = false;
+            RefreshSavedCredential();
+            EnableActions(true);
+        }
         ResizeForOptions(); break;
     case BrowseStore: BrowseSigningStore(); break;
     case SaveConfiguration: SaveConfigurationNow(); break;
@@ -734,6 +921,11 @@ LRESULT CALLBACK Window::Procedure(HWND window, UINT message, WPARAM wparam, LPA
         switch (message) {
         case WM_CREATE: self->CreateControls(); return 0;
         case WM_COMMAND:
+            {
+                const auto diagnosticEvent = "command-id=" + std::to_string(LOWORD(wparam))
+                    + ";code=" + std::to_string(HIWORD(wparam));
+                self->Trace(diagnosticEvent.c_str());
+            }
             if (HIWORD(wparam) == BN_CLICKED || HIWORD(wparam) == CBN_SELCHANGE) self->Command(LOWORD(wparam));
             return 0;
         case WM_SIZE: if (self->heading_) self->Layout(); return 0;
@@ -761,7 +953,11 @@ LRESULT CALLBACK Window::Procedure(HWND window, UINT message, WPARAM wparam, LPA
 }
 bool Window::SelfTest() {
     Require(testing_, "Window test must not access production settings");
-    Require(Features() == KnownProductFeatures(*product_), "Default permissions are incomplete");
+    Require(Features() == product_->issuerSelectableFeatures, "Default permissions must match offered rights");
+    Require(features_.size() == 4 && Features() == 113, "TubeDesigner must offer only the four product permissions");
+    const std::array expectedLabels{L"产品页", L"产品设计", L"产品拆单", L"产品导出"};
+    for (std::size_t index = 0; index < features_.size(); ++index)
+        Require(TextOf(features_[index]) == expectedLabels[index], "Unexpected permission control");
     Require(SendMessageW(productChoice_, CB_GETCOUNT, 0, 0) == static_cast<LRESULT>(drafts_.size()),
         "Product selector must use registered drafts");
     Require(!IsWindowEnabled(issue_), "Generation must require a verified request");
@@ -782,8 +978,8 @@ bool Window::SelfTest() {
     };
     services_.isBundle = [](const auto& path) { return path.stem() == L"multi-ui"; };
     SendMessageW(features_[0], BM_SETCHECK, BST_UNCHECKED, 0); Command(FeatureBase);
-    for (std::size_t index = 0; index < product_->features.size(); ++index)
-        if (product_->features[index].parent == 1) {
+    for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
+        if (featureDescriptors_[index].parent == 1) {
             Require(!IsWindowEnabled(features_[index]), "Child permission must be disabled");
             Require(SendMessageW(features_[index], BM_GETCHECK, 0, 0) == BST_UNCHECKED, "Disabled child must clear");
         }
@@ -835,14 +1031,55 @@ bool Window::SelfTest() {
     InspectSelection(L"first-ui.tdreq"); pump();
     Require(credentialReads == 2 && IsWindowEnabled(issue_) && !settings_.password.empty(),
         "Validation completion must recheck unavailable saved credential");
+    std::size_t settingsWrites{};
+    services_.saveSettings = [this, configured, &settingsWrites](const auto& product, const auto& directory,
+        auto password, bool remember) {
+        Require(product.id == product_->id
+            && std::filesystem::weakly_canonical(directory) == std::filesystem::weakly_canonical(L"ui-vault")
+            && Bytes(password.begin(), password.end()) == configured.password && remember,
+            "Blank password save must use the selected product's saved vault credential");
+        ++settingsWrites;
+    };
+    services_.loadSettings = [configured](const auto&) {
+        auto restored = configured; restored.storeDirectory = L"ui-vault"; return restored;
+    };
+    Wipe(settings_.password); EnableActions(true);
+    SetWindowTextW(password_, L"");
+    Command(SaveConfiguration); pump();
+    Require(settingsWrites == 1 && TextOf(password_).empty() && IsWindowEnabled(issue_)
+        && CurrentDraft().settings.password == configured.password
+        && TextOf(status_).find(L"设置未保存") == std::wstring::npos,
+        "Saving with a blank password must reload an available credential and enable generation");
+    Wipe(settings_.password); SetWindowTextW(store_, L"unsaved-ui-vault");
+    Command(SaveConfiguration);
+    Require(settingsWrites == 1 && settings_.password.empty() && !IsWindowEnabled(issue_)
+        && TextOf(store_) == L"unsaved-ui-vault" && TextOf(status_).find(L"更换签发库") != std::wstring::npos,
+        "Blank password save must not reuse a credential for another selected vault");
+    SetWindowTextW(store_, L"ui-vault");
+    services_.loadSettings = [](const auto&) { return Settings{}; };
+    Command(SaveConfiguration);
+    Require(settingsWrites == 1 && !IsWindowEnabled(issue_)
+        && TextOf(status_).find(L"请填写签发口令") != std::wstring::npos,
+        "Blank password without a saved credential must remain blocked without saving settings");
+    services_.loadSettings = [configured](const auto&) {
+        auto restored = configured; restored.storeDirectory = L"ui-vault"; return restored;
+    };
+    if (expandedConfiguration_) Command(Configuration);
+    Command(Configuration);
+    Require(IsWindowEnabled(issue_) && settings_.password == configured.password
+        && CurrentDraft().settings.password == configured.password,
+        "Opening signing settings must reload a newly available credential and restore readiness");
+    services_.saveSettings = [](const auto&, const auto&, auto, bool) {
+        throw std::runtime_error("Window test must not save production settings");
+    };
     services_.loadSettings = [](const auto&) { return Settings{}; };
     for (const auto control : features_) SendMessageW(control, BM_SETCHECK, BST_UNCHECKED, 0);
     EnableActions(true);
     Require(!IsWindowEnabled(issue_) && TextOf(status_).find(L"至少选择一个页面") != std::wstring::npos,
         "Empty permission selection must explain the disabled action");
-    for (std::size_t index = 0; index < product_->features.size(); ++index)
+    for (std::size_t index = 0; index < featureDescriptors_.size(); ++index)
         SendMessageW(features_[index], BM_SETCHECK,
-            (selected & static_cast<std::uint32_t>(product_->features[index].feature)) ? BST_CHECKED : BST_UNCHECKED, 0);
+            (selected & static_cast<std::uint32_t>(featureDescriptors_[index].feature)) ? BST_CHECKED : BST_UNCHECKED, 0);
     EnableActions(true);
     Require(IsWindowEnabled(issue_) && TextOf(status_).find(L"已就绪") != std::wstring::npos,
         "Repairing a readiness blocker must update both the button and prompt");
@@ -859,13 +1096,21 @@ bool Window::SelfTest() {
         generated.clear(); products.clear(); generatedBase = base;
         for (const auto& input : inputs) {
             Require(input.password == Bytes({'t','e','s','t'}), "Worker credential mismatch");
+            Require(!input.allowReissue, "Ordinary generation must never silently reissue a previous trial");
             generated.push_back(input.policy); products.emplace_back(input.product->id);
         }
         Require(output.extension() == L".tdact", "Output extension must be tdact");
         GenerateResult result; result.outputPath = output; return result;
     };
+    Wipe(settings_.password); EnableActions(true);
+    services_.loadSettings = [configured](const auto&) {
+        auto restored = configured; restored.storeDirectory = L"ui-vault"; return restored;
+    };
     SetWindowTextW(days_, L"7x"); Command(Issue);
     Require(!busy_ && generated.empty(), "Malformed trial days must not reach signer");
+    Require(settings_.password == configured.password && CurrentDraft().settings.password == configured.password,
+        "Generation must recheck the current product's saved credential before preparing signer inputs");
+    services_.loadSettings = [](const auto&) { return Settings{}; };
     SetWindowTextW(customer_, L"界面测试"); SetWindowTextW(days_, L"7");
     select(otherIndex);
     Require(!request_ && !CurrentDraft().included && drafts_[0].request && drafts_[0].days == L"7"
@@ -880,14 +1125,141 @@ bool Window::SelfTest() {
     Require(generated.size() == 2 && !generatedBase && products[0] == TubeDesignerProduct.id
         && products[1] == syntheticProduct_.id && generated[0].kind == Kind::Trial && generated[0].days == 7
         && generated[1].kind == Kind::Permanent && generated[0].features == selected
+        && generated[1].features == syntheticProduct_.issuerSelectableFeatures
         && generated[0].customer == WideToUtf8(L"界面测试") && generated[1].customer == generated[0].customer,
         "One generation must contain both product-specific policies and one customer");
     Require(!outputPath_.empty() && IsWindowEnabled(folder_), "Output must be visible");
     SendMessageW(included_, BM_SETCHECK, BST_UNCHECKED, 0); Command(IncludeProduct);
     Command(Issue); pump(); Require(generated.size() == 1, "Unchecked draft must not be signed");
     select(0); Require(request_ && TextOf(days_) == L"7" && Features() == selected, "Original draft must restore controls");
+    const auto regularGeneration = services_.generateBundle;
+    const auto historyRoot = std::filesystem::temp_directory_path()
+        / (L"icax-issuer-ui-history-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+    Require(std::filesystem::create_directory(historyRoot), "Cannot create isolated history UI fixture");
+    IssuanceHistory previous;
+    previous.outputPath = historyRoot / L"客户甲-2026-10-10-试用授权.tdact";
+    previous.recoveryPath = historyRoot / L"签发库固化授权.tdact";
+    previous.licenseId = "synthetic-history-license"; previous.requestId = "synthetic-history-request";
+    previous.customer = WideToUtf8(L"历史客户"); previous.issuedAt = 1791647930; previous.outputExists = true;
+    for (const auto& path : {previous.outputPath, previous.recoveryPath}) {
+        std::ofstream fixture(path, std::ios::binary); fixture << "Synthetic UI fixture; no production authorization";
+        Require(static_cast<bool>(fixture), "Cannot create history UI fixture");
+    }
+    const auto regularInspection = services_.inspect;
+    const auto retainedDays = TextOf(days_); const auto retainedFeatures = Features();
+    services_.inspect = [previous](const auto&, const auto&, const auto&) {
+        RequestInfo request; request.digest = "synthetic-fresh-request"; request.isTrial = true;
+        request.previousIssuance = previous; return request;
+    };
+    SetWindowTextW(customer_, L"");
+    InspectSelection(L"fresh-duplicate-ui.tdreq"); pump();
+    Require(request_ && request_->previousIssuance && duplicateTrial_ && IsWindowEnabled(reissue_)
+        && TextOf(historyFile_) == previous.outputPath.filename().wstring()
+        && TextOf(output_) == previous.outputPath.wstring()
+        && TextOf(customer_) == Utf8ToWide(previous.customer)
+        && TextOf(days_) == retainedDays && Features() == retainedFeatures,
+        "Reading an issued-device request must immediately show history, fill the recorded customer and preserve draft settings");
+    bool directlyReissued{};
+    services_.generateBundle = [&directlyReissued, previous, retainedDays, retainedFeatures](auto inputs, const auto& base, const auto& output) {
+        Require(inputs.size() == 1 && !base && inputs.front().allowReissue
+            && inputs.front().policy.customer == previous.customer && inputs.front().policy.days == std::stoul(retainedDays)
+            && inputs.front().policy.features == retainedFeatures,
+            "Immediate history reissue must submit current settings and signed customer without a failed generation first");
+        directlyReissued = true; GenerateResult result; result.outputPath = output; return result;
+    };
+    Command(Reissue); pump();
+    Require(directlyReissued && TextOf(status_).find(L"试用期限按本次设置与签发时间重新计算") != std::wstring::npos,
+        "The direct reissue action must run without an extra permission dialog");
+    services_.generateBundle = regularGeneration;
+    SetWindowTextW(customer_, L"操作员手填的客户");
+    InspectSelection(L"fresh-duplicate-ui-2.tdreq"); pump();
+    Require(TextOf(customer_) == L"操作员手填的客户" && TextOf(days_) == retainedDays && Features() == retainedFeatures,
+        "Historical inspection must not overwrite a manually entered customer or current settings");
+    SetWindowTextW(customer_, L"fresh-duplicate-ui-3");
+    InspectSelection(L"fresh-duplicate-ui-3.tdreq"); pump();
+    Require(TextOf(customer_) == Utf8ToWide(previous.customer) && IsWindowEnabled(reissue_),
+        "A generated request-stem customer must be replaced with the signed customer before reissue");
+    services_.inspect = regularInspection;
+    const auto selectedRequest = requestPath_; const auto selectedCustomer = TextOf(customer_);
+    const auto selectedDays = TextOf(days_); const auto selectedFeatures = Features();
+    const auto rejectDuplicate = [this, &pump](const IssuanceHistory& history) {
+        services_.generateBundle = [history](auto inputs, const auto&, const auto&) -> GenerateResult {
+            for (const auto& input : inputs) Require(!input.allowReissue, "Ordinary retry must preserve the duplicate guard");
+            throw DuplicateTrialError(history);
+        };
+        Command(Issue); pump();
+    };
+    rejectDuplicate(previous);
+    Require(duplicateTrial_ && outputPath_ == previous.outputPath && TextOf(output_) == previous.outputPath.wstring()
+        && TextOf(historyFile_) == previous.outputPath.filename().wstring()
+        && (GetWindowLongW(output_, GWL_STYLE) & ES_READONLY) && (GetWindowLongW(output_, GWL_STYLE) & WS_TABSTOP)
+        && TextOf(status_).find(LocalIssuedTime(previous.issuedAt)) != std::wstring::npos
+        && IsWindowEnabled(folder_) && IsWindowEnabled(readOriginal_),
+        "Duplicate trial must show the original filename, copyable full path, local time and explicit recovery action");
+    Require(request_ && !authorization_ && requestPath_ == selectedRequest && TextOf(file_) == selectedRequest.wstring()
+        && TextOf(customer_) == selectedCustomer && TextOf(days_) == selectedDays && Features() == selectedFeatures
+        && CurrentDraft().source == selectedRequest && CurrentDraft().features == selectedFeatures,
+        "Duplicate trial must preserve the selected request and unsigned permission draft");
+    Require(IsWindowEnabled(reissue_), "A duplicate trial must offer an explicit reissue action");
+    bool signedAgain{};
+    services_.generateBundle = [&signedAgain, selectedRequest, selectedFeatures, selectedDays](auto inputs, const auto& base, const auto& output) {
+        Require(inputs.size() == 1 && !base && inputs.front().allowReissue && inputs.front().sourcePath == selectedRequest
+            && inputs.front().policy.kind == Kind::Trial && inputs.front().policy.features == selectedFeatures
+            && inputs.front().policy.days == std::stoul(selectedDays),
+            "Explicit reissue must use the current request, permissions and duration");
+        signedAgain = true; GenerateResult result; result.outputPath = output; return result;
+    };
+    Command(Reissue); pump();
+    Require(signedAgain && !duplicateTrial_ && !IsWindowEnabled(reissue_)
+        && TextOf(status_).find(L"已再次授权") != std::wstring::npos
+        && request_ && requestPath_ == selectedRequest && TextOf(days_) == selectedDays && Features() == selectedFeatures,
+        "Only the explicit reissue button may authorize a fresh period, without altering the selected draft");
+    auto missing = previous; missing.outputPath = historyRoot / L"已经移动的原授权.tdact";
+    missing.outputExists = false; missing.recoveryPath.clear();
+    rejectDuplicate(missing);
+    Require(TextOf(historyFile_) == missing.outputPath.filename().wstring() && outputPath_ == missing.outputPath
+        && TextOf(status_).find(L"原路径下未找到") != std::wstring::npos
+        && IsWindowEnabled(folder_) && !IsWindowEnabled(readOriginal_),
+        "A missing historical file must keep its recorded name and existing folder without implying it can be read");
+    auto legacy = previous; legacy.outputPath.clear(); legacy.outputExists = false;
+    rejectDuplicate(legacy);
+    Require(outputPath_.empty() && TextOf(output_).empty()
+        && TextOf(historyFile_) == L"旧记录未保存导出文件名" && !IsWindowEnabled(folder_)
+        && TextOf(status_).find(L"旧记录未保存导出文件名") != std::wstring::npos
+        && IsWindowEnabled(readOriginal_) && requestPath_ == selectedRequest && Features() == selectedFeatures,
+        "Legacy history must state its missing filename, suppress stale paths and retain explicit signed-cache recovery");
+    services_.generateBundle = [](auto inputs, const auto&, const auto&) -> GenerateResult {
+        Require(inputs.size() == 1 && inputs.front().allowReissue, "Fresh-trial failure must only arise from explicit reissue");
+        throw std::runtime_error("该试用申请仍使用原计数器，请从客户软件重新导出新的试用申请后再次授权。");
+    };
+    Command(Reissue); pump();
+    Require(duplicateTrial_ && TextOf(historyFile_) == L"旧记录未保存导出文件名"
+        && TextOf(status_).find(L"再次授权失败") != std::wstring::npos
+        && TextOf(status_).find(L"重新导出新的试用申请") != std::wstring::npos
+        && request_ && requestPath_ == selectedRequest && Features() == selectedFeatures && TextOf(days_) == selectedDays,
+        "A used trial binding must clearly request a fresh enrollment while preserving history and the current draft");
+    services_.inspectAuthorization = [previous, selectedFeatures](const auto& product, const auto&, const auto&) {
+        AuthorizationInfo result; result.product = std::string(product.id); result.policy.kind = Kind::Trial;
+        result.policy.customer = previous.customer; result.policy.features = selectedFeatures; result.policy.days = 7;
+        return result;
+    };
+    Command(ReadOriginal); pump();
+    Require(authorization_ && !request_ && requestPath_ == previous.recoveryPath && !duplicateTrial_
+        && TextOf(customer_) == Utf8ToWide(previous.customer),
+        "Only an explicit read-original action may replace the request with its original authorization");
+    InspectSelection(selectedRequest); pump();
+    SetWindowTextW(customer_, selectedCustomer.c_str()); SetWindowTextW(days_, selectedDays.c_str());
+    services_.generateBundle = [regularGeneration](auto inputs, const auto& base, const auto& output) {
+        auto result = regularGeneration(inputs, base, output); result.warning = "导出位置记录未保存，授权文件已生成。"; return result;
+    };
+    Command(Issue); pump();
+    Require(!duplicateTrial_ && !outputPath_.empty() && TextOf(status_).find(L"导出位置记录未保存") != std::wstring::npos,
+        "Successful output with a history receipt warning must remain a successful output");
+    services_.generateBundle = regularGeneration;
+    std::filesystem::remove(previous.outputPath); std::filesystem::remove(previous.recoveryPath);
+    Require(std::filesystem::remove(historyRoot), "History UI fixture must not retain files");
     Policy original; original.customer = WideToUtf8(L"原授权客户"); original.kind = Kind::Trial;
-    original.features = RequiredFeatures(Feature::ProductDesign); original.days = 7; original.maxMajor = 2;
+    original.features = RequiredFeatures(Feature::ProductDesign) | RequiredFeatures(Feature::NestingEdit); original.days = 7; original.maxMajor = 2;
     services_.inspectAuthorization = [original](const auto& product, const auto&, const auto&) {
         AuthorizationInfo result; result.product = std::string(product.id); result.policy = original; return result;
     };
@@ -896,9 +1268,9 @@ bool Window::SelfTest() {
         && !IsWindowEnabled(days_) && expandedOptions_ && IsWindowEnabled(issue_),
         "Existing single authorization must support wrapping and preserve identity");
     std::size_t design{}, breakdown{};
-    for (std::size_t index = 0; index < product_->features.size(); ++index) {
-        if (product_->features[index].feature == Feature::ProductDesign) design = index;
-        if (product_->features[index].feature == Feature::ProductBreakdown) breakdown = index;
+    for (std::size_t index = 0; index < featureDescriptors_.size(); ++index) {
+        if (featureDescriptors_[index].feature == Feature::ProductDesign) design = index;
+        if (featureDescriptors_[index].feature == Feature::ProductBreakdown) breakdown = index;
     }
     Require(!IsWindowEnabled(features_[design]) && IsWindowEnabled(features_[breakdown]), "Existing rights must lock");
     SendMessageW(features_[design], BM_SETCHECK, BST_UNCHECKED, 0); Command(FeatureBase + static_cast<int>(design));
@@ -909,11 +1281,15 @@ bool Window::SelfTest() {
         && generated[0].maxMajor == original.maxMajor && generated[0].kind == Kind::Trial
         && generated[0].features == (original.features | static_cast<std::uint32_t>(Feature::ProductBreakdown)),
         "Single authorization upgrade must preserve prior policy");
+    InspectSelection(L"next-ui.tdreq"); pump();
+    Require(request_ && (Features() & ~product_->issuerSelectableFeatures) == 0,
+        "New requests must not inherit unoffered rights from an authorization");
     services_.inspectBundle = [this, original](const auto&, auto stores) {
         Require(stores.size() == drafts_.size(), "Every registered store must be available for inspection");
         BundleInfo bundle; bundle.bundleId = "synthetic-ui-bundle"; bundle.customer = original.customer;
         for (const auto* draft : {&drafts_.front(), &drafts_.back()}) {
             AuthorizationInfo item; item.product = std::string(draft->product->id); item.policy = original;
+            item.deviceHash = "synthetic-retained-device";
             if (draft->product != &TubeDesignerProduct) item.policy.kind = Kind::Permanent;
             bundle.products.push_back(item);
         }
@@ -938,9 +1314,65 @@ bool Window::SelfTest() {
     InspectSelection(L"bad-ui.tdact"); pump();
     Require(authorization_ && CurrentDraft().retained && CurrentDraft().source.stem() == L"multi-ui"
         && IsWindowEnabled(issue_), "Failed replacement must preserve loaded bundle");
-    bool blocked{};
-    try { InspectSelection(L"wrong-ui.tdreq"); } catch (const std::exception&) { blocked = true; }
-    Require(blocked && !busy_ && authorization_, "Existing product cannot be replaced by a new request");
+    select(0);
+    const auto retainedBase = *baseBundlePath_;
+    const auto otherSource = drafts_[otherIndex].source;
+    const auto otherFeatures = drafts_[otherIndex].features;
+    const auto otherPolicy = drafts_[otherIndex].authorization->policy;
+    IssuanceHistory retainedHistory; retainedHistory.outputPath = retainedBase;
+    retainedHistory.requestId = "prior-retained-request"; retainedHistory.customer = original.customer;
+    retainedHistory.issuedAt = 1791647930;
+    services_.inspect = [retainedHistory](const auto& product, const auto&, const auto&) {
+        Require(product.id == TubeDesignerProduct.id, "Only the selected product receives the fresh request");
+        RequestInfo request; request.digest = "fresh-retained-request"; request.isTrial = true;
+        request.deviceHash = "synthetic-retained-device"; request.previousIssuance = retainedHistory; return request;
+    };
+    SetWindowTextW(days_, L"11");
+    InspectSelection(L"retained-product-fresh-ui.tdreq"); pump();
+    const auto freshFeatures = Features();
+    Require(request_ && !authorization_ && request_->digest == "fresh-retained-request"
+        && CurrentDraft().retained && CurrentDraft().included && CurrentDraft().request
+        && CurrentDraft().source.stem() == L"retained-product-fresh-ui" && TextOf(days_) == L"11"
+        && baseBundlePath_ && *baseBundlePath_ == retainedBase
+        && drafts_[otherIndex].retained && drafts_[otherIndex].included && drafts_[otherIndex].authorization
+        && !drafts_[otherIndex].request && drafts_[otherIndex].source == otherSource
+        && drafts_[otherIndex].features == otherFeatures && !IsWindowEnabled(included_)
+        && !IsWindowEnabled(issue_) && IsWindowEnabled(reissue_),
+        "A retained product must accept its fresh request while keeping the bundle and every other product intact");
+    std::size_t renewedBundles{};
+    services_.generateBundle = [&renewedBundles, retainedBase, otherSource, otherFeatures, otherPolicy, freshFeatures, original]
+        (auto inputs, const auto& base, const auto& output) {
+        Require(base && *base == retainedBase && inputs.size() == 2, "Retained renewal must submit the whole original bundle");
+        const auto fresh = std::find_if(inputs.begin(), inputs.end(), [](const auto& input) {
+            return input.product->id == TubeDesignerProduct.id;
+        });
+        const auto retained = std::find_if(inputs.begin(), inputs.end(), [](const auto& input) {
+            return input.product->id != TubeDesignerProduct.id;
+        });
+        Require(fresh != inputs.end() && retained != inputs.end() && fresh->allowReissue && !retained->allowReissue
+            && fresh->sourcePath.stem() == L"retained-product-fresh-ui" && fresh->policy.kind == Kind::Trial
+            && fresh->policy.days == 11 && fresh->policy.features == freshFeatures && fresh->policy.customer == original.customer
+            && retained->sourcePath == otherSource && retained->policy.kind == otherPolicy.kind
+            && retained->policy.features == otherFeatures && retained->policy.customer == otherPolicy.customer,
+            "Explicit renewal must only replace the selected request and retain the unrelated product policy");
+        ++renewedBundles; GenerateResult result; result.outputPath = output; return result;
+    };
+    Command(Issue); pump();
+    Require(renewedBundles == 0 && TextOf(status_).find(L"再次授权") != std::wstring::npos,
+        "Ordinary generation must not silently ignore a retained product's fresh request");
+    Command(Reissue); pump();
+    Require(renewedBundles == 1 && baseBundlePath_ && *baseBundlePath_ == retainedBase
+        && drafts_[otherIndex].authorization && drafts_[otherIndex].source == otherSource
+        && TextOf(status_).find(L"已再次授权") != std::wstring::npos,
+        "The explicit action must renew with the base bundle and preserve every retained other product");
+    services_.inspect = [](const auto&, const auto&, const auto&) {
+        RequestInfo request; request.isTrial = true; request.deviceHash = "different-ui-device"; return request;
+    };
+    InspectSelection(L"wrong-ui-device.tdreq"); pump();
+    Require(request_ && requestPath_.stem() == L"retained-product-fresh-ui" && request_->deviceHash == "synthetic-retained-device"
+        && baseBundlePath_ && *baseBundlePath_ == retainedBase && drafts_[otherIndex].source == otherSource
+        && TextOf(status_).find(L"TPM 设备不一致") != std::wstring::npos,
+        "A different-device request must preserve the last verified retained request and unrelated products");
     return true;
 }
 void Window::CheckSelection(const std::filesystem::path& path, const std::filesystem::path& report) {
@@ -958,14 +1390,26 @@ void Window::CheckSelection(const std::filesystem::path& path, const std::filesy
     output << "requestVerified=" << request_.has_value()
         << "\nauthorizationVerified=" << authorization_.has_value()
         << "\ncredentialAvailable=" << !settings_.password.empty()
+        << "\nsigningStore=" << WideToUtf8(settings_.storeDirectory.wstring())
         << "\nfeatures=" << Features()
         << "\nfeaturesValid=" << IsValidFeatureSet(*product_, Features())
         << "\ngenerateEnabled=" << (IsWindowEnabled(issue_) != FALSE)
+        << "\nhistoryFound=" << duplicateTrial_.has_value()
+        << "\nhistoryFileName=" << (duplicateTrial_ ? WideToUtf8(duplicateTrial_->outputPath.filename().wstring()) : std::string{})
+        << "\nhistoryOutputPath=" << (duplicateTrial_ ? WideToUtf8(duplicateTrial_->outputPath.wstring()) : std::string{})
+        << "\nhistoryIssuedAt=" << (duplicateTrial_ ? duplicateTrial_->issuedAt : 0)
+        << "\nhistoryIssuedAtLocal=" << (duplicateTrial_ ? WideToUtf8(LocalIssuedTime(duplicateTrial_->issuedAt)) : std::string{})
+        << "\nhistoryOutputExists=" << (duplicateTrial_ && duplicateTrial_->outputExists)
+        << "\nhistoryFolderEnabled=" << (IsWindowEnabled(folder_) != FALSE)
+        << "\nreadOriginalEnabled=" << (IsWindowEnabled(readOriginal_) != FALSE)
+        << "\nreissueEnabled=" << (IsWindowEnabled(reissue_) != FALSE)
+        << "\ncustomer=" << WideToUtf8(TextOf(customer_))
         << "\nsummary=" << WideToUtf8(TextOf(summary_))
         << "\nstatus=" << WideToUtf8(TextOf(status_)) << '\n';
     Require(static_cast<bool>(output), "Cannot save selection check");
 }
 void Window::Capture(const std::filesystem::path& path, int section) {
+    std::optional<std::filesystem::path> syntheticHistoryRoot;
     if (section == 1) Command(Options);
     if (section == 2) Command(Configuration);
     if (section == 3) {
@@ -985,6 +1429,23 @@ void Window::Capture(const std::filesystem::path& path, int section) {
             Sleep(1);
         }
         if (worker_.joinable()) worker_.join();
+    }
+    if (section == 4) {
+        Require(testing_, "History capture must use synthetic settings");
+        syntheticHistoryRoot = std::filesystem::temp_directory_path()
+            / (L"icax-issuer-ui-capture-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+        Require(std::filesystem::create_directory(*syntheticHistoryRoot), "Cannot create synthetic history capture directory");
+        IssuanceHistory history; history.outputPath = *syntheticHistoryRoot / L"示例客户-2026-10-10-试用授权.tdact";
+        history.recoveryPath = history.outputPath; history.outputExists = true; history.issuedAt = 1791647930;
+        { std::ofstream fixture(history.outputPath, std::ios::binary); fixture << "Synthetic UI capture; no authorization";
+          Require(static_cast<bool>(fixture), "Cannot create synthetic history capture file"); }
+        request_.emplace(); request_->isTrial = true;
+        requestPath_ = *syntheticHistoryRoot / L"示例客户-新的试用申请.tdreq";
+        SetWindowTextW(file_, requestPath_.c_str()); SetWindowTextW(summary_, L"试用申请 · 验证通过");
+        SaveDraft();
+        auto completion = std::make_unique<Completion>(); completion->token = ++token_; completion->generation = true;
+        completion->duplicateTrial = history; completion->error = L"该设备已有试用签发记录";
+        Accept(std::move(completion));
     }
     ShowWindow(window_, SW_SHOWNORMAL);
     // The first call can honor a hidden STARTUPINFO supplied by the test runner.
@@ -1015,6 +1476,10 @@ void Window::Capture(const std::filesystem::path& path, int section) {
     output.write(reinterpret_cast<const char*>(&info.bmiHeader), sizeof(info.bmiHeader));
     output.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
     Require(static_cast<bool>(output), "Cannot save issuer window capture");
+    if (syntheticHistoryRoot) {
+        std::filesystem::remove(*syntheticHistoryRoot / L"示例客户-2026-10-10-试用授权.tdact");
+        std::filesystem::remove(*syntheticHistoryRoot);
+    }
 }
 }
 int RunIssuerWindow(HINSTANCE instance, int show) {
@@ -1032,16 +1497,32 @@ int RunIssuerWindow(HINSTANCE instance, int show) {
     const bool testing = options.size() == 1 && options[0] == L"--self-test";
     const bool capture = (options.size() == 2 || options.size() == 3) && options[0] == L"--capture-ui";
     const bool checkSelection = options.size() == 3 && options[0] == L"--check-selection";
-    Require(options.empty() || testing || capture || checkSelection, "Unknown issuer argument");
-    const bool syntheticCapture = capture && options.size() == 3 && options[2] == L"upgrade";
-    Window window(instance, testing || syntheticCapture); window.Create(testing || checkSelection ? SW_HIDE : show);
+    const bool traceUi = options.size() == 2 && options[0] == L"--trace-ui";
+    Require(options.empty() || testing || capture || checkSelection || traceUi, "Unknown issuer argument");
+    const bool syntheticCapture = capture && options.size() == 3 && (options[2] == L"upgrade" || options[2] == L"history");
+    const auto diagnosticPath = traceUi ? std::filesystem::path(options[1])
+        : (options.empty() ? UiDiagnosticPath() : std::filesystem::path{});
+    if (!diagnosticPath.empty()) {
+        try {
+            std::wstring executable(32768, L'\0');
+            const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+            executable.resize(length);
+            std::ofstream diagnostic(diagnosticPath, std::ios::app);
+            diagnostic << "startup pid=" << GetCurrentProcessId() << " arguments=" << options.size()
+                << " executable=" << WideToUtf8(executable)
+                << " cwd=" << WideToUtf8(std::filesystem::current_path().wstring()) << '\n';
+        } catch (...) {}
+    }
+    Window window(instance, testing || syntheticCapture, diagnosticPath);
+    window.Create(testing || checkSelection ? SW_HIDE : show);
     if (testing) return window.SelfTest() ? 0 : 1;
     if (checkSelection) { window.CheckSelection(options[1], options[2]); return 0; }
     if (capture) {
         int section{};
         if (options.size() == 3) {
-            Require(options[2] == L"options" || options[2] == L"configuration" || options[2] == L"upgrade", "Unknown capture section");
-            section = options[2] == L"options" ? 1 : (options[2] == L"configuration" ? 2 : 3);
+            Require(options[2] == L"options" || options[2] == L"configuration" || options[2] == L"upgrade" || options[2] == L"history",
+                "Unknown capture section");
+            section = options[2] == L"options" ? 1 : (options[2] == L"configuration" ? 2 : (options[2] == L"upgrade" ? 3 : 4));
         }
         window.Capture(options[1], section); return 0;
     }

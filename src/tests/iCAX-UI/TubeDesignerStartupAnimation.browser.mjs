@@ -65,8 +65,8 @@ async function createScenario(options = {}) {
     } catch { return route.abort(); }
   });
   await page.goto("http://startup-animation.test/src/iCAX-UI/SDK/AppShell/index.html");
-  assert.equal(await page.locator("[data-startup-screen]").isVisible(), true, "Static first paint must already show TubeDesigner before JavaScript/native connection");
-  assert.equal(await page.title(), "TubeDesigner");
+  assert.equal(await page.locator("[data-startup-screen]").isVisible(), true, "Static first paint must be neutral until the native product list is known");
+  assert.equal(await page.title(), "工作台");
   assert.equal(await page.locator(".start-center,.start-products").count(), 0);
   await assertStartupGuards(page, "static first paint");
   await page.evaluate(async options => {
@@ -123,6 +123,8 @@ async function createScenario(options = {}) {
       async openProjectCatalog(path, payload) { openCalls.push({ path, payload }); return { projectProxy, sceneProxy, catalog: { mainProject: projectState } }; },
       async invoke(method) {
         requests.push(method);
+        if (method === "TubeDesignerLicensing.Status") return { activated: true, featureSchemaVersion: 1,
+          capabilities: { "page.product": true, "product.design": true }, featureCatalog: [] };
         if (method === "TubeDesigner.ListUserData") { await awaitGate("userData"); return { systemProfiles: [{ id: "startup-square", name: "方管", libraryScope: "system" }], profiles: [], templateProfiles: [] }; }
         throw new Error("Unexpected product transport request: " + method);
       } };
@@ -151,7 +153,7 @@ async function assertLoading(page, gateName) {
   assert.equal(state.startCenterOpen, false, gateName);
   assert.equal(await page.locator(".start-center,.start-products,.global-progress-backdrop,.cam-progress-backdrop").count(), 0, gateName);
   assert.equal(await page.locator("[data-startup-screen]").count(), 1, gateName);
-  assert.equal(await page.title(), "TubeDesigner", gateName);
+  assert.equal(await page.title(), ["connect", "app"].includes(gateName) ? "工作台" : "TubeDesigner", gateName);
   assert.deepEqual(await page.evaluate(() => globalThis.__startupTransport.forbiddenFrames), [], gateName);
   assert.deepEqual(await page.evaluate(() => globalThis.__startupTransport.forbiddenModals), [], gateName);
   await assertStartupGuards(page, gateName);

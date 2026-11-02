@@ -1,0 +1,333 @@
+{
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.five-axis-cam",
+  "productName": "三维五轴 CAM",
+  "productVersion": "0.1.0",
+  "capabilities": {
+    "machineDefinition": {
+      "defaults": [
+        {
+          "id": "b21ac27d-75e8-4847-a80a-4c25feaa3015",
+          "name": "LC-3015 工业五轴激光机床",
+          "sourcePath": "apps/five-axis-cam/resources/machines/industrial-ac/LC-3015.urdf",
+          "endpointCompatibilitySources": [
+            "apps/five-axis-cam/resources/machines/industrial-ac/compatibility/LC-3015.urdf"
+          ]
+        },
+        {
+          "id": "bf0d5260-2b94-4454-929e-c075b1ee1600",
+          "name": "IR-1600 六轴激光加工机械臂",
+          "sourcePath": "apps/five-axis-cam/resources/machines/industrial-arm/IR-1600.sdf"
+        },
+        {
+          "id": "f4ed0130-37ef-45fb-9883-7af0b1fc1000",
+          "name": "RC-1000 转盘式五轴激光机床（4+1）",
+          "sourcePath": "apps/five-axis-cam/resources/machines/rotary-four-plus-one/RC-1000.urdf"
+        },
+        {
+          "id": "a30b2cab-c634-4b3a-94c0-c7ad1eac0800",
+          "name": "TC-800 摇篮式五轴激光机床（3+2）",
+          "sourcePath": "apps/five-axis-cam/resources/machines/cradle-three-plus-two/TC-800.urdf"
+        },
+        {
+          "id": "6bfa3015-1101-4500-9000-000000000001",
+          "name": "GAC-3015 龙门 · AC 双回转头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAC-3015/GAC-3015.urdf",
+          "headRoot": "C 回转叉架",
+          "headAxes": [
+            "C",
+            "A"
+          ],
+          "workpieceAxes": [],
+          "kind": "AC",
+          "introducedInCatalogVersion": 2
+        },
+        {
+          "id": "6bfa3015-1101-4500-9000-000000000002",
+          "name": "GAB-3015 龙门 · AB 双摆头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAB-3015/GAB-3015.urdf",
+          "headRoot": "AB 刀头安装座",
+          "headRootAliases": [
+            "B 回转叉架"
+          ],
+          "headAxes": [
+            "B",
+            "A"
+          ],
+          "workpieceAxes": [],
+          "kind": "AB",
+          "introducedInCatalogVersion": 2
+        },
+        {
+          "id": "6bfa3015-1101-4500-9000-000000000003",
+          "name": "GBC-3015 龙门 · BC 双回转头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GBC-3015/GBC-3015.urdf",
+          "headRoot": "C 回转叉架",
+          "headAxes": [
+            "C",
+            "B"
+          ],
+          "workpieceAxes": [],
+          "kind": "BC",
+          "introducedInCatalogVersion": 2
+        },
+        {
+          "id": "6bfa3015-1101-4500-9000-000000000004",
+          "name": "GA-3015 龙门 · 4+1 A 单摆头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GA-3015/GA-3015.urdf",
+          "headRoot": "固定摆头叉架",
+          "headAxes": [
+            "A"
+          ],
+          "workpieceAxes": [
+            "C"
+          ],
+          "kind": "4+1",
+          "introducedInCatalogVersion": 2
+        },
+        {
+          "id": "6bfa3015-1101-4500-9000-000000000005",
+          "name": "GF-3015 龙门 · 3+2 固定头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GF-3015/GF-3015.urdf",
+          "headRoot": "固定激光切割头",
+          "headAxes": [],
+          "workpieceAxes": [
+            "A",
+            "C"
+          ],
+          "kind": "3+2",
+          "introducedInCatalogVersion": 2
+        }
+      ],
+      "supportedFormats": [
+        {
+          "formatId": "machine.sdf",
+          "name": "SDF 机床定义",
+          "extensions": [
+            ".sdf",
+            ".xml"
+          ]
+        },
+        {
+          "formatId": "machine.urdf",
+          "name": "URDF 机床定义",
+          "extensions": [
+            ".urdf"
+          ]
+        }
+      ],
+      "defaultCatalogVersion": 2
+    },
+    "cuttingHead": {
+      "defaults": [
+        {
+          "id": "6bfc0001-1101-4500-9000-000000000001",
+          "name": "AC 双回转切割头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAC-3015/GAC-3015.urdf",
+          "headRoot": "C 回转叉架",
+          "headAxes": [
+            "C",
+            "A"
+          ],
+          "workpieceAxes": [],
+          "kind": "AC"
+        },
+        {
+          "id": "6bfc0001-1101-4500-9000-000000000002",
+          "name": "AB 双摆切割头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAB-3015/GAB-3015.urdf",
+          "headRoot": "AB 刀头安装座",
+          "headAxes": [
+            "B",
+            "A"
+          ],
+          "workpieceAxes": [],
+          "kind": "AB"
+        },
+        {
+          "id": "6bfc0001-1101-4500-9000-000000000003",
+          "name": "BC 双回转切割头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GBC-3015/GBC-3015.urdf",
+          "headRoot": "C 回转叉架",
+          "headAxes": [
+            "C",
+            "B"
+          ],
+          "workpieceAxes": [],
+          "kind": "BC"
+        },
+        {
+          "id": "6bfc0001-1101-4500-9000-000000000004",
+          "name": "A 单摆切割头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GA-3015/GA-3015.urdf",
+          "headRoot": "固定摆头叉架",
+          "headAxes": [
+            "A"
+          ],
+          "workpieceAxes": [],
+          "kind": "A"
+        },
+        {
+          "id": "6bfc0001-1101-4500-9000-000000000005",
+          "name": "固定切割头",
+          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GF-3015/GF-3015.urdf",
+          "headRoot": "固定激光切割头",
+          "headAxes": [],
+          "workpieceAxes": [],
+          "kind": "Fixed"
+        }
+      ]
+    }
+  },
+  "projectFile": {
+    "magic": "ICAX_FIVE_AXIS_CAM",
+    "formatVersion": "0.1",
+    "formatRevision": 1,
+    "quickSaveLogMagic": "ICAX_FIVE_AXIS_CAM_QSAVE",
+    "quickSaveLogVersion": 1,
+    "fileExtensions": [
+      ".i5cam"
+    ],
+    "magicOffset": 0,
+    "probeBytes": 256
+  },
+  "backend": {
+    "startupComponent": "CFiveAxisSceneComponent",
+    "pdo": {
+      "enabled": true,
+      "arenaSize": 134217728,
+      "slotCapacity": 4096
+    },
+    "modules": {
+      "dependencies": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/RenderData.dll",
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/ColliderData.dll",
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/Machine.dll",
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
+      ],
+      "components": [
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
+        "../../${Platform}/${Configuration}/FiveAxisCAM.dll",
+        "../../${Platform}/${Configuration}/IntentToolpath.dll",
+        "../../${Platform}/${Configuration}/Machine.dll"
+      ],
+      "behaviours": [
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
+        "../../${Platform}/${Configuration}/FiveAxisCAM.dll",
+        "../../${Platform}/${Configuration}/Machine.dll"
+      ],
+      "services": [
+        "../../${Platform}/${Configuration}/CoalCollisionServices.dll",
+        "../../${Platform}/${Configuration}/MachineKinematicsServices.dll",
+        "../../${Platform}/${Configuration}/DescartesPlanningServices.dll",
+        "../../${Platform}/${Configuration}/MachineMotionPlanningServices.dll",
+        "../../${Platform}/${Configuration}/OpenCascadeGeometryServices.dll",
+        "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+        "../../${Platform}/${Configuration}/CutRecognition.dll",
+        "../../${Platform}/${Configuration}/ProcessPlanning.dll"
+      ],
+      "sdo": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/FiveAxisCAM.dll",
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
+      ]
+    },
+    "resources": {
+      "handlers": [
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.step",
+          "extensions": [
+            ".step",
+            ".stp"
+          ],
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.iges",
+          "extensions": [
+            ".igs",
+            ".iges"
+          ],
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.triangle_mesh",
+          "formatId": "geometry.stl",
+          "extensions": [
+            ".stl"
+          ],
+          "module": "../../${Platform}/${Configuration}/STLResourceImport.dll",
+          "provider": "icax.stl",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.triangle_mesh",
+          "formatId": "geometry.dae",
+          "extensions": [
+            ".dae"
+          ],
+          "module": "../../${Platform}/${Configuration}/DAEResourceImport.dll",
+          "provider": "icax.dae",
+          "priority": 100
+        }
+      ]
+    }
+  },
+  "webpage": {
+    "entry": "apps/five-axis-cam/webpage/entry.mjs"
+  },
+  "userData": {
+    "features": [
+      {
+        "featureId": "head-configurations",
+        "recordTypes": [
+          {
+            "recordType": "configuration",
+            "subjectTypes": [
+              "product"
+            ],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      },
+      {
+        "featureId": "fixture-library",
+        "recordTypes": [
+          {
+            "recordType": "assembly",
+            "subjectTypes": [
+              "product"
+            ],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          },
+          {
+            "recordType": "preferences",
+            "subjectTypes": [
+              "product"
+            ],
+            "schemaVersion": 1,
+            "cardinality": "single"
+          }
+        ]
+      }
+    ]
+  }
+}

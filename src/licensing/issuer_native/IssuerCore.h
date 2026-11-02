@@ -3,11 +3,25 @@
 #include "ProductCatalog.h"
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 
 namespace tube::license::issuer_native {
 struct StoreInfo final {
     std::string issuerId;
     std::string publicKeyHash;
+};
+struct IssuanceHistory final {
+    std::filesystem::path outputPath, recoveryPath;
+    std::string licenseId, requestId, customer;
+    std::uint64_t issuedAt{};
+    bool outputExists{};
+};
+class DuplicateTrialError final : public std::runtime_error {
+public:
+    explicit DuplicateTrialError(IssuanceHistory history);
+    const IssuanceHistory& History() const noexcept { return history_; }
+private:
+    IssuanceHistory history_;
 };
 struct RequestInfo final {
     std::string digest;
@@ -15,6 +29,7 @@ struct RequestInfo final {
     std::string deviceHash;
     std::string ekCertificateHash;
     std::string issuerId;
+    std::optional<IssuanceHistory> previousIssuance;
 };
 struct Policy final {
     std::string customer;
@@ -28,6 +43,7 @@ struct GenerateResult final {
     std::filesystem::path outputPath;
     std::string licenseId;
     bool reexported{};
+    std::string warning;
 };
 struct AuthorizationInfo final {
     std::string issuerId, licenseId, requestId, customerId, product, deviceHash;
@@ -44,6 +60,7 @@ struct BundleInput final {
     Bytes password;
     std::filesystem::path sourcePath;
     Policy policy;
+    bool allowReissue{};
 };
 struct BundleInfo final {
     std::string bundleId, customer, deviceHash;

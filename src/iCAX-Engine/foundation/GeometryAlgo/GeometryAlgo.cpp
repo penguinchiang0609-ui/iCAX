@@ -53,7 +53,8 @@ namespace
         const std::size_t poleCount,
         const std::vector<double>& knots,
         const std::vector<std::int32_t>& multiplicities,
-        std::string& error)
+        std::string& error,
+        bool periodic = false)
     {
         if (degree <= 0)
         {
@@ -93,7 +94,14 @@ namespace
             multiplicities.end(),
             std::int32_t { 0 });
 
-        if (totalMultiplicity != static_cast<std::int32_t>(poleCount) + degree + 1)
+        if(periodic)
+        {
+            if(knots.size()<2||multiplicities.front()!=multiplicities.back()
+                ||totalMultiplicity-multiplicities.front()!=static_cast<std::int32_t>(poleCount)
+                ||std::any_of(multiplicities.begin(),multiplicities.end(),[&](auto m){return m<1||m>degree;}))
+            {error="Periodic B-spline multiplicities must match its cyclic pole count.";return false;}
+        }
+        else if (totalMultiplicity != static_cast<std::int32_t>(poleCount) + degree + 1)
         {
             error = "B-spline multiplicity sum must equal pole count + degree + 1.";
             return false;
@@ -875,12 +883,12 @@ namespace iCAX::GeometryAlgo
 
     bool Validate(const GeometryData::BSpline2& curve, std::string& error)
     {
-        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error);
+        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error,curve.Periodic);
     }
 
     bool Validate(const GeometryData::BSpline3& curve, std::string& error)
     {
-        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error);
+        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error,curve.Periodic);
     }
 
     bool Validate(const GeometryData::NURBS2& curve, std::string& error)
@@ -891,7 +899,7 @@ namespace iCAX::GeometryAlgo
             return false;
         }
 
-        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error);
+        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error,curve.Periodic);
     }
 
     bool Validate(const GeometryData::NURBS3& curve, std::string& error)
@@ -902,7 +910,7 @@ namespace iCAX::GeometryAlgo
             return false;
         }
 
-        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error);
+        return ValidateBSplineCore(curve.Degree, curve.Poles.size(), curve.Knots, curve.Multiplicities, error,curve.Periodic);
     }
 
     bool Validate(const GeometryData::BSplineSurface3& surface, std::string& error)
@@ -926,12 +934,12 @@ namespace iCAX::GeometryAlgo
             return false;
         }
 
-        if (!ValidateBSplineCore(surface.UDegree, surface.UCount, surface.UKnots, surface.UMultiplicities, error))
+        if (!ValidateBSplineCore(surface.UDegree, surface.UCount, surface.UKnots, surface.UMultiplicities, error,surface.UPeriodic))
         {
             return false;
         }
 
-        return ValidateBSplineCore(surface.VDegree, surface.VCount, surface.VKnots, surface.VMultiplicities, error);
+        return ValidateBSplineCore(surface.VDegree, surface.VCount, surface.VKnots, surface.VMultiplicities, error,surface.VPeriodic);
     }
 
     bool Validate(const GeometryData::BRepModel& model, std::string& error)

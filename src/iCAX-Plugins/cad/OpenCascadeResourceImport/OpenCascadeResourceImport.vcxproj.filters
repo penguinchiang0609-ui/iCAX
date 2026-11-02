@@ -1,20 +1,55 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClInclude Include="CadBRepImportService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CadBRepHealService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeTopologyPreparation.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeFaceIntegration.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeIgesSession.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeVisibleImport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeAssemblyImport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RigidRegistrationService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CadReferenceService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CurveEditingService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="GeometryFeatureAnalysisService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="CadDocumentImportService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CadBevelService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CadFeatureModelService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeCadDocumentService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeBoundaryGeometry.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeCadJson.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeCadFieldNames.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeCancellation.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeNeutralModelEvaluator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="OpenCascadeBRepReader.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeTaskExecution.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeShapeBounds.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeBRepBuilder.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeBooleanPreparation.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeResourceImportExport.h"><Filter>Header Files</Filter></ClInclude>
     <Filter Include="Header Files"><UniqueIdentifier>{b0f9a00a-4de0-40c2-b400-bb436008168f}</UniqueIdentifier></Filter>
     <Filter Include="Source Files"><UniqueIdentifier>{1ca62587-d1b1-440c-a58f-02602518a912}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CadBRepImportService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CadBRepHealService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="OpenCascadeVisibleImport.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="OpenCascadeAssemblyImport.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RigidRegistrationService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CadReferenceService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SurfaceTravelService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RapidPathGeometryService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RigidMotionCollisionService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="BoundaryLeadService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CurveEditingService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="GeometryFeatureAnalysisService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="CadDocumentImportService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CadBevelService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CadFeatureModelService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeCadDocumentService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeBoundaryGeometry.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeNeutralModelEvaluator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -26,6 +61,8 @@
     <ClCompile Include="OpenCascadeCancellation.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeResourceImporter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeBRepBuilder.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="OpenCascadeBooleanPreparation.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup><ClInclude Include="TubeCadConstraints.h"><Filter>头文件</Filter></ClInclude><ClCompile Include="TubeCadConstraints.cpp"><Filter>源文件</Filter></ClCompile></ItemGroup>
 </Project>

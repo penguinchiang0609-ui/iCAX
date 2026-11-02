@@ -1,0 +1,17 @@
+Descartes Light: https://github.com/swri-robotics/descartes_light
+Commit: 49e2ee3305b5d7ba5018f28cf706e0dc71ecf6cf (2026-08-28)
+Source: https://codeload.github.com/swri-robotics/descartes_light/zip/49e2ee3305b5d7ba5018f28cf706e0dc71ecf6cf
+SHA256: 958F9C37719741415D9970354AE463C38112E5EAAEC67A52F7B58859CA16B192
+License: Apache-2.0; copyright Southwest Research Institute.
+Builds the unmodified upstream core sources. BGL, ROS and Python are unused.
+
+console_bridge: https://github.com/ros/console_bridge
+Version: 1.0.2
+Source: https://codeload.github.com/ros/console_bridge/zip/refs/tags/1.0.2
+SHA256: 3B09ADD927FD9CC63D8A8CC53FBD7F5B6C8B6142A155A5DB0BF2E48829F1D4D9
+License: BSD-3-Clause
+
+Eigen 3.4.0 is shared with src/third_party/coal (MPL-2.0/BSD notices).
+MSVC OpenMP runtime is supplied by Visual Studio; optimized Debug uses /MDd.
+No upstream source modifications. The local CMake wrapper replaces only
+ROS-industrial packaging infrastructure, retaining every upstream core source.

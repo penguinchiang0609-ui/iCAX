@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+export async function verifyNamesAndToggle({page,rpc,calls,output}){
+  const invoke=(method,payload={})=>rpc({action:'invoke',scope:'scene',method,payload});
+  const read=()=>invoke('CamScene.ReadState'),setup=s=>s.setups.find(t=>t.id===s.activeSetupId),idle=()=>page.waitForFunction(()=>!fixture.view.pending);
+  const command=id=>page.evaluate(id=>fixture.entry.handleRibbonCommand(fixture.context,id),id);
+  await page.evaluate(()=>fixture.context.actions.selectRibbonTab('toolpath'));await page.getByRole('tab',{name:'切割',exact:true}).click();
+  const initial=await read(),id=setup(initial).definitionOrder[2],cut=initial.intentToolpaths.find(c=>c.id===id),nameInput=page.getByRole('textbox',{name:'刀路名称',exact:true});
+  await page.locator(`[data-five-intent="${id}"]`).click();assert.equal(await nameInput.inputValue(),cut.name);assert.match(await page.locator(`[data-five-intent="${id}"]`).innerText(),new RegExp(`#${cut.number}`));
+  await nameInput.fill('排气槽 A');await nameInput.press('Enter');await idle();assert.equal(await page.evaluate(()=>fixture.view.error),'');
+  let state=await read();assert.equal(state.intentToolpaths.find(c=>c.id===id).name,'排气槽 A');assert.deepEqual(setup(state).generatedGeometry,setup(initial).generatedGeometry);
+  assert.match(await page.locator(`[data-five-intent="${id}"]`).innerText(),/排气槽 A/);
+  await page.waitForFunction(()=>fixture.view.viewport?.getDebugState().objectCount>0&&!fixture.view.fiveThumbnails?.running);
+  const resourceGets=from=>calls.slice(from).filter(c=>c.action==='resource'&&!c.head);
+  await page.locator(`[data-five-command="five.tree.ToggleEnabled:${id}"]`).hover();const start=calls.length;
+  await page.evaluate(()=>{fixture.toggleNodes={canvas:document.querySelector('canvas'),model:[...fixture.view.viewport.sceneObjects.values()][0],geometry:[...fixture.view.viewport.sceneObjects.values()][0].geometry,name:document.querySelector('[data-five-cut-name]')};});
+  const begin=Date.now();await page.locator(`[data-five-command="five.tree.ToggleEnabled:${id}"]`).click();await idle();const toggleMs=Date.now()-begin;
+  assert.equal(calls.slice(start).some(c=>c.method==='CamScene.ReadState'),false,'tree switches must use the native receipt, not serialize generated paths again');
+  state=await read();assert.equal(state.intentToolpaths.find(c=>c.id===id).enabled,false);
+  const cached=await page.evaluate(()=>structuredClone(fixture.view.scene.domain)),active=setup(state),cachedSetup=setup(cached);
+  for(const key of ['inputRevision','planValidity','cutGroups','definitionOrder'])assert.deepEqual(cachedSetup[key],active[key]);
+  assert.equal(cachedSetup.generatedGeometry.status,active.generatedGeometry.status);assert.equal(cachedSetup.generatedGeometry.rapidClearCount,active.generatedGeometry.rapidClearCount);assert.ok(cachedSetup.generatedGeometry.transitions.every(t=>t.validation==='Unchecked'));
+  for(const item of state.intentToolpaths)for(const key of ['id','name','enabled','ownEnabled','locked','ownLocked','groupId'])assert.deepEqual(cached.intentToolpaths.find(c=>c.id===item.id)[key],item[key]);
+  assert.equal(resourceGets(start).length,0,'enabling/disabling must not download unchanged resources (View HEAD version polling remains active)');
+  console.log('Toggle timing',toggleMs,calls.slice(start).filter(c=>c.action==='invoke').map(c=>[c.method,c.elapsedMs]));
+  assert.equal(await page.evaluate(()=>{const p=fixture.toggleNodes,o=[...fixture.view.viewport.sceneObjects.values()][0];return p.canvas===document.querySelector('canvas')&&p.model===o&&p.geometry===o.geometry&&p.name===document.querySelector('[data-five-cut-name]');}),true);
+  assert.match(await page.locator(`[data-five-command="five.tree.ToggleEnabled:${id}"] path`).getAttribute('d'),/M12 3v8/);
+  const baselineStart=calls.length,baselineTime=Date.now();await invoke('CamCut.ManageTree',{commandId:crypto.randomUUID(),expected:state.expected,setupId:state.activeSetupId,action:'Enable',intentIds:[id]});await command('five.refresh');const fullRefreshMs=Date.now()-baselineTime,fullRefreshResources=resourceGets(baselineStart).length;
+  const stress=await page.addStyleTag({content:'.cam-context-pane::after,.cam-info-pane::after{content:"";display:block;height:1700px}'});
+  await page.evaluate(()=>{fixture.holdMethod='CamCut.ManageTree';fixture.hold=true;fixture.toggleOutput=document.querySelector('[data-five-cut-name]');});
+  await page.locator(`[data-five-command="five.tree.ToggleEnabled:${id}"]`).click();await page.waitForFunction(()=>fixture.held);
+  const scroll=await page.evaluate(()=>{fixture.toggleOutput.focus({preventScroll:true});fixture.toggleOutput.setSelectionRange(1,3);return ['.cam-context-pane','.cam-info-pane'].map((s,i)=>{const n=document.querySelector(s);n.scrollTop=70+i*20;return n.scrollTop;});});assert.ok(scroll.every(n=>n>0));
+  await page.evaluate(()=>fixture.release());await idle();assert.equal(await page.evaluate(()=>fixture.toggleOutput===document.querySelector('[data-five-cut-name]')&&document.activeElement===fixture.toggleOutput),true);assert.deepEqual(await nameInput.evaluate(n=>[n.selectionStart,n.selectionEnd]),[1,3]);assert.deepEqual(await page.evaluate(()=>['.cam-context-pane','.cam-info-pane'].map(s=>document.querySelector(s).scrollTop)),scroll);
+  await stress.evaluate(n=>n.remove());await command(`five.tree.ToggleEnabled:${id}`);await idle();
+  const ids=setup(await read()).definitionOrder;await invoke('CamPlan.SetOrder',{commandId:crypto.randomUUID(),expected:(await read()).expected,setupId:state.activeSetupId,mode:'Manual',intentIds:ids.toReversed()});await command('five.refresh');
+  assert.equal((await read()).intentToolpaths.find(c=>c.id===id).name,'排气槽 A');assert.match(await page.locator(`[data-five-intent="${id}"]`).innerText(),/排气槽 A/);
+  await command('five.tool.auto-order');await idle();await command('five.order.close');assert.equal((await read()).intentToolpaths.find(c=>c.id===id).name,'排气槽 A');assert.match(await page.locator(`[data-five-intent="${id}"]`).innerText(),/排气槽 A/);
+  await page.locator(`[data-five-intent="${id}"]`).click();await nameInput.fill('排气槽 <B>');
+  await page.evaluate(()=>{fixture.loseMethod='CamCut.Rename';});await nameInput.press('Enter');await idle();assert.equal(await nameInput.inputValue(),'排气槽 <B>');assert.equal(await page.locator(`[data-five-intent="${id}"] b`).count(),0);
+  const saved=await read();await page.evaluate(()=>fixture.entry.releaseProject(fixture.context));const reopened=await rpc({action:'save-reopen'});assert.deepEqual(reopened.intentToolpaths,saved.intentToolpaths);
+  await page.evaluate(async()=>{const {getProjectView}=await import('/src/apps/_shared/workbench/state/projectViewStore.mjs');const {ViewClient}=await import('/src/iCAX-UI/SDK/View/viewClient.mjs');fixture.view=getProjectView(fixture.context.project.projectId);fixture.context.sceneProxy.views=new ViewClient(fixture.context.sceneProxy);fixture.entry.mountProject(fixture.context);});await idle();await page.waitForFunction(()=>fixture.view.viewport?.getDebugState().objectCount>0);await page.locator(`[data-five-intent="${id}"]`).click();assert.equal(await nameInput.inputValue(),'排气槽 <B>');assert.equal(await page.evaluate(()=>fixture.view.error),'');
+  await page.screenshot({path:resolve(output,'named-cutting-paths.png')});
+  writeFileSync(resolve(output,'names-toggle-report.json'),JSON.stringify({passed:true,operations:initial.intentToolpaths.length,toggleMs,fullRefreshMs,fastToggleResources:0,fullRefreshResources,cases:['persistent editable names and immutable identifiers separate from order','rename leaves geometry current','manual and automatic order preserve names','enable/disable uses power symbol','toggle retains mesh geometry canvas and parameter input without fetching geometry','delayed tree receipt preserves latest dual scroll, focus, selection and input identity','lost rename response recovers command receipt','HTML names escaped','names persist through save reopen'],coverage:{native:true,browser:'Edge',standaloneCef:false}},null,2));
+}

@@ -1,0 +1,28 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.ICAX_PLAYWRIGHT_MODULE||'playwright');
+const output=path.resolve(process.env.ICAX_AUTOSAVE_OUTPUT||'output/tests/machine-simulation');
+(async()=>{
+ const browser=await chromium.connectOverCDP(process.env.ICAX_CEF_DEBUG_URL||'http://127.0.0.1:9483'),page=browser.contexts()[0].pages()[0];page.setDefaultTimeout(60000);
+ const f=n=>page.locator(`[data-five-rapid-field="${n}"]`).last(),button=n=>page.locator(`[data-five-command="five.rapid.${n}"]`).last();
+ const idle=()=>page.waitForFunction(()=>!tv.pending&&!tv.fiveHistoryBusy&&!tv.fiveRapid.savingPath&&!tv.fiveRapid.saveTimer&&!tv.fiveRapid.policyChanged&&!tv.fiveRapid.pathEdit?.changed);
+ await button('path-automatic').click();await idle();
+ await page.evaluate(()=>{const proxy=tv.fiveRapid.saveBinding.context.sceneProxy,invoke=proxy.invoke.bind(proxy);window.policyHold={proxy,invoke};proxy.invoke=async(method,...args)=>{const result=await invoke(method,...args);if(method==='CamRapid.EditPolicy'&&!policyHold.held){policyHold.held=true;await new Promise(resolve=>policyHold.release=resolve);}return result;};window.policyInput=document.querySelector('[data-five-rapid-field="marginMm"]');window.policyCanvas=document.querySelector('canvas');window.policyEvents=0;policyInput.addEventListener('input',()=>policyEvents++);});
+ const style=await page.addStyleTag({content:'.cam-context-pane::after,.cam-info-pane::after,.five-rapid-body::after{content:"";display:block;height:1600px}.cam-info-pane{max-height:270px!important}.five-rapid-body{height:190px;overflow:auto}'});
+ await f('strategy').selectOption('Frog');await page.waitForFunction(()=>policyHold.held);await f('marginMm').fill('0.85');
+ const scroll=await page.evaluate(()=>{policyInput.focus({preventScroll:true});policyInput.setSelectionRange(0,3);return ['.cam-context-pane','.cam-info-pane','.five-rapid-body'].map((s,i)=>{const e=document.querySelector(s);e.scrollTop=55+i*25;return e.scrollTop;});});assert.ok(scroll.every(n=>n>0));
+ await page.evaluate(()=>policyHold.release());await idle();assert.equal(await f('marginMm').inputValue(),'0.85');
+ assert.equal(await page.evaluate(()=>tv.scene.domain.setups[0].generatedGeometry.transitions[0].policy.marginMm),.85);
+ assert.equal(await page.evaluate(()=>policyInput===document.querySelector('[data-five-rapid-field="marginMm"]')&&policyCanvas===document.querySelector('canvas')&&document.activeElement===policyInput&&policyEvents>0),true);
+ assert.deepEqual(await f('marginMm').evaluate(e=>[e.selectionStart,e.selectionEnd]),[0,3]);assert.deepEqual(await page.evaluate(()=>['.cam-context-pane','.cam-info-pane','.five-rapid-body'].map(s=>document.querySelector(s).scrollTop)),scroll);
+ await page.evaluate(()=>{policyHold.proxy.invoke=policyHold.invoke});await style.evaluate(e=>e.remove());console.log('PASS in-flight strategy + newer input, focus/selection/nodes/listener and latest dual/nested scrolling');
+ await f('strategy').selectOption('Fly');await idle();assert.equal(await page.locator('[data-five-rapid-field="liftHeightMm"]').count(),0);
+ await page.getByRole('button',{name:'撤销',exact:true}).click();await page.waitForFunction(()=>!tv.fiveHistoryBusy&&tv.fiveRapid.policy.strategy==='Frog');assert.equal(await page.locator('[data-five-rapid-field="liftHeightMm"]').count(),1);
+ await page.getByRole('button',{name:'重做',exact:true}).click();await page.waitForFunction(()=>!tv.fiveHistoryBusy&&tv.fiveRapid.policy.strategy==='Fly');assert.equal(await page.locator('[data-five-rapid-field="liftHeightMm"]').count(),0);
+ await f('strategy').selectOption('Quick');await idle();assert.equal(await page.locator('[data-five-rapid-field="liftHeightMm"]').count(),1);
+ console.log('PASS conditional fields across strategy changes and undo/redo');
+ const snapshots=await page.evaluate(()=>{const g=tv.scene.domain.setups[0].generatedGeometry;return {path:__icaxAppShell.getState().activeProjectPath,transitions:g.transitions.map(t=>({from:t.from,to:t.to,policy:t.policy,manualPath:t.manualPath,points:t.points,directions:t.directions,geometryStatus:t.geometryStatus,validation:t.validation}))};});
+ fs.copyFileSync(snapshots.path,path.join(output,'rapid-policy-automatic.i5cam'));fs.writeFileSync(path.join(output,'rapid-policy-automatic.json'),JSON.stringify(snapshots,null,2));
+ await button('path-edit').click();await page.waitForFunction(()=>tv.fiveRapid.pathEdit);await f('pathZ').fill('39');await idle();
+ const manual=await page.evaluate(()=>({path:__icaxAppShell.getState().activeProjectPath,transitions:tv.scene.domain.setups[0].generatedGeometry.transitions.map(t=>({from:t.from,to:t.to,policy:t.policy,manualPath:t.manualPath,points:t.points,directions:t.directions,geometryStatus:t.geometryStatus,validation:t.validation}))}));
+ fs.writeFileSync(path.join(output,'rapid-policy-manual.json'),JSON.stringify(manual,null,2));fs.writeFileSync(path.join(output,'rapid-policy-async-report.json'),JSON.stringify({passed:true,latestInput:true,focus:true,selection:true,nodeIdentity:true,listeners:true,dualNestedScroll:true,conditionalFields:true},null,2));console.log('Saved independent automatic and manual reopen cases');process.exit();
+})().catch(error=>{console.error(error);process.exit(1)});

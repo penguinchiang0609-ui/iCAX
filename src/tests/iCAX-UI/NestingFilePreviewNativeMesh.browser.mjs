@@ -46,7 +46,11 @@ try {
           nativePreviews.push(payload);
           const item = records.find(item => canonical(item.sourcePath) === canonical(payload.sourcePath));
           if (!item) throw Error('Unexpected source file');
-          return structuredClone(item);
+          const response = structuredClone(item);
+          response.wireframe = { ...response.wireframe,
+            polylinesJson: JSON.stringify(response.wireframe.polylines) };
+          delete response.wireframe.polylines;
+          return response;
         }
         if (method === 'TubeDesigner.ReleaseNestingPartFilePreview') { releases.push(payload); return { released: true }; }
         throw Error('Preview must never import or change entities: ' + method);

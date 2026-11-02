@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ICAXFixtureGeometryRoot>$(MSBuildThisFileDirectory)</ICAXFixtureGeometryRoot><ICAXFixtureInstall>$(ICAXFixtureGeometryRoot)install\$(Platform)\$(Configuration)</ICAXFixtureInstall><ICAXVtkSuffix Condition="'$(Configuration)'=='Debug'">d</ICAXVtkSuffix></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(ICAXFixtureInstall)\include\vtk-9.5;$(ICAXFixtureGeometryRoot)Clipper2-Clipper2_1.5.4\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><AdditionalLibraryDirectories>$(ICAXFixtureInstall)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>vtkCommonCore-9.5$(ICAXVtkSuffix).lib;vtkCommonDataModel-9.5$(ICAXVtkSuffix).lib;vtkCommonExecutionModel-9.5$(ICAXVtkSuffix).lib;vtkFiltersCore-9.5$(ICAXVtkSuffix).lib;icax_clipper2.lib;vtksys-9.5$(ICAXVtkSuffix).lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <Target Name="DeployFixtureGeometry" AfterTargets="Build">
+    <ItemGroup><FixtureGeometryDll Include="$(ICAXFixtureInstall)\bin\*.dll" /><FixtureGeometryLicense Include="$(ICAXFixtureInstall)\licenses\*" /></ItemGroup>
+    <Copy SourceFiles="@(FixtureGeometryDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(FixtureGeometryLicense)" DestinationFolder="$(OutDir)Licenses\FixtureGeometry" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

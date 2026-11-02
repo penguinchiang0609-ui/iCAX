@@ -49,7 +49,7 @@ export async function startSideSketchNativeBridge(artifacts) {
   });
   const invoke = (method, payload = {}, scope = 'scene') => rpc({ action: 'invoke', scope, method, payload });
   await rpc({ action: 'reset' });
-  return { rpc, invoke, dllDirectory, dllHash, importerHash, requests, async close() {
+  return { rpc, invoke, dllDirectory, dllHash, importerHash, requests, processId:processHandle.pid, async close() {
     try { await rpc({ action: 'exit' }); } finally { processHandle.stdin.end(); processHandle.kill(); }
   } };
 }

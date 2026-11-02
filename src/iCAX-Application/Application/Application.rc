@@ -1,11 +1,11 @@
 #include <winver.h>
 
-// The first icon resource is the executable/Explorer application icon.
-101 ICON "../../apps/tube-designer/webpage/assets/tube-designer.ico"
+// Product resource files supply the branding; the launcher owns the version layout.
+101 ICON ICAX_APPLICATION_ICON
 
 1 VERSIONINFO
- FILEVERSION 0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION ICAX_APPLICATION_VERSION
+ PRODUCTVERSION ICAX_APPLICATION_VERSION
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -20,12 +20,12 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "FileDescription", "TubeDesigner\0"
-            VALUE "FileVersion", "0.1.0.0\0"
-            VALUE "InternalName", "TubeDesigner\0"
-            VALUE "OriginalFilename", "TubeDesigner.exe\0"
-            VALUE "ProductName", "TubeDesigner\0"
-            VALUE "ProductVersion", "0.1.0\0"
+            VALUE "FileDescription", ICAX_APPLICATION_NAME
+            VALUE "FileVersion", ICAX_APPLICATION_FILE_VERSION
+            VALUE "InternalName", ICAX_APPLICATION_NAME
+            VALUE "OriginalFilename", ICAX_APPLICATION_FILENAME
+            VALUE "ProductName", ICAX_APPLICATION_NAME
+            VALUE "ProductVersion", ICAX_APPLICATION_PRODUCT_VERSION
         END
     END
     BLOCK "VarFileInfo"

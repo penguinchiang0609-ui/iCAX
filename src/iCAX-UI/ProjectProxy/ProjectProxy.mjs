@@ -99,6 +99,18 @@ export class ProjectProxy {
     return response;
   }
 
+  async autosave(projectPath = this.state.projectPath, options = {}) {
+    const scene = this.getMainScene();
+    if (!scene) throw new Error("项目主场景尚未就绪，无法保存。");
+    const response = await scene.invoke(ProjectSDO.autosave, { projectPath }, options);
+    if (response?.saved !== true) {
+      if (response?.deferred === true) return response;
+      throw new Error("项目自动保存未成功。");
+    }
+    if (response.project) this.updateState(response.project);
+    return response;
+  }
+
   releaseScene(sceneId) {
     const key = String(sceneId ?? "");
     if (!key || key === String(this.mainSceneId ?? "")) {

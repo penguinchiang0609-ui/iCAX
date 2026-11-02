@@ -5,8 +5,12 @@
        computation units so template-heavy value handling does not dominate
        normal edits and disassembly. Other units retain ordinary Debug builds. -->
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
-    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'Data'">Variant.cpp;VariantSerializer.cpp</ICAXDebugComputationSources>
+    <!-- uuid.h exports the inline SHA-1 implementation. Every Data unit that
+         includes it must use the same computation settings, so an unoptimized
+         COMDAT cannot replace the hash used by toolpath fingerprints. -->
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'Data'">CommonFunction.cpp;PropertyBag.cpp;StableId.cpp;uuid.cpp;Variant.cpp;VariantSerializer.cpp</ICAXDebugComputationSources>
     <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'Database'">Repository.cpp;OperationLog.cpp;ComponentBase.cpp;Entity.cpp;ChangeSet.cpp;RepositoryUndoRedoHistory.cpp</ICAXDebugComputationSources>
+    <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'IntentToolpath'">EditableToolpathData.cpp;EditableToolpathGeometry.cpp;EditableToolpathOperations.cpp;EditableToolpathAttachments.cpp;EditableToolpathDocument.cpp</ICAXDebugComputationSources>
     <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'TemplateRuntime'">TemplateCodec.cpp;StandardJsonCodec.cpp;PythonTemplateHost.cpp</ICAXDebugComputationSources>
     <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'ProjectFile'">ProjectDocument.cpp;ProjectFileCodec.cpp;ProjectFileStore.cpp</ICAXDebugComputationSources>
     <ICAXDebugComputationSources Condition="'$(MSBuildProjectName)' == 'ProjectFile'">ProjectDocument.cpp;ProjectFileCodec.cpp;ProjectFileStore.cpp</ICAXDebugComputationSources>

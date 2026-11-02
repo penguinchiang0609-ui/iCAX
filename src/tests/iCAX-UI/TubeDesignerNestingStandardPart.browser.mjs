@@ -20,7 +20,7 @@ try {
     return route.fulfill({ contentType: path.endsWith('.css') ? 'text/css' : "text/javascript", body: readFileSync(browserAssetPath(path.slice(5)), "utf8") });
   });
   await page.goto("http://standard-part.test/");
-  const commonCss = readFileSync(browserAssetPath("apps/_shared/workbench/styles/laser3dcam.css"), "utf8");
+  const commonCss = readFileSync(browserAssetPath("apps/_shared/workbench/styles/workbench.css"), "utf8");
   await page.addStyleTag({ content: "*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,sans-serif}" + commonCss + tubeDesignerCss });
   const descriptor = JSON.parse(readFileSync(resolve('src/apps/tube-designer/templates/profile/rect/profile.json'), 'utf8'));
   descriptor.parameters.push({key:'fixtureText',displayName:'文字草稿',valueType:'string',defaultValue:'',presentation:{advanced:true,line:'full'}});

@@ -1,0 +1,178 @@
+#pragma once
+#include "Data/Variant.h"
+#include "ProjectContext/ISceneContext.h"
+#include "ApplicationContext/UserDataStore.h"
+
+#ifdef _FIVE_AXIS_CAM
+#define FIVE_AXIS_CAM_API __declspec(dllexport)
+#else
+#define FIVE_AXIS_CAM_API __declspec(dllimport)
+#endif
+
+namespace iCAX::FiveAxisCAM
+{
+    FIVE_AXIS_CAM_API void BindBuiltinHeadSources(iCAX::Project::ISceneContext&, const iCAX::Data::VariantArray&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ListBuiltinHeads(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureMachineSimulation(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap MountMachine(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap MountMachineWithTemplates(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CheckMachinePlacement(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap InspectMachineCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetMachinePlacement(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureMachinePost(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExportMachineProgram(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExportMachineProgramProjection(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BuildMachineSimulation(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BuildMachineSimulationProjection(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PlanMachineMotion(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadMachineMotionPlan(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadMachineMotionPlanProjection(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadMachineMotionAttempt(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadMachineSimulation(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CheckMachineMove(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap EndMachinePoseEdit(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BeginMachinePoseEdit(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API void PumpMachinePoseEdit(iCAX::Project::ISceneContext&);
+    struct SceneRuntime;
+    FIVE_AXIS_CAM_API void ReleaseMachinePoseEdit(iCAX::Project::ISceneContext&,const std::shared_ptr<SceneRuntime>&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap MoveMachineIK(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap MoveMachine(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PrepareMachines(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap StartMachineJog(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap StopMachineJog(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API void PumpMachineJog(iCAX::Project::ISceneContext&,double);
+    FIVE_AXIS_CAM_API void ReleaseMachineJog(iCAX::Project::ISceneContext&,const std::shared_ptr<SceneRuntime>&);
+    FIVE_AXIS_CAM_API void PumpTaskProgressPDO(iCAX::Project::ISceneContext&);
+    FIVE_AXIS_CAM_API void ReleaseTaskProgressPDO(iCAX::Project::ISceneContext&,const std::shared_ptr<SceneRuntime>&);
+    FIVE_AXIS_CAM_API void ReleaseIntentToolpaths(iCAX::Project::ISceneContext&,const std::shared_ptr<SceneRuntime>&);
+    FIVE_AXIS_CAM_API void BindFixtureLibraryStore(iCAX::Project::ISceneContext&,std::shared_ptr<iCAX::Application::IProductUserDataStore>);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixtureLibrary(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SaveFixtureLibrary(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateFixtureLibrary(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UseFixtureLibrary(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetFixtureRecipe(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap FindFixtureSupportFaces(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap FindCutRetainedFaces(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadCutRetainedSelection(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SuggestFixtureLayout(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap GenerateFixture(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfirmFixture(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BreakdownFixture(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExportFixture(iCAX::Project::ISceneContext&,const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CheckSimulationCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap AutoRepairCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap StartPlaybackCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryPlaybackCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ImportHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageHeadInstance(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap HeadConfigurationLibrary(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureRapids(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PreviewRapid(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CheckRapidPath(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadRapidEditPath(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap EditRapidPolicy(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap EditRapidPath(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap GenerateRapids(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ApplyRapid(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap GenerateToolpaths(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetToolpathOrder(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryToolpathOrder(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BeginToolpathOrder(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ImportFixture(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateFixtureUnit(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RemoveFixtureUnit(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ImportFixtureLibrary(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateFixture(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixturePartProfile(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixturePartProfileProjection(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixtureDesignDetails(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryFixtureSupportFaces(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryFixtureParts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixturePartDetails(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixtureSupportSelection(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadFixtureCheckDetails(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateFixturePart(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RemoveFixture(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CheckFixtures(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryCutSources(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveCutFace(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveCutEdge(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExtractCutCandidates(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryCutCandidates(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CreateCuts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadCutDefinitions(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetCutStart(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveCutStart(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveCutSplitPoint(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SplitCuts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap MergeCuts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap TransformCuts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetStandardHoleDimensions(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageCutTree(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryStandardHole(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetCutType(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReverseCuts(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetCutCommands(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RenameCut(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageCutLayers(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryCutLayers(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetCutRetainedSide(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PrepareCutPolicies(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadCutPolicies(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryCommand(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PreviewCutLeads(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PreviewCutCompensation(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap BeginPathPreview(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryPathPreview(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateCutProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap AssignCutProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap UpdateCutPose(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadToolAxis(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadToolAxisSamples(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetToolAxis(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ListToolAxisPoints(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveToolAxisPoint(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap EditToolAxisPoint(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ClearCutProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RestoreCutProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CompileCutProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryCompiledProcess(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SolveRegistration(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadRegistration(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ApplyRegistration(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolveRegistrationReference(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadRegistrationFaces(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    // All entry points execute on the owning Scene thread. Workers only return
+    // neutral snapshots; PumpTasks is also called by the Scene's Behaviour.
+    FIVE_AXIS_CAM_API void InitializeScene(iCAX::Project::ISceneContext& scene);
+    FIVE_AXIS_CAM_API void PumpTasks(iCAX::Project::ISceneContext& scene);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadState(iCAX::Project::ISceneContext& scene);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadStateProjection(iCAX::Project::ISceneContext& scene);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ListWorkpieceFiles(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PreviewWorkpieceFile(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryWorkpieceFilePreview(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReleaseWorkpieceFilePreview(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ImportWorkpiece(iCAX::Project::ISceneContext& scene, const iCAX::Data::ObjectMap& request);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ActivateWorkpiece(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RemoveWorkpiece(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap RenameWorkpiece(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageSetups(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CopyWorkpiece(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CopySetup(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CopyFixtureUnit(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetWorkpieceLocked(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetRegistrationPlan(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExportRegistrationPlan(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetSetupSequence(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ExportSetupProgram(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetSetupLocked(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetWorkpieceEnabled(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryTask(iCAX::Project::ISceneContext& scene, const iCAX::Data::ObjectMap& request);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap CancelTask(iCAX::Project::ISceneContext& scene, const iCAX::Data::ObjectMap& request);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap SetPlacement(iCAX::Project::ISceneContext& scene, const iCAX::Data::ObjectMap& request);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ResolvePickReference(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadSnapFeatures(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ScaleWorkpiece(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap InspectWorkpiece(iCAX::Project::ISceneContext& scene, const iCAX::Data::ObjectMap& request);
+}

@@ -1,4 +1,6 @@
 #include "pch.h"
+#include "OpenCascadeIgesSession.h"
+#include "OpenCascadeVisibleImport.h"
 #include "OpenCascadeBRepReader.h"
 #include "OpenCascadeTubeCSGConverter.h"
 #include "OpenCascadeTaskExecution.h"
@@ -7,13 +9,18 @@
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
+#include <BRepLib.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <GeomAdaptor_Curve.hxx>
+#include <Geom_SurfaceOfRevolution.hxx>
 #include <TopoDS_Compound.hxx>
 #include <chrono>
 #include <iostream>
+#include <unordered_map>
 
 #include "GeometryData/GeometryData.h"
 #include "GeometryData/BRepPersistence.h"
+#include "GeometryData/TubeNeutralPersistence.h"
 #include "Resources/ResourcePersistenceRegistrationCatalog.h"
 #include "GeometryData/TubeNeutralGeometry.h"
 #include "Resources/BinaryResource.h"
@@ -50,6 +57,28 @@ namespace
     }
 
     ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("geometry.brep", iCAX::GeometryData::BRepModel, MakeBRepPersistenceCodec)
+
+    template<class T, auto Read> iCAX::Resource::CResourceVersionCodec MakeTubeCodec()
+    {
+        iCAX::Resource::CResourceVersionCodec codec;
+        codec.Serialize = [](const std::shared_ptr<void>& resource) -> std::optional<std::vector<uint8_t>> {
+            if (!resource) return std::nullopt;
+            return iCAX::GeometryData::Tube::Persistence::Serialize(*std::static_pointer_cast<T>(resource));
+        };
+        codec.Deserialize = [](std::span<const uint8_t> bytes) -> std::shared_ptr<void> {
+            return std::make_shared<T>(Read(bytes));
+        };
+        return codec;
+    }
+    auto MakeTubeGeometryCodec() { return MakeTubeCodec<iCAX::GeometryData::Tube::CTubeNeutralGeometry,
+        iCAX::GeometryData::Tube::Persistence::DeserializeGeometry>(); }
+    auto MakeTubeDocumentCodec() { return MakeTubeCodec<iCAX::GeometryData::Tube::CTubeCadDocument,
+        iCAX::GeometryData::Tube::Persistence::DeserializeDocument>(); }
+    auto MakeTubeBoundaryCodec() { return MakeTubeCodec<iCAX::GeometryData::Tube::CTubeBoundaryGeometry,
+        iCAX::GeometryData::Tube::Persistence::DeserializeBoundary>(); }
+    ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("tube.neutral_geometry", iCAX::GeometryData::Tube::CTubeNeutralGeometry, MakeTubeGeometryCodec)
+    ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("tube.cad_document", iCAX::GeometryData::Tube::CTubeCadDocument, MakeTubeDocumentCodec)
+    ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("tube.boundary_geometry", iCAX::GeometryData::Tube::CTubeBoundaryGeometry, MakeTubeBoundaryCodec)
 
     constexpr const char* kImporterID = "opencascade";
     constexpr const char* kOccVersion = "8.0.0-p1";
@@ -404,7 +433,8 @@ namespace
         return { dFirst_, dLast_, dLast_ < dFirst_ };
     }
 
-    iCAX::GeometryData::Curve3 ToCurve3(IN BRepAdaptor_Curve& Curve_)
+    template<class TCurve>
+    iCAX::GeometryData::Curve3 ToCurve3(IN TCurve& Curve_)
     {
         using namespace iCAX::GeometryData;
 
@@ -438,6 +468,18 @@ namespace
         case GeomAbs_BezierCurve:
         {
             const auto _Bezier = Curve_.Bezier();
+            if (!_Bezier.IsNull() && _Bezier->IsRational())
+            {
+                NURBS3 result;
+                result.Degree = _Bezier->Degree();
+                result.Knots = {0.0, 1.0};
+                result.Multiplicities = {result.Degree + 1, result.Degree + 1};
+                for (int i = 1; i <= _Bezier->NbPoles(); ++i) {
+                    result.Poles.push_back(ToPoint3(_Bezier->Pole(i)));
+                    result.Weights.push_back(_Bezier->Weight(i));
+                }
+                return result;
+            }
             Bezier3 _Result;
             if (!_Bezier.IsNull())
             {
@@ -535,6 +577,18 @@ namespace
         case GeomAbs_BezierCurve:
         {
             const auto _Bezier = Curve_.Bezier();
+            if (!_Bezier.IsNull() && _Bezier->IsRational())
+            {
+                NURBS2 result;
+                result.Degree = _Bezier->Degree();
+                result.Knots = {0.0, 1.0};
+                result.Multiplicities = {result.Degree + 1, result.Degree + 1};
+                for (int i = 1; i <= _Bezier->NbPoles(); ++i) {
+                    result.Poles.push_back(ToPoint2(_Bezier->Pole(i)));
+                    result.Weights.push_back(_Bezier->Weight(i));
+                }
+                return result;
+            }
             Bezier2 _Result;
             if (!_Bezier.IsNull())
             {
@@ -681,50 +735,24 @@ namespace
         }
         case GeomAbs_SurfaceOfExtrusion:
         {
-            const auto _Extrusion = Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(
-                Surface_.GeomSurfaceOriginal());
-            if (_Extrusion.IsNull() || _Extrusion->BasisCurve().IsNull())
-                throw std::runtime_error("OCCT linear-extrusion surface has no basis curve");
-            const auto _Basis = GeomConvert::CurveToBSplineCurve(_Extrusion->BasisCurve());
-            if (_Basis.IsNull())
-                throw std::runtime_error("OCCT failed to convert an extrusion basis curve to B-spline form");
-
-            BSplineSurface3 _Result;
-            _Result.UDegree = _Basis->Degree();
-            _Result.VDegree = 1;
-            _Result.UCount = static_cast<std::uint32_t>(_Basis->NbPoles());
-            _Result.VCount = 2;
-            _Result.UPeriodic = _Basis->IsPeriodic();
-            _Result.VPeriodic = false;
-            const auto _Transform = Surface_.Trsf();
-            const auto _Direction = gp_Vec(_Extrusion->Direction());
-            const std::array<double, 2> _VParameters{
-                Surface_.FirstVParameter(), Surface_.LastVParameter()
-            };
-            _Result.Poles.reserve(static_cast<std::size_t>(_Result.UCount) * 2);
-            _Result.Weights.reserve(static_cast<std::size_t>(_Result.UCount) * 2);
-            for (int _U = 1; _U <= _Basis->NbPoles(); ++_U)
-            {
-                for (const auto _V : _VParameters)
-                {
-                    auto _Pole = _Basis->Pole(_U);
-                    _Pole.Translate(_Direction.Multiplied(_V));
-                    _Pole.Transform(_Transform);
-                    _Result.Poles.push_back(ToPoint3(_Pole));
-                    _Result.Weights.push_back(_Basis->Weight(_U));
-                }
-            }
-            for (int _Index = 1; _Index <= _Basis->NbKnots(); ++_Index)
-            {
-                _Result.UKnots.push_back(_Basis->Knot(_Index));
-                _Result.UMultiplicities.push_back(_Basis->Multiplicity(_Index));
-            }
-            _Result.VKnots = { _VParameters[0], _VParameters[1] };
-            _Result.VMultiplicities = { 2, 2 };
-            return _Result;
+            const auto extrusion = Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(Surface_.GeomSurfaceOriginal());
+            auto basis = Handle(Geom_Curve)::DownCast(extrusion->BasisCurve()->Transformed(Surface_.Trsf()));
+            GeomAdaptor_Curve curve(basis);
+            const auto direction = extrusion->Direction().Transformed(Surface_.Trsf());
+            return ExtrusionSurface3{ToCurve3(curve),ToDirection3(direction)};
+        }
+        case GeomAbs_SurfaceOfRevolution:
+        {
+            // Transform the surface as a whole. A reflected occurrence reverses
+            // the sense of rotation as well as its axis/basis coordinates.
+            // Transforming only Axis() loses that parity and mirrors every
+            // nonzero U while leaving the source pcurves unchanged.
+            const auto revolution = Handle(Geom_SurfaceOfRevolution)::DownCast(Surface_.GeomSurfaceTransformed());
+            GeomAdaptor_Curve curve(revolution->BasisCurve());
+            const auto axis = revolution->Axis();
+            return RevolutionSurface3{ToCurve3(curve),{ToPoint3(axis.Location()),ToDirection3(axis.Direction())}};
         }
         case GeomAbs_BezierSurface:
-        case GeomAbs_SurfaceOfRevolution:
         {
             const auto _Basis = Surface_.GeomSurfaceOriginal();
             if (_Basis.IsNull())
@@ -751,21 +779,21 @@ namespace
     {
         if (IsStepPath(strSourcePath_))
         {
-            STEPControl_Reader _Reader;
-            if (_Reader.ReadFile(strSourcePath_.c_str()) != IFSelect_RetDone)
+            const auto parameters = iCAX::OpenCascade::CaptureStepReadParameters();
+            STEPCAFControl_Reader _Caf;
+            auto& _Reader = _Caf.ChangeReader();
+            if (_Reader.ReadFile(strSourcePath_.c_str(), parameters) != IFSelect_RetDone)
             {
                 throw std::runtime_error("OCCT failed to read STEP file: " + strSourcePath_);
             }
-            if (_Reader.TransferRoots() <= 0)
-            {
-                throw std::runtime_error("OCCT did not transfer any STEP root shape: " + strSourcePath_);
-            }
-            return _Reader.OneShape();
+            return iCAX::OpenCascade::TransferVisibleStep(_Caf).Shape;
         }
 
         if (IsIgesPath(strSourcePath_))
         {
+            const auto session = iCAX::OpenCascade::AcquireIgesSession();
             IGESControl_Reader _Reader;
+            _Reader.SetReadVisible(true);
             if (_Reader.ReadFile(strSourcePath_.c_str()) != IFSelect_RetDone)
             {
                 throw std::runtime_error("OCCT failed to read IGES file: " + strSourcePath_);
@@ -917,6 +945,12 @@ namespace
 
         switch (_Kind)
         {
+        case TopAbs_VERTEX:
+            _AddRef(EBRepShapeKind::Vertex, FindShapeId(Maps_.Vertices, Shape_));
+            break;
+        case TopAbs_EDGE:
+            _AddRef(EBRepShapeKind::Edge, FindShapeId(Maps_.Edges, Shape_));
+            break;
         case TopAbs_FACE:
             _AddRef(EBRepShapeKind::Face, FindShapeId(Maps_.Faces, Shape_));
             break;
@@ -979,26 +1013,16 @@ namespace
         double ContainersMs = 0.0;
     };
 
-    bool NeedsSweptSurfaceParameterConversion(const TopoDS_Shape& Shape_)
+    bool NeedsBRepParameterConversion(const TopoDS_Shape& Shape_)
     {
-        for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE);
-            _Explorer.More(); _Explorer.Next())
+        // The neutral format has lines/circles/ellipses and rational splines,
+        // but no hyperbola/parabola primitive. Their exact rational conversion
+        // changes parameterization, so convert the complete BRep together.
+        for(TopExp_Explorer _Explorer(Shape_,TopAbs_EDGE);_Explorer.More();_Explorer.Next())
         {
-            BRepAdaptor_Surface _Surface(TopoDS::Face(_Explorer.Current()), true);
-            if (_Surface.GetType() == GeomAbs_SurfaceOfRevolution)
-                return true;
-            if (_Surface.GetType() != GeomAbs_SurfaceOfExtrusion) continue;
-            const auto _Extrusion = Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(
-                _Surface.GeomSurfaceOriginal());
-            if (_Extrusion.IsNull() || _Extrusion->BasisCurve().IsNull())
-                throw std::runtime_error("OCCT linear-extrusion surface has no basis curve");
-            const auto _BasisType = GeomAdaptor_Curve(_Extrusion->BasisCurve()).GetType();
-            // Linear, B-spline and Bezier basis curves retain their parameters.
-            // Conics acquire a rational parameter when converted, so exporting
-            // only the new surface would invalidate its old pcurves and UV domain.
-            if (_BasisType != GeomAbs_Line && _BasisType != GeomAbs_BSplineCurve
-                && _BasisType != GeomAbs_BezierCurve)
-                return true;
+            if(BRep_Tool::Degenerated(TopoDS::Edge(_Explorer.Current()))) continue;
+            const auto _Type=BRepAdaptor_Curve(TopoDS::Edge(_Explorer.Current())).GetType();
+            if(_Type==GeomAbs_Hyperbola || _Type==GeomAbs_Parabola) return true;
         }
         return false;
     }
@@ -1008,9 +1032,12 @@ namespace
         IN const std::string& strDisplayName_,
         IN const std::string& strSourceID_,
         IN const double dTolerance_,
-        SBRepConversionTiming* Timing_ = nullptr)
+        SBRepConversionTiming* Timing_ = nullptr,
+        const iCAX::OpenCascade::BRepTriangulationProvider* Triangulations_ = nullptr)
     {
         using namespace iCAX::GeometryData;
+        std::string _ConversionStage = "parameter conversion";
+        try {
 
         if (Shape_.IsNull())
         {
@@ -1018,14 +1045,26 @@ namespace
         }
 
         auto _ExportShape = Shape_;
-        if (NeedsSweptSurfaceParameterConversion(Shape_))
+        if (NeedsBRepParameterConversion(Shape_))
         {
+            if(Triangulations_)throw std::invalid_argument("CAD_DISPLAY_TOPOLOGY_CHANGED");
             // Exact rational surface conversion must update the complete BRep:
             // adjoining edges, pcurves and face domains share its parameter frame.
-            BRepBuilderAPI_NurbsConvert _Conversion(Shape_, true);
+            _ConversionStage = "NURBS conversion";
+            BRepBuilderAPI_Copy _InputCopy(Shape_, true, false);
+            BRepBuilderAPI_NurbsConvert _Conversion(_InputCopy.Shape(), true);
             if (!_Conversion.IsDone() || _Conversion.Shape().IsNull())
                 throw std::runtime_error("OCCT failed to convert swept-surface BRep parameters");
             _ExportShape = _Conversion.Shape();
+            // NURBS conversion reparameterizes conics, but OCC retains the
+            // original SameParameter flags. Actually synchronize the pcurves
+            // with their converted 3D edges before publishing neutral data.
+            // Clearing a flag alone does not repair an invalid representation.
+            _ConversionStage = "NURBS SameParameter";
+            BRepLib::SameParameter(_ExportShape, 1.0e-7, true);
+            _ConversionStage = "NURBS validation";
+            if (!BRepCheck_Analyzer(_ExportShape).IsValid())
+                throw std::runtime_error("OCCT converted swept-surface BRep parameters are invalid");
         }
 
         const auto _Elapsed = [](const auto& Start_) {
@@ -1034,8 +1073,8 @@ namespace
         };
         auto _StageStart = std::chrono::steady_clock::now();
         const double _MeshDeflection = std::max(0.01, dTolerance_ * 10.0);
-        BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);
-        (void)_Mesh;
+        _ConversionStage = "meshing";
+        if(!Triangulations_){BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);(void)_Mesh;}
         if (Timing_) Timing_->MeshingMs = _Elapsed(_StageStart);
 
         _StageStart = std::chrono::steady_clock::now();
@@ -1047,6 +1086,12 @@ namespace
         _Model.Metadata.Name = strDisplayName_;
         _Model.Metadata.SourceId = strSourceID_;
         _Model.Metadata.Tags = { kImporterID, "occt-" + std::string(kOccVersion) };
+        struct SLocatedGeometryRecord {
+            TopLoc_Location Location;
+            std::uint64_t ID;
+        };
+        std::unordered_multimap<const Geom_Curve*, SLocatedGeometryRecord> _CurveIdentities;
+        std::unordered_multimap<const Geom_Surface*, SLocatedGeometryRecord> _SurfaceIdentities;
 
         for (int _Index = 1; _Index <= _Maps.Vertices.Extent(); ++_Index)
         {
@@ -1061,6 +1106,7 @@ namespace
 
         for (int _Index = 1; _Index <= _Maps.Edges.Extent(); ++_Index)
         {
+            _ConversionStage = "edge " + std::to_string(_Index);
             // Edge 几何、参数范围和端点始终按 canonical forward 导出；
             // 它在各 Wire 中的实际方向只由 BRepCoedge::Orientation 表达。
             // 否则映射表若首次保存的是 reversed occurrence，会出现曲线参数
@@ -1069,11 +1115,22 @@ namespace
                 _Maps.Edges(_Index).Oriented(TopAbs_FORWARD));
             BRepAdaptor_Curve _Curve(_Edge);
 
-            Curve3Record _CurveRecord;
-            _CurveRecord.Id = static_cast<std::uint64_t>(_Index);
-            _CurveRecord.Geometry = ToCurve3(_Curve);
-            _CurveRecord.Metadata = { "edge curve " + std::to_string(_Index), strSourceID_, {} };
-            _Model.Curves3.push_back(std::move(_CurveRecord));
+            TopLoc_Location _CurveLocation;
+            double _CurveFirst, _CurveLast;
+            const auto _SourceCurve = BRep_Tool::Curve(_Edge, _CurveLocation, _CurveFirst, _CurveLast);
+            std::uint64_t _CurveID = 0;
+            if (!_SourceCurve.IsNull()) {
+                const auto [_First, _Last] = _CurveIdentities.equal_range(_SourceCurve.get());
+                for (auto _It = _First; _It != _Last; ++_It)
+                    if (_It->second.Location.IsEqual(_CurveLocation)) { _CurveID = _It->second.ID; break; }
+            }
+            if (!_CurveID) {
+                _CurveID = _Model.Curves3.size() + 1;
+                _Model.Curves3.push_back({_CurveID, ToCurve3(_Curve),
+                    {"edge curve " + std::to_string(_Index), strSourceID_, {}}});
+                if (!_SourceCurve.IsNull())
+                    _CurveIdentities.emplace(_SourceCurve.get(), SLocatedGeometryRecord{_CurveLocation, _CurveID});
+            }
 
             TopoDS_Vertex _FirstVertex;
             TopoDS_Vertex _LastVertex;
@@ -1081,7 +1138,7 @@ namespace
 
             _Model.Edges.push_back({
                 static_cast<std::uint64_t>(_Index),
-                static_cast<std::uint64_t>(_Index),
+                _CurveID,
                 FindShapeId(_Maps.Vertices, _FirstVertex),
                 FindShapeId(_Maps.Vertices, _LastVertex),
                 MakeRange(_Curve.FirstParameter(), _Curve.LastParameter()),
@@ -1100,6 +1157,7 @@ namespace
         _StageStart = std::chrono::steady_clock::now();
         for (int _Index = 1; _Index <= _Maps.Faces.Extent(); ++_Index)
         {
+            _ConversionStage = "face " + std::to_string(_Index);
             const auto _FaceOccurrence = TopoDS::Face(_Maps.Faces(_Index));
             // 面自身只保存 canonical forward 的曲面、wire 与 coedge；它在
             // Shell 中的实际方向由 BRepShell::FaceOrientations 单独表达。
@@ -1109,17 +1167,25 @@ namespace
                 _FaceOccurrence.Oriented(TopAbs_FORWARD));
             BRepAdaptor_Surface _Surface(_Face, true);
 
-            Surface3Record _SurfaceRecord;
-            _SurfaceRecord.Id = static_cast<std::uint64_t>(_Index);
-            _SurfaceRecord.Geometry = ToSurface3(_Surface);
-            _SurfaceRecord.Metadata = { "face surface " + std::to_string(_Index), strSourceID_, {} };
-            _Model.Surfaces3.push_back(std::move(_SurfaceRecord));
+            TopLoc_Location _SurfaceLocation;
+            const auto _SourceSurface = BRep_Tool::Surface(_Face, _SurfaceLocation);
+            std::uint64_t _SurfaceID = 0;
+            const auto [_FirstSurface, _LastSurface] = _SurfaceIdentities.equal_range(_SourceSurface.get());
+            for (auto _It = _FirstSurface; _It != _LastSurface; ++_It)
+                if (_It->second.Location.IsEqual(_SurfaceLocation)) { _SurfaceID = _It->second.ID; break; }
+            if (!_SurfaceID) {
+                _SurfaceID = _Model.Surfaces3.size() + 1;
+                _Model.Surfaces3.push_back({_SurfaceID, ToSurface3(_Surface),
+                    {"face surface " + std::to_string(_Index), strSourceID_, {}}});
+                _SurfaceIdentities.emplace(_SourceSurface.get(), SLocatedGeometryRecord{_SurfaceLocation, _SurfaceID});
+            }
 
             Triangulation3Record _TriangulationRecord;
             _TriangulationRecord.Id = static_cast<std::uint64_t>(_Index);
             // Display data follows the actual face occurrence; canonical
             // orientation remains reserved for the persisted BRep topology.
-            _TriangulationRecord.Geometry = MakeTriangulation(_FaceOccurrence, static_cast<std::uint64_t>(_Index));
+            _TriangulationRecord.Geometry = Triangulations_ ? (*Triangulations_)(_FaceOccurrence,static_cast<std::uint64_t>(_Index))
+                : MakeTriangulation(_FaceOccurrence, static_cast<std::uint64_t>(_Index));
             _TriangulationRecord.Metadata = { "face triangulation " + std::to_string(_Index), strSourceID_, {} };
             _Model.Triangulations3.push_back(std::move(_TriangulationRecord));
 
@@ -1168,6 +1234,9 @@ namespace
                     };
                     const auto _Curve2ID = _Curve2Record.Id;
                     _Model.Curves2.push_back(std::move(_Curve2Record));
+                    double _StoredFirst, _StoredLast;
+                    bool _PCurveStored = true;
+                    BRep_Tool::CurveOnSurface(_Edge, _Face, _StoredFirst, _StoredLast, &_PCurveStored);
 
                     const auto _EdgeID = FindShapeId(_Maps.Edges, _Edge);
                     if (_EdgeID == 0)
@@ -1181,7 +1250,8 @@ namespace
                         FindShapeId(_Maps.Vertices, _FirstVertex),
                         FindShapeId(_Maps.Vertices, _LastVertex),
                         MakeRange(_Curve2.FirstParameter(), _Curve2.LastParameter()),
-                        ToOrientation(_Edge.Orientation())
+                        ToOrientation(_Edge.Orientation()),
+                        _PCurveStored
                     });
                 }
 
@@ -1199,7 +1269,7 @@ namespace
 
             BRepFace _FaceRecord;
             _FaceRecord.Id = static_cast<std::uint64_t>(_Index);
-            _FaceRecord.Surface3Id = static_cast<std::uint64_t>(_Index);
+            _FaceRecord.Surface3Id = _SurfaceID;
             _FaceRecord.Triangulation3Id = static_cast<std::uint64_t>(_Index);
             _FaceRecord.WireIds = std::move(_WireIDs);
             _FaceRecord.WireOrientations = std::move(_WireOrientations);
@@ -1211,6 +1281,12 @@ namespace
                 _FaceOccurrence.Orientation());
             _FaceRecord.Tolerance = BRep_Tool::Tolerance(_Face);
             _FaceRecord.NaturalRestriction = BRep_Tool::NaturalRestriction(_Face);
+            const auto _TrimmedSurface = Handle(Geom_RectangularTrimmedSurface)::DownCast(_SourceSurface);
+            _FaceRecord.SurfaceTrimmed = !_TrimmedSurface.IsNull();
+            if (_FaceRecord.SurfaceTrimmed) {
+                _TrimmedSurface->Bounds(_UFirst, _ULast, _VFirst, _VLast);
+                _FaceRecord.Domain = {_UFirst, _ULast, _VFirst, _VLast, false, false};
+            }
             _FaceRecord.Metadata = {
                 "face " + std::to_string(_Index), strSourceID_, {}
             };
@@ -1331,6 +1407,9 @@ namespace
         AddRootReferences(_ExportShape, _Maps, _Model);
         if (Timing_) Timing_->ContainersMs = _Elapsed(_StageStart);
         return _Model;
+        } catch (const Standard_Failure& error) {
+            throw std::runtime_error("CAD_BREP_CONVERSION_FAILED: " + _ConversionStage + ": " + error.what());
+        }
     }
 
     iCAX::Resource::CResourceImportItem MakeImportItem(
@@ -1788,6 +1867,14 @@ iCAX::GeometryData::BRepModel iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
         strDisplayName_,
         strSourceID_,
         dTolerance_);
+}
+
+iCAX::GeometryData::BRepModel iCAX::OpenCascade::ConvertOpenCascadeShapeToBRepWithDisplay(
+    const TopoDS_Shape& shape,const std::string& displayName,const std::string& sourceID,
+    const BRepTriangulationProvider& triangulations)
+{
+    if(!triangulations)throw std::invalid_argument("CAD_DISPLAY_PROVIDER_REQUIRED");
+    return ConvertToBRepModel(shape,displayName,sourceID,0.001,nullptr,&triangulations);
 }
 
 std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(

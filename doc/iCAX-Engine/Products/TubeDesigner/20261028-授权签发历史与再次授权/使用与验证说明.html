@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>授权签发器 0.1.2：历史文件与再次授权</title>
+<style>body{font:17px/1.8 "Microsoft YaHei",sans-serif;max-width:1040px;margin:40px auto;padding:0 24px;color:#172332}h1{font-size:28px}h2{font-size:22px;margin-top:32px}code{background:#edf1f5;padding:2px 5px;overflow-wrap:anywhere}img{max-width:100%;border:1px solid #c9d1db}table{border-collapse:collapse;width:100%}td,th{padding:10px;text-align:left;border:1px solid #c9d1db}.note{background:#edf4ff;padding:14px 18px}</style>
+<h1>授权签发器 0.1.2：历史文件与再次授权</h1>
+<p>2026-10-28。签发程序交付目录：<code>D:\penguinchinage0609\release\tubedesigner\授权签发</code>。</p>
+<h2>怎么操作</h2>
+<ol>
+<li>打开 <code>iCAX-License-Issuer.exe</code>，选择客户新导出的申请文件。</li>
+<li>同一设备有历史记录时，界面显示上次授权文件名、完整路径和签发时间。可以复制路径、打开文件夹，或点击“读取原授权”查看原文件。</li>
+<li>设置本次权限、客户名和试用天数，点击“再次授权”。试用期限从本次签发时间重新计算，使用本次设置的天数。</li>
+<li>客户先更新本次配套 TubeDesigner 授权模块，再导入新文件。试用重签必须使用新导出的试用申请，绑定新计数器；不能拿旧申请反复重新起算。</li>
+</ol>
+<p>普通“读取原授权”仍用于原文件重新导出或追加权限；追加试用权限保留原到期时间。“再次授权”是明确重新签发。永久授权不能改为试用。多产品文件保留其他产品。</p>
+<img src="签发历史界面.png" alt="合成测试数据展示的签发历史界面，包含文件名、完整路径、读取原授权和再次授权按钮">
+<p>上图使用合成测试文件展示界面，不是本次真实客户签发结果。</p>
+<h2>历史文件怎么判断</h2>
+<p>历史记录以设备与签名台账为依据，并验证授权文件内容。新导出文件额外保存签名路径凭据；即使文件后来丢失，记录的名称仍可显示。老记录没有路径时，只在申请附近有限查找并验证。找不到原文件时明确提示，不把签发库内部缓存的摘要文件名冒充客户文件名。</p>
+<p>已核实这次设备的旧文件：<code>TubeDesigner-2026-10-10T13-39-00-142Z.tdact</code>，位于 <code>D:\penguinchinage0609\release\tubedesigner\授权文件\客户申请</code>，签发时间为 <strong>2026-10-10 23:58:50（北京时间）</strong>。</p>
+<h2>配套客户端</h2>
+<p>原 0.3.1 客户端不能识别明确重新签发的新授权步骤。0.3.2 安装包包含新版授权模块；继续使用原 0.3.1 时，也可用交付目录的“配套客户端更新”。其中的 <code>TubeDesigner.dll</code> 和更新脚本只针对本次核对过的 0.3.1 模块。关闭 TubeDesigner 后运行；脚本先核对旧模块、保存备份，再替换并校验新模块。遇到其他版本会停止，不强行覆盖。旧正式安装包未改动。</p>
+<h2>验证范围</h2>
+<table><tr><th>项目</th><th>覆盖</th></tr>
+<tr><td>原生软件测试</td><td>七组通过；覆盖历史文件查找、丢失文件、签名凭据、试用重新计期、混合升级/重签链及多产品保留。</td></tr>
+<tr><td>界面</td><td>Win32 自测通过；上方截图已核对文件名、路径和按钮布局。</td></tr>
+<tr><td>Release 独立程序</td><td>真实启动并查询原生授权状态；强制授权有效，开发及 Release 绕过均关闭，重新签发支持已报告。</td></tr>
+<tr><td>真实客户文件</td><td>只读校验旧文件与台账；本轮未给客户生成新授权。</td></tr>
+<tr><td>硬件续期</td><td>新授权链使用隔离软件密钥验证。未在客户 TPM 上执行真实试用重新签发和导入，不能视为硬件验收。</td></tr></table>
+<p class="note">签发器不包含私钥、口令或客户授权。原签发库继续使用原位置；备份需包含 native-ledger、native-upgrades、native-bundles 和新增的 native-exports。</p>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>加工面 · 边关系检查</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header>
+    <div><strong>加工面 · 边关系检查</strong><span>皮关系看颜色，凹凸性看线型</span></div>
+    <div id="summary" aria-live="polite">正在读取结果…</div>
+  </header>
+  <main>
+    <aside class="models">
+      <label class="field">模型<input id="modelSearch" type="search" placeholder="查找模型" aria-label="查找模型"></label>
+      <div id="modelList" class="scroll list model-list"></div>
+      <div id="modelInfo"></div>
+      <div class="face-heading"><strong>原加工面</strong><button id="clearSelection">取消选中</button></div>
+      <label class="field"><input id="faceSearch" type="search" placeholder="面编号 F…" aria-label="查找原加工面"></label>
+      <div id="faceList" class="scroll list face-list"></div>
+    </aside>
+    <section class="workspace">
+      <div class="toolbar">
+        <button id="fit">整件适合窗口</button><button id="fitSelection">查看选中面</button><button id="iso">立体</button><button data-axis="x">沿 X 看</button><button data-axis="y">沿 Y 看</button><button data-axis="z">沿 Z 看</button>
+        <label><input id="xray" type="checkbox">透视背面边</label>
+        <label>面透明度 <input id="opacity" type="range" min="0.08" max="1" step="0.02" value="0.88"></label>
+      </div>
+      <div class="legend" aria-label="颜色和线型图例">
+        <div><strong>皮关系 · 颜色</strong><span><i class="swatch on-skin"></i>在皮上</span><span><i class="swatch off-skin"></i>不在皮上</span><span><i class="swatch partial-skin"></i>部分在皮上</span></div>
+        <div><strong>凹凸性 · 线型</strong><span><svg><path d="M0 7H43"/></svg>凸 · 实线</span><span><svg><path d="M0 7H43" stroke-dasharray="9 5"/></svg>凹 · 虚线</span><span><svg><path d="M0 7H43" stroke-dasharray="11 4 2 4"/></svg>共面 · 点划线</span><span><svg><path d="M0 7H43" stroke-dasharray="2 4"/></svg>自由边 · 点线</span></div>
+        <div class="legend-note">按实际状态变化分段，每段只有一种皮关系和一种凹凸性。参数接缝、退化边单列为非物理边；线宽和虚线间距按屏幕像素显示。</div>
+      </div>
+      <div id="viewport">
+        <canvas id="scene" aria-label="完整加工面模型，点击面或边检查"></canvas>
+        <div id="viewTitle"><strong id="modelName">尚未载入模型</strong><span id="viewSubtitle"></span></div>
+        <div id="status" role="status" hidden></div>
+        <div id="hover" hidden></div>
+        <div class="coordinate-label">模型坐标 · mm</div>
+      </div>
+      <div class="caption"><span id="selectionCaption">点击边查看两个枚举，点击面查看该面的全部边。</span><span>左键拖动旋转 · 右键拖动平移 · 滚轮缩放</span></div>
+    </section>
+    <aside id="details" class="details scroll"><p class="empty">选中原加工面或一条边，查看判定依据。</p></aside>
+  </main>
+  <script type="module" src="viewer.mjs"></script>
+</body>
+</html>

@@ -179,6 +179,7 @@ if exist "$(ICAXCefRoot)\locales" xcopy /E /I /Y "$(ICAXCefRoot)\locales" "$(Out
   <ItemGroup>
     <ClInclude Include="CefUIContainer.h" />
     <ClInclude Include="CefUIContainerExport.h" />
+    <ClInclude Include="FileDialogStartPath.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>

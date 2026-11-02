@@ -1,0 +1,540 @@
+{
+  "schema": "icax.cam.design.review.v1",
+  "reviewDate": "2026-10-13",
+  "scope": "Document consistency and source-link checks only; no native algorithm or machine acceptance executed.",
+  "passed": true,
+  "documentCount": 12,
+  "featureCount": 49,
+  "plannedAcceptanceCount": 40,
+  "plannedKinematicsCaseCount": 12,
+  "plannedRecognitionCaseCount": 36,
+  "statusMeaning": "passed applies only to the enumerated document checks, not design depth, implemented features, or algorithm correctness.",
+  "recognitionImplementation": {
+    "currentEvidence": "Existing CamRuntime wire-order heuristic, vertex averages, fixed axis and fixed confidence; source inspected only.",
+    "newDesignImplemented": false,
+    "nativeCasesExecuted": 0,
+    "plannedCases": [
+      "FR01",
+      "FR02",
+      "FR03",
+      "FR04",
+      "FR05",
+      "FR06",
+      "FR07",
+      "FR08",
+      "FR09",
+      "FR10",
+      "FR11",
+      "FR12",
+      "FR13",
+      "FR14",
+      "FR15",
+      "FR16",
+      "FR17",
+      "FR18",
+      "FR19",
+      "FR20",
+      "FR21",
+      "FR22",
+      "FR23",
+      "FR24",
+      "FR25",
+      "FR26",
+      "FR27",
+      "FR28",
+      "FR29",
+      "FR30",
+      "FR31",
+      "FR32",
+      "FR33",
+      "FR34",
+      "FR35",
+      "FR36"
+    ],
+    "qualification": "NotQualified"
+  },
+  "jsonExampleCount": 3,
+  "checks": [
+    {
+      "check": "catalogue_names_and_unique_49_rows",
+      "passed": true,
+      "detail": {
+        "sourceCount": 49,
+        "traceCount": 49
+      }
+    },
+    {
+      "check": "numbered_volumes_00_to_11",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "acceptance_D01_to_D40",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "kinematics_IK01_to_IK12",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "recognition_FR01_to_FR36",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F14_links_recognition_design_and_cases",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F15_links_recognition_design_and_cases",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F18_links_recognition_design_and_cases",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F01_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F02_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F03_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F04_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F05_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F06_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F07_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F08_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F09_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F10_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F11_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F12_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F13_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F14_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F15_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F16_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F17_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F18_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F19_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F20_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F21_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F22_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F23_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F24_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F25_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F26_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F27_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F28_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F29_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F30_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F31_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F32_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F33_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F34_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F35_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F36_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F37_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F38_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F39_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F40_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F41_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F42_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F43_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F44_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F45_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F46_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F47_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F48_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "F49_has_design_and_acceptance",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "00-详细设计总览与功能追踪.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "01-框架接入与一致性内核.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "02-工件定位与夹具制造.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "03-CAD准备与切割定义.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "04-工艺编译与姿态约束.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "05-五轴运动排序与空移规划.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "06-双层仿真验证与加工交付.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "07-工作台交互与端到端消息.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "07-工作台交互与端到端消息.md_command_context",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "08-实施分解与验收矩阵.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "09-源码依据与设计校核.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "10-逆运动学开源库选型与接入.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "11-加工特征识别算法与数据契约.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "02-三维五轴CAM技术方案设计书.md_utf8_and_fences",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "02-三维五轴CAM技术方案设计书.md_command_context",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "02-三维五轴CAM技术方案设计书.md_reply_context",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "local_links_exist",
+      "passed": true,
+      "detail": {
+        "uniqueTargets": 60,
+        "missing": []
+      }
+    },
+    {
+      "check": "obsolete_command_aliases_removed",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "gantry_robot_rail_solver_scope",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "recognition_contract_declarations_consistent",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "recognition_no_implicit_fixed_rotary",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "recognition_cases_explicitly_not_executed",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "errors": [],
+  "priorUiReportReadOnly": {
+    "passed": true,
+    "caseCount": 17,
+    "coverage": {
+      "actualAppShell": true,
+      "actualProductEntry": true,
+      "realSdkViewport": true,
+      "controlledNativeTransport": true,
+      "nativeBackend": false,
+      "standaloneCef": false
+    }
+  },
+  "files": [
+    {
+      "path": "doc/3DCAm/详细设计/00-详细设计总览与功能追踪.md",
+      "bytes": 18229,
+      "sha256": "7dcffeea075cd46e50f098ad4ac5d0cca094fa063b29a42a1a6fdb117ecc7228"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/01-框架接入与一致性内核.md",
+      "bytes": 15359,
+      "sha256": "a77324e1f55f1f61ff435b679d52154290ab2b86d44380c62911046880403aea"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/02-工件定位与夹具制造.md",
+      "bytes": 13294,
+      "sha256": "a4216fdfd434ffe608cc3dab6077d9360b5d1e5043ea659b86be2608910656f0"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/03-CAD准备与切割定义.md",
+      "bytes": 13719,
+      "sha256": "b0ffa0af16d4a03dafb489c6fb0c63103da3aa267dbe901225d7b35aec1ad3bf"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/04-工艺编译与姿态约束.md",
+      "bytes": 11285,
+      "sha256": "2ba677f013d8deaa50de3a0090f603f70405d1d1d559d8bd6d6583de875551b6"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/05-五轴运动排序与空移规划.md",
+      "bytes": 12622,
+      "sha256": "784e1c426ba51a822f415bc10170438a4ca464ecc8055315746117fcaa50b24d"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/06-双层仿真验证与加工交付.md",
+      "bytes": 13067,
+      "sha256": "f11bc3c6632d3beb9e10e5c020c596783c28aa01d74a1442d69a497509d16a43"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/07-工作台交互与端到端消息.md",
+      "bytes": 9976,
+      "sha256": "0994e59923af0a43e7413fa4bbf93f7ed79c6057e632284bd1daf4d75b8f8d34"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/08-实施分解与验收矩阵.md",
+      "bytes": 11946,
+      "sha256": "fb3e1cb2825b88580220e9d4b32649308b473e3e7054103b45b501b5bd486723"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/09-源码依据与设计校核.md",
+      "bytes": 17972,
+      "sha256": "007e12b7a23213f0f107677d7d3486c96f0a723830edeb1f082b92c82f4efe27"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/10-逆运动学开源库选型与接入.md",
+      "bytes": 18260,
+      "sha256": "baf2d19001d2adc4c99ac4557011fd80ba36b3300a03e98e92b3eab107e5099e"
+    },
+    {
+      "path": "doc/3DCAm/详细设计/11-加工特征识别算法与数据契约.md",
+      "bytes": 49881,
+      "sha256": "b1092bb78219b5d6a71ea7fb24af8e7061e7d847d90388da1768b52194c8eda2"
+    },
+    {
+      "path": "doc/3DCAm/02-三维五轴CAM技术方案设计书.md",
+      "bytes": 171858,
+      "sha256": "fdc88abf7967f490dd6a143d63b7be5c18d028267d403af0e7f97cc20e0a39be"
+    }
+  ]
+}

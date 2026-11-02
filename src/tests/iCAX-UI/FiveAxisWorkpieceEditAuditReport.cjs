@@ -1,0 +1,19 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const directory=path.resolve('output/tests/workpiece-edit-audit-20261023');
+const phases=['core','scale','import','fixtures','library','librarybulk','gizmo','alignment','locating','invalid','generation','check','sequence','saveinputs','saveextras','interaction','related','reopen','fresh'];
+const results=phases.map(phase=>{const r=JSON.parse(fs.readFileSync(path.join(directory,phase+'-report.json'),'utf8'));assert.equal(r.passed,true,phase);return{phase,cases:r.cases,evidence:phase+'-report.json',screenshot:phase+'-final.png'};});
+const native=JSON.parse(fs.readFileSync(path.join(directory,'native.json'),'utf8')),framework=JSON.parse(fs.readFileSync(path.join(directory,'framework.json'),'utf8'));
+assert.equal(native.failures,0);assert.equal(framework.failures,0);
+const report={passed:true,product:'FiveAxisCAM',area:'工件',date:'2026-10-23',uiCases:results.reduce((n,r)=>n+r.cases.length,0),nativeCases:native.tests-native.disabled,frameworkCases:framework.tests-framework.disabled,frameworkDisabledCases:framework.disabled,
+ environment:{standaloneCef:true,realNativeSdo:true,viewport:{width:1600,height:950,fixed:true},runtime:'runtime/FiveAxisCAM.exe',project:'workpiece-audit.i5cam',restart:'Normal window close, then a fresh independent process; actual serialized file reopened.'},
+ inventory:[
+  {scope:'工件',entries:['文件选择与导入','复制','删除','锁定/解锁','启用/禁用','XYZ 等比几何缩放','实际取面、方向、原点后重置自身坐标系'],history:'framework Scene / Database',persistence:'Acknowledged commits automatically write the project file.'},
+  {scope:'装夹',entries:['新增','复制','删除','连续改名','锁定/解锁','启用/禁用','XYZ 位置与旋转数值','轴旁数值预览','鼠标平移/旋转','树拖动顺序','三点取点','连续实测坐标','定位误差参数'],history:'framework Scene / Database',persistence:'Shared serialized project writer, plus Save flushes valid pending input.'},
+  {scope:'工装',entries:['模型导入并选用','库工装选用','复制','删除','名称与 XYZ/RXYZ 参数','鼠标平移/旋转','锁定/解锁','启用/禁用','生成参数','重新生成','采用','拆单','导出交付记录','干涉检查与间隙'],history:'framework Scene / Database',persistence:'Native facts saved before reloading parameters and geometry.'},
+  {scope:'工装库',entries:['导入','当前单元/组合保存','连续改名','默认设置/取消','删除恢复'],history:'framework Product / Database, separate feature scope',persistence:'Native product SQLite store; revisioned writes including undo and redo.'}
+ ],
+ nonEngineeringActions:['Tree selection and current workpiece activation persist selection without consuming engineering undo.','Camera, display style, tree expansion, and uncommitted previews do not create native commands. Undo clears invalid/unapplied preview before consuming committed history.','Exported external files are retained; undo restores the project delivery record.','Unconfirmed coordinate resets and ungenerated fixture drafts prevent Save from silently discarding input.'],
+ verification:['Continuous edits and object switches use toolbar Undo/Redo and exact native business-state comparisons.','Displayed transforms and numeric fields are checked against native state; restored geometry vertex buffers are checked.','Save/reopen and fresh-process reopen compare every workpiece, setup, fixture, library entry and active setup; each placement is selected again and rendered vertex buffers/transforms are compared.','Held real native responses preserve input/canvas/listener identity, caret, both sidebars and nested scroll, including conditional field changes.','Injected file-write failure preserves committed native edits; Save retry does not duplicate history.','CAM and simulation pages save, close and reopen successfully.'],
+ results};
+fs.writeFileSync(path.join(directory,'audit-report.json'),JSON.stringify(report,null,2));
+console.log(JSON.stringify({passed:report.passed,uiCases:report.uiCases,nativeCases:report.nativeCases,frameworkCases:report.frameworkCases,report:path.join(directory,'audit-report.json')},null,2));

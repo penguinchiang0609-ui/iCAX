@@ -100,6 +100,6 @@ for(const dir of readdirSync(root,{withFileTypes:true}).filter(dir=>dir.isDirect
   assert.deepEqual(getDefaultParameters([template],'unknown-template'),{});
   count++;
 }
-assert.equal(count,9);assert.ok(anchors>=30);
+assert.equal(count,10);assert.ok(anchors>=30);
 assert.equal(installationCases,4);
 console.log(`PASS ${count} product mechanism contracts and ${anchors} annotation ownership checks (${nativeCases} native cases); renamed IDs behave identically`);

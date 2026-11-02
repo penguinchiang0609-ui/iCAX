@@ -230,8 +230,8 @@ TEST(UserDataStoreTest, ProductScopeOwnsTheIdentityAndPreventsCrossProductAccess
         auto _RawStore = std::make_shared<CSqliteUserDataStore>(_Path.string());
         CProductUserDataStore _TubeDesigner(
             _RawStore, "icax.tube-designer", MakeUserDataDescriptors());
-        CProductUserDataStore _TubeOne(
-            _RawStore, "icax.tube-one", MakeUserDataDescriptors());
+        CProductUserDataStore _OtherProduct(
+            _RawStore, "test.other-product", MakeUserDataDescriptors());
 
         CProductUserDataRecord _Record;
         _Record.FeatureID = "template";
@@ -245,15 +245,15 @@ TEST(UserDataStoreTest, ProductScopeOwnsTheIdentityAndPreventsCrossProductAccess
 
         const auto _Saved = _TubeDesigner.Put(_Record, 0);
         EXPECT_EQ("icax.tube-designer", _TubeDesigner.GetProductID());
-        EXPECT_EQ("icax.tube-one", _TubeOne.GetProductID());
+        EXPECT_EQ("test.other-product", _OtherProduct.GetProductID());
         EXPECT_EQ(1u, _Saved.Revision);
         EXPECT_TRUE(_TubeDesigner.Get("template", "parameter-preset", "preset-1").has_value());
-        EXPECT_FALSE(_TubeOne.Get("template", "parameter-preset", "preset-1").has_value());
+        EXPECT_FALSE(_OtherProduct.Get("template", "parameter-preset", "preset-1").has_value());
 
-        CProductUserDataQuery _TubeOneQuery;
-        _TubeOneQuery.FeatureID = "template";
-        _TubeOneQuery.RecordType = "parameter-preset";
-        EXPECT_TRUE(_TubeOne.List(_TubeOneQuery).empty());
+        CProductUserDataQuery _OtherProductQuery;
+        _OtherProductQuery.FeatureID = "template";
+        _OtherProductQuery.RecordType = "parameter-preset";
+        EXPECT_TRUE(_OtherProduct.List(_OtherProductQuery).empty());
         EXPECT_THROW(
             (void)_TubeDesigner.Get("nesting", "strategy-preset", "preset-1"),
             std::invalid_argument);

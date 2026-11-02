@@ -1,0 +1,7 @@
+#define ICAX_APPLICATION_ICON "tube-designer/webpage/assets/tube-designer.ico"
+#define ICAX_APPLICATION_NAME "TubeDesigner\0"
+#define ICAX_APPLICATION_FILENAME "TubeDesigner.exe\0"
+#define ICAX_APPLICATION_VERSION 0,3,3,0
+#define ICAX_APPLICATION_FILE_VERSION "0.3.3.0\0"
+#define ICAX_APPLICATION_PRODUCT_VERSION "0.3.3\0"
+#include "../../iCAX-Application/Application/Application.rc"

@@ -57,7 +57,7 @@ TEST(ProductIdenticalManufacturingPartsSDO, RealStocksAggregateQuantitiesSources
         return keys;
     };
     ASSERT_EQ(stockCount, 41u);
-    ASSERT_EQ(rows.size(), 20u);
+    ASSERT_EQ(rows.size(), 14u);
     const auto originalSections = sectionIdentities(rows);
     EXPECT_EQ(originalSections.size(), 7u);
     ASSERT_EQ(run->GetPartCount(), rows.size());
@@ -80,17 +80,26 @@ TEST(ProductIdenticalManufacturingPartsSDO, RealStocksAggregateQuantitiesSources
         ASSERT_TRUE(BRepCheck_Analyzer(actual).IsValid());
         std::size_t solidCount = 0; for (TopExp_Explorer e(actual, TopAbs_SOLID); e.More(); e.Next()) ++solidCount;
         EXPECT_EQ(solidCount, 1u);
-        std::string identity;
         for (const auto& source : sourceIDs) {
             const auto id = source.To<std::string>(); EXPECT_TRUE(stockCoverage.insert(id).second);
             const auto stock = frozen.at(id).To<ObjectMap>();
             EXPECT_EQ(stock.at("itemKey").To<std::string>(), component->GetStableKey());
             const auto current = stock.at("manufacturingIdentity").To<std::string>();
-            if (identity.empty()) identity = current; else EXPECT_EQ(identity, current);
+            EXPECT_FALSE(current.empty());
             const auto geometry = stock.at("processedGeometry").To<ObjectMap>();
             const auto resource = scene.Resources().Get<BRepModel>(geometry.at("url").To<std::string>(), geometry.at("version").To<unsigned long long>());
             ASSERT_TRUE(resource);
-            checkSameShape(actual, iCAX::OpenCascade::BuildOpenCascadeShape(*resource).Shape);
+            const auto placements = extensions.at("tubeDesigner.identicalManufacturingSource").To<ObjectMap>()
+                .at("stockPlacements").To<ObjectMap>();
+            const auto placement = placements.at(id).To<ObjectMap>();
+            const auto x = placement.at("xAxis").To<VariantArray>(), y = placement.at("yAxis").To<VariantArray>(),
+                z = placement.at("zAxis").To<VariantArray>(), o = placement.at("origin").To<VariantArray>();
+            gp_Trsf transform;
+            transform.SetValues(x[0].To<double>(),y[0].To<double>(),z[0].To<double>(),o[0].To<double>(),
+                x[1].To<double>(),y[1].To<double>(),z[1].To<double>(),o[1].To<double>(),
+                x[2].To<double>(),y[2].To<double>(),z[2].To<double>(),o[2].To<double>());
+            EXPECT_FALSE(transform.IsNegative());
+            checkSameShape(actual, iCAX::OpenCascade::BuildOpenCascadeShape(*resource).Shape.Moved(TopLoc_Location(transform)));
         }
         for (const auto& source : sources) EXPECT_TRUE(memberCoverage.insert(source.To<ObjectMap>().at("itemKey").To<std::string>()).second);
         evidence.emplace_back(ObjectMap{{"itemKey", component->GetStableKey()}, {"unitQuantity", component->GetQuantity()},

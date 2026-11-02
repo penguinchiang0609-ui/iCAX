@@ -158,6 +158,8 @@ namespace iCAX
             * @brief 替换并保存产品级设置。
             */
             void ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_) override;
+            void UpdateSettingsWithHistory(const std::string& Scope_,
+                const iCAX::Data::PropertyBag& Fields_, const std::string& CommandName_) override;
 
             /*
             * @brief 获取产品 ID。
@@ -525,11 +527,15 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
-                IN iCAX::Project::ISceneContext* pSceneContext_);
+                IN iCAX::Project::ISceneContext* pSceneContext_,
+                IN bool bAutoSave_ = false);
 
         private:
             CProductDefinition m_Definition;
             CProductData m_ProductData;
+            // Native repositories own all history. No command/snapshot stack here.
+            std::map<std::string, std::shared_ptr<iCAX::Database::IRepository>> m_SettingsRepositories;
+            iCAX::Data::Variant SettingsHistory(const std::string& Scope_, const std::string& Direction_);
             iCAX::Data::uuid m_ProductChannelID;
             std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pProductServiceProvider;

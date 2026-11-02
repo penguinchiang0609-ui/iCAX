@@ -1,0 +1,37 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ICAXInspectionBridgeSource>$(MSBuildProjectDirectory)\CadBevelAcceptanceBridge.cpp</ICAXInspectionBridgeSource>
+    <ICAXInspectionBridgeOutputRoot>$(SolutionDir)..\output\tests\cad-bevel\native</ICAXInspectionBridgeOutputRoot>
+  </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)SecurityWindowFramesBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>CadBevelAcceptanceBridge</TargetName>
+    <TargetPath>$(OutDir)$(TargetName)$(TargetExt)</TargetPath>
+  </PropertyGroup>
+  <!-- Exercise the actual geometry units without linking a concurrent SDO
+       edit into this service-only fixture or updating the desktop runtime. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ClCompile Update="$(ICAXInspectionBridgeSource)">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)iCAX-Plugins\product\TubeDesigner\TubeSideSketchCurveService.cpp;$(SolutionDir)iCAX-Plugins\product\TubeDesigner\TubeSideSketchPlanarCurves.cpp;$(SolutionDir)iCAX-Plugins\product\TubeDesigner\TubeSideSketchKerf.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\standalone\occ-extrusion-toolpath\include;$(SolutionDir)iCAX-Plugins\geometry;$(SolutionDir)iCAX-Plugins\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\Analyzer.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\GeometryUtils.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\RulingToolpath.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\SectionRegion.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\SweepCompiler.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\FaceSplitClassifyWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\FeatureGroupingWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\NormalizeWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\Pipeline.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\PipelineGeometry.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\PreprocessWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\SectionProfileWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\SweepFaceDecomposeWork.cxx;$(SolutionDir)..\standalone\occ-extrusion-toolpath\src\pipeline\ToolpathWork.cxx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\standalone\occ-extrusion-toolpath\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ObjectFileName>$(IntDir)etp_%(Filename).obj</ObjectFileName>
+      <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+  </ItemGroup>
+</Project>

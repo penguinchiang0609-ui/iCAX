@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../TriangleMeshPersistence.h"
 
 #include "GeometryData/GeometryData.h"
 #include "Resources/BinaryResource.h"
@@ -786,6 +787,9 @@ namespace
         _Info.nSize = Size_;
         _Info.ContentHash = ContentHash_;
         _Info.Metadata["kind"] = Kind_;
+        _Info.ResourceTypeID = Kind_ == "resource.source" ? kBinaryResourceType : kTriangleMeshResourceType;
+        _Info.nSchemaVersion = 1;
+        _Info.nMinimumReaderVersion = 1;
         _Info.Metadata["formatId"] = kFormatID;
         _Info.Metadata["importer"] = kImporterID;
         return _Info;

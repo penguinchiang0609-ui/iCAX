@@ -1,0 +1,1065 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "frame": {
+          "title": {
+            "zh-CN": "A 管 · 边框"
+          },
+          "order": 40,
+          "defaultOpen": true
+        },
+        "inner": {
+          "title": {
+            "zh-CN": "B 管 · 内杆"
+          },
+          "order": 50,
+          "defaultOpen": true
+        },
+        "joint": {
+          "title": {
+            "zh-CN": "接头装配"
+          },
+          "order": 60,
+          "defaultOpen": true
+        },
+        "installation": {
+          "title": {
+            "zh-CN": "安装孔"
+          },
+          "order": 70,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "overall": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "handle": {
+          "category": "specifications",
+          "order": 20,
+          "defaultOpen": true
+        },
+        "layout": {
+          "category": "specifications",
+          "order": 30,
+          "defaultOpen": true
+        },
+        "frame_profile": {
+          "category": "materials",
+          "sectionGroup": "frame",
+          "order": 40,
+          "defaultOpen": true
+        },
+        "inner_profile": {
+          "category": "materials",
+          "sectionGroup": "inner",
+          "order": 50,
+          "defaultOpen": true
+        },
+        "joint": {
+          "category": "process",
+          "sectionGroup": "joint",
+          "order": 60,
+          "defaultOpen": true
+        },
+        "mounting_layout": {
+          "category": "specifications",
+          "order": 35,
+          "defaultOpen": true
+        },
+        "installation": {
+          "category": "process",
+          "sectionGroup": "installation",
+          "order": 70,
+          "defaultOpen": true
+        },
+        "joint_connection": {
+          "category": "process",
+          "sectionGroup": "joint",
+          "order": 61,
+          "defaultOpen": true
+        },
+        "joint_male": {
+          "category": "process",
+          "sectionGroup": "joint",
+          "order": 62,
+          "defaultOpen": true
+        },
+        "joint_female": {
+          "category": "process",
+          "sectionGroup": "joint",
+          "order": 63,
+          "defaultOpen": true
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 10,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "frameType": {
+          "order": 20,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "width": {
+          "order": 30,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "height": {
+          "order": 40,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleEnabled": {
+          "order": 50,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "handleSide": {
+          "order": 60,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "handleClosure": {
+          "order": 70,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "handleBottom": {
+          "order": 80,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleHeight": {
+          "order": 90,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleWidth": {
+          "order": 100,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleCenterOffset": {
+          "order": 110,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "barLayoutMode": {
+          "order": 120,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "maximumClearGap": {
+          "order": 130,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "upperBarCount": {
+          "order": 140,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "lowerBarCount": {
+          "order": 150,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "middleBarCount": {
+          "order": 160,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "barCount": {
+          "order": 170,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "firstBarTopOffset": {
+          "order": 180,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "lastBarBottomOffset": {
+          "order": 190,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "frameProfileType": {
+          "order": 200,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "frameWidth": {
+          "order": 210,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "frameDepth": {
+          "order": 220,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "frameWallThickness": {
+          "order": 230,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "frameCornerRadius": {
+          "order": 240,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "innerProfileType": {
+          "order": 250,
+          "category": "materials",
+          "sectionGroup": "inner",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "innerWidth": {
+          "order": 260,
+          "category": "materials",
+          "sectionGroup": "inner",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "innerDepth": {
+          "order": 270,
+          "category": "materials",
+          "sectionGroup": "inner",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "innerWallThickness": {
+          "order": 280,
+          "category": "materials",
+          "sectionGroup": "inner",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "innerCornerRadius": {
+          "order": 290,
+          "category": "materials",
+          "sectionGroup": "inner",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "jointMode": {
+          "order": 300,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "maleHeadLength": {
+          "order": 310,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "maleHeadWidth": {
+          "order": 320,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "maleCornerType": {
+          "order": 330,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "maleCornerSize": {
+          "order": 340,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "holeTotalClearanceDepth": {
+          "order": 350,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "holeTotalClearanceHeight": {
+          "order": 360,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "minimumFeatureWeb": {
+          "order": 370,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleEnabled": {
+          "order": 400,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "installHoleCountPerSide": {
+          "order": 410,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleTopOffset": {
+          "order": 420,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleBottomOffset": {
+          "order": 430,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleOrientation": {
+          "order": 435,
+          "category": "process",
+          "sectionGroup": "installation",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "installHoleLargeDiameter": {
+          "order": 440,
+          "category": "process",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleSmallDiameter": {
+          "order": 450,
+          "category": "process",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "installHoleMinimumWeb": {
+          "order": 460,
+          "category": "process",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "maleEndForm": {
+          "order": 305,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 100,
+            "preferred": 150,
+            "max": 220
+          }
+        },
+        "fullHeadTotalClearance": {
+          "order": 345,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 100,
+            "preferred": 150,
+            "max": 220
+          }
+        },
+        "maleTabCount": {
+          "order": 306,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 90,
+            "preferred": 140,
+            "max": 220
+          }
+        },
+        "maleTabAngle": {
+          "order": 307,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 90,
+            "preferred": 140,
+            "max": 220
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {
+        "frameType": {
+          "order": 20,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "handleEnabled": {
+          "order": 50,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "handleSide": {
+          "order": 60,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "handleClosure": {
+          "order": 70,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "handleBottom": {
+          "order": 80,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleHeight": {
+          "order": 90,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleWidth": {
+          "order": 100,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "handleCenterOffset": {
+          "order": 110,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "barLayoutMode": {
+          "order": 120,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "maximumClearGap": {
+          "order": 130,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "upperBarCount": {
+          "order": 140,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "lowerBarCount": {
+          "order": 150,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "middleBarCount": {
+          "order": 160,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "barCount": {
+          "order": 170,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "firstBarTopOffset": {
+          "order": 180,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "lastBarBottomOffset": {
+          "order": 190,
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "overall": {
+          "title": {
+            "zh-CN": "成品尺寸"
+          },
+          "order": 10
+        },
+        "handle": {
+          "title": {
+            "zh-CN": "把手位"
+          },
+          "order": 20
+        },
+        "layout": {
+          "title": {
+            "zh-CN": "内杆排布"
+          },
+          "order": 30
+        },
+        "mounting_layout": {
+          "title": {
+            "zh-CN": "安装孔位"
+          },
+          "order": 40
+        }
+      },
+      "annotations": {
+        "width": {
+          "kind": "linear",
+          "group": "overall",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "order": 0,
+          "editable": true
+        },
+        "height": {
+          "kind": "linear",
+          "group": "overall",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "order": 10,
+          "editable": true
+        },
+        "handleEnabled": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "预留把手位"
+          },
+          "order": 20,
+          "editable": true
+        },
+        "handleSide": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "把手位置"
+          },
+          "order": 30,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          }
+        },
+        "handleClosure": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "把手口形式"
+          },
+          "order": 40,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          }
+        },
+        "handleBottom": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "把手净口离底"
+          },
+          "order": 50,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          }
+        },
+        "handleHeight": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "把手净高"
+          },
+          "order": 60,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          }
+        },
+        "handleWidth": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "把手净宽"
+          },
+          "order": 70,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          }
+        },
+        "handleCenterOffset": {
+          "kind": "parameter",
+          "group": "handle",
+          "label": {
+            "zh-CN": "双把手左右偏移"
+          },
+          "order": 80,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "handleSide",
+                "value": "center_double"
+              }
+            ]
+          }
+        },
+        "barLayoutMode": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "内杆排布"
+          },
+          "order": 90,
+          "editable": true
+        },
+        "maximumClearGap": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "最大净距"
+          },
+          "order": 100,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "maximum_gap"
+          }
+        },
+        "upperBarCount": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "上区内杆数"
+          },
+          "order": 110,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          }
+        },
+        "lowerBarCount": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "下区内杆数"
+          },
+          "order": 120,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          }
+        },
+        "middleBarCount": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "中区内杆数"
+          },
+          "order": 130,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          }
+        },
+        "barCount": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "内杆根数"
+          },
+          "order": 140,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "no"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          }
+        },
+        "firstBarTopOffset": {
+          "kind": "linear",
+          "group": "layout",
+          "label": {
+            "zh-CN": "首杆中心离顶"
+          },
+          "order": 150,
+          "editable": true,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "frameType",
+            "value": "closed_frame"
+          }
+        },
+        "lastBarBottomOffset": {
+          "kind": "linear",
+          "group": "layout",
+          "label": {
+            "zh-CN": "末杆中心离底"
+          },
+          "order": 160,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "frameType",
+            "value": "two_vertical"
+          }
+        },
+        "installHoleEnabled": {
+          "kind": "parameter",
+          "group": "mounting_layout",
+          "label": {
+            "zh-CN": "安装孔"
+          },
+          "order": 170,
+          "editable": true
+        },
+        "installHoleCountPerSide": {
+          "kind": "parameter",
+          "group": "mounting_layout",
+          "label": {
+            "zh-CN": "每侧组数"
+          },
+          "order": 180,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          }
+        },
+        "installHoleTopOffset": {
+          "kind": "linear",
+          "group": "mounting_layout",
+          "label": {
+            "zh-CN": "顶部孔中心离顶"
+          },
+          "order": 190,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          }
+        },
+        "installHoleBottomOffset": {
+          "kind": "linear",
+          "group": "mounting_layout",
+          "label": {
+            "zh-CN": "底部孔中心离底"
+          },
+          "order": 200,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          }
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{width} × {height} mm"
+        }
+      }
+    ]
+  }
+}

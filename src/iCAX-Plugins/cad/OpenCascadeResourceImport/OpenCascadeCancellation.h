@@ -4,6 +4,7 @@
 #include <functional>
 
 class BRepBuilderAPI_MakeShape;
+class BOPAlgo_Algo;
 
 namespace iCAX::OpenCascade
 {
@@ -24,6 +25,7 @@ namespace iCAX::OpenCascade
         // Build once, with an OCC progress indicator whose UserBreak observes
         // shutdown. Never use an eagerly executing two-shape boolean constructor.
         static void Build(BRepBuilderAPI_MakeShape& Builder_);
+        static void Perform(BOPAlgo_Algo& Algorithm_);
 
     private:
         CancellationCheck m_Check;

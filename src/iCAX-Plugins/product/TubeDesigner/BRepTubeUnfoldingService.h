@@ -14,6 +14,8 @@
 
 #include <TopoDS_Shape.hxx>
 
+namespace iCAX::CAD { class ICadBevelService; }
+
 namespace iCAX::TubeDesigner
 {
     /*
@@ -133,6 +135,9 @@ namespace iCAX::TubeDesigner
         double TrajectoryWidth = 0.5;
         double OuterClearance = 0.2;
         double InnerClearance = 0.2;
+        // Synchronously borrowed geometry service, resolved by the caller's
+        // owning runtime. Needed only when an enabled CAD bevel is present.
+        const iCAX::CAD::ICadBevelService* BevelService = nullptr;
     };
 
     struct STubeSideSketchResult final

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorkbench } from '../../apps/_shared/workbench/createWorkbench.mjs';
@@ -17,7 +17,12 @@ function closure(path, visited = new Set()) {
   return visited;
 }
 
-for (const product of ['tube-designer', 'tube-one', 'laser-3d-cam']) {
+const products = readdirSync(apps).filter(product => existsSync(resolve(apps, product, 'product.manifest.json')));
+assert.deepEqual(products, ['five-axis-cam', 'tube-designer']);
+for (const retired of ['tube-one', 'laser-3d-cam']) {
+  assert.ok(!existsSync(resolve(apps, retired)), `Retired product directory exists: ${retired}`);
+}
+for (const product of products) {
   const files = closure(resolve(apps, product, 'webpage/entry.mjs'));
   for (const file of files) {
     const path = relative(apps, file).replaceAll('\\', '/');
@@ -29,8 +34,8 @@ for (const product of ['tube-designer', 'tube-one', 'laser-3d-cam']) {
     }
   }
   const manifest = JSON.parse(readFileSync(resolve(apps, product, 'product.manifest.json'), 'utf8'));
+  assert.equal(manifest.capabilities.tubeDesigner?.downstreamProductId, undefined);
   const modules = Object.values(manifest.backend.modules).flat();
-  assert.ok(!modules.some(path => path.endsWith('/Laser3DCAM.dll')));
   if (product === 'tube-designer') {
     assert.equal(manifest.backend.startupComponent, 'CSceneBootstrapComponent');
     assert.ok(!modules.some(path => path.endsWith('/CamRuntime.dll')));

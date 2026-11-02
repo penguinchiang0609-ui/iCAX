@@ -1,16 +1,19 @@
 import { parameterVisible } from "./parameterConditions.mjs";
+import { isTubeCadDocumentSnapshot, isTubeBoundaryGeometry } from "./tubeCadModel.mjs";
 import { escapeAttr as esc, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import { libraryProfiles, profileRef, profileSelectionKey, renderProfileSvg,
   renderProfileParameterControl, renderProfileParameterGroups } from "./profileLibrary.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { libraryDiagramPositionStyle, renderDiagramResizeHandles } from "./floatingParameterDiagram.mjs";
-import { listNestingParts } from "./partsArea.mjs";
 import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { renderPartDrawingWorkbench } from "./partDrawingView.mjs";
 import { bindPartDrawingLayout } from "./partDrawingLayout.mjs";
+import { createDrawingPreviewKey, invokeDrawingPreview, invokeTubeCadDocumentPreview, releaseDrawingPreviewResources } from "./partDrawingSession.mjs";
 import { createDrawingState, checkpointDrawing, getDrawingPayload, validateDrawing,
+  createDrawingCadState, captureDrawingCadBaseline, getDrawingCadPayload,
   installDrawingCatalogue, drawingToolDescriptor, isDrawingToolReadOnly, updateDrawingField,
-  addDrawingFeature, editDrawingFeature, normalizeDrawingFeature, selectDrawingTool, setDrawingArrayDimension } from "./partDrawingModel.mjs";
+  addDrawingFeature, editDrawingFeature, normalizeDrawingFeature, selectDrawingTool, setDrawingArrayDimension,
+  updateSelectedDrawingBevel, removeSelectedDrawingBevel, reselectDrawingBevel } from "./partDrawingModel.mjs";
 
 const PREFIX="tube-designer-drawing-";
 export const NEW_DRAWING_PART_ID="__new_drawn_part__";
@@ -18,9 +21,12 @@ const clone=value=>structuredClone(value);
 const text=value=>typeof value==="object"?(value?.["zh-CN"]??value?.["en-US"]??""):String(value??"");
 const profileName=p=>text(p?.name??p?.descriptor?.displayName??p?.previewProfile?.name)||"未命名截面";
 const snapshot=p=>p?.previewProfile??p?.profile??(p?.contours?p:null);
-const hasDrawingToolPreview=result=>result?.toolsOnly===true && !!result?.baseGeometry?.url
-  && !result.resultError && result.previewToolsComplete!==false;
+const hasDrawingPreview=result=>result?.toolsOnly!==true && (!!result?.geometry?.url
+  || !!result?.resultError && !!result?.topology?.revision
+    && !!(result.cutBoundaryGeometry?.url || result.baseGeometry?.url));
 const drawingState=view=>view?.tubeDesignerPartDrawing?.state;
+const drawingOwned=(context,view,state)=>drawingState(view)===state&&!view.disposed&&context.isCurrentProject?.()!==false
+  &&(!state.cadSession||view.scene===state.cadSession.scene&&context.sceneProxy===state.cadSession.sceneProxy);
 const withDrawingState=(view,state)=>({...view,tubeDesignerPartDrawing:{...view.tubeDesignerPartDrawing,state}});
 const paint=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>{
   let settled=false;const finish=()=>{if(!settled){settled=true;clearTimeout(timer);resolve();}};
@@ -75,14 +81,15 @@ function sectionFromLibrary(p,view) {
     parameters:clone(snapshot(p)?.parameters??p.defaultParameters??{}),profile:clone(snapshot(p))};
 }
 function virtualPart(view) {
-  const s=drawingState(view),d=s.drawing,meta=view.tubeDesignerPartDrawing;
-  return {...meta.part,entityId:meta.part?.entityId??NEW_DRAWING_PART_ID,name:d.name,length:Number(d.length),profile:d.section?.profile};
+  const s=drawingState(view),d=s.drawing;
+  return {entityId:s.partId,name:d.name,length:Number(d.length),profile:d.section?.profile};
 }
 function mainLocked(s) {
+  if(s.cadSession)return s.cadSession.mainReadOnly;
   return [...s.features,...Object.values(s.ends)].some(f=>isDrawingToolReadOnly(s,f));
 }
 function drawingNodeIds(s) {
-  return ["main",...["start","end"].filter(end=>s.ends?.[end]?.type!=="keep"),...s.features.map(feature=>feature.id)];
+  return ["main",...["start","end"].filter(end=>s.ends?.[end]?.type!=="keep"),...s.features.map(feature=>feature.id),...(s.drawing.bevels??[]).map(bevel=>bevel.id)];
 }
 function adjacentDrawingNode(s,node) {
   const ids=drawingNodeIds(s),index=ids.indexOf(node);
@@ -90,16 +97,25 @@ function adjacentDrawingNode(s,node) {
 }
 function selectDrawingNode(view,node="main") {
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
+  s.reselectBevelId="";
   if(node==="main") {
     m.mode="main";m.selected="main";s.editingId="";return true;
   }
   if(["start","end"].includes(node)) {
     if(s.ends[node]?.type==="keep")return false;
-    m.mode=node;m.selected=node;s.draft=s.ends[node];s.editingId="";s.previewMode="tools";return true;
+    m.mode=node;m.selected=node;s.draft=s.ends[node];s.editingId="";return true;
   }
   const feature=s.features.find(item=>item.id===node);
-  if(!feature)return false;
-  m.mode="feature";m.selected=node;s.draft=feature;s.editingId="";s.previewMode="tools";return true;
+  if(!feature) {
+    const preserved=s.cadSession?.readOnlyNodes.find(item=>item.nodeId===node);
+    if(preserved){m.mode="preserved";m.selected=node;s.editingId="";return true;}
+    const bevel=s.drawing.bevels?.find(item=>item.id===node);if(!bevel)return false;
+    m.mode="bevel";m.selected=node;s.editingId="";
+    s.topologySelection={kind:"edge",id:bevel.edgeIds[0],edgeIds:clone(bevel.edgeIds),
+      topologyRevision:bevel.topologyRevision,adjacentFaceIds:bevel.referenceFaceId?[bevel.referenceFaceId]:[]};
+    return true;
+  }
+  m.mode="feature";m.selected=node;s.draft=feature;s.editingId="";return true;
 }
 function getSection(view,which) {
   const s=drawingState(view);
@@ -169,89 +185,55 @@ export function renderDrawingSection(view,which) {
 export function renderPartDrawingDialog(view) {
   return renderPartDrawingWorkbench(view,renderDrawingSection,renderDrawingSectionDiagram);
 }
-export function openPartDrawing(view,part=null) {
-  const recipe=part?.properties?.["tubeDesigner.partDrawing"];
-  const saved=recipe?.drawing;
-  if(part&&!saved)throw new Error("此零件没有三维绘制定义，请使用冲孔向导。");
-  // A drawing always starts with a real editable main tube. There is no
-  // separate "apply main" transaction anymore; the right panel edits the
-  // current model directly and the history is the only rollback mechanism.
-  view.tubeDesignerPartDrawing={part:part?clone(part):null,mainApplied:true,mode:"main",selected:"main"};
+export function openPartDrawing(view) {
+  const previous=drawingState(view);if(previous)void releaseDrawingPreviewResources(previous);
+  view.tubeDesignerPartDrawing={mainApplied:true,mode:"main",selected:"main"};
   const profiles=libraryProfiles(view),p=profiles.find(p=>profileSelectionKey(p)===view.tubeDesignerSelectedProfileId)
     ??defaultDrawingProfile(view)??profiles[0];
-  view.tubeDesignerPartDrawing.state=createDrawingState(part??{entityId:NEW_DRAWING_PART_ID,length:500});
+  view.tubeDesignerPartDrawing.state=createDrawingState({entityId:NEW_DRAWING_PART_ID,length:500});
   const s=drawingState(view);
-  s.previewMode="tools";
-  s.drawing=saved?{...clone(saved),name:part.name}:{length:500,name:"三维绘制零件",quantity:1,material:"",section:p?sectionFromLibrary(p,view):{}};
+  s.previewMode="finished";
+  s.previewResourceKey=createDrawingPreviewKey();
+  s.drawing={length:500,name:"三维绘制零件",quantity:1,material:"",section:p?sectionFromLibrary(p,view):{}};
   if(!s.drawing.section?.profile?.contours?.length&&p)s.drawing.section=sectionFromLibrary(p,view);
   s.baseLength=Number(s.drawing.length);
 }
 
-async function recoverImportedPartDrawing(context,view,partId,ops) {
-  const part=listNestingParts(view.scene?.tubeDesigner??{}).find(item=>String(item.entityId)===partId);
-  if(!part?.independentNesting||!part.properties?.["manufacturing.imported"])
-    throw new Error("请选择独立导入的管材零件，再识别三维编辑特征。");
-  if(part.properties?.["tubeDesigner.partDrawing"]?.drawing) {
-    openPartDrawing(view,part);
-    return;
-  }
-  if(view.tubeDesignerPartRecoveryPending)return;
-  if(typeof context.sceneProxy?.invoke!=="function")throw new Error("当前项目未连接，无法识别三维编辑特征。");
-  const scene=view.scene;
-  const selectedPart=String(view.tubeDesignerActiveNestingPartId??"");
-  const priorDrawing=view.tubeDesignerPartDrawing;
-  const options={timeoutMs:180000,onReport(report) {
-    const data=report?.payload??report?.data??report;
-    const message=String(data?.message??"").trim();
-    if(!message||view.tubeDesignerPartRecoveryPending!==partId)return;
-    const button=[...context.mount?.querySelectorAll?.('[data-cam-action="tube-designer-drawing-recover"]')??[]]
-      .find(item=>String(item.dataset?.tubeDesignerPartId)===partId);
-    if(button)button.textContent=message;
-  }};
-  view.tubeDesignerPartRecoveryPending=partId;
-  view.error="";
+export async function openPartDrawingCad(context,view,part,ops) {
+  if(!part?.properties?.["tubeDesigner.cadDocument"]?.documentResourceId)
+    throw new Error("此零件没有可编辑的管材 CAD 文档。");
+  if(!context.sceneProxy?.invoke)throw new Error("当前项目未连接，无法打开三维编辑。");
+  const previous=drawingState(view);if(previous)void releaseDrawingPreviewResources(previous);
+  const scene=view.scene,sceneProxy=context.sceneProxy;
+  const state=createDrawingState(part);
+  state.drawing={length:part.length,name:part.name,quantity:part.quantity??1,material:part.material??"",section:{}};
+  state.catalogueStatus="loading";state.previewResourceKey=createDrawingPreviewKey();
+  const meta={mainApplied:true,mode:"main",selected:"main",state,loading:true,savedPartId:part.entityId};
+  view.tubeDesignerPartDrawing=meta;
+  const options=beginDrawingOperation(context,view,"正在读取三维 CAD 文档"),operation=view.tubeDesignerOperation;
+  renderDrawing(context,view,ops);await paint();
+  const owned=()=>view.tubeDesignerPartDrawing===meta&&view.scene===scene&&context.sceneProxy===sceneProxy
+    &&!view.disposed&&context.isCurrentProject?.()!==false;
   try {
-    renderDrawing(context,view,ops);
-    await paint();
-    const result=await context.sceneProxy.invoke("TubeDesigner.RecoverImportedPartDrawing",{
-      partEntityId:partId,
-      resourceVersion:Number(part.manufacturingGeometryResourceVersion??0),
-    },options);
-    if(result?.ready!==true||String(result.partEntityId??"")!==partId)
-      throw new Error("没有收到三维特征识别完成通知。");
-    // A slow response must not reopen an editor after the user changes page or project.
-    if(view.scene!==scene||view.activeAreaId!=="nesting"
-      ||view.tubeDesignerPartDrawing!==priorDrawing
-      ||String(view.tubeDesignerActiveNestingPartId??"")!==selectedPart)return;
-    const detail=await context.sceneProxy.invoke("TubeDesigner.GetPartDrawing",{
-      partEntityId:partId,
-      resourceVersion:Number(result.resourceVersion??part.manufacturingGeometryResourceVersion??0),
-    });
-    if(view.scene!==scene)return;
-    if(String(detail?.partEntityId??"")!==partId||!detail?.definition?.drawing)
-      throw new Error("识别结果缺少可编辑的主管定义，请重新读取项目。");
-    const saved=view.scene.tubeDesigner?.nestingGroups?.flatMap(group=>group.parts??[])
-      .find(item=>String(item.entityId)===partId);
-    if(!saved)throw new Error("零件已从当前下料任务中移除，请刷新项目。");
-    saved.properties={...saved.properties,["tubeDesigner.partDrawing"]:detail.definition};
-    if(view.activeAreaId!=="nesting"||view.tubeDesignerPartDrawing!==priorDrawing
-      ||String(view.tubeDesignerActiveNestingPartId??"")!==selectedPart)return;
-    view.tubeDesignerActivePartId=partId;
-    view.tubeDesignerActiveNestingPartId=partId;
-    view.tubeDesignerNestingSelectionKind="part";
-    view.tubeDesignerActiveNestingPlacementId="";
-    view.tubeDesignerPartMeasurementState=null;
-    view.tubeDesignerPartViewportKey="";
-    openPartDrawing(view,saved);
-    ops.showNotice?.(context,view,"已识别可编辑特征，正在打开三维编辑。");
+    const document=await sceneProxy.invoke("TubeDesigner.GetTubeCadDocument",{partEntityId:part.entityId,
+      resourceVersion:part.manufacturingGeometryResourceVersion,authoringView:"drawing"},options);
+    if(!owned())return;
+    if(!isTubeCadDocumentSnapshot(document))throw new Error("没有返回有效的管材边界文档。");
+    meta.state=createDrawingCadState(part,document);
+    meta.state.previewResourceKey=state.previewResourceKey;
+    Object.assign(meta.state.cadSession,{scene,sceneProxy,geometry:clone(document.geometry),
+      construction:clone(document.construction),placement:clone(document.placement)});
   } catch(error) {
-    view.error=`三维特征识别失败：${error?.message??String(error)}`;
-    throw new Error(view.error,{cause:error});
+    if(!owned())return;
+    meta.loadError=true;state.catalogueStatus="error";state.error=error?.message??String(error);
+    throw error;
   } finally {
-    if(view.tubeDesignerPartRecoveryPending===partId)view.tubeDesignerPartRecoveryPending="";
-    if(view.scene===scene&&view.activeAreaId==="nesting")renderDrawing(context,view,ops);
+    meta.loading=false;finishDrawingOperation(view,operation);
+    if(owned())renderDrawing(context,view,ops);
   }
+  return meta;
 }
+
 function savedSection(section) {
   if(!section?.profile?.contours?.length)throw new Error("请先选择有效截面。");
   if(section.pendingParameters)throw new Error("截面参数正在更新，请等待更新完成。");
@@ -271,10 +253,10 @@ export function getPartDrawingPayload(view,{includeDraft=false}={}) {
   if(!Number.isFinite(length)||length<1||length>100000)throw new Error("主管长度须为 1 至 100000 mm。");
   const error=validateDrawing(s);if(error)throw new Error(error);
   const payload=getDrawingPayload(s);
-  payload.drawing={schemaVersion:1,length,section:savedSection(d.section)};
+  payload.drawing={...clone(d),schemaVersion:1,length,section:savedSection(d.section)};
+  for(const key of ["name","quantity","material"])delete payload.drawing[key];
   for(const f of payload.features)if(f.section)f.section=savedSection(f.section);
-  if(!view.tubeDesignerPartDrawing.part) {
-    delete payload.partEntityId;delete payload.resourceId;delete payload.resourceVersion;
+  {
     const name=String(d.name??"").trim(),quantity=Number(d.quantity),material=String(d.material??"").trim();
     if(!name||name.length>160)throw new Error("请填写零件名称（最多 160 个字符）。");
     if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)throw new Error("数量须为 1 至 1000000 的整数。");
@@ -285,9 +267,10 @@ export function getPartDrawingPayload(view,{includeDraft=false}={}) {
 }
 async function resolveSection(context,view,which,key,ops,shouldCheckpoint=true) {
   if(sectionLocked(view,which))throw new Error("退化定式刀具仅可删除，不能修改其截面或主管。");
-  const current=getSection(view,which)??{};
+  const current=getSection(view,which)??{},state=drawingState(view);
   if(key==="__snapshot__") {const restored=clone(current);delete restored.pendingParameters;delete restored.key;setSection(view,which,restored);return;}
-  const options=beginDrawingOperation(context,view,"正在读取精确截面");renderDrawing(context,view,ops);await paint();
+  const options=beginDrawingOperation(context,view,"正在读取精确截面"),operation=view.tubeDesignerOperation;
+  renderDrawing(context,view,ops);await paint();
   try {
     let section;
     if(key==="__dxf__") {
@@ -305,27 +288,41 @@ async function resolveSection(context,view,which,key,ops,shouldCheckpoint=true) 
       const result=await context.productProxy.invoke("TubeDesigner.EvaluateProfilePackage",{profileRef:profileRef(p),parameters},options);
       section={...sectionFromLibrary(p,view),parameters:clone(parameters),profile:result.profile};
     }
+    if(!drawingOwned(context,view,state))return;
     savedSection(section);setSection(view,which,section,shouldCheckpoint);
-  } finally {finishDrawingOperation(view);}
+  } catch(error) {
+    if(drawingOwned(context,view,state))throw error;
+  } finally {finishDrawingOperation(view,operation);}
 }
 async function applyDrawing(context,view,ops) {
-  const payload=getPartDrawingPayload(view),meta=view.tubeDesignerPartDrawing;
-  const options=beginDrawingOperation(context,view,meta.part?"正在更新三维零件":"正在生成三维零件");renderDrawing(context,view,ops);await paint();
+  const meta=view.tubeDesignerPartDrawing,state=meta.state,cad=state.cadSession;
+  if(meta.savedPartId&&!cad)throw new Error("当前零件的三维 CAD 文档尚未读取完成。");
+  const payload=cad?getDrawingCadPayload(state):getPartDrawingPayload(view);
+  const options=beginDrawingOperation(context,view,cad?"正在保存三维 CAD 修改":"正在生成三维零件"),operation=view.tubeDesignerOperation;
+  renderDrawing(context,view,ops);await paint();
   try {
-    const result=await context.sceneProxy.invoke(meta.part?"TubeDesigner.ApplyPartDrawing":"TubeDesigner.AddPartDrawing",payload,options);
-    const id=String(result.partEntityId??meta.part?.entityId??"");
-    if(!result.tubeDesigner||!id)throw new Error("没有收到保存后的零件记录。");
-view.scene??={};view.scene.tubeDesigner=result.tubeDesigner;await restoreSavedNestingTask(view,context);
+    const result=await context.sceneProxy.invoke(cad?"TubeDesigner.ApplyTubeCadDocument":"TubeDesigner.AddPartDrawing",payload,options);
+    if(view.tubeDesignerPartDrawing!==meta||cad&&(view.scene!==cad.scene||context.sceneProxy!==cad.sceneProxy||view.disposed||context.isCurrentProject?.()===false))return;
+    if(cad&&!isTubeCadDocumentSnapshot(result))throw new Error("三维修改没有返回有效的管材边界文档。");
+    const id=String(cad?state.partId:result.partEntityId??"");
+    const snapshot=cad?result.snapshot?.tubeDesigner:result.tubeDesigner;
+    if(!snapshot||!id)throw new Error("没有收到保存后的零件记录。");
+    view.scene??={};view.scene.tubeDesigner=snapshot;await restoreSavedNestingTask(view,context);
+    if(!drawingOwned(context,view,state))return;
     view.tubeDesignerNestingSelectedPartIds=[id];view.tubeDesignerActivePartId=id;view.tubeDesignerActiveNestingPartId=id;
     view.tubeDesignerNestingSelectionKind="part";view.tubeDesignerActiveNestingPlacementId="";
     view.tubeDesignerPartMeasurementState=null;view.tubeDesignerPartViewportKey="";view.tubeDesignerNestingSettingsSourceSignature="";
     view.tubeDesignerPartDrawing=null;
+    void releaseDrawingPreviewResources(meta.state);
     await context.actions?.refreshActiveSceneState?.();
-    ops.showNotice?.(context,view,"三维零件已保存到下料区，可继续编辑、排样或导出。");
-  } finally {finishDrawingOperation(view);}
+    ops.showNotice?.(context,view,cad?"三维 CAD 修改已保存。":"三维零件已保存到下料区，可继续编辑、排样或导出。");
+  } catch(error) {
+    if(drawingOwned(context,view,state))throw error;
+  } finally {finishDrawingOperation(view,operation);}
 }
 const previewQueues=new WeakMap();
 function renderDrawing(context,view,ops) {
+  if(view.disposed||context.isCurrentProject?.()===false)return;
   context.mount?.querySelector?.(".td-draw-property-scroll")?._captureDrawingLayout?.();
   ops.renderProject(context,view);
 }
@@ -360,7 +357,8 @@ function drawingPreviewPayload(view) {
   // Features are committed to the local drawing state as soon as they are
   // created or edited. Preview therefore always consumes the same complete
   // recipe that the final save will use; there is no draft-only preview path.
-  return {...getPartDrawingPayload(view),toolsOnly:true};
+  return {...(drawingState(view).cadSession?getDrawingCadPayload(drawingState(view)):getPartDrawingPayload(view)),toolsOnly:false,individualToolPreviews:true,includeTopology:true,
+    previewResourceKey:drawingState(view).previewResourceKey};
 }
 // One native evaluation at a time. Coalesce edits and never display a stale response.
 export function attachPartDrawingEditor(context,view,mount,ops) {
@@ -368,17 +366,21 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
   attachDrawingInspector(view,mount);
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
   if(!s||!m||!context.sceneProxy?.invoke)return;
+  if(!drawingOwned(context,view,s))return;
   if(s.catalogueStatus==="idle"&&!view.pending) {
     s.catalogueStatus="loading";
     const options=beginDrawingOperation(context,view,"正在加载三维绘制工具"),operation=view.tubeDesignerOperation;
     renderDrawing(context,view,ops);
     void paint().then(()=>context.sceneProxy.invoke("TubeDesigner.GetPartDrawingTools",{},options)).then(result=>{
-      if(drawingState(view)===s)installDrawingCatalogue(s,result);
+      if(drawingOwned(context,view,s)){
+        installDrawingCatalogue(s,result);
+        if(s.cadSession&&!s.cadSession.baselineCatalogueReady){captureDrawingCadBaseline(s);s.cadSession.baselineCatalogueReady=true;}
+      }
     }).catch(error=>{
-      if(drawingState(view)===s){s.catalogueStatus="error";s.error=error?.message??String(error);}
+      if(drawingOwned(context,view,s)){s.catalogueStatus="error";s.error=error?.message??String(error);}
     }).finally(()=>{
       finishDrawingOperation(view,operation);
-      if(drawingState(view)===s)renderDrawing(context,view,ops);
+      if(drawingOwned(context,view,s))renderDrawing(context,view,ops);
     });
     return;
   }
@@ -402,15 +404,16 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
     return;
   }
   q.signature=signature;q.payload=payload;
-  s.pendingPreviewRecipe=clone(payload);
+  q.presentationRecipe=s.cadSession?{...clone(payload),drawing:clone(s.drawing),features:clone(s.features),ends:clone(s.ends)}:clone(payload);
+  s.pendingPreviewRecipe=clone(q.presentationRecipe);
   clearTimeout(q.timer);
   const run=async()=>{
     if(q.running)return;
-    if(drawingState(view)!==s||view.tubeDesignerPartDrawing!==m||view.pending||!q.payload)return;
-    const current=q.signature,body=clone(q.payload),revision=s.revision;
-    q.running=true;s.previewPending=true;s.error="";s.previewComputeError=null;s.previewPhase="正在更新主管与刀具";
+    if(!drawingOwned(context,view,s)||view.tubeDesignerPartDrawing!==m||view.pending||!q.payload)return;
+    const current=q.signature,body=clone(q.payload),presentationRecipe=clone(q.presentationRecipe),revision=s.revision;
+    q.running=true;s.previewPending=true;s.error="";s.previewComputeError=null;s.previewPhase="正在更新三维成品";
     const options={timeoutMs:180000,onReport(report) {
-      if(drawingState(view)!==s||q.signature!==current)return;
+      if(!drawingOwned(context,view,s)||q.signature!==current)return;
       const data=report?.payload??report?.data??report;
       s.previewPhase=String(data?.message??s.previewPhase);
       const label=context.mount?.querySelector?.("[data-part-drawing-preview-notice] > span");
@@ -420,19 +423,23 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
     renderDrawing(context,view,ops);
     try {
       await paint();
-      const result=await context.sceneProxy.invoke("TubeDesigner.PreviewPartDrawing",body,options);
-      if(!hasDrawingToolPreview(result))throw new Error(result?.resultError||"未返回可显示的主管与刀具预览。");
-      if(drawingState(view)===s&&q.signature===current&&s.revision===revision) {
+      const result=await (s.cadSession?invokeTubeCadDocumentPreview:invokeDrawingPreview)(context.sceneProxy,s,body,options);
+      if(!hasDrawingPreview(result))throw new Error(result?.resultError||"未返回可显示的三维成品预览。");
+      if(s.cadSession&&(!isTubeBoundaryGeometry(result.documentGeometry)||!Array.isArray(result.documentConstruction?.SolidNodes)))
+        throw new Error("三维预览没有返回有效的管材边界文档。");
+      if(drawingOwned(context,view,s)&&q.signature===current&&s.revision===revision
+        &&body.previewResourceKey===s.previewResourceKey) {
         s.preview={...result,revision,includesDraft:false};m.validSignature=current;
-        s.previewRecipe=clone(body);
+        if(result.resultError){s.error=result.resultError;s.previewComputeError={revision,message:result.resultError};}
+        s.previewRecipe=presentationRecipe;
       }
     } catch(error) {
-      if(drawingState(view)===s&&q.signature===current) {
+      if(drawingOwned(context,view,s)&&q.signature===current) {
         s.error=error?.message??String(error);s.previewComputeError={revision,message:s.error};
       }
     } finally {
       q.running=false;
-      if(drawingState(view)===s) {
+      if(drawingOwned(context,view,s)) {
         s.previewPending=false;renderDrawing(context,view,ops);
         if(q.payload&&q.signature!==current)q.timer=setTimeout(run,180);
       }
@@ -443,11 +450,12 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
 function cancelOperation(view) {
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
   if(!s||!m)return;
-  s.editingId="";m.mode="";s.error="";s.previewMode="tools";
+  s.editingId="";s.reselectBevelId="";m.mode="";s.error="";
 }
 function beginOperation(view,command,node=null) {
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
   if(!s||!m)throw new Error("三维绘制未打开。");
+  s.reselectBevelId="";
   if(command!=="main"&&!m.mainApplied)throw new Error("请先建立主管。");
   if(node) {
     if(!selectDrawingNode(view,node))throw new Error("该特征已不存在。");
@@ -461,7 +469,7 @@ function beginOperation(view,command,node=null) {
       checkpointDrawing(s);selectDrawingTool(s,end,"end-miter");
       Object.assign(end,{trim:0,rotation:0,datum:"long"});s.ends[command]=end;
     }
-    m.mode=command;m.selected=command;s.draft=end;s.editingId="";s.previewMode="tools";return;
+    m.mode=command;m.selected=command;s.draft=end;s.editingId="";return;
   }
   const feature=normalizeDrawingFeature({station:s.baseLength/2});
   const id=command==="branch"?"branch-profile":command==="hole"?s.tools.find(t=>t.target==="side")?.id:command==="part"?s.tools.find(t=>t.target==="part"&&!t.requiresSection)?.id:command;
@@ -478,25 +486,32 @@ function beginOperation(view,command,node=null) {
     // selecting a section in the inspector will make the live recipe valid.
     s.error="";checkpointDrawing(s);s.features=[...s.features,clone(feature)];
   }
-  s.draft=s.features.at(-1);m.mode="feature";m.selected=s.draft.id;s.previewMode="tools";
+  s.draft=s.features.at(-1);m.mode="feature";m.selected=s.draft.id;
 }
 export async function handlePartDrawingAction(context,view,action,target,ops) {
   if(!action.startsWith(PREFIX))return {handled:false};
   if(view.pending)return {handled:true};
   const suffix=action.slice(PREFIX.length);
+  const initialMeta=view.tubeDesignerPartDrawing,scene=view.scene,sceneProxy=context.sceneProxy;
+  const savedOperation=suffix==="open"?!!target?.dataset?.tubeDesignerPartId:!!(initialMeta?.savedPartId||initialMeta?.state?.cadSession);
+  let superseded=false;
+  const owned=()=>!superseded&&(!savedOperation||view.scene===scene&&context.sceneProxy===sceneProxy
+    &&(suffix==="open"||view.tubeDesignerPartDrawing===initialMeta||view.tubeDesignerPartDrawing===null));
   try {
-    if(suffix==="recover") {
-      const id=String(target?.dataset?.tubeDesignerPartId??"").trim();
-      if(!id)throw new Error("未指定待识别的零件。");
-      await recoverImportedPartDrawing(context,view,id,ops);
-    } else if(suffix==="open") {
-      const id=target?.dataset?.tubeDesignerPartId;
-      const part=id?listNestingParts(view.scene?.tubeDesigner??{}).find(p=>String(p.entityId)===String(id)):null;
-      if(id&&!part)throw new Error("零件记录不存在。");
-      openPartDrawing(view,part);
-    } else if(suffix==="cancel") {view.tubeDesignerPartDrawing=null;}
+    if(suffix==="open") {
+      const partId=target?.dataset?.tubeDesignerPartId;
+      if(partId) {
+        const part=view.scene?.tubeDesigner?.nestingGroups?.flatMap(group=>group.parts??[]).find(item=>String(item.entityId)===String(partId));
+        if(!part)throw new Error("当前下料零件已不存在，请重新选择。");
+        if(!await openPartDrawingCad(context,view,part,ops))superseded=true;
+      } else openPartDrawing(view);
+    } else if(suffix==="cancel") {
+      const previous=drawingState(view);view.tubeDesignerPartDrawing=null;
+      if(previous)void releaseDrawingPreviewResources(previous);
+    }
     else if(view.tubeDesignerPartDrawing) {
       const s=drawingState(view),m=view.tubeDesignerPartDrawing,which=target?.dataset?.drawingSection;
+      if(s.cadSession&&!s.cadSession.bevelEditable&&suffix.startsWith("bevel-"))throw new Error("当前三维编辑暂不支持新增或修改坡口，原有坡口已保留。");
       if(suffix==="section-diagram")m.sectionDiagram=m.sectionDiagram===which?"":which;
       else if(suffix==="section-diagram-close")m.sectionDiagram="";
       else if(suffix==="command") {m.sectionDiagram="";beginOperation(view,target?.dataset?.drawingCommand);}
@@ -508,27 +523,31 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
         const kind=suffix.slice(9);
         if(kind==="remove"&&m.selected==="main")throw new Error("主管不可删除。");
         const index=s.features.findIndex(f=>f.id===m.selected);
-        if(index>=0) {
+        const selectedBevel=s.drawing.bevels?.find(item=>item.id===m.selected);
+        if(selectedBevel&&kind==="remove") {
+          checkpointDrawing(s);s.drawing.bevels=s.drawing.bevels.filter(item=>item.id!==selectedBevel.id);
+          s.topologySelection=null;selectDrawingNode(view,"main");
+        }
+        else if(index>=0) {
           const selected=s.features[index];
           const nextAfterRemove=kind==="remove"?adjacentDrawingNode(s,selected.id):null;
           if(kind==="copy") {
             if(isDrawingToolReadOnly(s,selected))throw new Error("退化定式刀具仅可删除。");
-            const copy=normalizeDrawingFeature({...clone(selected),id:undefined,station:selected.station+(selected.arrayPitch||50),enabled:true});
+            const copy=normalizeDrawingFeature({...clone(selected),id:undefined,station:selected.station+(selected.arrayPitch||50),enabled:true});delete copy.cadNodeId;
             checkpointDrawing(s);s.features=[...s.features,copy];s.draft=s.features.at(-1);s.editingId="";
-            m.mode="feature";m.selected=s.draft.id;s.previewMode="tools";
+            m.mode="feature";m.selected=s.draft.id;
           } else if(editDrawingFeature(s,kind,index)) {
             if(kind==="remove") {
               if(!selectDrawingNode(view,nextAfterRemove))selectDrawingNode(view,"main");
               s.editingId="";
             }
             else {m.mode="feature";m.selected=selected.id;s.draft=s.features.find(f=>f.id===selected.id)??s.draft;s.editingId="";}
-            s.previewMode="tools";
           }
         } else if(kind==="remove"&&["start","end"].includes(m.selected)) {
           const next=adjacentDrawingNode(s,m.selected);
           editDrawingFeature(s,"remove-end",m.selected);
           if(!selectDrawingNode(view,next))selectDrawingNode(view,"main");
-          s.editingId="";s.previewMode="tools";
+          s.editingId="";
         } else if(kind==="remove") {
           selectDrawingNode(view,"main");
         }
@@ -578,23 +597,45 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
       }
       else if(suffix==="preview-mode") {
         const mode=target?.dataset?.drawingPreviewMode;
-        if(mode==="tools")s.previewMode=mode;
+        if(["finished","base","tools"].includes(mode))s.previewMode=mode;
+      }
+      else if(suffix==="selection-mode") {
+        if(["edge","face"].includes(target?.value)){s.selectionMode=target.value;s.topologySelection=null;}
+      }
+      else if(suffix==="clear-topology")s.topologySelection=null;
+      else if(suffix==="bevel-reselect") {
+        const definition=s.drawing.bevels?.find(item=>item.id===m.selected);
+        if(definition){s.reselectBevelId=definition.id;s.topologySelection=null;}
+      }
+      else if(suffix==="bevel-use-selection") {
+        const id=s.reselectBevelId;
+        if(reselectDrawingBevel(s)){m.mode="bevel";m.selected=id;s.reselectBevelId="";}
+      }
+      else if(suffix==="bevel-cancel-reselect") {
+        const id=s.reselectBevelId;s.reselectBevelId="";selectDrawingNode(view,id);
+      }
+      else if(suffix==="bevel-remove") {
+        if(removeSelectedDrawingBevel(s)){s.topologySelection=null;selectDrawingNode(view,"main");}
+      }
+      else if(suffix==="bevel-reference-face")updateSelectedDrawingBevel(s,"referenceFaceId",target);
+      else if(suffix==="bevel-change") {
+        const field=target?.dataset?.cadBevelField;
+        if(["enabled","side","angleDegrees","rootFace"].includes(field))updateSelectedDrawingBevel(s,field,target);
       }
       else if(["edit","copy","toggle","remove","undo","redo","remove-end"].includes(suffix)) {
         if(["undo","redo"].includes(suffix)) {
           cancelOperation(view);
           if(editDrawingFeature(s,suffix,target?.dataset?.tubeDesignerPunchIndex)) {
-            m.mode="main";m.selected="main";s.editingId="";s.previewMode="tools";
+            m.mode="main";m.selected="main";s.editingId="";s.topologySelection=null;
           }
         } else if(editDrawingFeature(s,suffix,target?.dataset?.tubeDesignerPunchIndex)) {
           if(suffix==="remove-end") {m.mode="main";m.selected="main";}
           else {m.mode="feature";const feature=s.features.find(item=>item.id===m.selected);if(feature)s.draft=feature;}
-          s.editingId="";s.previewMode="tools";
+          s.editingId="";
         }
       }
       else if(suffix==="preview") {
-        // Refresh the drawing-only tool preview through its existing serial
-        // queue. Never route this editor into machining's Boolean preview.
+        // Re-evaluate the CAD recipe through this editor's own serial queue.
         s.previewRenderError="";s.error="";m.validSignature="";
         if(s.catalogueStatus==="error")s.catalogueStatus="idle";
         const q=previewQueues.get(view);
@@ -602,9 +643,11 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
       } else if(suffix==="apply")await applyDrawing(context,view,ops);
     }
   } catch(error) {
-    if(drawingState(view))drawingState(view).error=error?.message??String(error);else throw error;
+    if(owned()) {
+      if(drawingState(view))drawingState(view).error=error?.message??String(error);else throw error;
+    }
   } finally {
-    renderDrawing(context,view,ops);
+    if(owned())renderDrawing(context,view,ops);
   }
   return {handled:true};
 }

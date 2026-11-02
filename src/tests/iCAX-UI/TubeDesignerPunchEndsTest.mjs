@@ -26,20 +26,6 @@ assert.equal(changePunchRecordKind(view,{value:"branch",dataset:start}),true);
 assert.equal(s.ends.start.toolRef.id,"end-profile");assert.equal(s.ends.start.datum,"long");
 assert.equal(s.ends.start.section.key,"system:rect");
 assert.deepEqual(s.draft,originalDraft);assert.equal(s.ends.end.type,"keep");
-let html=renderPunchWizardDialog(part,view,{tableMode:true,showEnds:true,branchProfiles:punchProfileChoices(view)});
-assert.match(html,/左端面参数/);assert.match(html,/data-tube-designer-punch-end="start"/);
-assert.match(html,/外轮廓填实并拉伸为端部刀具/);assert.match(html,/支管参数示意图/);
-assert.doesNotMatch(html,/data-tube-designer-punch-field="allowOpen"|允许端部开口|端部开口<\/th>/);
-const endTable=html.slice(html.indexOf('<section class="tube-designer-punch-ends"'),html.indexOf('</section>',html.indexOf('<section class="tube-designer-punch-ends"')));
-assert.match(endTable,/端面加工/);assert.match(endTable,/两端独立设置/);
-assert.doesNotMatch(endTable,/data-tube-designer-punch-field="(?:arrayCount|arrayPitch|station|datum|trim|rotation)"/);
-const holeTable=html.slice(html.indexOf('<section class="tube-designer-punch-sheet"'),html.indexOf('</section>',html.indexOf('<section class="tube-designer-punch-sheet"')));
-assert.doesNotMatch(holeTable,/data-tube-designer-punch-end-row/);
-assert.doesNotMatch(html,/class="tube-designer-punch-end-placement"/);
-for(const key of ['datum','trim','rotation']){
-  const matches=html.match(new RegExp('data-tube-designer-punch-field="'+key+'"[^>]*data-tube-designer-punch-end="start"','g'))??[];
-  assert.equal(matches.length,1,key+' must be rendered once from operationParameters');
-}
 const profileContext={sceneProxy:{async invoke(method,request){
   assert.equal(method,"TubeDesigner.GenerateProfilePreview");
   return {profile:{...structuredClone(profile.previewProfile),width:request.parameters.width}};
@@ -72,106 +58,25 @@ assert.equal(s.ends.start.toolRef.id,"end-profile");assert.equal(s.ends.start.re
 assert.equal(closePunchParameters(view,true,part),true);
 const saved=getPunchWizardPayload(view);
 assert.equal(saved.ends.start.section.source,"dxf");assert.equal(saved.ends.end.toolRef.id,"end-step-z");
-const reopened=createPunchWizardState({...part,properties:{"tubeDesigner.punchWizard":{...saved,baseLength:1000}}});
+const reopened=createPunchWizardState(part,{...saved,baseLength:1000});
 assert.deepEqual(getPunchWizardPayload({tubeDesignerPunchWizard:reopened}).ends,saved.ends);
 
-// Both profile sources and both ends use the same explicit concave/convex
-// contract, without exposing the removed inner/material region option.
+// Creation drafts preserve exact current end-source fields through direct draft copies.
 for(const source of ["branch","dxf"])for(const key of ["start","end"]){
-  const modeView={pending:false,tubeDesignerSystemProfiles:[profile],tubeDesignerPunchWizard:createPunchWizardState(part)};
-  const modeState=modeView.tubeDesignerPunchWizard,target={tubeDesignerPunchIndex:key,tubeDesignerPunchEnd:key};
-  installPunchCatalogue(modeState,{tools});
-  openPunchParameters(modeView,key,key);
-  if(source==="branch")assert.equal(changePunchRecordKind(modeView,{value:"branch",dataset:target}),true);
-  else assert.equal(await selectPunchProfileSource(dxfContext,modeView,{value:"__dxf__",dataset:target}),true);
-  assert.equal(modeState.ends[key].toolParameters.cutMode,"concave");
-  const modeHtml=()=>renderPunchWizardDialog(part,modeView,{tableMode:true,showEnds:true,branchProfiles:punchProfileChoices(modeView)});
-  assert.match(modeHtml(),/data-tube-designer-punch-parameter="cutMode"/);
-  assert.match(modeHtml(),/<option value="concave" selected>凹口<\/option>/);
-  assert.doesNotMatch(modeHtml(),/data-tube-designer-punch-parameter="cutRegion"|保留内孔/);
-  assert.equal(updatePunchWizardField(modeView,{value:"convex",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}}),true);
-  assert.match(modeHtml(),/外轮廓填实并拉伸为端部刀具/);
-  assert.equal(closePunchParameters(modeView,true,part),true);
-  const modePayload=getPunchWizardPayload(modeView);
-  assert.equal(modePayload.ends[key].toolParameters.cutMode,"convex");
-  assert.match(modeHtml(),/tube-designer-punch-end-summary">[^<]*凸口/);
-  assert.match(buildPunchReviewSummary(modeState,part).ends.find(item=>item.key===key).label,/凸口/);
-  const modeReopened=createPunchWizardState({...part,properties:{"tubeDesigner.punchWizard":{...modePayload,baseLength:1000}}});
-  assert.equal(getPunchWizardPayload({tubeDesignerPunchWizard:modeReopened}).ends[key].toolParameters.cutMode,"convex");
-  const nativeRecipe=structuredClone(modePayload);
-  for(const item of Object.values(nativeRecipe.ends))delete item.recordKind;
-  const nativeView={pending:false,tubeDesignerSystemProfiles:[profile],tubeDesignerPunchWizard:createPunchWizardState({...part,properties:{"tubeDesigner.punchWizard":{...nativeRecipe,baseLength:1000}}})};
-  const nativeState=nativeView.tubeDesignerPunchWizard,nativeSource=source==="branch"?"library":"dxf";
-  installPunchCatalogue(nativeState,{tools});
-  assert.notEqual(nativeState,modeState,"The regression must reopen a native-style recipe into a fresh wizard state");
-  const nativeHtml=()=>renderPunchWizardDialog(part,nativeView,{tableMode:true,showEnds:true,branchProfiles:punchProfileChoices(nativeView)});
-  openPunchParameters(nativeView,key,key);
-  const nativePopup=()=>nativeHtml().slice(nativeHtml().indexOf('<div class="tube-designer-punch-parameter-backdrop">'));
-  assert.match(nativePopup(),/选择截面/);assert.doesNotMatch(nativePopup(),/选择刀具|保留原端面/);
-  assert.match(nativePopup(),new RegExp('<option value="'+(source==="branch"?'system:rect':'__dxf__')+'" selected>'));
-  assert.match(nativePopup(),/data-tube-designer-punch-parameter="cutMode"/);
-  if(source==="branch"){
-    assert.match(nativePopup(),/data-tube-designer-punch-profile-parameter="width"/);
-    await updatePunchProfileParameter(profileContext,nativeView,{value:"34",dataset:{...target,tubeDesignerPunchProfileParameter:"width"}});
-    assert.equal(nativeState.ends[key].section.parameters.width,34);
-  }
-  updatePunchWizardField(nativeView,{value:"concave",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}});
-  assert.equal(closePunchParameters(nativeView,true,part),true);
-  assert.equal(nativeState.ends[key].section.source,nativeSource);
-  assert.equal(nativeState.ends[key].section.key,nativeRecipe.ends[key].section.key);
-  const nativeCommitted=getPunchWizardPayload(nativeView).ends[key];
-  openPunchParameters(nativeView,key,key);
-  updatePunchWizardField(nativeView,{value:"convex",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}});
-  if(source==="branch")await updatePunchProfileParameter(profileContext,nativeView,{value:"38",dataset:{...target,tubeDesignerPunchProfileParameter:"width"}});
-  assert.equal(closePunchParameters(nativeView,false,part),true);
-  assert.deepEqual(getPunchWizardPayload(nativeView).ends[key],nativeCommitted,"Cancel on a native-reloaded end restores parameters without changing its inferred source");
-  openPunchParameters(modeView,key,key);
-  updatePunchWizardField(modeView,{value:"concave",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}});
-  assert.equal(closePunchParameters(modeView,false,part),true);
-  assert.equal(modeState.ends[key].toolParameters.cutMode,"convex","Cancelling restores the selected end's saved convex mode");
-  assert.equal(modeState.ends[key==="start"?"end":"start"].type,"keep","Changing cut mode never rewrites the other end");
+  const current={pending:false,tubeDesignerSystemProfiles:[profile],tubeDesignerPunchWizard:createPunchWizardState(part)};
+  installPunchCatalogue(current.tubeDesignerPunchWizard,{tools});
+  const target={tubeDesignerPunchIndex:key,tubeDesignerPunchEnd:key};
+  openPunchParameters(current,key,key);
+  if(source==="branch")assert.equal(changePunchRecordKind(current,{value:"branch",dataset:target}),true);
+  else assert.equal(await selectPunchProfileSource(dxfContext,current,{value:"__dxf__",dataset:target}),true);
+  assert.equal(current.tubeDesignerPunchWizard.ends[key].toolParameters.cutMode,"concave");
+  assert.equal(updatePunchWizardField(current,{value:"convex",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}}),true);
+  assert.equal(closePunchParameters(current,true,part),true);
+  const payload=getPunchWizardPayload(current);
+  assert.equal(payload.ends[key].toolParameters.cutMode,"convex");
+  assert.equal(payload.ends[key==="start"?"end":"start"].type,"keep");
+  const copy=createPunchWizardState(part,{...payload,baseLength:1000});
+  assert.deepEqual(getPunchWizardPayload({tubeDesignerPunchWizard:copy}).ends,payload.ends);
+  assert.equal(payload.partEntityId,undefined);
 }
-
-// Verify the production creation handler routes end sources and can create an
-// end-cut-only part, with no side holes and no accidental draft in the payload.
-const creation={pending:false,tubeDesignerSystemProfiles:[profile]},requests=[];
-let dxfPath="";
-const context={appProxy:{bridge:{async openFileDialog(){return dxfPath;}}},productProxy:dxfContext.productProxy,
-  sceneProxy:{async invoke(method,request){requests.push({method,request});
-    if(method==="TubeDesigner.AddNestingPunchPart")return {tubeDesigner:{nestingGroups:[]},partEntityId:"created-end-only"};
-    return {toolsOnly:true,baseGeometry:{url:"memory://end-base",version:1},toolGeometry:{url:"memory://end-tools",version:1},length:1000,baseBounds:{width:1000}};
-  }},actions:{async refreshActiveSceneState(){}}};
-const ops={renderProject(){},showNotice(){}};
-const act=(suffix,target={})=>handleNestingPunchPartAction(context,creation,"tube-designer-nesting-punch-create-"+suffix,target,ops);
-await act("open");installPunchCatalogue(creation.tubeDesignerPunchWizard,{tools});
-await act("record-kind-change",{value:"dxf",dataset:start});
-assert.equal(creation.tubeDesignerPunchWizard.parameterEditor,null,"Cancelling the native file picker restores the original end");
-assert.equal(creation.tubeDesignerPunchWizard.ends.start.type,"keep");
-dxfPath="C:\\fixtures\\end-cut.dxf";
-await act("record-kind-change",{value:"dxf",dataset:start});
-assert.equal(creation.tubeDesignerPunchWizard.parameterEditor,null,"Selecting an inline end source does not open a modal editor");
-await act("parameters-open",{dataset:start});
-assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"start");
-assert.equal(requests.at(-1).request.ends.start.section.source,"dxf");
-assert.deepEqual(requests.at(-1).request.features,[]);
-const countBeforeModeChange=requests.length;
-await act("preview-mode",{dataset:{tubeDesignerPunchPreviewMode:"result"}});
-assert.equal(creation.tubeDesignerPunchWizard.previewMode,"tools","Intermediate editing never switches to a boolean cut result");
-assert.equal(requests.length,countBeforeModeChange,"A retired result-mode action cannot schedule geometry");
-assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"start","The tool-only display keeps the parameter transaction open");
-await act("parameters-close");
-await act("field-change",{value:"end-step-z",dataset:{...end,tubeDesignerPunchField:"tool"}});
-await act("parameters-open",{dataset:end});
-assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"end");
-await act("parameters-close");
-const beforeBlankSwitch=structuredClone(creation.tubeDesignerPunchWizard.ends);
-const replacement={...structuredClone(profile),id:"another-rect",name:"另一主管"};
-creation.tubeDesignerSystemProfiles.push(replacement);
-await act("draft-change",{value:"system:another-rect",dataset:{tubeDesignerNestingPunchField:"profileKey"}});
-assert.deepEqual(creation.tubeDesignerPunchWizard.ends,beforeBlankSwitch,"Changing the main section must retain both end operations for revalidation");
-assert.equal(requests.at(-1).request.profileRef.id,"another-rect");
-await act("apply");
-const request=requests.find(row=>row.method==="TubeDesigner.AddNestingPunchPart").request;
-assert.deepEqual(request.features,[]);assert.equal(request.ends.start.toolRef.id,"end-profile");assert.equal(request.ends.end.toolRef.id,"end-step-z");
-assert.equal(creation.tubeDesignerPunchWizard,null);
-console.log("End cutter UI: independent ends, profile/DXF sources, shape parameters, transactions, saved recipe and end-only creation passed.");
+console.log("Creation end draft helpers: independent ends, profile/DXF sources, parameters, transactions and exact draft copies passed.");

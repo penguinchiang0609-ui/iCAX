@@ -13,7 +13,7 @@
 
 宿主 bridge 的必需能力是 application/product/scene channel 注册、`postSDOFrame`、`subscribeSDOFrames` 和直接资源访问 `requestResource`。资源请求只传 method、完整 URL、headers 和 body；URL 自身决定 Application/Product/Project/Scene 资源库。`openFileDialog(options)` 是可选 UI 容器能力，CEF 容器会提供；没有该方法时，产品页面仍可以让用户手动输入路径。
 
-CEF 同时提供 `saveFileDialog({ title, defaultPath, defaultExtension, filters })`。`defaultExtension` 不带点；`filters` 为 `{ name, extensions }` 数组。返回所选本地路径，取消返回 `null`，覆盖已有文件由原生对话框确认。该方法只选择路径；实际保存通过主场景上的 `Project.Save` 完成，可调用 `ProjectProxy.save(projectPath)`。AppShell 首次保存选位置，后续保存使用现有路径；Ctrl+Shift+S 另存为，Ctrl+O 打开，Ctrl+S 保存。
+CEF 同时提供 `saveFileDialog({ title, initialDirectory, defaultPath, defaultExtension, filters })`。打开与保存文件选择器的 `initialDirectory` 指定初始目录，`defaultPath` 指定文件名或已有文件路径；目录不得作为文件名传入。`defaultExtension` 不带点；`filters` 为 `{ name, extensions }` 数组。返回所选本地路径，取消返回 `null`，覆盖已有文件由原生对话框确认。该方法只选择路径；实际保存通过主场景上的 `Project.Save` 完成，可调用 `ProjectProxy.save(projectPath)`。AppShell 首次保存选位置，后续保存使用现有路径；Ctrl+Shift+S 另存为，Ctrl+O 打开，Ctrl+S 保存。
 
-SDK 对 `openFileDialog`、`saveFileDialog` 和 `openDirectoryDialog` 记忆最近成功选择的目录。页面可用 `memoryKey: "稳定操作标识"` 指定独立记忆身份；未指定时按方法、标题、筛选器和默认扩展名区分。传 `memoryKey: false` 可关闭该次调用的目录记忆：不读取或写入记忆，原生路径参数按调用者传值保留。`memoryKey` 仅用于 SDK，不传给原生选择器。取消或选择器报错均不覆盖已记忆的目录。
+SDK 对 `openFileDialog`、`saveFileDialog` 和 `openDirectoryDialog` 记忆最近成功选择的目录。记忆目录通过 `initialDirectory` 传给原生选择器；未指定文件名的打开操作保持文件名为空，保存新文件时保留调用者提供的文件名。显式初始目录优先于记忆；`defaultPath` 含自身目录时不填入记忆目录。页面可用 `memoryKey: "稳定操作标识"` 指定独立记忆身份；未指定时按方法、标题、筛选器和默认扩展名区分。传 `memoryKey: false` 可关闭该次调用的目录记忆：不读取或写入记忆，原生路径参数按调用者传值保留。`memoryKey` 仅用于 SDK，不传给原生选择器。取消或选择器报错均不覆盖已记忆的目录。
 

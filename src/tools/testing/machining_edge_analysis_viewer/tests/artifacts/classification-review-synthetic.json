@@ -1,0 +1,1523 @@
+{
+  "passed": true,
+  "syntheticMetadataFixture": true,
+  "realGeometrySource": "TestData/Tube/EdgeAnalysis/0001.json",
+  "exactPublicDataBefore": "591cf3524e146d4041fe0a4b70cc98934a58a66e2779b26bbdc9faeca20013b9",
+  "exactPublicDataAfter": "591cf3524e146d4041fe0a4b70cc98934a58a66e2779b26bbdc9faeca20013b9",
+  "geometryBefore": "c37a08c1a2f9c0bde4748de62b2011ad8b7ff75f0ecfafc8a8b19dbc00f8a51c",
+  "geometryAfter": "c37a08c1a2f9c0bde4748de62b2011ad8b7ff75f0ecfafc8a8b19dbc00f8a51c",
+  "sourceIdIntentionallyEqualsOtherCurrentFaceId": "18",
+  "currentFaceId": "17",
+  "nonMachiningFaceIds": [
+    "90001",
+    "90002"
+  ],
+  "sourceIdsArePlainText": true,
+  "onlyCurrentFaceIdCreatesNavigation": true,
+  "edgeStylesUnchanged": true,
+  "initialState": {
+    "styles": [
+      {
+        "edgeKey": "E105:S1",
+        "edgeId": "105",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E105:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E106:S1",
+        "edgeId": "106",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E106:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E107:S1",
+        "edgeId": "107",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E107:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E108:S1",
+        "edgeId": "108",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E108:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E109:S1",
+        "edgeId": "109",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E109:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E110:S1",
+        "edgeId": "110",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E110:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E111:S1",
+        "edgeId": "111",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E111:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E112:S1",
+        "edgeId": "112",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E112:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E113:S1",
+        "edgeId": "113",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E113:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E114:S1",
+        "edgeId": "114",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E114:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E115:S1",
+        "edgeId": "115",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E115:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E116:S1",
+        "edgeId": "116",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E116:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E117:S1",
+        "edgeId": "117",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E117:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E118:S1",
+        "edgeId": "118",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E118:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E119:S1",
+        "edgeId": "119",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E119:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E120:S1",
+        "edgeId": "120",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E120:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E121:S1",
+        "edgeId": "121",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E121:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E122:S1",
+        "edgeId": "122",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E122:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E123:S1",
+        "edgeId": "123",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E123:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E124:S1",
+        "edgeId": "124",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E124:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E125:S1",
+        "edgeId": "125",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E125:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E126:S1",
+        "edgeId": "126",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E126:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E127:S1",
+        "edgeId": "127",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E127:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E128:S1",
+        "edgeId": "128",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E128:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E129:S1",
+        "edgeId": "129",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E129:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E130:S1",
+        "edgeId": "130",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E130:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E131:S1",
+        "edgeId": "131",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E131:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E132:S1",
+        "edgeId": "132",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E132:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E133:S1",
+        "edgeId": "133",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E133:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E134:S1",
+        "edgeId": "134",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E134:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E135:S1",
+        "edgeId": "135",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E135:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E136:S1",
+        "edgeId": "136",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E136:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E137:S1",
+        "edgeId": "137",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E137:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E138:S1",
+        "edgeId": "138",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E138:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E139:S1",
+        "edgeId": "139",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E139:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E140:S1",
+        "edgeId": "140",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E140:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E141:S1",
+        "edgeId": "141",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E141:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E142:S1",
+        "edgeId": "142",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E142:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E143:S1",
+        "edgeId": "143",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E143:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E144:S1",
+        "edgeId": "144",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E144:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E145:S1",
+        "edgeId": "145",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E145:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E146:S1",
+        "edgeId": "146",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E146:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E147:S1",
+        "edgeId": "147",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E147:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E148:S1",
+        "edgeId": "148",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E148:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E149:S1",
+        "edgeId": "149",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E149:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E150:S1",
+        "edgeId": "150",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E150:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E151:S1",
+        "edgeId": "151",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E151:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E152:S1",
+        "edgeId": "152",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E152:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E153:S1",
+        "edgeId": "153",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E153:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E154:S1",
+        "edgeId": "154",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E154:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E155:S1",
+        "edgeId": "155",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E155:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E156:S1",
+        "edgeId": "156",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E156:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E157:S1",
+        "edgeId": "157",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E157:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E158:S1",
+        "edgeId": "158",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E158:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E159:S1",
+        "edgeId": "159",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E159:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E160:S1",
+        "edgeId": "160",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E160:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E161:S1",
+        "edgeId": "161",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E161:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E162:S1",
+        "edgeId": "162",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E162:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E163:S1",
+        "edgeId": "163",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E163:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E164:S1",
+        "edgeId": "164",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E164:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E165:S1",
+        "edgeId": "165",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E165:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E166:S1",
+        "edgeId": "166",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E166:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E167:S1",
+        "edgeId": "167",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E167:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E168:S1",
+        "edgeId": "168",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E168:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E169:S1",
+        "edgeId": "169",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E169:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E170:S1",
+        "edgeId": "170",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E170:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E171:S1",
+        "edgeId": "171",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E171:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E172:S1",
+        "edgeId": "172",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E172:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E173:S1",
+        "edgeId": "173",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E173:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E174:S1",
+        "edgeId": "174",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E174:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E175:S1",
+        "edgeId": "175",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E175:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E176:S1",
+        "edgeId": "176",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E176:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E177:S1",
+        "edgeId": "177",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E177:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E178:S1",
+        "edgeId": "178",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E178:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E179:S1",
+        "edgeId": "179",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E179:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E180:S1",
+        "edgeId": "180",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E180:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E181:S1",
+        "edgeId": "181",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E181:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E182:S1",
+        "edgeId": "182",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E182:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E183:S1",
+        "edgeId": "183",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E183:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E184:S1",
+        "edgeId": "184",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E184:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E185:S1",
+        "edgeId": "185",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E185:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E186:S1",
+        "edgeId": "186",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E186:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E187:S1",
+        "edgeId": "187",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E187:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E188:S1",
+        "edgeId": "188",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E188:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E189:S1",
+        "edgeId": "189",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E189:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E190:S1",
+        "edgeId": "190",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E190:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E191:S1",
+        "edgeId": "191",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E191:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      },
+      {
+        "edgeKey": "E192:S1",
+        "edgeId": "192",
+        "segmentId": 1,
+        "originalSpanKeys": [
+          "E192:S1"
+        ],
+        "width": 2.4,
+        "worldUnits": false,
+        "color": "#00b8d9",
+        "skinRelation": "OnSkin",
+        "convexity": "Free",
+        "pattern": [
+          2,
+          4
+        ]
+      }
+    ],
+    "faces": 2,
+    "segments": 88
+  },
+  "certificateText": "Classify 分类证据 · 外露 1 / 内部 1 / 零裁剪域 1\nClassify 加工面\n2\nClassify 不加工面\n3\n外露剩余片\n1\n内部接合片\n1\n零裁剪域证书\n1\n\n下列计数只统计带分片或零裁剪域标记的记录。内部片和零裁剪域不在当前加工面网格中。\n\n外露剩余片（可定位）· 1\nF1 · 模型面 ID 17\nClassify 来源与分片\n来源 sourceId\n18\n分类片类型\n外露剩余片（加工）\n来源原面 ID\n18\n接合锚定原面 ID\n81,82\n来源原边 ID\n17,18\n来源三维曲线 ID\n27,28\n\nsourceId 与来源原面 ID 是来源标识；当前加工面的选中和定位使用模型面 ID。\n\n完整 sourceTags（5）\n内部接合片（不加工）· 1\n内部接合片（不加工）\n分类模型面 ID 90001\nClassify 来源与分片\n来源 sourceId\n17\n分类片类型\n内部接合片（不加工）\n来源原面 ID\n81,82\n\nsourceId 与来源原面 ID 是来源标识；当前加工面的选中和定位使用模型面 ID。\n\n完整 sourceTags（2）\n零裁剪域证书（不加工）· 1\n零裁剪域（不加工）\n分类模型面 ID 90002\nClassify 来源与分片\n来源 sourceId\nsource<not-a-current-face>\n分类片类型\n零裁剪域（不加工）\n\nsourceId 与来源原面 ID 是来源标识；当前加工面的选中和定位使用模型面 ID。\n\n零裁剪域证书\n裁剪域证明\n两条仿射参数曲线在参数舍入界内沿同一原生顶点对往返\nClassify 输出面 ID\n90002\n分割前面索引\n350\nUV 参数范围\n-1.2345678901234567,2,3,4\n线环数\n1\n面内边使用数\n2\nUV 舍入预算\n1.2345678901234567e-34\n最大端点 UV 间隙\n9.876543210987654e-35\nUV 面积表示界\n1.2345678901234567e-68\n\n面 ID 属于本次 Classify 输出；分割前面索引不表示导入原模型的祖先面编号。\n\n数值按证书原文显示。UV 是曲面参数；UV 面积表示界不是物理面积阈值。\n\n证明标识\n完整 sourceTags（10）\nClassify 诊断（1）\n完整 classificationReview",
+  "faceDetails": "Classify 来源与分片\n来源 sourceId\n18\n分类片类型\n外露剩余片（加工）\n来源原面 ID\n18\n接合锚定原面 ID\n81,82\n来源原边 ID\n17,18\n来源三维曲线 ID\n27,28\n\nsourceId 与来源原面 ID 是来源标识；当前加工面的选中和定位使用模型面 ID。\n\n完整 sourceTags（5）",
+  "pageErrors": []
+}

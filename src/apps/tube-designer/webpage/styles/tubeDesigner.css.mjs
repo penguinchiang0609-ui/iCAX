@@ -6,6 +6,8 @@ import { dialogAppearanceCss } from "./dialogAppearance.css.mjs";
 import { punchSheetRegionsCss } from "./punchSheetRegions.css.mjs";
 import { punchBatchCss } from "./punchBatch.css.mjs";
 import { floatingEditorsCss } from "./floatingEditors.css.mjs";
+import { machiningWorkspaceCss } from "./machiningWorkspace.css.mjs";
+import { viewportNavigationCss } from "./viewportNavigation.css.mjs";
 const baseTubeDesignerCss = String.raw`
 .tube-designer-workspace > .cam-status.notice { width:max-content; max-width:min(420px, calc(100% - 24px)); box-sizing:border-box; padding:5px 10px; line-height:1.4; overflow-wrap:anywhere; }
 .tube-parameter-advanced { grid-column: 1 / -1; width: 100%; min-width: 0; border: 1px solid #cbdce0; padding: 10px; }
@@ -1057,6 +1059,32 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-diagram > header > div { display: grid; gap: 2px; }
 .tube-designer-product-diagram > header strong { color: #294b54; font-size: 12px; }
 .tube-designer-product-diagram > header span { color: #789096; font-size: 9px; }
+.tube-insert-detail {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #c6d6d9;
+  border-radius: 6px;
+  background: #f5f9fa;
+  color: #294b54;
+}
+.tube-insert-detail > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; font-weight: 600; }
+.tube-insert-detail > header strong { font-size: 12px; }
+.tube-insert-detail > header small { color: #637f85; font-size: 11px; }
+.tube-insert-detail-artwork { min-width: 0; border: 1px solid #dae4e7; border-radius: 5px; overflow: hidden; background: #fff; }
+svg.tube-insert-detail-artwork, .tube-insert-detail-artwork svg { display: block; width: 100%; height: auto; min-height: 155px; max-height: 300px; }
+.tube-insert-detail-artwork svg text { font-family: Arial, "Microsoft YaHei", sans-serif; }
+.tube-insert-detail-artwork [data-product-diagram-parameter] { cursor: pointer; }
+.tube-insert-detail-artwork [data-product-diagram-parameter]:hover,
+.tube-insert-detail-artwork [data-product-diagram-parameter].is-active { filter: drop-shadow(0 0 3px #e3a83f); }
+.tube-insert-detail-artwork [data-product-diagram-parameter]:focus-visible { outline: 2px solid #ffd166; outline-offset: 3px; }
+.tube-insert-detail-readouts { display: grid; gap: 6px; margin: 0; padding: 0; font-size: 12px; }
+.tube-insert-detail-readouts > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.tube-insert-detail-readouts dt { color: #63767b; }
+.tube-insert-detail-readouts dd { margin: 0; color: #244957; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tube-insert-detail-note { margin: 0; color: #657d83; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .tube-designer-product-diagram-canvas {
   display: grid;
   grid-template-columns: minmax(160px, 1.45fr) minmax(92px, .72fr);
@@ -3924,6 +3952,13 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .td-draw-workbench .tube-designer-punch-field-grid label:not(.tube-designer-field) { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; font-size: 11px; color: #617c85; }
 .td-draw-workbench .tube-designer-punch-field-grid input,.td-draw-workbench .tube-designer-punch-field-grid select { min-height: 29px; padding: 4px 6px; font-size: 12px; }
 .td-draw-workbench .tube-designer-punch-field-grid input[type="checkbox"] { min-height: 16px; }
+label.cad-bevel-enable, .cad-bevel-segments label,
+.td-draw-workbench .tube-designer-punch-field-grid label.cad-bevel-enable,
+.td-draw-workbench .tube-designer-punch-field-grid .cad-bevel-segments label { display: flex; align-items: center; gap: 6px; }
+.cad-bevel-editor input[type="checkbox"] { width: 16px; min-height: 16px; flex: 0 0 auto; accent-color: #168f84; }
+.cad-bevel-enable { margin-bottom: 8px; }
+.cad-bevel-segments { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.cad-bevel-editor > small { display: block; margin-top: 5px; font-size: 10px; line-height: 1.5; color: #617c85; }
 .td-draw-workbench .tube-drawing-section-preview { gap: 8px; }
 .td-draw-workbench .tube-drawing-section-preview > svg { width: 70px; height: 55px; flex-basis: 70px; }
 .td-draw-workbench .tube-drawing-section-preview > span { font-size: 11px; }
@@ -4057,7 +4092,7 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-designer-add-dialog .tube-designer-template-card strong { font-size:11px; }
 .tube-designer-add-dialog .tube-designer-template-card small { font-size:9px; line-height:1.3; }
 .tube-designer-add-dialog .tube-designer-field-grid { grid-template-columns:minmax(0, 1fr); }
-.tube-designer-parameter-panel { container:designer-parameter-panel / inline-size; }
+.tube-designer-parameter-panel { min-width:0; }
 .tube-library-diagram-dock { position:absolute; z-index:6; top:145px; right:0; width:360px; height:405px; max-height:calc(100% - 16px); display:flex; flex-direction:column; align-items:stretch; box-sizing:border-box; overflow:hidden; max-width:calc(100% - 16px); background:#f6faf9; pointer-events:none; will-change:transform; transform:translateZ(0); }
 .tube-library-diagram-dock[hidden] { display:none; }
 .tube-library-diagram-actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
@@ -4077,7 +4112,7 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-library-diagram-content .tube-tool-library-parameter-diagram { margin:0; border:0; border-radius:0; padding:8px; }
 .tube-library-diagram-content .td-profile-parameter-diagram > header,
 .tube-library-diagram-content .tube-tool-library-parameter-diagram > header { color:#285f58; }
-.tube-designer-parameter-panel .tube-designer-field-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px; padding:4px; }
+.tube-designer-parameter-panel .tube-designer-field-grid { grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap:4px; padding:4px; }
 .tube-designer-parameter-panel .tube-designer-field { min-height:32px; padding:4px 6px; border:1px solid #d7e1e3; border-radius:3px; background:#fff; }
 .tube-designer-parameter-panel .tube-designer-field.wide { grid-column:auto; }
 .tube-designer-parameter-panel .tube-designer-field.is-line-full { grid-column:1 / -1; }
@@ -4111,7 +4146,7 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
   );
 }
 .tube-designer-parameter-panel .tube-designer-profile-field { grid-column:1 / -1; }
-.tube-designer-product-tool-field > [data-tool-parameter-scope] { min-width:0; container:product-tool-parameters / inline-size; }
+.tube-designer-product-tool-field > [data-tool-parameter-scope] { min-width:0; }
 .tube-product-tool-diagram-open { justify-self:start; }
 .tube-floating-parameter-diagram { position:absolute; z-index:12; width:360px; height:405px; max-width:100%; max-height:100%; background:#f4f8f8; border:1px solid #a9bec3; border-radius:5px; box-shadow:0 5px 20px #0005; pointer-events:auto; display:flex; flex-direction:column; will-change:transform; transform:translateZ(0); }
 .tube-floating-parameter-diagram > header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:#e4efee; color:#28565d; cursor:move; touch-action:none; user-select:none; border-bottom:1px solid #c6d7da; }
@@ -4128,9 +4163,7 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 }
 .tube-designer-product-tool-field [data-tool-parameter-scope] .tube-designer-field > span { min-width:0; overflow-wrap:anywhere; }
 .tube-designer-product-tool-field [data-tool-parameter-scope] .tube-designer-field > :is(input:not([type="checkbox"]), select) { max-width:100%; }
-@container product-tool-parameters (max-width:279px) {
-  .tube-designer-product-tool-field [data-tool-parameter-scope] > .tube-designer-field-grid { grid-template-columns:minmax(0, 1fr); }
-}
+.tube-designer-product-tool-field [data-tool-parameter-scope] > .tube-designer-field-grid { grid-template-columns:repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
 .tube-designer-parameter-panel .tube-designer-profile-field > select {
   justify-self:start;
   inline-size:clamp(
@@ -4143,10 +4176,6 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-designer-scene-product-identity > header { display:flex; align-items:center; justify-content:space-between; min-height:29px; padding:4px 9px; border-bottom:1px solid #c8d5d8; color:#275f5a; }
 .tube-designer-scene-product-identity > header strong { font-size:11px; }
 .tube-designer-scene-product-identity > header small { color:#73878d; font-size:9px; }
-@container designer-parameter-panel (max-width:279px) {
-  .tube-designer-parameter-panel .tube-designer-field-grid { grid-template-columns:minmax(0, 1fr); }
-  .tube-designer-parameter-panel .tube-designer-field.is-line-full { grid-column:auto; }
-}
 .tube-designer-add-editor-stage { padding:0; }
 .tube-designer-add-quick-layout { display:grid; gap:10px; align-items:start; }
 .tube-designer-add-quick-visual, .tube-designer-add-quick-options { min-width:0; }
@@ -4192,4 +4221,71 @@ const licenseStyles = `
 [data-tube-designer-license-status] dd { margin:0; white-space:nowrap; }
 [data-tube-designer-locked-area] button { padding:5px 8px; border:1px solid #aac2cb; background:#f5fafb; color:#294852; cursor:pointer; }
 `;
-export const tubeDesignerCss=baseTubeDesignerCss+punchLayoutStyles+punchReviewStyles+punchRecordAreasCss+tileWindowCss+sceneParameterStyles+dialogAppearanceCss+punchSheetRegionsCss+floatingEditorsCss+punchBatchCss+licenseStyles;
+const tubeCadStyles = `
+.tube-cad-backdrop { position:absolute; inset:0; z-index:100; padding:12px; background:#13252d65; display:flex; color:#244750; }
+.tube-cad-editor { display:flex; flex-direction:column; width:100%; min-width:0; min-height:0; background:#f6fafb; border:1px solid #6a959d; box-shadow:0 8px 28px #0005; border-radius:7px; overflow:hidden; }
+.tube-cad-editor > header { display:flex; align-items:center; gap:14px; padding:10px 14px; background:#e3eff0; border-bottom:1px solid #bdcfd2; }
+.tube-cad-editor > header strong { flex:1; font-size:13px; }
+.tube-cad-editor nav { display:flex; gap:4px; }
+.tube-cad-editor button { border:1px solid #afc8cd; border-radius:4px; padding:6px 10px; background:#fff; color:#244750; cursor:pointer; }
+.tube-cad-editor button[aria-pressed=true],.tube-cad-editor button[aria-selected=true] { border-color:#278b85; background:#def0ed; }
+.tube-cad-editor button:disabled { opacity:.5; cursor:default; }
+.tube-cad-editor button.tube-designer-primary { background:#167e77; color:#fff; border-color:#167e77; }
+.tube-cad-layout { display:grid; grid-template-columns:230px minmax(200px,1fr) 290px; flex:1; min-height:0; }
+.tube-cad-sidebar,.tube-cad-properties { min-height:0; overflow:auto; padding:12px; overscroll-behavior:contain; }
+.tube-cad-sidebar { border-right:1px solid #cadbdd; background:#edf5f6; }
+.tube-cad-properties { border-left:1px solid #cadbdd; background:#fff; }
+.tube-cad-editor h2 { margin:0 0 10px; font-size:13px; }
+.tube-cad-editor h2 small { display:block; margin-top:5px; color:#67818a; font-size:11px; font-weight:400; }
+.tube-cad-editor h3,.tube-cad-editor summary { font-size:12px; margin:0 0 8px; font-weight:600; }
+.tube-cad-editor h4 { font-size:11px; margin:9px 0 5px; }
+.tube-cad-sidebar [role=treeitem] { width:100%; text-align:left; display:block; margin:4px 0; padding:9px; }
+.tube-cad-sidebar [role=treeitem] strong,.tube-cad-sidebar [role=treeitem] small { display:block; overflow-wrap:anywhere; }
+.tube-cad-sidebar [role=treeitem] small { margin-top:4px; color:#66818a; font-size:10px; }
+.tube-cad-editor .tube-designer-field { display:flex; align-items:center; gap:8px; margin:7px 0; min-width:0; }
+.tube-cad-editor .tube-designer-field > span { flex:1; font-size:11px; min-width:70px; }
+.tube-cad-editor input,.tube-cad-editor select { box-sizing:border-box; width:126px; min-width:0; border:1px solid #b8cdd2; border-radius:4px; padding:6px; background:#fff; color:#244750; }
+.tube-cad-editor input:disabled { background:#edf1f2; color:#81979c; }
+.tube-cad-editor p { font-size:11px; line-height:1.6; color:#617d86; }
+.tube-cad-property-section,.tube-cad-add-hole { border-top:1px solid #dce6e8; margin-top:12px; padding-top:12px; }
+.tube-cad-curve-fields { max-height:290px; overflow:auto; overscroll-behavior:contain; }
+.tube-cad-center { position:relative; display:flex; flex-direction:column; min-height:0; min-width:0; background:#13252d; }
+.tube-cad-center [data-tube-cad-viewport] { position:relative; flex:1; min-height:0; overflow:hidden; }
+.tube-cad-center canvas { display:block; width:100%; height:100%; }
+.tube-cad-center > p { color:#c3dcdf; padding:7px 12px; margin:0; background:#213740; }
+.tube-cad-editor > footer { display:flex; gap:8px; align-items:center; padding:9px 14px; border-top:1px solid #bdcfd2; background:#eaf3f4; }
+.tube-cad-editor footer span { flex:1; color:#ae4137; font-size:11px; }
+@media(max-width:950px) { .tube-cad-layout { grid-template-columns:185px minmax(120px,1fr) 240px; }.tube-cad-editor nav button { padding:5px; }.tube-cad-editor input,.tube-cad-editor select { width:100px; } }
+`;
+const readableProductEditorCss = `
+.tube-designer-parameter-panel .tube-designer-field { font-size: 13px; min-height: 38px; grid-template-columns: minmax(90px, 1fr) minmax(90px, 1.1fr); }
+.tube-designer-parameter-panel .tube-designer-field > span { font-size: 13px; overflow-wrap: anywhere; line-height: 1.4; }
+/* Intrinsic columns avoid nested container-query relayout in the CEF editor
+   when a narrow pane gains a scrollbar. Keep the existing DOM and focus. */
+.tube-designer-parameter-panel .tube-designer-parametric-profile-parameters .tube-designer-field-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.tube-designer-parameter-panel .tube-designer-field :is(input,select),
+.tube-designer-parameter-panel .tube-designer-user-preset-bar :is(input,select) { font-size: 14px; height: 30px; min-width: 0; }
+.tube-designer-parameter-panel :is(.tube-designer-parameter-section,.tube-designer-parameter-subsection) > summary { font-size: 14px; min-height: 36px; }
+.tube-designer-parameter-panel :is(.tube-designer-parametric-profile-parameters > strong,.tube-designer-profile-actions button,.tube-designer-user-preset-bar label,.tube-designer-user-preset-bar button) { font-size: 13px; }
+.tube-designer-parameter-panel .tube-designer-parameter-summary > strong { font-size: 14px; }
+.tube-designer-config-dialog .tube-designer-field { font-size: 13px; line-height: 1.4; }
+.tube-designer-config-dialog { --td-dialog-font-size: 14px; }
+.tube-designer-config-dialog .tube-designer-field :is(input,select) { font-size: 14px; min-height: 30px; }
+.tube-designer-config-dialog .tube-designer-template-card strong { font-size: 13px; }
+.tube-designer-config-dialog .tube-designer-template-card small { font-size: 11px; }
+.tube-designer-preset-dialog[data-floating-editor-window="product-preset"] { --td-dialog-font-size: 14px; max-height: calc(100vh - 32px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.tube-designer-preset-dialog[data-floating-editor-window="product-preset"] .tube-designer-field { font-size: 13px; line-height: 1.4; min-width: 0; }
+.tube-designer-preset-dialog[data-floating-editor-window="product-preset"] .tube-designer-preset-dialog-body { min-height: 0; overflow: auto; }
+.tube-designer-instance-card strong { font-size: 13px; }
+.tube-designer-product-parts-dock :is(td,th),.tube-designer-scene-specification-tree { font-size: 13px; }
+@media (max-width: 1100px) and (max-height: 700px) {
+  .tube-designer-workspace:has(> .tube-designer-product-parts-dock) { --cam-left-width: min(20vw, 220px) !important; --cam-right-width: min(28vw, 300px) !important; --cam-bottom-height: 80px !important; }
+  .workbench:has(.tube-designer-workspace > .tube-designer-product-parts-dock) { --bottom-dock-height: 36px !important; }
+  .tube-designer-workspace:has(> .tube-designer-product-parts-dock) .tube-designer-scene-specification-tree:not(.is-collapsed) { top: 8px; left: 8px; width: 150px; max-height: 96px; }
+  .tube-designer-workspace:has(> .tube-designer-product-parts-dock) .tube-designer-scene-specification-tree-body { max-height: 64px; }
+  .tube-designer-workspace .icax-three-axis-gizmo { width: 58px; height: 58px; }
+  .tube-designer-workspace .icax-three-axis-gizmo canvas { width: 100% !important; height: 100% !important; }
+  .tube-designer-workspace .icax-three-specification-label { max-width: 190px; }
+}
+`;
+export const tubeDesignerCss=baseTubeDesignerCss+punchLayoutStyles+punchReviewStyles+punchRecordAreasCss+tileWindowCss+sceneParameterStyles+dialogAppearanceCss+punchSheetRegionsCss+floatingEditorsCss+punchBatchCss+licenseStyles+tubeCadStyles+machiningWorkspaceCss+readableProductEditorCss+viewportNavigationCss;

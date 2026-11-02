@@ -2,11 +2,11 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "single-face-security-window",
-  "version": "3.9.9",
+  "version": "3.13.0",
   "displayName": {
     "zh-CN": "防盗窗"
   },
-  "description": "支持单面、双面、三面和五面；按面型配置侧面、顶底格栅及开启口。双面、三面的其他边界需要现场封闭。",
+  "description": "支持单面、双面、三面和五面；所有填充形式的逃生窗均支持九宫格方位及边距定位。",
   "extensions": {
     "parameterDependencies": {
       "manufacturingOnly": [
@@ -83,7 +83,6 @@
       "structureParameters": [
         "faceType",
         "outerFrameStructure",
-        "doorFrameStructure",
         "doorLeafFrameStructure",
         "frameLayout",
         "infillPattern",
@@ -92,7 +91,19 @@
         "sidePosition",
         "accessDoorFace2",
         "accessDoorFace3",
-        "accessDoorFace5"
+        "accessDoorFace5",
+        "doorPosition",
+        "doorClearHeight",
+        "doorClearWidth",
+        "doorColumnCount",
+        "doorRowCount",
+        "barDistribution",
+        "doorLeftMargin",
+        "doorRightMargin",
+        "doorBottomMargin",
+        "doorTopMargin",
+        "doorHorizontalOffset",
+        "doorVerticalOffset"
       ],
       "parameterGroups": [
         {
@@ -111,15 +122,6 @@
           },
           "parameters": [
             "outerFrameStructure"
-          ]
-        },
-        {
-          "key": "fixed-frame-structure",
-          "displayName": {
-            "zh-CN": "逃生窗框"
-          },
-          "parameters": [
-            "doorFrameStructure"
           ]
         },
         {
@@ -144,7 +146,18 @@
             "sidePosition",
             "accessDoorFace2",
             "accessDoorFace3",
-            "accessDoorFace5"
+            "accessDoorFace5",
+            "doorPosition",
+            "doorClearHeight",
+            "doorClearWidth",
+            "doorColumnCount",
+            "doorRowCount",
+            "doorLeftMargin",
+            "doorRightMargin",
+            "doorBottomMargin",
+            "doorTopMargin",
+            "doorHorizontalOffset",
+            "doorVerticalOffset"
           ]
         }
       ]
@@ -161,19 +174,6 @@
         },
         "controls": [
           "outerFrameStructure"
-        ]
-      },
-      {
-        "key": "fixed_frame",
-        "controlKey": "doorFrameStructure",
-        "displayName": {
-          "zh-CN": "逃生窗框结构"
-        },
-        "dialogTitle": {
-          "zh-CN": "更改逃生窗框结构"
-        },
-        "controls": [
-          "doorFrameStructure"
         ]
       },
       {
@@ -241,7 +241,17 @@
         "doorHorizontalMaximumCenterSpacing": "doorHorizontalMaximumCenterSpacing",
         "doorVerticalLeftCenterOffset": "doorVerticalLeftCenterOffset",
         "doorVerticalRightCenterOffset": "doorVerticalRightCenterOffset",
-        "doorVerticalMaximumCenterSpacing": "doorVerticalMaximumCenterSpacing"
+        "doorVerticalMaximumCenterSpacing": "doorVerticalMaximumCenterSpacing",
+        "doorPosition": "doorPosition",
+        "doorColumnCount": "doorColumnCount",
+        "doorRowCount": "doorRowCount",
+        "barDistribution": "barDistribution",
+        "doorLeftMargin": "doorLeftMargin",
+        "doorRightMargin": "doorRightMargin",
+        "doorBottomMargin": "doorBottomMargin",
+        "doorTopMargin": "doorTopMargin",
+        "doorHorizontalOffset": "doorHorizontalOffset",
+        "doorVerticalOffset": "doorVerticalOffset"
       },
       "sceneBindings": {
         "faceType": "all",
@@ -598,11 +608,6 @@
             "outer_frame."
           ]
         },
-        "doorFrameStructure": {
-          "memberStableKeyPrefixes": [
-            "access_door.fixed_frame."
-          ]
-        },
         "doorFrameConnection": {
           "memberStableKeyPrefixes": [
             "access_door.fixed_frame."
@@ -684,6 +689,68 @@
         "doorLeafFrameGrooveTool": {
           "memberStableKeyPrefixes": [
             "access_door.leaf.frame."
+          ]
+        },
+        "doorPosition": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorColumnCount": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid."
+          ]
+        },
+        "doorRowCount": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid."
+          ]
+        },
+        "barDistribution": "all",
+        "doorLeftMargin": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorRightMargin": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorBottomMargin": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorTopMargin": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorHorizontalOffset": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
+          ]
+        },
+        "doorVerticalOffset": {
+          "memberStableKeyPrefixes": [
+            "access_door.",
+            "main_grid.",
+            "cap_grid."
           ]
         }
       },
@@ -1944,87 +2011,6 @@
         ]
       },
       {
-        "key": "doorFrameStructure",
-        "displayName": {
-          "zh-CN": "逃生窗框结构"
-        },
-        "group": "door_process",
-        "order": 0,
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "accessDoorEnabled",
-          "value": true
-        },
-        "choices": [
-          {
-            "value": "joined",
-            "displayName": {
-              "zh-CN": "拼接"
-            },
-            "matchWhen": {
-              "op": "any",
-              "conditions": [
-                {
-                  "op": "eq",
-                  "parameter": "doorFrameJoinType",
-                  "value": "miter_45"
-                },
-                {
-                  "op": "eq",
-                  "parameter": "doorFrameJoinType",
-                  "value": "butt_90"
-                }
-              ]
-            },
-            "assignments": [
-              {
-                "when": {
-                  "op": "eq",
-                  "parameter": "doorFrameJoinType",
-                  "value": "v_groove_90:tool_library"
-                },
-                "parameters": {
-                  "doorFrameJoinType": "miter_45"
-                }
-              }
-            ]
-          },
-          {
-            "value": "folded",
-            "displayName": {
-              "zh-CN": "折弯"
-            },
-            "matchWhen": {
-              "op": "eq",
-              "parameter": "doorFrameJoinType",
-              "value": "v_groove_90:tool_library"
-            },
-            "assignments": [
-              {
-                "when": {
-                  "op": "any",
-                  "conditions": [
-                    {
-                      "op": "eq",
-                      "parameter": "doorFrameJoinType",
-                      "value": "miter_45"
-                    },
-                    {
-                      "op": "eq",
-                      "parameter": "doorFrameJoinType",
-                      "value": "butt_90"
-                    }
-                  ]
-                },
-                "parameters": {
-                  "doorFrameJoinType": "v_groove_90:tool_library"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      {
         "key": "doorLeafFrameStructure",
         "displayName": {
           "zh-CN": "窗扇结构"
@@ -2609,6 +2595,11 @@
       }
     ],
     "parameterLayout": {
+      "parameterKinds": {
+        "dimension": [
+          "doorPosition"
+        ]
+      },
       "sections": [
         {
           "key": "product",
@@ -4731,7 +4722,7 @@
         {
           "value": "horizontal",
           "displayName": {
-            "zh-CN": "纯横杆"
+            "zh-CN": "横杆（极简防护网）"
           }
         },
         {
@@ -4806,65 +4797,85 @@
       "group": "door_position",
       "order": 31,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
-            "op": "all",
+            "op": "any",
             "conditions": [
               {
-                "op": "eq",
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               },
               {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
               }
             ]
           }
@@ -4889,65 +4900,85 @@
       "group": "door_position",
       "order": 32,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
-            "op": "all",
+            "op": "any",
             "conditions": [
               {
-                "op": "eq",
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "two"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "three"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "faceType",
+                    "value": "five"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               },
               {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
               }
             ]
           }
@@ -5127,6 +5158,150 @@
       }
     },
     {
+      "key": "doorPosition",
+      "displayName": {
+        "zh-CN": "逃生窗位置"
+      },
+      "valueType": "enum",
+      "defaultValue": "center_middle",
+      "group": "door_position",
+      "order": 2,
+      "choices": [
+        {
+          "value": "left_top",
+          "displayName": {
+            "zh-CN": "左上"
+          }
+        },
+        {
+          "value": "center_top",
+          "displayName": {
+            "zh-CN": "上中"
+          }
+        },
+        {
+          "value": "right_top",
+          "displayName": {
+            "zh-CN": "右上"
+          }
+        },
+        {
+          "value": "left_middle",
+          "displayName": {
+            "zh-CN": "左中"
+          }
+        },
+        {
+          "value": "center_middle",
+          "displayName": {
+            "zh-CN": "正中"
+          }
+        },
+        {
+          "value": "right_middle",
+          "displayName": {
+            "zh-CN": "右中"
+          }
+        },
+        {
+          "value": "left_bottom",
+          "displayName": {
+            "zh-CN": "左下"
+          }
+        },
+        {
+          "value": "center_bottom",
+          "displayName": {
+            "zh-CN": "下中"
+          }
+        },
+        {
+          "value": "right_bottom",
+          "displayName": {
+            "zh-CN": "右下"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "accessDoorEnabled",
+        "value": true
+      },
+      "description": "在所选安装面内选择九宫格方位，再用边距或居中偏移定位；创建后可通过场景标注修改方位，重新生成后更新构件。"
+    },
+    {
+      "key": "doorColumnCount",
+      "displayName": {
+        "zh-CN": "横向占格数"
+      },
+      "valueType": "integer",
+      "defaultValue": 6,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "group": "door_position",
+      "order": 3,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "single"
+          },
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "infillPattern",
+            "value": "grid"
+          }
+        ]
+      },
+      "description": "选择连续格栅单元；创建后通过场景标注修改，净开口随管型和格栅尺寸计算。"
+    },
+    {
+      "key": "doorRowCount",
+      "displayName": {
+        "zh-CN": "竖向占格数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "group": "door_position",
+      "order": 4,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "single"
+          },
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "infillPattern",
+            "value": "grid"
+          }
+        ]
+      },
+      "description": "选择连续格栅单元；创建后通过场景标注修改，净开口随管型和格栅尺寸计算。"
+    },
+    {
       "key": "productCode",
       "displayName": {
         "zh-CN": "产品编号"
@@ -5267,6 +5442,51 @@
       "order": 30
     },
     {
+      "key": "barDistribution",
+      "displayName": {
+        "zh-CN": "布杆方式"
+      },
+      "description": "自动均分：以边框内侧为边界等分，边缘到首末杆中心与杆间中心距相同，均不超过最大中心距。",
+      "valueType": "enum",
+      "defaultValue": "automatic",
+      "choices": [
+        {
+          "value": "automatic",
+          "displayName": {
+            "zh-CN": "按最大中心距自动均分"
+          }
+        },
+        {
+          "value": "end_offsets",
+          "displayName": {
+            "zh-CN": "指定首末留距"
+          }
+        }
+      ],
+      "group": "main_grid",
+      "order": 65,
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "faceType",
+            "value": "single"
+          },
+          {
+            "op": "ne",
+            "parameter": "infillPattern",
+            "value": "horizontal"
+          },
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
       "key": "horizontalMaximumCenterSpacing",
       "displayName": {
         "zh-CN": "横杆最大中心距"
@@ -5305,9 +5525,19 @@
       "group": "main_grid",
       "order": 80,
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillPattern",
-        "value": "horizontal"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "infillPattern",
+            "value": "horizontal"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5327,9 +5557,19 @@
       "group": "main_grid",
       "order": 90,
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillPattern",
-        "value": "horizontal"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "infillPattern",
+            "value": "horizontal"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5406,14 +5646,24 @@
         "op": "all",
         "conditions": [
           {
-            "op": "ne",
-            "parameter": "faceType",
-            "value": "single"
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "horizontal"
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "horizontal"
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
           }
         ]
       }
@@ -5438,14 +5688,24 @@
         "op": "all",
         "conditions": [
           {
-            "op": "ne",
-            "parameter": "faceType",
-            "value": "single"
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "horizontal"
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "horizontal"
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
           }
         ]
       }
@@ -5499,9 +5759,19 @@
       "group": "top_bottom_grid",
       "order": 90,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "faceType",
-        "value": "five"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "five"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5521,9 +5791,19 @@
       "group": "top_bottom_grid",
       "order": 100,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "faceType",
-        "value": "five"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "five"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5565,9 +5845,19 @@
       "group": "top_bottom_grid",
       "order": 120,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "faceType",
-        "value": "five"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "five"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5587,9 +5877,19 @@
       "group": "top_bottom_grid",
       "order": 130,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "faceType",
-        "value": "five"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "faceType",
+            "value": "five"
+          },
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "end_offsets"
+          }
+        ]
       }
     },
     {
@@ -5630,65 +5930,100 @@
       "group": "main_grid",
       "order": 50,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "all",
             "conditions": [
               {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
                 "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               },
               {
                 "op": "ne",
                 "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
+                "value": "horizontal"
               },
               {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
                 "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
+                "parameter": "accessDoorEnabled",
+                "value": false
               }
             ]
           }
@@ -5711,65 +6046,100 @@
       "group": "main_grid",
       "order": 60,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "all",
             "conditions": [
               {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
                 "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               },
               {
                 "op": "ne",
                 "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
+                "value": "horizontal"
               },
               {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
                 "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "ne",
-                "parameter": "infillPattern",
-                "value": "vertical"
+                "parameter": "accessDoorEnabled",
+                "value": false
               }
             ]
           }
@@ -5791,27 +6161,10 @@
       },
       "group": "door_position",
       "order": 10,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "single"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          }
-        ]
-      },
-      "description": "从成品所在面外缘量到固定窗框外缘的距离。"
+      "description": "从成品所在面外缘量到固定窗框外缘的距离。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorBottom",
@@ -5828,27 +6181,10 @@
       },
       "group": "door_position",
       "order": 20,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "single"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          }
-        ]
-      },
-      "description": "从成品所在面外缘量到固定窗框外缘的距离。"
+      "description": "从成品所在面外缘量到固定窗框外缘的距离。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorGap",
@@ -5948,105 +6284,155 @@
       "group": "door_grid",
       "order": 10,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "all",
             "conditions": [
               {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "single"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "ne",
+                                "parameter": "infillPattern",
+                                "value": "vertical"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "accessDoorEnabled",
+                                "value": true
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "two"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "ne",
+                                "parameter": "infillPattern",
+                                "value": "vertical"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "accessDoorEnabled",
+                                "value": true
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "three"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "ne",
+                                "parameter": "infillPattern",
+                                "value": "vertical"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "accessDoorEnabled",
+                                "value": true
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": "all",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "five"
+                          },
+                          {
+                            "op": "all",
+                            "conditions": [
+                              {
+                                "op": "ne",
+                                "parameter": "infillPattern",
+                                "value": "vertical"
+                              },
+                              {
+                                "op": "eq",
+                                "parameter": "accessDoorEnabled",
+                                "value": true
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "ne",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "grid"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
                 "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
                 "parameter": "faceType",
                 "value": "single"
               },
               {
-                "op": "all",
-                "conditions": [
-                  {
-                    "op": "ne",
-                    "parameter": "infillPattern",
-                    "value": "vertical"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "accessDoorEnabled",
-                    "value": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
                 "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "all",
-                "conditions": [
-                  {
-                    "op": "ne",
-                    "parameter": "infillPattern",
-                    "value": "vertical"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "accessDoorEnabled",
-                    "value": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "all",
-                "conditions": [
-                  {
-                    "op": "ne",
-                    "parameter": "infillPattern",
-                    "value": "vertical"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "accessDoorEnabled",
-                    "value": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "all",
-                "conditions": [
-                  {
-                    "op": "ne",
-                    "parameter": "infillPattern",
-                    "value": "vertical"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "accessDoorEnabled",
-                    "value": true
-                  }
-                ]
+                "parameter": "infillPattern",
+                "value": "vertical"
               }
             ]
           }
@@ -6073,14 +6459,64 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "accessDoorEnabled",
+                        "value": true
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "vertical"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "ne",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "grid"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "vertical"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              }
+            ]
           }
         ]
       }
@@ -6105,14 +6541,54 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "infillPattern",
+                    "value": "vertical"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "infillPattern",
+                    "value": "grid"
+                  }
+                ]
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "vertical"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              }
+            ]
           }
         ]
       }
@@ -6137,14 +6613,64 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "accessDoorEnabled",
+                        "value": true
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "horizontal"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "ne",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "grid"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "horizontal"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              }
+            ]
           }
         ]
       }
@@ -6169,14 +6695,64 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "accessDoorEnabled",
+                        "value": true
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "horizontal"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "ne",
+                        "parameter": "faceType",
+                        "value": "single"
+                      },
+                      {
+                        "op": "ne",
+                        "parameter": "infillPattern",
+                        "value": "grid"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "barDistribution",
+                "value": "end_offsets"
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "horizontal"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              }
+            ]
           }
         ]
       }
@@ -6201,14 +6777,54 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "infillPattern",
+                    "value": "horizontal"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "faceType",
+                    "value": "single"
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "infillPattern",
+                    "value": "grid"
+                  }
+                ]
+              }
+            ]
           },
           {
-            "op": "ne",
-            "parameter": "infillPattern",
-            "value": "horizontal"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "eq",
+                "parameter": "infillPattern",
+                "value": "vertical"
+              }
+            ]
           }
         ]
       }
@@ -7550,54 +8166,79 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "all",
             "conditions": [
-              {
-                "op": "eq",
-                "parameter": "assemblyPlanningMode",
-                "value": "builtin_rules"
-              },
               {
                 "op": "any",
                 "conditions": [
                   {
                     "op": "eq",
-                    "parameter": "faceType",
-                    "value": "two"
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
                   },
                   {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "three"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "five"
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
                   }
                 ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+              },
               {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "doorFrameJoinType",
+                    "value": "v_groove_90:tool_library"
+                  }
+                ]
               },
               {
                 "op": "eq",
-                "parameter": "doorFrameJoinType",
-                "value": "v_groove_90:tool_library"
+                "parameter": "doorFrameGrooveTool",
+                "value": "system:edge-arc-groove"
               }
             ]
           },
           {
-            "op": "eq",
-            "parameter": "doorFrameGrooveTool",
-            "value": "system:edge-arc-groove"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         ]
       },
@@ -7656,7 +8297,10 @@
           }
         ]
       },
-      "description": "仅用于固定窗框当前采用的边弧连续折弯。0 表示不启用弧根展开补偿；大于 0 时使用此 K 系数，不改变成品尺寸。尖底 V 槽按槽面闭合，不使用此补偿；切换做法时保留草稿。"
+      "description": "仅用于固定窗框当前采用的边弧连续折弯。0 表示不启用弧根展开补偿；大于 0 时使用此 K 系数，不改变成品尺寸。尖底 V 槽按槽面闭合，不使用此补偿；切换做法时保留草稿。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorFrameFoldBridge",
@@ -7674,47 +8318,67 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "all",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "assemblyPlanningMode",
-                "value": "builtin_rules"
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
+                  },
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "doorFrameJoinType",
+                    "value": "v_groove_90:tool_library"
+                  }
+                ]
               },
               {
                 "op": "any",
                 "conditions": [
                   {
                     "op": "eq",
-                    "parameter": "faceType",
-                    "value": "two"
+                    "parameter": "doorFrameGrooveTool",
+                    "value": "system:v-notch-sharp"
                   },
                   {
                     "op": "eq",
-                    "parameter": "faceType",
-                    "value": "three"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "five"
+                    "parameter": "doorFrameGrooveTool",
+                    "value": "system:edge-arc-groove"
                   }
                 ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              },
-              {
-                "op": "eq",
-                "parameter": "doorFrameJoinType",
-                "value": "v_groove_90:tool_library"
               }
             ]
           },
@@ -7722,14 +8386,19 @@
             "op": "any",
             "conditions": [
               {
-                "op": "eq",
-                "parameter": "doorFrameGrooveTool",
-                "value": "system:v-notch-sharp"
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
               },
               {
                 "op": "eq",
-                "parameter": "doorFrameGrooveTool",
-                "value": "system:edge-arc-groove"
+                "parameter": "doorPosition",
+                "value": "center_middle"
               }
             ]
           }
@@ -7800,7 +8469,10 @@
           }
         ]
       },
-      "description": "控制固定窗框折角处保留的连接材料厚度，以管材外底面为基准。仅用于当前采用系统边弧或尖底 V 槽的连续折弯；切换做法时保留草稿。"
+      "description": "控制固定窗框折角处保留的连接材料厚度，以管材外底面为基准。仅用于当前采用系统边弧或尖底 V 槽的连续折弯；切换做法时保留草稿。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorFrameVGrooveBottomStrategy",
@@ -7829,54 +8501,79 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "all",
             "conditions": [
-              {
-                "op": "eq",
-                "parameter": "assemblyPlanningMode",
-                "value": "builtin_rules"
-              },
               {
                 "op": "any",
                 "conditions": [
                   {
                     "op": "eq",
-                    "parameter": "faceType",
-                    "value": "two"
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
                   },
                   {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "three"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "five"
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
                   }
                 ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+              },
               {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "doorFrameJoinType",
+                    "value": "v_groove_90:tool_library"
+                  }
+                ]
               },
               {
                 "op": "eq",
-                "parameter": "doorFrameJoinType",
-                "value": "v_groove_90:tool_library"
+                "parameter": "doorFrameGrooveTool",
+                "value": "system:v-notch-sharp"
               }
             ]
           },
           {
-            "op": "eq",
-            "parameter": "doorFrameGrooveTool",
-            "value": "system:v-notch-sharp"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         ]
       },
@@ -7959,61 +8656,86 @@
             "op": "all",
             "conditions": [
               {
-                "op": "any",
+                "op": "all",
                 "conditions": [
-                  {
-                    "op": "eq",
-                    "parameter": "assemblyPlanningMode",
-                    "value": "builtin_rules"
-                  },
                   {
                     "op": "any",
                     "conditions": [
                       {
                         "op": "eq",
-                        "parameter": "faceType",
-                        "value": "two"
+                        "parameter": "assemblyPlanningMode",
+                        "value": "builtin_rules"
                       },
                       {
-                        "op": "eq",
-                        "parameter": "faceType",
-                        "value": "three"
-                      },
-                      {
-                        "op": "eq",
-                        "parameter": "faceType",
-                        "value": "five"
+                        "op": "any",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "two"
+                          },
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "three"
+                          },
+                          {
+                            "op": "eq",
+                            "parameter": "faceType",
+                            "value": "five"
+                          }
+                        ]
                       }
                     ]
-                  }
-                ]
-              },
-              {
-                "op": "all",
-                "conditions": [
+                  },
                   {
-                    "op": "eq",
-                    "parameter": "accessDoorEnabled",
-                    "value": true
+                    "op": "all",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "accessDoorEnabled",
+                        "value": true
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "doorFrameJoinType",
+                        "value": "v_groove_90:tool_library"
+                      }
+                    ]
                   },
                   {
                     "op": "eq",
-                    "parameter": "doorFrameJoinType",
-                    "value": "v_groove_90:tool_library"
+                    "parameter": "doorFrameGrooveTool",
+                    "value": "system:v-notch-sharp"
                   }
                 ]
               },
               {
                 "op": "eq",
-                "parameter": "doorFrameGrooveTool",
-                "value": "system:v-notch-sharp"
+                "parameter": "doorFrameVGrooveBottomStrategy",
+                "value": "rounded"
               }
             ]
           },
           {
-            "op": "eq",
-            "parameter": "doorFrameVGrooveBottomStrategy",
-            "value": "rounded"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         ]
       },
@@ -8082,7 +8804,10 @@
           }
         ]
       },
-      "description": "控制固定窗框 V 槽底部局部避空的圆角大小，保持当前槽根圆角几何；仅在圆角底部方式下生效，不用于相切过渡或折弯展开。"
+      "description": "控制固定窗框 V 槽底部局部避空的圆角大小，保持当前槽根圆角几何；仅在圆角底部方式下生效，不用于相切过渡或折弯展开。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorFrameVGrooveMaleFemale",
@@ -8097,54 +8822,79 @@
         "op": "all",
         "conditions": [
           {
-            "op": "any",
+            "op": "all",
             "conditions": [
-              {
-                "op": "eq",
-                "parameter": "assemblyPlanningMode",
-                "value": "builtin_rules"
-              },
               {
                 "op": "any",
                 "conditions": [
                   {
                     "op": "eq",
-                    "parameter": "faceType",
-                    "value": "two"
+                    "parameter": "assemblyPlanningMode",
+                    "value": "builtin_rules"
                   },
                   {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "three"
-                  },
-                  {
-                    "op": "eq",
-                    "parameter": "faceType",
-                    "value": "five"
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "two"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "three"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "faceType",
+                        "value": "five"
+                      }
+                    ]
                   }
                 ]
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
+              },
               {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "accessDoorEnabled",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "doorFrameJoinType",
+                    "value": "v_groove_90:tool_library"
+                  }
+                ]
               },
               {
                 "op": "eq",
-                "parameter": "doorFrameJoinType",
-                "value": "v_groove_90:tool_library"
+                "parameter": "doorFrameGrooveTool",
+                "value": "system:v-notch-sharp"
               }
             ]
           },
           {
-            "op": "eq",
-            "parameter": "doorFrameGrooveTool",
-            "value": "system:v-notch-sharp"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         ]
       },
@@ -8203,7 +8953,10 @@
           }
         ]
       },
-      "description": "仅用于固定窗框当前采用的尖底 V 槽连续折弯，减少固定平面开槽折弯后的材料干涉。公母尺寸按固定窗框实际管壁自动确定；不作用于边弧槽或拼焊框。"
+      "description": "仅用于固定窗框当前采用的尖底 V 槽连续折弯，减少固定平面开槽折弯后的材料干涉。公母尺寸按固定窗框实际管壁自动确定；不作用于边弧槽或拼焊框。",
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorLeafFrameBendKFactor",
@@ -10243,7 +10996,7 @@
         "zh-CN": "固定窗框连接方式"
       },
       "valueType": "enum",
-      "defaultValue": "miter_45",
+      "defaultValue": "butt_90",
       "group": "door_process",
       "order": 10,
       "visibleWhen": {
@@ -10316,6 +11069,26 @@
           "value": "v_groove_90:tool_library",
           "displayName": {
             "zh-CN": "连续成形"
+          },
+          "visibleWhen": {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         },
         {
@@ -10331,9 +11104,32 @@
           }
         }
       ],
-      "description": "固定窗框独立选择斜拼焊接、直切拼焊或开槽折弯；开槽折弯角度与位置由窗框尺寸确定。",
+      "description": "固定窗框按同材连续横杆与平切竖框布置，不生成独立矩形框的斜拼或折弯。",
       "presentation": {
-        "visible": false
+        "visible": false,
+        "choiceConditions": {
+          "v_groove_90:tool_library": {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
+          }
+        },
+        "unavailableChoiceFallback": "miter_45"
       }
     },
     {
@@ -10342,7 +11138,7 @@
         "zh-CN": "直拼包边方向"
       },
       "valueType": "enum",
-      "defaultValue": "side_wraps_horizontal",
+      "defaultValue": "horizontal_wraps_side",
       "group": "door_process",
       "order": 20,
       "visibleWhen": {
@@ -10463,7 +11259,10 @@
             "zh-CN": "上下框包左右框"
           }
         }
-      ]
+      ],
+      "presentation": {
+        "visible": false
+      }
     },
     {
       "key": "doorLeafFrameJoinType",
@@ -10812,14 +11611,39 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "accessDoorEnabled",
-            "value": true
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "accessDoorEnabled",
+                "value": true
+              },
+              {
+                "op": "eq",
+                "parameter": "doorFrameJoinType",
+                "value": "v_groove_90:tool_library"
+              }
+            ]
           },
           {
-            "op": "eq",
-            "parameter": "doorFrameJoinType",
-            "value": "v_groove_90:tool_library"
+            "op": "any",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "faceType",
+                "value": "single"
+              },
+              {
+                "op": "ne",
+                "parameter": "infillPattern",
+                "value": "grid"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              }
+            ]
           }
         ]
       },
@@ -14575,55 +15399,8 @@
       },
       "group": "door_position",
       "order": 30,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          }
-        ]
+      "presentation": {
+        "visible": false
       }
     },
     {
@@ -14642,55 +15419,8 @@
       },
       "group": "door_position",
       "order": 40,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "two"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "three"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          },
-          {
-            "op": "all",
-            "conditions": [
-              {
-                "op": "eq",
-                "parameter": "faceType",
-                "value": "five"
-              },
-              {
-                "op": "eq",
-                "parameter": "accessDoorEnabled",
-                "value": true
-              }
-            ]
-          }
-        ]
+      "presentation": {
+        "visible": false
       }
     },
     {
@@ -14889,6 +15619,288 @@
                 "op": "eq",
                 "parameter": "accessDoorEnabled",
                 "value": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorLeftMargin",
+      "displayName": {
+        "zh-CN": "左边距"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_bottom"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_middle"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_top"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorRightMargin",
+      "displayName": {
+        "zh-CN": "右边距"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_bottom"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_middle"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_top"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorBottomMargin",
+      "displayName": {
+        "zh-CN": "下边距"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_bottom"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_bottom"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_bottom"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorTopMargin",
+      "displayName": {
+        "zh-CN": "上边距"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_top"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_top"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_top"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorHorizontalOffset",
+      "displayName": {
+        "zh-CN": "左右偏移"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": -10000,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_bottom"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_top"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "doorVerticalOffset",
+      "displayName": {
+        "zh-CN": "上下偏移"
+      },
+      "description": "按所选安装面的局部左右、上下方向，以外框内侧与逃生窗净口为准；边距0共用外框，独立固定框须留足管宽。居中偏移正值向右或向上；底面向上对应朝后。",
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "door_position",
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": -10000,
+        "maximum": 10000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "accessDoorEnabled",
+            "value": true
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "left_middle"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "center_middle"
+              },
+              {
+                "op": "eq",
+                "parameter": "doorPosition",
+                "value": "right_middle"
               }
             ]
           }

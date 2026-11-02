@@ -17,11 +17,13 @@ namespace iCAX
         inline constexpr const char* kProjectRedoName = "Redo";
         inline constexpr const char* kProjectGetUndoRedoStateName = "GetUndoRedoState";
         inline constexpr const char* kProjectSaveName = "Save";
+        inline constexpr const char* kProjectAutoSaveName = "AutoSave";
 
         inline constexpr uint64_t kProjectGetStateMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectGetStateName);
         inline constexpr uint64_t kProjectUndoMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectUndoName);
         inline constexpr uint64_t kProjectRedoMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectRedoName);
         inline constexpr uint64_t kProjectGetUndoRedoStateMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectGetUndoRedoStateName);
         inline constexpr uint64_t kProjectSaveMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectSaveName);
+        inline constexpr uint64_t kProjectAutoSaveMethodCode = iCAX::Interaction::MakeSDOMethodCode(kProjectSDOName, kProjectAutoSaveName);
     }
 }

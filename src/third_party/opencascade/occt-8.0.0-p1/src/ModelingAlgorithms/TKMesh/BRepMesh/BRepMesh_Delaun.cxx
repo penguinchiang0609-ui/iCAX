@@ -32,9 +32,9 @@
 
 #include <NCollection_DynamicArray.hxx>
 #include <NCollection_LinearVector.hxx>
+#include <NCollection_LocalArray.hxx>
 
 #include <algorithm>
-#include <stack>
 
 const double AngDeviation1Deg  = M_PI / 180.;
 const double AngDeviation90Deg = 90 * AngDeviation1Deg;
@@ -751,14 +751,25 @@ void BRepMesh_Delaun::insertInternalEdges()
 
 bool BRepMesh_Delaun::isBoundToFrontier(const int theRefNodeId, const int theRefLinkId)
 {
-  std::stack<int>            aLinkStack;
+  // Most vertex fans need only a handful of links. Avoid allocating and
+  // destroying a deque for every frontier query; grow without a fixed limit
+  // for larger fans, retaining exactly the same LIFO traversal order.
+  NCollection_LocalArray<int, 64> aLinkStack(64);
+  size_t aLinkCount = 0;
+  const auto pushLink = [&](const int theLink)
+  {
+    if (aLinkCount == aLinkStack.Size())
+    {
+      aLinkStack.Reallocate(aLinkStack.Size() * 2);
+    }
+    aLinkStack[aLinkCount++] = theLink;
+  };
   TColStd_PackedMapOfInteger aVisitedLinks;
 
-  aLinkStack.push(theRefLinkId);
-  while (!aLinkStack.empty())
+  pushLink(theRefLinkId);
+  while (aLinkCount != 0)
   {
-    const int aCurrentLinkId = aLinkStack.top();
-    aLinkStack.pop();
+    const int aCurrentLinkId = aLinkStack[--aLinkCount];
 
     const BRepMesh_PairOfIndex& aPair = myMeshData->ElementsConnectedTo(aCurrentLinkId);
     if (aPair.IsEmpty())
@@ -799,7 +810,7 @@ bool BRepMesh_Delaun::isBoundToFrontier(const int theRefNodeId, const int theRef
 
         if (aVisitedLinks.Add(anEdgeId))
         {
-          aLinkStack.push(anEdgeId);
+          pushLink(anEdgeId);
         }
       }
     }

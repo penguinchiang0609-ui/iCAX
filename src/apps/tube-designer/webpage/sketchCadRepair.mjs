@@ -1,9 +1,15 @@
-import { curvePoint, editableSegments, reverseSegment, splitSegment, distance, TAU } from "./sketchGeometry.mjs";
+import { curvePoint, editableSegments, reverseSegment, splitSegment, distance, TAU } from "../../_shared/workbench/sketch/sketchGeometry.mjs";
 import { intersectionsOfEntities, boundsOfEntities } from "./sketchCadGeometry.mjs";
+import { mergeCadBevels, normalizeCadBevel, remapCadBevel } from "./cadBevel.mjs";
 
 const clone = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 const closed = entity => entity.closed === true || ["circle", "ellipse", "rectangle"].includes(entity.kind);
-const segments = entity => entity.kind === "bezier" ? [clone(entity)] : editableSegments(entity);
+const segments = entity => {
+  const chain = entity.kind === "bezier" ? [clone(entity)] : editableSegments(entity);
+  if (entity.kind === "path" && entity.closed && chain.length && distance(curvePoint(chain.at(-1),1),curvePoint(chain[0],0))>1e-9)
+    chain.push(line(curvePoint(chain.at(-1),1),curvePoint(chain[0],0)));
+  return chain;
+};
 const start = chain => curvePoint(chain[0], 0);
 const end = chain => curvePoint(chain[chain.length - 1], 1);
 const reverse = chain => [...chain].reverse().map(reverseSegment);
@@ -109,24 +115,41 @@ function joinPair(a,b,tolerance) {
   if(["circleArc","ellipseArc"].includes(a.kind)&&sameConic(a,b,Math.min(tolerance,1e-8))&&Math.sign(a.sweep)===Math.sign(b.sweep)&&Math.abs(a.sweep+b.sweep)<=TAU+1e-9)return {...a,sweep:a.sweep+b.sweep};
   return joinedBezier(a,b,tolerance);
 }
-function simplified(chain,isClosed,tolerance) {
-  const result=[];
-  for(const original of chain) {
+function simplified(chain,isClosed,tolerance,tracking) {
+  const result=[],sources=[];
+  const selected=tracking?.selected;
+  const matches=(a,b)=>!selected||a.every(i=>selected.has(i))===b.every(i=>selected.has(i));
+  for(let i=0;i<chain.length;i++) {
+    const original=chain[i],origins=tracking?.sources?.[i]??[i];
     const s=reducedBezier(original,tolerance);
-    const merged=result.length?joinPair(result[result.length-1],s,tolerance):null;
-    if(merged)result[result.length-1]=merged;else result.push(s);
+    const merged=result.length&&matches(sources.at(-1),origins)?joinPair(result[result.length-1],s,tolerance):null;
+    if(merged){result[result.length-1]=merged;sources[sources.length-1]=[...sources.at(-1),...origins];}
+    else {result.push(s);sources.push(origins);}
   }
   if(isClosed&&result.length>1) {
-    const merged=joinPair(result[result.length-1],result[0],tolerance);
-    if(merged) {result[0]=merged;result.pop();}
+    const merged=matches(sources.at(-1),sources[0])?joinPair(result[result.length-1],result[0],tolerance):null;
+    if(merged) {result[0]=merged;result.pop();sources[0]=[...sources.at(-1),...sources[0]];sources.pop();}
   }
+  if(tracking)tracking.sources=sources;
   return result;
 }
-function asPath(source,chain,isClosed) {
+function asPath(source,chain,isClosed,sources) {
   const entity={...source};
+  if(sources&&source.bevel)entity.bevel=remapCadBevel(source.bevel,sources);
+  chain=chain.map(segment=>{const value=clone(segment);delete value.bevel;return value;});
   for(const key of ["x","y","width","height","radius","radiusX","radiusY","cx","cy","rotation","startAngle","sweep","x1","y1","x2","y2","points","segments","brokenStart","brokenEnd"])delete entity[key];
   if(chain.length===1&&!isClosed&&chain[0].kind!=="bezier")return {...entity,...chain[0],id:source.id,closed:false};
   return {...entity,kind:"path",segments:chain,closed:isClosed};
+}
+function sameBevelFeature(a,b) {
+  if(!a.bevel&&!b.bevel)return true;
+  if(!a.bevel||!b.bevel)return false;
+  const aa=normalizeCadBevel(a.bevel),bb=normalizeCadBevel(b.bevel);
+  if(["enabled","side","angleDegrees","rootFace"].some(key=>!Object.is(aa[key],bb[key])))return false;
+  // Duplicate paths may use another seam, direction or subdivision. Keep
+  // selected-edge features until their physical boundaries can be compared.
+  if((aa.segmentIndices||bb.segmentIndices)&&(segments(a).length!==1||segments(b).length!==1))return false;
+  return (aa.segmentIndices===undefined||aa.segmentIndices.includes(0))===(bb.segmentIndices===undefined||bb.segmentIndices.includes(0));
 }
 function bridgeChains(aa,bb,same=false) {
   const gap=distance(end(aa),start(bb));
@@ -197,11 +220,11 @@ function sliceSegment(segment,lo,hi) {
   if(lo>1e-10)value=splitSegment(value,lo/hi)[1];
   return value;
 }
-function sliceChain(chain,lo,hi) {
+function sliceChain(chain,lo,hi,sources,outputSources) {
   const result=[];
   for(let i=Math.floor(lo);i<Math.ceil(hi-1e-10);i++) {
     const from=Math.max(0,lo-i),to=Math.min(1,hi-i);
-    if(to-from>1e-10)result.push(sliceSegment(chain[i],from,to));
+    if(to-from>1e-10){result.push(sliceSegment(chain[i],from,to));outputSources?.push(sources[i]);}
   }
   return result;
 }
@@ -221,22 +244,23 @@ function selfCrossing(chain,isClosed) {
   return null;
 }
 function trimCrossings(entity) {
-  const pending=[{chain:segments(entity),closed:closed(entity)}],parts=[];let count=0;
+  const chain=segments(entity),pending=[{chain,sources:chain.map((_,i)=>i),closed:closed(entity)}],parts=[];let count=0;
   while(pending.length) {
     const item=pending.pop(),hit=selfCrossing(item.chain,item.closed);
     if(!hit){parts.push(item);continue;}
     if(++count>256)throw new Error("自相交数量过多，请分段修图。");
-    const before=sliceChain(item.chain,0,hit.lo),loop=sliceChain(item.chain,hit.lo,hit.hi),after=sliceChain(item.chain,hit.hi,item.chain.length);
+    const beforeSources=[],loopSources=[],afterSources=[];
+    const before=sliceChain(item.chain,0,hit.lo,item.sources,beforeSources),loop=sliceChain(item.chain,hit.lo,hit.hi,item.sources,loopSources),after=sliceChain(item.chain,hit.hi,item.chain.length,item.sources,afterSources);
     if(item.closed) {
       // Each resulting ring consists of exact subdivisions of the input. No
       // tessellated contour, fitted replacement or guessed new boundary is used.
-      pending.push({chain:[...after,...before],closed:true},{chain:loop,closed:true});
+      pending.push({chain:[...after,...before],sources:[...afterSources,...beforeSources],closed:true},{chain:loop,sources:loopSources,closed:true});
     } else {
       const remainder=[...before,...after];
-      if(remainder.length)pending.push({chain:remainder,closed:false});
+      if(remainder.length)pending.push({chain:remainder,sources:[...beforeSources,...afterSources],closed:false});
     }
   }
-  return {parts:count?parts.map(part=>asPath(entity,part.chain,part.closed)):[entity],count};
+  return {parts:count?parts.map(part=>asPath(entity,part.chain,part.closed,part.sources)):[entity],count};
 }
 function nextRepairId(sourceId,usedIds) {
   let index=1,id;
@@ -250,6 +274,7 @@ function removeOverlappingLines(entities,tolerance,removedIds,changedIds,created
     let spans=[[0,1]];
     for(const previous of kept) {
       if((previous.fillGroup||"")!==(entity.fillGroup||"")||(previous.fillRule||"")!==(entity.fillRule||""))continue;
+      if(!sameBevelFeature(entity,previous))continue;
       const overlap=overlapOfLines(entity,previous,tolerance);if(!overlap)continue;
       const [lo,hi]=overlap;
       spans=spans.flatMap(([from,to])=>hi<=from+1e-10||lo>=to-1e-10?[[from,to]]:[...(lo>from+1e-10?[[from,Math.min(to,lo)]]:[]),...(hi<to-1e-10?[[Math.max(from,hi),to]]:[])]);
@@ -317,7 +342,7 @@ export function repairSketchEntities(entities,options={}) {
   if(options.removeDuplicates!==false) {
     const unique=[];
     for(const entity of result) {
-      if(unique.some(candidate=>sameGeometry(candidate,entity,tolerance)))removedIds.push(entity.id);else unique.push(entity);
+      if(unique.some(candidate=>sameBevelFeature(candidate,entity)&&sameGeometry(candidate,entity,tolerance)))removedIds.push(entity.id);else unique.push(entity);
     }
     result=removeOverlappingLines(unique,tolerance,removedIds,changedIds,createdIds,usedIds);
   }
@@ -347,12 +372,17 @@ export function repairSketchEntities(entities,options={}) {
         if(a===b) {
           if(p.end===q.end)continue;
           if(aa.length===1&&aa[0].kind==="line")continue;
+          const sources=aa.map((_,index)=>index),count=aa.length;
           if(!bridgeChains(aa,aa,true))continue;
-          result=result.map(entity=>entity===a?asPath(a,aa,true):entity);changedIds.add(a.id);didJoin=true;
+          if(aa.length>count)sources.push([count-1,0]);
+          result=result.map(entity=>entity===a?asPath(a,aa,true,sources):entity);changedIds.add(a.id);didJoin=true;
         } else {
-          if(!p.end)aa=reverse(aa);if(q.end)bb=reverse(bb);
+          if(sameGeometry(a,b,tolerance)&&!sameBevelFeature(a,b))continue;
+          const bevel=mergeCadBevels(a.bevel,b.bevel,aa.length,bb.length),aSources=aa.map((_,index)=>index),bSources=bb.map((_,index)=>index+aa.length),aCount=aa.length;
+          if(!p.end){aa=reverse(aa);aSources.reverse();}if(q.end){bb=reverse(bb);bSources.reverse();}
           if(!bridgeChains(aa,bb))continue;
-          const merged=asPath(a,[...aa,...bb],false);
+          if(aa.length>aCount)aSources.push([aSources.at(-1),bSources[0]]);
+          const merged=asPath({...a,...(bevel?{bevel}:{})},[...aa,...bb],false,[...aSources,...bSources]);
           result=result.filter(entity=>entity!==b).map(entity=>entity===a?merged:entity);removedIds.push(b.id);changedIds.add(a.id);didJoin=true;
         }
       }
@@ -360,9 +390,9 @@ export function repairSketchEntities(entities,options={}) {
   }
   if(options.simplify!==false) result=result.map(entity=>{
     if(entity.kind==="text"||["circle","ellipse","rectangle"].includes(entity.kind))return entity;
-    const chain=segments(entity),next=simplified(chain,closed(entity),tolerance);
+    const chain=segments(entity),tracking={sources:chain.map((_,i)=>[i]),...(Array.isArray(entity.bevel?.segmentIndices)?{selected:new Set(entity.bevel.segmentIndices)}:{})},next=simplified(chain,closed(entity),tolerance,tracking);
     if(JSON.stringify(next)===JSON.stringify(chain))return entity;
-    changedIds.add(entity.id);return asPath(entity,next,closed(entity));
+    changedIds.add(entity.id);return asPath(entity,next,closed(entity),tracking.sources);
   });
   for(const entity of result) {
     const previous=original.find(item=>item.id===entity.id);if(JSON.stringify(previous)!==JSON.stringify(entity))changedIds.add(entity.id);

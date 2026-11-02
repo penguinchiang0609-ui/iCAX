@@ -3,6 +3,7 @@
 #include "GeometryData/TubeNeutralGeometry.h"
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -17,6 +18,10 @@
 
 namespace iCAX::OpenCascade
 {
+    _OPEN_CASCADE_TUBE_CSG_EXP GeometryData::Tube::CPlanarRegion2 ExtractPlanarTubeRegion(
+        const TopoDS_Shape& Faces, const GeometryData::Placement3& Frame);
+    _OPEN_CASCADE_TUBE_CSG_EXP std::vector<GeometryData::CurveSegment2> ExtractPlanarTubeCurves(
+        const TopoDS_Shape& Edges, const GeometryData::Placement3& Frame);
     struct STubeCSGConversionOptions final
     {
         double Tolerance = 0.001;
@@ -25,6 +30,9 @@ namespace iCAX::OpenCascade
         std::string SourceBRepResourceID;
         std::string RemovalBRepResourceID;
         std::string AdditionBRepResourceID;
+        // Optional neutral progress observation; no scene or editor state.
+        std::function<void(const std::string&, double)> StageCompleted;
+        std::size_t FeatureWorkerCount = 4;
     };
 
     struct STubeCSGReplayValidationResult final
@@ -113,4 +121,12 @@ namespace iCAX::OpenCascade
         IN const TopoDS_Shape& SourceShape_,
         IN const iCAX::GeometryData::Tube::CTubeNeutralGeometry& Geometry_,
         IN const STubeCSGEvaluationOptions& Options_ = {});
+
+    /* Compare an already evaluated/transported result with the original using
+       fresh operands and both directed differences. No graph evaluation cache
+       or source-body fallback participates in this proof. */
+    _OPEN_CASCADE_TUBE_CSG_EXP STubeCSGReplayValidationResult ValidateTubeCSGShapeReplay(
+        IN const TopoDS_Shape& SourceShape_,
+        IN const TopoDS_Shape& ReplayedShape_,
+        IN double Tolerance_ = 0.001);
 }

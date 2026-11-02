@@ -10,18 +10,18 @@ inline void VerifyActivationRoot(std::span<const unsigned char> file,
     VerifySignature(trustedKey, body, file.last(64));
     Require(body.size() >= 8 && std::memcmp(body.data(), "TDACT001", 8) == 0, "Unknown activation format");
 }
-inline std::vector<UpgradePackage> VerifyChainPackages(const BundleSlot& slot,
+inline std::vector<AuthorizationTransition> VerifyChainPackages(const BundleSlot& slot,
     std::string_view issuer, std::span<const unsigned char> trustedKey,
     const ProductDescriptor& product) {
     Require(slot.productId == product.id && slot.issuerId == issuer && !slot.chain.empty(),
         "Authorization chain belongs to another product or issuer");
     VerifyActivationRoot(slot.chain.front(), issuer, trustedKey);
-    std::vector<UpgradePackage> upgrades;
+    std::vector<AuthorizationTransition> upgrades;
     for (std::size_t index = 1; index < slot.chain.size(); ++index) {
-        auto next = VerifyUpgradePackage(slot.chain[index], issuer, trustedKey, product);
+        auto next = VerifyAuthorizationTransition(slot.chain[index], issuer, trustedKey, product);
         if (!upgrades.empty()) {
             Require(next.baseDigest == upgrades.back().parsed.bodyDigest, "Authorization chain skips an upgrade");
-            RequireAuthorizationUpgrade(upgrades.back().parsed, next.parsed);
+            RequireAuthorizationTransition(upgrades.back().parsed, next);
         }
         upgrades.push_back(std::move(next));
     }
@@ -35,7 +35,8 @@ template<class DecryptRoot>
 inline Bytes ResolveAuthorizationChain(const BundleSlot& slot,
     std::span<const unsigned char> installed, std::string_view issuer,
     std::span<const unsigned char> trustedKey, const ProductDescriptor& product,
-    DecryptRoot decryptRoot) {
+    DecryptRoot decryptRoot, std::vector<Bytes>* transitionProof = nullptr) {
+    if (transitionProof) transitionProof->clear();
     const auto upgrades = activation_detail::VerifyChainPackages(slot, issuer, trustedKey, product);
     Bytes current;
     std::size_t first{};
@@ -60,8 +61,10 @@ inline Bytes ResolveAuthorizationChain(const BundleSlot& slot,
             Require(found, "Installed license is not in this authorization chain");
         }
     }
-    for (std::size_t index = first; index < upgrades.size(); ++index)
-        current = ResolveUpgradeCertificate(slot.chain[index + 1], current, issuer, trustedKey, product);
+    for (std::size_t index = first; index < upgrades.size(); ++index) {
+        current = ResolveAuthorizationTransition(slot.chain[index + 1], current, issuer, trustedKey, product);
+        if (transitionProof && !installed.empty()) transitionProof->push_back(slot.chain[index + 1]);
+    }
     return current;
 }
 
@@ -95,14 +98,19 @@ inline Bytes PrepareAuthorizationAtDirectory(std::span<const unsigned char> file
     std::string_view issuer, std::span<const unsigned char> trustedKey,
     std::uint32_t major, const std::filesystem::path& folder) {
     RequirePreservedAuthorizationSourceAtDirectory(file, folder, issuer, trustedKey);
-    Bytes certificate;
+    Bytes certificate; std::vector<Bytes> transitionProof;
     if (IsAuthorizationBundle(file)) {
         const auto bundle = VerifyAuthorizationBundleForProduct(file, TubeDesignerProduct, issuer, trustedKey);
         Bytes installed;
         if (std::filesystem::exists(folder / L"license.tdlic"))
             installed = ReadFileBounded(folder / L"license.tdlic", static_cast<DWORD>(MaxCertificateBytes));
         certificate = ResolveAuthorizationChain(FindBundleSlot(bundle, Product), installed, issuer, trustedKey,
-            TubeDesignerProduct, [&](std::span<const unsigned char> root) { return DecryptActivation(root, issuer, trustedKey); });
+            TubeDesignerProduct, [&](std::span<const unsigned char> root) { return DecryptActivation(root, issuer, trustedKey); }, &transitionProof);
+    } else if (IsReissuePackage(file)) {
+        const auto installed = ReadFileBounded(folder / L"license.tdlic",
+            static_cast<DWORD>(MaxCertificateBytes));
+        certificate = ResolveReissueCertificate(file, installed, issuer, trustedKey);
+        transitionProof.emplace_back(file.begin(), file.end());
     } else if (IsUpgradePackage(file)) {
         const auto installed = ReadFileBounded(folder / L"license.tdlic",
             static_cast<DWORD>(MaxCertificateBytes));
@@ -113,7 +121,7 @@ inline Bytes PrepareAuthorizationAtDirectory(std::span<const unsigned char> file
     const auto parsed = VerifyCertificate(certificate, issuer, trustedKey);
     Require(major >= parsed.minMajor && major <= parsed.maxMajor,
         "当前版本不在授权范围");
-    RequireCertificateReplacementAtDirectory(certificate, folder, issuer, trustedKey);
+    RequireCertificateReplacementAtDirectory(certificate, folder, issuer, trustedKey, transitionProof);
     return certificate;
 }
 
@@ -177,8 +185,8 @@ inline void ExportLicenseFileAtDirectory(const std::filesystem::path& output,
             issuer, trustedKey, TubeDesignerProduct);
         if (!upgrades.empty()) Require(upgrades.back().parsed.bodyDigest == current.bodyDigest,
             "Stored authorization file does not match the current license");
-    } else if (IsUpgradePackage(source)) {
-        Require(VerifyUpgradePackage(source, issuer, trustedKey).parsed.bodyDigest == current.bodyDigest,
+    } else if (IsUpgradePackage(source) || IsReissuePackage(source)) {
+        Require(VerifyAuthorizationTransition(source, issuer, trustedKey).parsed.bodyDigest == current.bodyDigest,
             "Stored authorization file does not match the current license");
     } else activation_detail::VerifyActivationRoot(source, issuer, trustedKey);
     // Export permits expired trials and performs no hardware operation.

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+ <PropertyGroup><ICAXKDLRoot>$(MSBuildThisFileDirectory)</ICAXKDLRoot><ICAXKDLInstall>$(ICAXKDLRoot)install\$(Platform)\$(Configuration)\</ICAXKDLInstall></PropertyGroup>
+ <ItemDefinitionGroup><ClCompile><AdditionalIncludeDirectories>$(ICAXKDLInstall)include;$(ICAXKDLRoot)..\coal\eigen-3.4.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>NOMINMAX;ICAX_KDL_IMPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile><Link><AdditionalDependencies>$(ICAXKDLInstall)lib\orocos-kdl.lib;%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
+ <Target Name="RequireKDL" BeforeTargets="PrepareForBuild"><Error Condition="!Exists('$(ICAXKDLInstall)lib\orocos-kdl.lib')" Text="Build KDL first: src/third_party/orocos-kdl/prepare-kdl.ps1 -Configuration $(Configuration)" /></Target>
+ <Target Name="CopyKDLRuntime" AfterTargets="Build">
+  <Copy SourceFiles="$(ICAXKDLInstall)bin\orocos-kdl.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  <ItemGroup><KDLNotices Include="$(ICAXKDLInstall)licenses\*;$(ICAXKDLRoot)source.zip;$(ICAXKDLRoot)CMakeLists.txt;$(ICAXKDLRoot)prepare-kdl.ps1" /></ItemGroup>
+  <Copy SourceFiles="@(KDLNotices)" DestinationFolder="$(OutDir)Licenses\OrocosKDL" SkipUnchangedFiles="true" />
+ </Target>
+</Project>

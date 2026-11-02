@@ -1,5 +1,29 @@
 # Window state memory
 
+## File browser with an isolated preview
+
+`createFilePreviewPicker(config)` in `filePreviewPicker.mjs` provides the shared
+directory tree, selection, keyboard navigation, bounded preview cache, remembered
+directory, and isolated preview area used by TubeDesigner and FiveAxisCAM.
+Products supply `listDirectory`, `preview`, `previewData`, `hasData`, an optional
+`release`, and `createPreview`; the component never calls an import operation.
+`choose(context, view)` returns the selected paths; an empty array means cancelled.
+`dispose(view)` and `disposeInactive(context, view)` close it on project teardown
+or switch. Each product owns its `stateKey`, `memoryNamespace`, window `key` and
+`isActive` policy. Backend operations capture the original Scene/Product proxies.
+
+`createWireframePreview()` renders CAD edge polylines in a standalone SVG, with
+right-drag rotation, middle-drag pan, wheel zoom and blank double-click fit. It
+does not allocate a WebGL context or change the main viewport. Native preview
+data must remain temporary and must not create business entities or undo entries.
+
+Preview responses update only the preview area. They do not replace file rows,
+inputs, focus, selection or scroll state. Stale results cannot show after a new
+selection, navigation, cancellation or a project switch. File identity uses path,
+size and modification time; caches are bounded to 8 entries / 32 MiB per Scene.
+
+## Persistent control values
+
 `createWindowStateMemory({ namespace, storage? })` stores user defaults for each
 semantic window and field. Its API is `read(windowKey, fieldKey, defaultValue)`,
 `write(windowKey, fieldKey, value)`, `readFields(windowKey)`,

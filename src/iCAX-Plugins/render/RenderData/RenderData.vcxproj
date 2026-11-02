@@ -55,6 +55,7 @@
   <ItemGroup>
     <ClCompile Include="RenderData.cpp" />
     <ClCompile Include="RenderResource.cpp" />
+    <ClCompile Include="RenderPersistence.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

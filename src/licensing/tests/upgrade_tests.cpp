@@ -294,6 +294,121 @@ void BundleImportTests(const TestKey& issuer, const TestKey& device) {
     Check(ReadFileBounded(trialStore.folder / L"expired-trial.tdact", static_cast<DWORD>(MaxAuthorizationFileBytes)) == trialSource,
         "An expired trial can export the full authorization for a paid upgrade without TPM or business access");
 }
+void ReissueTests(const TestKey& issuer, const TestKey& device) {
+    const auto key = issuer.Public();
+    auto originalPolicy = Policy(device.Public(), KnownFeatures, Kind::Trial);
+    originalPolicy.expiresAt = originalPolicy.notBefore + 86400;
+    const auto originalFile = SignedCertificate(issuer, originalPolicy);
+    const auto original = VerifyCertificate(originalFile, originalPolicy.issuerId, key);
+    auto renewedPolicy = originalPolicy;
+    renewedPolicy.licenseId = "reissued-license"; renewedPolicy.requestId = "fresh-request";
+    renewedPolicy.features = RequiredFeatures(Feature::ProductDesign);
+    renewedPolicy.minMajor = 1; renewedPolicy.maxMajor = 1;
+    renewedPolicy.issuedAt = renewedPolicy.notBefore = originalPolicy.expiresAt + 100;
+    renewedPolicy.expiresAt = renewedPolicy.notBefore + 3 * 86400;
+    renewedPolicy.trialNvPublic[3] ^= 1;
+    const auto renewedFile = SignedCertificate(issuer, renewedPolicy);
+    const auto renewed = VerifyCertificate(renewedFile, renewedPolicy.issuerId, key);
+    const auto package = issuer.Sign(ReissueBody(original, renewedFile, originalPolicy.issuerId, key));
+    Check(IsReissuePackage(package) && !IsUpgradePackage(package), "Reissue has an explicit signed operation format");
+    Check(ResolveReissueCertificate(package, originalFile, originalPolicy.issuerId, key) == renewedFile,
+        "Explicit reissue accepts fresh trial time and new selected permissions");
+    Check(ResolveReissueCertificate(package, renewedFile, originalPolicy.issuerId, key) == renewedFile,
+        "Reissue retry is idempotent against its installed successor");
+    Reject([&] { UpgradeBody(original, renewedFile, originalPolicy.issuerId, key); },
+        "Ordinary upgrade still cannot reset trial or replace its identity");
+    auto changed = package; changed.back() ^= 1;
+    Reject([&] { ResolveReissueCertificate(changed, originalFile, originalPolicy.issuerId, key); },
+        "Reissue signature tampering is rejected");
+    auto wrongPredecessor = originalPolicy; wrongPredecessor.issuedAt--;
+    Reject([&] { ResolveReissueCertificate(package, SignedCertificate(issuer, wrongPredecessor), originalPolicy.issuerId, key); },
+        "Reissue cannot skip or substitute its signed predecessor");
+    for (unsigned field = 0; field < 10; ++field) {
+        auto invalid = renewedPolicy;
+        if (field == 0) invalid.customerId = "another-customer";
+        if (field == 1) { TestKey otherDevice; invalid.devicePublicKey = otherDevice.Public(); }
+        if (field == 2) invalid.licenseId = originalPolicy.licenseId;
+        if (field == 3) invalid.requestId = originalPolicy.requestId;
+        if (field == 4) invalid.issuedAt = originalPolicy.issuedAt - 1;
+        if (field == 5) invalid.notBefore++;
+        if (field == 6) invalid.expiresAt++;
+        if (field == 7) invalid.expiresAt = invalid.notBefore + 31 * 86400;
+        if (field == 8) { invalid.trialNvPublic = originalPolicy.trialNvPublic; invalid.trialInitialCounter = originalPolicy.trialInitialCounter; }
+        if (field == 9) invalid.issuerId = "another-issuer";
+        Reject([&] { RequireAuthorizationReissue(original, invalid); },
+            "Reissue validates customer, device, new identities, period, fresh counter and issuer");
+    }
+    auto permanentPolicy = originalPolicy; permanentPolicy.kind = Kind::Permanent;
+    Reject([&] { RequireAuthorizationReissue(permanentPolicy, renewed); },
+        "Reissue cannot downgrade permanent authorization to trial");
+    auto nextPolicy = renewedPolicy; nextPolicy.features = KnownFeatures; nextPolicy.maxMajor = 2;
+    const auto nextFile = SignedCertificate(issuer, nextPolicy);
+    const auto upgrade = issuer.Sign(UpgradeBody(renewed, nextFile, originalPolicy.issuerId, key));
+    auto secondPolicy = nextPolicy; secondPolicy.licenseId = "reissued-again"; secondPolicy.requestId = "another-fresh-request";
+    secondPolicy.issuedAt = secondPolicy.notBefore = nextPolicy.expiresAt + 1;
+    secondPolicy.expiresAt = secondPolicy.notBefore + 86400; secondPolicy.trialNvPublic[3] ^= 2;
+    const auto secondFile = SignedCertificate(issuer, secondPolicy);
+    const auto next = VerifyCertificate(nextFile, originalPolicy.issuerId, key);
+    const auto secondPackage = issuer.Sign(ReissueBody(next, secondFile, originalPolicy.issuerId, key));
+    AuthorizationBundle bundle{"reissue-bundle", "customer-1", Hash(Bytes{4,5,6}), {}};
+    bundle.slots.push_back({"icax.other-product", "other-test-issuer", {ActivationRoot(issuer)}, {}});
+    bundle.slots.push_back({std::string(Product), originalPolicy.issuerId,
+        {ActivationRoot(issuer), package, upgrade, secondPackage}, {}});
+    SignBundle(bundle, issuer, issuer);
+    const auto file = EncodeAuthorizationBundle(bundle);
+    const auto verified = VerifyAuthorizationBundleForProduct(file, TubeDesignerProduct, originalPolicy.issuerId, key);
+    const auto& slot = FindBundleSlot(verified, Product);
+    const auto noDecrypt = [](std::span<const unsigned char>) -> Bytes { throw std::runtime_error("Unexpected root decryption"); };
+    Check(ResolveAuthorizationChain(slot, {}, originalPolicy.issuerId, key, TubeDesignerProduct,
+        [&](std::span<const unsigned char>) { return originalFile; }) == secondFile,
+        "Fresh installation resolves a complete mixed reissue and upgrade chain");
+    for (const auto* installed : {&originalFile, &renewedFile, &nextFile, &secondFile}) {
+        std::vector<Bytes> proof;
+        Check(ResolveAuthorizationChain(slot, *installed, originalPolicy.issuerId, key,
+            TubeDesignerProduct, noDecrypt, &proof) == secondFile,
+            "Installed root, reissue, upgrade or latest tip resolves the same mixed chain");
+        IsolatedStore store; InstallCertificateAtDirectory(*installed, store.folder);
+        Check(PrepareAuthorizationAtDirectory(file, originalPolicy.issuerId, key, 1, store.folder) == secondFile,
+            "Import preparation validates the exact signed replacement suffix");
+    }
+    IsolatedStore store; InstallCertificateAtDirectory(originalFile, store.folder);
+    Reject([&] { RequireCertificateReplacementAtDirectory(renewedFile, store.folder, originalPolicy.issuerId, key); },
+        "Standalone new certificate cannot replace installed identity without signed predecessor proof");
+    Check(PrepareAuthorizationAtDirectory(package, originalPolicy.issuerId, key, 1, store.folder) == renewedFile,
+        "A standalone explicit reissue validates its installed predecessor");
+    CommitPreparedAuthorizationAtDirectory(package, renewedFile, store.folder, originalPolicy.issuerId, key);
+    const auto exported = store.folder / L"reissued.tdact";
+    ExportLicenseFileAtDirectory(exported, store.folder, originalPolicy.issuerId, key);
+    Check(ReadFileBounded(exported, MaxAuthorizationFileBytes) == package,
+        "Export preserves the exact signed standalone reissue source");
+    Check(PrepareAuthorizationAtDirectory(package, originalPolicy.issuerId, key, 1, store.folder) == renewedFile,
+        "A committed reissue can be imported again");
+    Reject([&] { RequireCertificateReplacementAtDirectory(originalFile, store.folder, originalPolicy.issuerId, key); },
+        "The old activation cannot roll back a committed reissue");
+    const auto prepared = PrepareAuthorizationAtDirectory(file, originalPolicy.issuerId, key, 1, store.folder);
+    Check(prepared == secondFile, "Standalone reissue extends into a complete mixed-product chain");
+    CommitPreparedAuthorizationAtDirectory(file, prepared, store.folder, originalPolicy.issuerId, key);
+    const auto fullExport = store.folder / L"mixed.tdact";
+    ExportLicenseFileAtDirectory(fullExport, store.folder, originalPolicy.issuerId, key);
+    Check(ReadFileBounded(fullExport, MaxAuthorizationFileBytes) == file,
+        "Export preserves every mixed-chain predecessor and source byte");
+    auto oldBundle = bundle; oldBundle.slots.back().chain.pop_back(); SignBundle(oldBundle, issuer, issuer);
+    Reject([&] { PrepareAuthorizationAtDirectory(EncodeAuthorizationBundle(oldBundle), originalPolicy.issuerId, key, 1, store.folder); },
+        "An older mixed bundle cannot roll back the installed reissue chain");
+    Reject([&] { PrepareAuthorizationAtDirectory(package, originalPolicy.issuerId, key, 1, store.folder); },
+        "Standalone reissue cannot discard the installed complete bundle");
+    auto alteredPrefix = bundle; alteredPrefix.slots.back().chain.front() = ActivationRoot(issuer);
+    SignBundle(alteredPrefix, issuer, issuer);
+    Reject([&] { PrepareAuthorizationAtDirectory(EncodeAuthorizationBundle(alteredPrefix), originalPolicy.issuerId, key, 1, store.folder); },
+        "Even signed reissue bundles must preserve their original chain prefix exactly");
+    auto lostProduct = bundle; lostProduct.slots.erase(lostProduct.slots.begin()); SignBundle(lostProduct, issuer, issuer);
+    Reject([&] { PrepareAuthorizationAtDirectory(EncodeAuthorizationBundle(lostProduct), originalPolicy.issuerId, key, 1, store.folder); },
+        "A reissue bundle cannot remove another installed product");
+    auto replacedProduct = bundle; replacedProduct.slots.front().chain.front() = ActivationRoot(issuer);
+    SignBundle(replacedProduct, issuer, issuer);
+    Reject([&] { PrepareAuthorizationAtDirectory(EncodeAuthorizationBundle(replacedProduct), originalPolicy.issuerId, key, 1, store.folder); },
+        "A reissue bundle cannot silently replace another product authorization");
+}
 }
 
 int main() {
@@ -504,6 +619,7 @@ int main() {
         }
         { AuthorizationInstallLock afterRelease(store.folder); ++checks; }
         BundleImportTests(issuer, device);
+        ReissueTests(issuer, device);
         std::cout << checks << " checks passed (ephemeral software keys and isolated files; hardware and production license untouched)\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

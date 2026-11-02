@@ -41,13 +41,15 @@ namespace iCAX
             * @param [in] strName_ 步骤名称，不允许为空。
             * @return 撤销记录作用域；调用 End 或析构时结束记录。
             */
-            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const std::string& strName_);
+            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const std::string& strName_,
+                std::function<void(const COperationBatch&)> Rollback_);
 
             /*
             * @brief 判断当前是否正在记录撤销还原步骤。
             * @return true 表示 BeginCommand 后尚未 End。
             */
             bool IsRecording() const;
+            void RetainDerivedEntity(const iCAX::Data::uuid& EntityID_);
 
             /*
             * @brief 处理 Repository 已提交的操作批次。
@@ -142,7 +144,11 @@ namespace iCAX
             * @details
             *   EndCommand 会按 meta 过滤出 Transactional 操作，保留操作顺序后压入 undo 栈。
             */
-            void EndCommand();
+            void EndCommand(bool RecordHistory_ = true);
+            COperationBatch BuildCurrentCommand(bool RetainDerived_ = true) const;
+            void CancelCommand(const std::function<void(const COperationBatch&)>& Rollback_);
+            void IncludeObservableProperty(const iCAX::Data::uuid& EntityID_,
+                const std::string& ComponentClass_, const std::string& PropertyName_);
 
             /*
             * @brief 将已提交批次记录到当前撤销命令。
@@ -183,6 +189,8 @@ namespace iCAX
             std::shared_ptr<IMetaRegistry> m_pMetaRegistry;
             std::unique_ptr<COperationBatchBuilder> m_pCommandBuilder;
             std::vector<std::shared_ptr<const COperationBatch>> m_CommandBatches;
+            UndoObservableProperties m_IncludedObservableProperties;
+            std::set<iCAX::Data::uuid> m_RetainedDerivedEntities;
             std::deque<std::shared_ptr<CHistoryStep>> m_UndoStack;
             std::deque<std::shared_ptr<CHistoryStep>> m_RedoStack;
         };

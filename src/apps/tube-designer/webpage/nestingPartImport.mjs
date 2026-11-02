@@ -64,9 +64,14 @@ export async function importNestingParts(context, view, ops, files) {
       view.tubeDesignerOperation.message = `${index + 1} / ${files.length} · ${sourceFileName(metadata.sourcePath)}`;
       ops.renderProject(context, view);
       try {
+        const requestStarted = performance.now();
         const response = await sceneProxy.invoke("TubeDesigner.ImportNestingPart", metadata, { timeoutMs: 180000 });
         if (!current()) return null;
         if (!response?.tubeDesigner || !response.partEntityId) throw new Error("导入零件未返回有效的下料记录。");
+        const importPerformance = { sourceFileName: sourceFileName(metadata.sourcePath),
+          requestMs: performance.now() - requestStarted, ...response.importPerformance };
+        ops.appendProjectLog?.(context, "info", `导入耗时｜${importPerformance.sourceFileName}：${(importPerformance.requestMs / 1000).toFixed(2)} 秒`);
+        console.info("TubeDesigner.ImportNestingPart.performance", JSON.stringify(importPerformance));
         imported.push(response);
         view.scene ??= {};
         view.scene.tubeDesigner = response.tubeDesigner;

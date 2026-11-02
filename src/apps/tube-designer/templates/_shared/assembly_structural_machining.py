@@ -14,12 +14,21 @@ import sys
 
 EPS = 1.0e-7
 SCHEMA = "icax.assembly-process-result"
-DEPENDENCIES = ["tube_profile_catalog.py", "profile_package_runtime.py"]
+DEPENDENCIES = ["tube_profile_catalog.py", "profile_package_runtime.py", "directional_tube_geometry.py"]
 
 
 def _profile_rules():
     path=Path(__file__).with_name("tube_profile_catalog.py")
     name="icax_structural_profile_"+hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    if name not in sys.modules:
+        spec=importlib.util.spec_from_file_location(name,path)
+        module=importlib.util.module_from_spec(spec);sys.modules[name]=module;spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def _directions():
+    path=Path(__file__).with_name('directional_tube_geometry.py')
+    name='icax_structural_directions_'+hashlib.sha256(path.read_bytes()).hexdigest()[:16]
     if name not in sys.modules:
         spec=importlib.util.spec_from_file_location(name,path)
         module=importlib.util.module_from_spec(spec);sys.modules[name]=module;spec.loader.exec_module(module)
@@ -250,6 +259,12 @@ class Tools:
         self.geometry.append({"key":key,"operator":"boolean","inputs":roots,"arguments":{"operation":"union"}})
         return key
 
+    def boolean(self,key,operation,target,tools):
+        if operation not in ('intersect','subtract'):raise ValueError('invalid local region operation')
+        self.geometry.append({'key':key,'operator':'boolean','inputs':[target,*tools],
+                              'arguments':{'operation':operation,'target':target,'tools':tools}})
+        return key
+
 
 def stock_fit(process_input, parameters):
     """Keep explicit local regions, then fit actual mating section envelopes."""
@@ -319,9 +334,26 @@ def _apertures(g,parameters):
     holes=g.get("holes")
     if not isinstance(holes,list) or not holes:raise ValueError("holes are required")
     for index,h in enumerate(holes):
-        contour=(circle(number(h["diameter"],"diameter",True)/2) if "diameter" in h else
-                 rounded_rectangle(h["width"],h["height"],h.get("radius",0)))
-        roots.append(t.solid("hole."+str(index),{"placement":h["placement"],"contours":[contour],"vector":h["vector"]}))
+        if 'directions' in h:
+            d=h['directions'];vector=h['vector']
+            depth=math.sqrt(sum(v*v for v in vector))
+            nodes=_directions().socket_cutter(h['contours'],h['placement']['origin'],
+                h['placement']['xAxis'],h['placement']['yAxis'],h['placement']['origin'],
+                [v/depth for v in vector],depth,d['width'],d['count'],d['angle'],
+                d['zAxis'],d['yAxis'],d['reach'])
+            prefix='hole.'+str(index)+'.'
+            for node in nodes:
+                node['key']=prefix+node['key']
+                if 'inputs' in node:node['inputs']=[prefix+k for k in node['inputs']]
+            t.geometry.extend(nodes);roots.append(prefix+'tool')
+            continue
+        contours=h.get('contours')
+        if contours is None:
+            contour=(circle(number(h["diameter"],"diameter",True)/2) if "diameter" in h else
+                     rounded_rectangle(h["width"],h["height"],h.get("radius",0)))
+            contours=[contour]
+        if not isinstance(contours,list) or not contours:raise ValueError('aperture section is required')
+        roots.append(t.solid("hole."+str(index),{"placement":h["placement"],"contours":contours,"vector":h["vector"]}))
     return result(parameters,t.geometry,[{"id":"apertures","kind":"neutral-csg","role":"stock","operation":"subtract","tools":roots}])
 
 
@@ -344,13 +376,16 @@ def plate_apertures(process_input, parameters):
 
 
 def male_head(process_input, parameters):
-    parameters_only(parameters,("length","width","corner","size"),("length","width"))
+    parameters_only(parameters,("length","width","corner","size","form","count","angle"),("length","width"))
     g=input_geometry(process_input);t=Tools()
     left=number(g["visibleLeft"],"visibleLeft");right=number(g["visibleRight"],"visibleRight")
     z=number(g["centerZ"],"centerZ");pw=number(g["profileWidth"],"profileWidth",True)
     depth=number(g["profileDepth"],"profileDepth",True)+max(4,4*number(g["wall"],"wall",True))
     length=number(parameters["length"],"length",True);width=number(parameters["width"],"width",True)
     corner=parameters.get("corner","none");size=number(parameters.get("size",0),"size")
+    form=parameters.get('form','tongue')
+    if form not in ('tongue','full_section'):raise ValueError('invalid inserted end form')
+    if form=='full_section':width=pw;corner='square';size=0
     if right<=left or corner not in {"round","chamfer","none","square"}:raise ValueError("invalid head geometry")
     def prism(key,contour,cx=0,cz=0):
         return t.solid(key,{"placement":{"origin":[cx,-depth/2,cz],"xAxis":[1,0,0],"yAxis":[0,0,1]},"contours":[contour],"vector":[0,depth,0]})
@@ -360,15 +395,47 @@ def male_head(process_input, parameters):
         if corner=="round":
             radius=min(size,span/2-EPS,half-EPS)
             if radius<=0:raise ValueError("invalid rounded head radius")
-            return prism(tip,rounded_rectangle(span,width,radius),cx,z)
+            contour=rounded_rectangle(span,width,radius)
+            return directional_head(tip,contour,cx) if form=='tongue' else prism(tip,contour,cx,z)
         if corner=="chamfer":
             leg=min(size,span-EPS,half-EPS)
             if leg<=0:raise ValueError("invalid head chamfer")
-            points=([[a,z-half+leg],[a+leg,z-half],[b,z-half],[b,z+half],[a+leg,z+half],[a,z+half-leg]] if tip=="left" else
+            points=([[a,z-half+leg],[a+leg,z-half],[b,z-half],[b,z+half],[a+leg,z+half],[a,z+half-leg]] if tip=="left" or tip.endswith('.left') else
                     [[a,z-half],[b-leg,z-half],[b,z-half+leg],[b,z+half-leg],[b-leg,z+half],[a,z+half]])
         else:points=[[a,z-half],[b,z-half],[b,z+half],[a,z+half]]
-        return prism(tip,path([[x-cx,y-z] for x,y in points]),cx,z)
+        contour=path([[x-cx,y-z] for x,y in points])
+        return directional_head(tip,contour,cx) if form=='tongue' else prism(tip,contour,cx,z)
+    def directional_head(key,contour,cx):
+        roots=[];reach=2*(pw+depth+length+1)
+        # The grille's initial pair is on its front/back skins; four adds the
+        # perpendicular pair. Both ends use the same physical section frame.
+        for index,(normal,tangent) in enumerate(_directions().angular_bands(
+                parameters.get('count',2),parameters.get('angle',0),[0,1,0],[0,0,1])):
+            roots.append(t.solid(key+'.band.'+str(index),{
+                'placement':{'origin':[cx-normal[0]*reach,-normal[1]*reach,z-normal[2]*reach],
+                             'xAxis':[1,0,0],'yAxis':tangent},
+                'contours':[contour],'vector':[v*2*reach for v in normal]}))
+        return t.union(key+'.bands',roots)
     root=t.union("envelope",[body,head(left-length,left+EPS,"left"),head(right-EPS,right+length,"right")])
+    mate_ends=g.get('mateEnds',[])
+    if not isinstance(mate_ends,list):raise ValueError('observed mate ends must be a list')
+    if mate_ends:
+        # Each observed receiving envelope clips its own tip and shoulder.
+        # All profiles remain exact curves; there is no planar-face assumption.
+        operations=[]
+        for index,mate in enumerate(mate_ends):
+            prefix='mate.'+str(index)
+            receiver=t.solid(prefix+'.receiver',mate['envelope'])
+            near=t.solid(prefix+'.near',mate['nearRegion'])
+            outside=t.boolean(prefix+'.outside','subtract',near,[receiver])
+            station=number(mate['station'],'mate station')
+            direction=number(mate['direction'],'mate direction')
+            if direction not in (-1.,1.):raise ValueError('mate direction must be axial')
+            tongue=head(station-length,station+EPS,prefix+'.left') if direction>0 else head(station-EPS,station+length,prefix+'.right')
+            inside=t.boolean(prefix+'.inside','intersect',tongue,[receiver])
+            keep=t.union(prefix+'.keep',[outside,inside])
+            operations.append({'id':prefix,'kind':'neutral-csg','role':'stock','operation':'intersect','tool':keep})
+        return result(parameters,t.geometry,operations)
     return result(parameters,t.geometry,[{"id":"male-head","kind":"neutral-csg","role":"stock","operation":"intersect","tool":root}])
 
 

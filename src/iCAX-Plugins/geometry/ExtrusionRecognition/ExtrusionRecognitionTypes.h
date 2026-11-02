@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <string_view>
@@ -124,8 +125,10 @@ namespace iCAX::ExtrusionRecognition
         std::vector<iCAX::GeometryData::Direction3> CandidateDirections;
     };
 
+    struct SSectionWireEdge;
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireOptions final
     {
+        std::size_t nMaximumConcurrency = 0;
         // A face is a section side face when its tangent plane contains +X.
         double dFaceParallelToleranceRadians = 0.001;
         // Endpoints within this distance are represented by one graph node.
@@ -134,12 +137,19 @@ namespace iCAX::ExtrusionRecognition
         // A turn within 180 degrees +/- this tolerance is treated as a
         // U-turn and is not a valid continuation of a contour.
         double dUTurnAngleToleranceRadians = 0.2617993877991494; // 15 degrees
+        // Optional caller-owned telemetry; never changes geometric decisions.
+        std::function<void(const std::string&)> Progress;
+        // Optional neutral-geometry diagnostic; never changes candidate acceptance.
+        std::function<void(const std::string&,const std::vector<SSectionWireEdge>&)> CandidateAudit;
     };
 
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireEdge final
     {
         // Curve2 coordinates are (Y, Z) coordinates on the reset BRep's YOZ plane.
         std::uint64_t SourceEdgeId = 0;
+        // Nonzero when this curve is an exact trimmed-face silhouette rather
+        // than an existing topological edge. SourceEdgeId is then zero.
+        std::uint64_t SourceFaceId = 0;
         iCAX::GeometryData::Curve2 Curve;
         iCAX::GeometryData::ParameterRange Range;
         iCAX::GeometryData::Point2 Start;
@@ -225,6 +235,9 @@ namespace iCAX::ExtrusionRecognition
 
     struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpathOptions final
     {
+        std::size_t nMaximumConcurrency = 0;
+        // Optional work telemetry; never participates in geometry decisions.
+        std::function<void(const std::string&)> Progress;
         double dLinearTolerance = 0.001;
         double dAngularToleranceRadians = 0.001;
         std::size_t nTrajectorySampleCount = 33;
@@ -235,6 +248,22 @@ namespace iCAX::ExtrusionRecognition
         double dSkinDistanceTolerance = 0.002;
         bool bProcessInternalFaces = true;
         bool bEmitMarkPaths = true;
+        // Declared by the caller, never inferred from coincident faces.
+        // A single extruded stock may contain internal construction interfaces.
+        bool bSingleExtrudedStock = false;
+    };
+
+    // Independent intermediate result; no toolpath or product state is required.
+    struct _EXTRUSION_RECOGNITION_EXP SSectionFaceClassificationResult final
+    {
+        bool bSuccess = false;
+        iCAX::GeometryData::BRepModel SplitGeometry;
+        iCAX::GeometryData::BRepModel MachiningGeometry;
+        iCAX::GeometryData::BRepModel NonMachiningGeometry;
+        // Stable IDs in SplitGeometry; the partition models retain these IDs.
+        std::vector<std::uint64_t> MachiningFaceIds;
+        std::vector<std::uint64_t> NonMachiningFaceIds;
+        std::vector<std::string> Diagnostics;
     };
 
     struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpathResult final

@@ -156,7 +156,7 @@ try {
     };
     fixture.resolvePreview = index => fixture.previews[index].resolve({ sourceFileName: fixture.previews[index].payload.sourcePath.split('/').at(-1),
       sourcePath: fixture.previews[index].payload.sourcePath, sizeBytes: 1000, lastModifiedNs: '1001',
-      wireframe: { polylines: [[-200,-20,-10,200,-20,-10,200,20,-10,-200,20,-10,-200,-20,-10], [-200,-20,10,200,-20,10,200,20,10,-200,20,10,-200,-20,10]], edgeCount: 2, pointCount: 10 } });
+      wireframe: { polylinesJson: JSON.stringify([[-200,-20,-10,200,-20,-10,200,20,-10,-200,20,-10,-200,-20,-10], [-200,-20,10,200,-20,10,200,20,10,-200,20,10,-200,-20,10]]), edgeCount: 2, pointCount: 10 } });
     const projectState = { projectId, projectName: '下料直接导入浏览器验证', mainScene: state };
     const projectProxy = { projectId, state: projectState, getMainScene() { return sceneProxy; } };
     const otherState = { ...structuredClone(state), sceneId: 'other-scene' };

@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+import {copyFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {restoreNativeCefViewport} from './nativeCefViewport.mjs';
+
+const output=resolve('output/acceptance/head-instances-20261101/cef');mkdirSync(output,{recursive:true});
+const project=resolve(output,`工程刀头验收-${Date.now()}.i5cam`);copyFileSync(resolve('output/acceptance/head-instances-20261101/browser/刀头实例验证.i5cam'),project);
+const report={passed:false,standaloneCef:true,nativeProductStore:true,project,cases:[],errors:[]};
+const browser=await chromium.connectOverCDP(process.env.ICAX_HEAD_INSTANCE_CDP||'http://127.0.0.1:9596');let page;
+try{
+ page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('AppShell'));assert.ok(page);page.setDefaultTimeout(30000);page.on('pageerror',e=>report.errors.push(e.message));
+ await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');await restoreNativeCefViewport(page);
+ assert.equal(await page.evaluate(()=>!!__icaxAppShell.getState().activeProjectPath),false,'Owned clean runtime is required');
+ await page.evaluate(path=>__icaxAppShell.openProject(path,'icax.five-axis-cam'),project);
+ await page.waitForFunction(async path=>{const {getProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.hi=getProjectView(__icaxAppShell.getState().activeProjectId);return __icaxAppShell.getState().activeProjectPath===path&&hi.scene?.domain?.headInstances?.length===3&&!hi.pending;},project,{timeout:120000});
+ const idle=()=>page.waitForFunction(()=>!__icaxAppShell.getState().pendingCount&&!hi.pending&&!hi.fiveHeadEditor?.busy&&!hi.fiveSimulation?.busy);
+ const read=()=>page.evaluate(()=>hi.viewportSceneProxy.invoke('CamScene.ReadState',{}));
+ const field=key=>page.locator(`[data-five-head-instance-field="${key}"]`),button=key=>page.locator(`[data-five-command="five.head-instance.${key}"]`);
+ await page.locator('[data-tab-id="toolpath"]').click();await page.locator('[data-command-id="five.simulation.head-open"]').click();await page.waitForFunction(()=>hi.fiveHeadPreview?.phase==='ready');
+ const before=await read();await page.evaluate(()=>{window.mainHeadCanvas=hi.viewport.renderer.domElement;window.mainHeadCamera=JSON.stringify(hi.viewport.getCameraState());window.savedHeadModel=hi.fiveHeadPreview.model;window.headPreviewCamera=hi.fiveHeadPreview.camera.position.toArray();});
+ await field('name').fill('工程 AB · 刀长228');await field('name').press('Enter');await idle();assert.equal(await page.evaluate(()=>hi.scene.domain.headInstances.find(i=>i.id===hi.scene.domain.setups.find(s=>s.id===hi.scene.domain.activeSetupId).headInstanceId).name),'工程 AB · 刀长228');
+ assert.equal(await page.evaluate(()=>savedHeadModel===hi.fiveHeadPreview.model),true);assert.deepEqual(await page.evaluate(()=>hi.fiveHeadPreview.camera.position.toArray()),await page.evaluate(()=>headPreviewCamera));
+ await field('lengthMm').fill('228');await button('apply').click();await idle();await page.waitForFunction(()=>hi.fiveHeadPreview?.phase==='ready');
+ const applied=await read(),active=applied.setups.find(s=>s.id===applied.activeSetupId);assert.deepEqual(active.headModel.tcpLocalPosition,[1,2,-225]);for(const s of applied.setups.filter(s=>s.headInstanceId===active.headInstanceId))assert.deepEqual(s.headModel.tcpLocalPosition,[1,2,-225]);
+ report.cases.push('Actual entry handles Enter rename and gauge application; shared setups use the same TCP and rename retains the preview');
+ await page.locator('[data-action="undo-project"]').click();await page.waitForFunction(()=>hi.scene?.domain?.setups.find(s=>s.id===hi.scene.domain.activeSetupId)?.headModel.tcpLocalPosition[2]===-223);await idle();assert.deepEqual((await read()).setups.find(s=>s.id===active.id).headModel.tcpLocalPosition,[1,2,-223]);
+ await page.locator('[data-action="redo-project"]').click();await page.waitForFunction(()=>hi.scene?.domain?.setups.find(s=>s.id===hi.scene.domain.activeSetupId)?.headModel.tcpLocalPosition[2]===-225);await idle();assert.deepEqual((await read()).setups.find(s=>s.id===active.id).headModel.tcpLocalPosition,[1,2,-225]);
+ if(!await page.locator('[data-five-key="head-popover"]').count())await page.locator('[data-command-id="five.simulation.head-open"]').click();await page.waitForFunction(()=>hi.fiveHeadPreview?.phase==='ready');
+ await button('tab.library').click();await page.waitForFunction(()=>hi.fiveHeadEditor?.libraryLoaded);await field('profileName').fill('独立程序刀头验收');await button('save-profile').click();await idle();assert.equal(await page.evaluate(()=>hi.fiveHeadEditor.error),'');
+ const entries=await page.evaluate(()=>hi.viewportSceneProxy.invoke('CamHead.Configurations',{action:'list'}));const entry=entries.items.find(e=>e.name==='独立程序刀头验收');assert.ok(entry);report.savedProfile=entry;
+ await field('entryId').selectOption(entry.id);await button('use-profile').click();await idle();await page.waitForFunction(()=>hi.fiveHeadPreview?.phase==='ready');
+ const loaded=await read();assert.equal(loaded.headInstances.length,4);assert.deepEqual(loaded.setups.find(s=>s.id===loaded.activeSetupId).headModel.tcpLocalPosition,[1,2,-225]);
+ report.cases.push('Native undo/redo and product-scoped configuration store save/load work in standalone CEF');
+ await button('tab.tool').click();
+ const canvas=page.locator('[data-five-head-preview]'),box=await canvas.boundingBox(),previewBefore=await page.evaluate(()=>hi.fiveHeadPreview.camera.quaternion.toArray());
+ await page.mouse.move(box.x+box.width*.45,box.y+box.height*.45);await page.mouse.down({button:'right'});await page.mouse.move(box.x+box.width*.7,box.y+box.height*.6,{steps:6});await page.mouse.up({button:'right'});
+ assert.notDeepEqual(await page.evaluate(()=>hi.fiveHeadPreview.camera.quaternion.toArray()),previewBefore);assert.equal(await page.evaluate(()=>mainHeadCanvas===hi.viewport.renderer.domElement&&mainHeadCamera===JSON.stringify(hi.viewport.getCameraState())),true);
+ await page.locator('[data-five-key="head-popover"]').screenshot({path:resolve(output,'工程刀头参数.png')});
+ await page.locator('[data-five-command="five.simulation.head-close"]').click();await page.locator('[data-command-id="five.simulation.head-open"]').click();await page.waitForFunction(()=>hi.fiveHeadPreview?.phase==='ready');assert.equal(await field('lengthMm').inputValue(),'228');
+ const after=await read();for(const key of ['workpieces','placements','intentToolpaths','fixtures','fixtureUnits'])assert.deepEqual(after[key],before[key],key+' changed');
+ await page.screenshot({path:resolve(output,'新版刀头实例.png')});report.cases.push('Right drag rotates the head preview, main canvas and camera remain unchanged, panel reopen retains edits, and CAD/toolpaths remain unchanged');
+ assert.deepEqual(report.errors,[]);report.passed=true;
+}catch(error){report.error=error.stack;if(page)await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});throw error;}finally{writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));await browser.close();}
+console.log(JSON.stringify(report));

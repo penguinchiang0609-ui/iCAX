@@ -50,6 +50,7 @@ import {
 } from "./productParameterDiagram.mjs";
 import { creationOnlyParameterKeys } from "./productParameterDependencies.mjs";
 import { productParameterKind } from "./productParameterClassification.mjs";
+import { renderInsertJointParameterDetail } from "./insertJointParameterDetails.mjs";
 export { sortTemplatesByCatalog } from "./productCatalog.mjs";
 
 export function getDefaultParameters(templates = [], templateId = "") {
@@ -285,10 +286,13 @@ export function renderDesignerRightPane(context, view, { includePartInspection =
   const parameterContent = renderDesignerRightParameterContent(designer, view);
   const { hasSavedPanelState, parts, scrollContent } = parameterContent;
   scheduleDesignerParameterPanelRestoration(context, view, product.entityId, hasSavedPanelState);
+  // Existing instance values are persisted in its product EC. Window defaults
+  // must not replay earlier edits over a loaded instance or an applied preset.
   return `
     <div class="tube-designer-panel tube-designer-parameter-panel"
       data-tube-designer-parameter-form data-tube-designer-product-parameter-scope
-      data-window-state-controls="[data-product-parameter-key]"
+      data-pane-interaction-scope="product:${escapeAttribute(product.entityId)}"
+      data-window-state-controls=":not(*)"
       data-tube-designer-editor-mode="right" data-tube-designer-active-parameter="${escapeAttribute(view.tubeDesignerLastEditedParameterKey ?? "")}">
       <header class="tube-designer-parameter-header">
         <div class="tube-designer-parameter-toolbar">
@@ -2136,7 +2140,19 @@ function renderEditorParameterLevels(definitions, render, context, key) {
   return renderParameterLevels(definitions, render, {key,gridClass:'tube-designer-field-grid',trackDisclosure:true,open:saved?.[`advanced:${key}`] === true});
 }
 
+function renderParameterGroupDetails(template, group, values, mode) {
+  const groupKey = sceneLogicalGroupKey(group);
+  const declarations = template?.extensions?.parameterGroupDetails;
+  if (!Array.isArray(declarations)) return "";
+  return declarations.filter(declaration => declaration?.group === groupKey
+    && matchesParameterCondition(declaration.visibleWhen, values))
+    .map(declaration => declaration.kind === 'directional-insert-joint'
+      ? renderInsertJointParameterDetail(declaration, values, { mode, template,
+        idPrefix: `${mode}-${groupKey}` }) : "").join("");
+}
+
 function renderAddParameterGroup(group, values, disabled, view, mode, template, presetHostGroups = new Map(), depth = 0, siblingIndex = 0) {
+  const detail = renderParameterGroupDetails(template, group, values, mode);
   const fields = renderEditorParameterLevels(group.fields, (field) => renderField(
     field,
     values[field.key ?? field.name],
@@ -2164,6 +2180,7 @@ function renderAddParameterGroup(group, values, disabled, view, mode, template, 
       <div class="tube-designer-config-subsection-content">
         ${presetBar}
         ${fields ? `<div class="tube-designer-field-grid">${fields}</div>` : ""}
+        ${detail}
         ${children ? `<div class="tube-designer-subsection-list">${children}</div>` : ""}
       </div>
     </details>`;
@@ -2172,12 +2189,20 @@ function renderAddParameterGroup(group, values, disabled, view, mode, template, 
     <strong>${escapeText(group.title)}</strong>
     ${presetBar}
     ${fields ? `<div class="tube-designer-field-grid">${fields}</div>` : ""}
+    ${detail}
     ${children ? `<div class="tube-designer-subsection-list">${children}</div>` : ""}
   </section>`;
 }
 
 function compactParameterGroup(group, values, disabled, expandedGroups, view, mode, template, presetHostGroups = new Map(), depth = 0, summaryOnly = false) {
+  // Keep the component's disclosure, flatten its sole specification wrapper.
+  // Multi-branch groups retain their useful separate controls.
+  if (mode === "right" && depth > 0 && !group.fields.length && group.children.length === 1) {
+    const child = group.children[0];
+    group = { ...child, key: group.key, title: group.title, defaultOpen: group.defaultOpen };
+  }
   const groupSummaryOnly = summaryOnly || (mode === "right" && depth === 0 && group.key === "section:structure");
+  const detail = groupSummaryOnly ? "" : renderParameterGroupDetails(template, group, values, mode);
   const fields = renderEditorParameterLevels(group.fields, (field) => renderField(
     field,
     values[field.key ?? field.name],
@@ -2206,6 +2231,7 @@ function compactParameterGroup(group, values, disabled, expandedGroups, view, mo
     <div class="tube-designer-parameter-group-content">
       ${presetBar}
       ${fields ? `<div class="tube-designer-field-grid">${fields}</div>` : ""}
+      ${detail}
       ${children ? `<div class="tube-designer-parameter-subsection-list">${children}</div>` : ""}
     </div>
   </details>`;

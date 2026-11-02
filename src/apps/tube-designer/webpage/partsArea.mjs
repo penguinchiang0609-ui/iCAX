@@ -1,10 +1,10 @@
+import { hasTubeCadDocument } from "./tubeCadEditor.mjs";
 import { buildAutomaticDimensionReport } from "./partInspection.mjs";
 import { partDimensionCategories, annotatedPartElementIds, visiblePartDimensionAnnotations,
   renderPartDimensionVisibilityIcon, nearestPartDimensionElement, partDimensionVisibilityState,
   partDimensionElementVisible, setPartDimensionMasterVisibility, setPartDimensionCategoryVisibility,
   setPartDimensionElementVisibility } from "./partDimensionAnnotations.mjs";
 import { patchParameterContent } from "./libraryDomPatch.mjs";
-import { beginPartSideSketch } from "./sketchArea.mjs";
 import { scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
 import { isNestingResultStale, loadNestingPlan, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { groupNestingPlans } from "./nestingGroups.mjs";
@@ -13,31 +13,12 @@ import { cancelNestingPlanHydration, getNestingPlacementColor, scheduleNestingPl
 import { isPlatePart, isSheetPart, isComponentPart, isTubeNestingPart, plateDimensions, componentBounds,
   manufacturingPartKind, manufacturingPartKindLabel, partSourcingLabel, tubeNestingExclusionReason,
   partAwaitingAssemblyValidation } from "./manufacturingParts.mjs";
-import { editPunchWizardFeature, validatePunchWizard, openPunchParameters, closePunchParameters, setPunchFeatureSelected, removeSelectedPunchWizardFeatures, togglePunchRowParameters, handlePunchColumnAction } from "./punchWizard.mjs";
-import { beginPunchOperation, finishPunchOperation, previewPunch } from "./punchEditor.mjs";
-import { handlePunchArrayGroupAction } from "./punchArrayGroupActions.mjs";
-import { handlePunchDiagramAction } from "./punchParameterDiagram.mjs";
-import {
-  addPunchWizardFeature,
-  createPunchWizardState,
-  getPunchWizardPayload,
-  removePunchWizardFeature,
-  renderPunchWizardDialog as renderPunchWizardDialogView,
-  updatePunchWizardField,
-} from "./punchWizard.mjs";
-import {
-  changePunchRecordKind,
-  initializePunchRecordSource,
-  punchProfileChoices,
-  selectPunchProfileSource,
-  updatePunchProfileParameter,
-} from "./punchProfileSource.mjs";
 export { isTubeNestingPart } from "./manufacturingParts.mjs";
 import { nestingSectionIdentity } from "./profileIdentity.mjs";
 
 export function canEditNestingSideSketch(part) {
   return !!(part?.independentNesting && isTubeNestingPart(part)
-    && part.properties?.["tubeDesigner.sideSketchRecipe"]);
+    && hasTubeCadDocument(part));
 }
 
 const hydrationTokens = new WeakMap();
@@ -50,18 +31,16 @@ const nestingResultDisclosureBindings = new WeakMap();
 const nestingPartCenterRequests = new WeakMap();
 
 function hasPartDrawing(part) {
-  return !!part?.properties?.["tubeDesigner.partDrawing"]?.drawing;
+  return hasTubeCadDocument(part);
 }
 
 function renderNestingPartEditActions(part, view = {}) {
   if (!part || !isTubeNestingPart(part) || !part.independentNesting) return "";
   const id = escapeAttribute(part.entityId);
-  const disabled = view.pending || view.tubeDesignerPartRecoveryPending ? "disabled" : "";
-  if (hasPartDrawing(part) && part.properties?.["manufacturing.process"] === "part-drawing") {
-    return `<button class="tube-designer-primary" data-cam-action="tube-designer-drawing-open" data-tube-designer-part-id="${id}" ${disabled}>三维编辑</button>`;
-  }
-  if (part.properties?.["manufacturing.punchPart"] !== true) return "";
-  return `<button class="tube-designer-primary" data-cam-action="tube-designer-punch-open" data-tube-designer-part-id="${id}" ${disabled}>冲孔向导</button>`;
+  const disabled = view.pending ? "disabled" : "";
+  if (hasPartDrawing(part)) return `<button class="tube-designer-primary" data-cam-action="tube-designer-drawing-open" data-tube-designer-part-id="${id}" ${disabled}>三维编辑</button>
+    <button class="tube-designer-secondary" data-cam-action="tube-designer-punch-open" data-tube-designer-part-id="${id}" ${disabled}>冲孔向导</button>`;
+  return "";
 }
 
 export function listManufacturingParts(designer = {}) {
@@ -201,50 +180,6 @@ export function filterManufacturingParts(parts = [], options = {}) {
   });
 }
 
-export function renderPunchWizardDialog(_context, view) {
-  if(view.tubeDesignerPartDrawing)return "";
-  const state = view?.tubeDesignerPunchWizard;
-  if (!state) return "";
-  const part = listNestingParts(view.scene?.tubeDesigner ?? {})
-    .find(item => String(item.entityId) === String(state.partId));
-  if (!part) return "";
-  const profile = partProfile(part);
-  const introHtml = `<section class="tube-designer-nesting-punch-setup tube-designer-punch-existing-main">
-    <div class="tube-designer-nesting-punch-profile-summary"><strong>主管 · ${escapeText(partDisplayName(part))}</strong><span>${escapeText(profile)}</span><small>成品长度 ${formatNumber(part.length)} mm</small></div>
-  </section>`;
-  return renderPunchWizardDialogView(part, view, {
-    title: "主管冲孔向导",
-    previewTitle: "主管与刀具场景",
-    previewStatus: "蓝色半透明实体是主管，橙色拉伸体是当前孔刀；保存孔位后再应用到零件。",
-    previewActionLabel: "更新刀具体",
-    previewLegendHtml: '<div class="tube-designer-punch-preview-legend"><span><i class="is-blank"></i>主管</span><span><i class="is-tool"></i>孔刀拉伸体</span></div>',
-    featureEditorTitle: state.editingId ? "编辑孔位" : "当前孔刀参数",
-    featureAddLabel: state.editingId ? "保存孔位修改" : "加入孔位清单",
-    featureListTitle: "冲孔记录",
-    featureEmptyText: "当前主管尚未配置孔位。",
-    tableMode: true,
-    showEnds: true,
-    editorFirst: true,
-    introInEditor: true,
-    bodyClass: "tube-designer-punch-body--creation",
-    dialogClass: "tube-designer-nesting-punch-dialog",
-    branchProfiles: punchProfileChoices(view),
-    introHtml,
-  });
-}
-
-function activePunchPart(view) {
-  return listNestingParts(view.scene?.tubeDesigner ?? {})
-    .find((part) => String(part.entityId) === String(view.tubeDesignerPunchWizard?.partId ?? ""));
-}
-
-async function previewActivePunch(context, view, ops, options = {}) {
-  const part = activePunchPart(view);
-  if (part && typeof context?.sceneProxy?.invoke === "function") {
-    await previewPunch(context, view, part, ops, null, options);
-  }
-  else ops.renderProject(context, view);
-}
 
 export function renderPartsViewportOverlay(_context, view) {
   const parts = listAreaParts(view);
@@ -880,254 +815,6 @@ function renderNestingSceneSummary(plan) {
 
 export async function handlePartsAreaAction(context, view, action, target, ops) {
   if (handlePartDimensionAction(context, view, action, target)) return { handled: true };
-  if (action.startsWith("tube-designer-punch-") && view.pending) return { handled: true };
-  if(action.startsWith('tube-designer-punch-')&&handlePunchDiagramAction(view,action.slice('tube-designer-punch-'.length),target)) {
-    ops.renderProject(context,view);return {handled:true};
-  }
-  if(action.startsWith('tube-designer-punch-')&&handlePunchColumnAction(view,action.slice('tube-designer-punch-'.length),target)) {
-    ops.renderProject(context,view);return {handled:true};
-  }
-  if(view.tubeDesignerPunchWizard?.parameterEditor?.inline
-    &&(target?.dataset?.punchSheetField!==undefined||target?.dataset?.punchSheetArrayField!==undefined))
-    closePunchParameters(view,true,activePunchPart(view),false);
-  if(view.tubeDesignerPunchWizard?.parameterEditor?.inline
-      && ["remove-selected","edit","copy","toggle","undo","redo","remove-end"].some(name=>action==="tube-designer-punch-"+name))
-    closePunchParameters(view,true,activePunchPart(view),false);
-  if(action==="tube-designer-punch-parameters-open") {
-    const editor=view.tubeDesignerPunchWizard?.parameterEditor;
-    if(target?.dataset?.punchCellActivate!==undefined&&editor?.inline
-      &&editor.index===String(target.dataset.tubeDesignerPunchIndex)
-      &&editor.end===(target.dataset.tubeDesignerPunchEnd??'')
-      &&editor.mode===(target.dataset.tubeDesignerPunchEditorMode??'shape'))return {handled:true};
-    if(target?.dataset?.tubeDesignerPunchInline!==undefined) {
-      const revision=view.tubeDesignerPunchWizard?.revision;
-      togglePunchRowParameters(view,target?.dataset?.tubeDesignerPunchIndex,target?.dataset?.tubeDesignerPunchEnd,target?.dataset?.tubeDesignerPunchEditorMode);
-      if(revision!==view.tubeDesignerPunchWizard?.revision)await previewActivePunch(context,view,ops,{includeDraft:view.tubeDesignerPunchWizard?.parameterEditor?.index==="draft",quiet:true});
-      else ops.renderProject(context,view);return {handled:true};
-    }
-    const revision=view.tubeDesignerPunchWizard?.revision;
-    openPunchParameters(view,target?.dataset?.tubeDesignerPunchIndex,target?.dataset?.tubeDesignerPunchEnd,target?.dataset?.tubeDesignerPunchEditorMode);
-    if(revision!==view.tubeDesignerPunchWizard?.revision)await previewActivePunch(context,view,ops,{includeDraft:view.tubeDesignerPunchWizard?.parameterEditor?.index==="draft",quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  const arrayAction=handlePunchArrayGroupAction(view,action.startsWith("tube-designer-punch-")?action.slice("tube-designer-punch-".length):"",target);
-  if(arrayAction.handled) {
-    if(arrayAction.changed)await previewActivePunch(context,view,ops,{includeDraft:arrayAction.includeDraft,quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action==="tube-designer-punch-preview-mode") {
-    if(view.tubeDesignerPunchWizard)view.tubeDesignerPunchWizard.previewMode="tools";
-    ops.renderProject(context,view);return {handled:true};
-  }
-  if(action==="tube-designer-punch-summary-select") {
-    const s=view.tubeDesignerPunchWizard,index=Number(target?.dataset?.tubeDesignerPunchIndex);
-    if(s?.features?.[index]){s.selectedFeatureId=s.features[index].id;s.scrollToFeatureIndex=index;}
-    ops.renderProject(context,view);return {handled:true};
-  }
-  if(action==="tube-designer-punch-selection-change") {
-    setPunchFeatureSelected(view,target?.dataset?.tubeDesignerPunchIndex,target?.checked===true);
-    ops.renderProject(context,view);return {handled:true};
-  }
-  if(action==="tube-designer-punch-remove-selected") {
-    if(removeSelectedPunchWizardFeatures(view))await previewActivePunch(context,view,ops,{quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action==="tube-designer-punch-copy-selected") {
-    const s=view.tubeDesignerPunchWizard;
-    if(s?.parameterEditor?.inline)closePunchParameters(view,true,activePunchPart(view),false);
-    const index=s?.features?.findIndex(item=>item.id===s.selectedFeatureId)??-1;
-    const changed=Number.isInteger(index)&&index>=0&&editPunchWizardFeature(view,"copy",index);
-    if(changed){s.showDraftRow=true;togglePunchRowParameters(view,'draft');}
-    if(changed)await previewActivePunch(context,view,ops,{includeDraft:true,quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action === "tube-designer-punch-parameters-close") {
-    const s=view.tubeDesignerPunchWizard,part=listNestingParts(view.scene?.tubeDesigner??{}).find(item=>String(item.entityId)===String(s?.partId));
-    const includeDraft=s?.parameterEditor?.index==="draft";
-    if(closePunchParameters(view,true,part,false))await previewActivePunch(context,view,ops,{includeDraft,quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if (["edit","copy","toggle","undo","redo","remove-end"].some(name => action === "tube-designer-punch-"+name)) {
-    const suffix = action.slice("tube-designer-punch-".length);
-    const changed = editPunchWizardFeature(view,suffix,target?.dataset?.tubeDesignerPunchIndex);
-    if (changed) await previewActivePunch(context, view, ops, {
-      includeDraft: suffix === "edit" || suffix === "copy", quiet: true,
-    });
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action === "tube-designer-punch-preview") {
-    await previewActivePunch(context, view, ops, { includeDraft: true });
-    return {handled:true};
-  }
-  if(action==="tube-designer-punch-record-kind-change") {
-    const selected=String(target?.value??"");
-    const changed=selected==="dxf"
-      ? await selectPunchProfileSource(context,view,{dataset:target?.dataset??{},value:"__dxf__"},ops)
-      : changePunchRecordKind(view,target);
-    if(changed)await previewActivePunch(context,view,ops,{includeDraft:String(target?.dataset?.tubeDesignerPunchIndex??"draft")==="draft",quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action==="tube-designer-punch-profile-select") {
-    if(await selectPunchProfileSource(context,view,target,ops))await previewActivePunch(context,view,ops,{includeDraft:String(target?.dataset?.tubeDesignerPunchIndex??"draft")==="draft",quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if(action==="tube-designer-punch-profile-parameter") {
-    if(await updatePunchProfileParameter(context,view,target,ops))await previewActivePunch(context,view,ops,{includeDraft:String(target?.dataset?.tubeDesignerPunchIndex??"draft")==="draft",quiet:true});
-    else ops.renderProject(context,view);
-    return {handled:true};
-  }
-  if (view.tubeDesignerNestingContextMenu) view.tubeDesignerNestingContextMenu = null;
-  if (action === "tube-designer-part-open-sketch") {
-    if (view.pending) return { handled: true };
-    const partId = String(target?.dataset?.tubeDesignerPartId
-      ?? view.tubeDesignerActiveNestingPartId
-      ?? view.tubeDesignerActivePartId ?? "").trim();
-    const part = listNestingParts(view.scene?.tubeDesigner ?? {})
-      .find((item) => String(item.entityId) === partId);
-    if (!canEditNestingSideSketch(part)) return { handled: true };
-    const sceneProxy = context.sceneProxy;
-    if (typeof sceneProxy?.invoke !== "function") throw new Error("当前项目未连接，无法打开二维编辑。");
-    const previewResourceKey = `side-edit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    let transferred = false;
-    view.pending = true;
-    view.error = "";
-    view.progress = { title: "正在打开二维绘制零件", detail: "正在恢复管坯展开和当前切割结果", stage: "恢复二维草图", mode: "Sketch" };
-    ops.renderProject(context, view);
-    try {
-      await waitForPartsAreaPaint();
-      const sketch = part.properties["tubeDesigner.sideSketch"];
-      const response = await sceneProxy.invoke("TubeDesigner.PreviewNestingSideSketchPart", {
-        partEntityId: partId,
-        resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
-        previewResourceKey,
-        ...(sketch?.entities?.length ? { sketch } : {}),
-      }, { timeoutMs: 180000 });
-      if (context.sceneProxy !== sceneProxy || view.disposed || context.isCurrentProject?.() === false
-        || view.activeAreaId !== "nesting") return { handled: true };
-      if (!response?.available || !response.unfolding?.available || !response.preview?.baseGeometry?.url) {
-        throw new Error(response?.message ?? "无法恢复二维绘制零件。");
-      }
-      beginPartSideSketch(view, part, { unfolding: response.unfolding, preview: response.preview, previewResourceKey });
-      view.tubeDesignerSketchDialogOpen = true;
-      transferred = true;
-    } catch (error) {
-      view.error = error?.message ?? String(error);
-      throw error;
-    } finally {
-      if (!transferred) {
-        try { await sceneProxy.invoke("TubeDesigner.ReleaseNestingSideSketchPreview", { previewResourceKey }); } catch {}
-      }
-      view.pending = false;
-      view.progress = null;
-      ops.renderProject(context, view);
-    }
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-open") {
-    if (view.pending) return { handled: true };
-    const partId = String(target?.dataset?.tubeDesignerPartId ?? view.tubeDesignerActivePartId ?? "").trim();
-    const part = listNestingParts(view.scene?.tubeDesigner ?? {})
-      .find(item => String(item.entityId) === partId);
-    if (!part || !isTubeNestingPart(part) || !part.independentNesting || part.properties?.["manufacturing.punchPart"] !== true) {
-      throw new Error("请先选择下料区的冲孔件，再打开冲孔向导。");
-    }
-    view.tubeDesignerActivePartId = partId;
-    view.tubeDesignerActiveNestingPartId = partId;
-    view.tubeDesignerNestingSelectionKind = "part";
-    view.tubeDesignerPunchWizard = createPunchWizardState(part);
-    view.tubeDesignerPunchWizard.initialToolsPreviewPart=part;
-    initializePunchRecordSource(view);
-    ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-cancel") {
-    if (!view.pending) {
-      view.tubeDesignerPunchWizard = null;
-      ops.renderProject(context, view);
-    }
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-field-change") {
-    if (updatePunchWizardField(view, target)) {
-      const row = target?.dataset?.tubeDesignerPunchIndex;
-      await previewActivePunch(context, view, ops, {
-        includeDraft: row === undefined || row === "" || row === "draft", quiet: true,
-      });
-    } else ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-add") {
-    const state = view.tubeDesignerPunchWizard;
-    const part = listNestingParts(view.scene?.tubeDesigner ?? {})
-      .find(item => String(item.entityId) === String(state?.partId ?? ""));
-    if(state?.parameterEditor?.inline)closePunchParameters(view,true,part,false);
-    if (part && addPunchWizardFeature(view, part)) {
-      state.showDraftRow=false;
-      await previewActivePunch(context, view, ops, { quiet: true });
-    } else ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-remove") {
-    if (removePunchWizardFeature(view, target?.dataset?.tubeDesignerPunchIndex)) {
-      await previewActivePunch(context, view, ops, { quiet: true });
-    } else ops.renderProject(context, view);
-    return { handled: true };
-  }
-  if (action === "tube-designer-punch-apply") {
-    if (view.pending) return { handled: true };
-    const state = view.tubeDesignerPunchWizard;
-    const partId = String(target?.dataset?.tubeDesignerPartId ?? state?.partId ?? "").trim();
-    const part = listNestingParts(view.scene?.tubeDesigner ?? {})
-      .find(item => String(item.entityId) === partId);
-    if (!part || !state || String(state.partId) !== partId) throw new Error("当前冲孔零件已不存在，请重新选择。");
-    if(state.parameterEditor?.inline)closePunchParameters(view,true,part,false);
-    const validationError = validatePunchWizard(view, part);
-    if (validationError) {
-      state.error = validationError;
-      ops.renderProject(context, view);
-      return { handled: true };
-    }
-    if (!context.sceneProxy?.invoke) throw new Error("当前项目未连接，无法保存冲孔结果。");
-    const invocationOptions = beginPunchOperation(context,view,"正在应用冲孔与端部切形");
-    view.pending = true;
-    state.error = "";
-    ops.renderProject(context, view);
-    await waitForPartsAreaPaint();
-    try {
-      const response = await context.sceneProxy.invoke("TubeDesigner.ApplyPunchWizard", {
-        ...getPunchWizardPayload(view),
-        partEntityId: partId,
-      }, invocationOptions);
-      if (!response?.tubeDesigner) throw new Error("冲孔结果未能保存。");
-      view.scene.tubeDesigner = response.tubeDesigner;
-      await restoreSavedNestingTask(view, context);
-      view.tubeDesignerPunchWizard = null;
-      view.tubeDesignerActivePartId = partId;
-      view.tubeDesignerActiveNestingPartId = partId;
-      view.tubeDesignerNestingSelectionKind = "part";
-      view.tubeDesignerActiveNestingPlacementId = "";
-      view.tubeDesignerPartViewportKey = "";
-      view.tubeDesignerPartMeasurementState = null;
-      view.viewport?.setCustomVisibleEntityIds?.([]);
-      await context.actions?.refreshActiveSceneState?.();
-    } catch (error) {
-      state.error = error?.message ?? String(error);
-      view.error = state.error;
-      throw error;
-    } finally {
-      finishPunchOperation(view);
-      ops.renderProject(context, view);
-    }
-    return { handled: true };
-  }
   if (action === "tube-designer-parts-select-part") {
     const partId = String(target?.dataset?.tubeDesignerPartId ?? "").trim();
     if (!partId || view.pending) return { handled: true };
@@ -1930,9 +1617,10 @@ function partProcessLabel(part, { showUnmarkedEnds = true } = {}) {
   if (partSourcingLabel(part) === "外购") return "外购";
   if (!isTubeNestingPart(part)) return "另行处理";
   const properties = part?.properties ?? {};
-  if (canEditNestingSideSketch(part)) return "二维绘制";
-  if (hasPartDrawing(part)) return "三维绘制";
-  if (properties["manufacturing.punchPart"]) return "冲孔件";
+  const creationProcess = String(properties["manufacturing.process"] ?? "");
+  if (creationProcess === "side-sketch") return "二维绘制";
+  if (creationProcess === "part-drawing") return "三维绘制";
+  if (creationProcess === "punch" || properties["manufacturing.punchPart"]) return "冲孔件";
   if (properties["tubeDesigner.cornerProcess"]) return "折弯 / 异形";
   const process = partEndProcess(part);
   const start = String(process.startCut ?? "").trim();

@@ -31,6 +31,7 @@ Application 清单要求管理员；启用授权检查的构建在每个业务�
 - 共用管型/模具编辑与参数预览允许 product.design 或 nesting.edit。当前 CAM 注册接口基于宿主 ProductContext 声明和场景资源归属校验，TubeDesigner 加工读取要求 page.machining，写入要求 machining.toolpath；其他产品的许可策略不受影响。仿真仅预留目录与访问检查，未新增业务。
 - 证书原子安装至 ProgramData/TubeDesigner/Licensing/license.tdlic。客户端不修改签名证书；篡改、删除、错误设备拒绝。
 - 试用由 NV 单调计数器保存小时水位，随机 NV_Certify 验签并串行推进，同小时不写，30 天最多 720 档。没有磁盘时间记录事务。状态丢失重新申请，完全离线仍不能防时钟冻结。
+- Quote / NV_Certify 的 TPMS_CLOCK_INFO.safe 仅表示 TPM 内部 Clock 的连续性；当前协议不使用该 Clock 计时。证据新鲜度由随机挑战保证，试用持久性由禁止 ORDERLY 的 NV 计数器保证。因此合法的 0、1 均可接受，其他编码、篡改、重放、错误设备、计数回退和到期仍拒绝。客户端、原生签发器与 Python 校验共用这一语义，修正此项时必须同步交付客户端和签发器。
 - 确定性 owner 受限 AK 使用临时句柄，TPM 清除会改变绑定。试用申请成功创建的 NV 项需保留；异常只清理本次创建项，不清 TPM 或其他产品状态。
 
 ## 构建与验证

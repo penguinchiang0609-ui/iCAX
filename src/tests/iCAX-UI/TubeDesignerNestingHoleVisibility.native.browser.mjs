@@ -32,7 +32,7 @@ try {
     return route.fulfill({ contentType: 'text/javascript', body: readFileSync(path, 'utf8') });
   });
   await page.goto('http://nesting-holes.test/');
-  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, 'apps/_shared/workbench/styles/laser3dcam.css'), 'utf8') });
+  await page.addStyleTag({ content: readFileSync(resolve(sourceRoot, 'apps/_shared/workbench/styles/workbench.css'), 'utf8') });
   await page.evaluate(async native => {
     const area = await import('/src/apps/tube-designer/webpage/partsArea.mjs');
     const THREE = await import('/src/iCAX-UI/SDK/ThirdParty/three/three.module.js');

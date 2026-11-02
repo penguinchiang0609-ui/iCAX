@@ -31,13 +31,14 @@ const document = {
 const windowListeners = new Map();
 const sandbox = {
   document,
-  window: { addEventListener(type, listener) { windowListeners.set(type, listener); }, clearTimeout() {}, requestAnimationFrame(callback) { callback(); } },
+  URLSearchParams,
+  window: { location: { search: '' }, addEventListener(type, listener) { windowListeners.set(type, listener); }, clearTimeout() {}, requestAnimationFrame(callback) { callback(); } },
   performance,
   HTMLElement: class HTMLElement {},
   escapeAttr,
   escapeText,
   renderRibbonCommandIcon,
-  createStartupScreen() { return { setStage() {}, finish() {}, fail() {} }; },
+  createStartupScreen() { return { setStage() {}, setPresentation() {}, finish() {}, fail() {} }; },
   createNewProjectMemory,
 };
 runInNewContext(script, sandbox, { filename: shellUrl.pathname });
@@ -49,9 +50,9 @@ const visibleText = (html) => html.replace(/<[^>]*>/g, "");
 const assertNoBranding = (html) => assert.doesNotMatch(visibleText(html), /icax/i);
 
 await render();
-assert.equal(document.title, "TubeDesigner");
+assert.equal(document.title, "工作台");
 assertNoBranding(root.innerHTML);
-assert.match(readFileSync(new URL("../../iCAX-UI/SDK/AppShell/index.html", import.meta.url), "utf8"), /<title>TubeDesigner<\/title>/);
+assert.match(readFileSync(new URL("../../iCAX-UI/SDK/AppShell/index.html", import.meta.url), "utf8"), /<title>工作台<\/title>/);
 assert.equal(state.startupPhase, "loading");
 assert.equal(state.startCenterOpen, false);
 assert.doesNotMatch(root.innerHTML, /start-center|最近项目|选择产品/);
@@ -61,7 +62,7 @@ assert.equal(state.newProjectName, "未命名项目");
 assert.equal(makeSafeProjectFileName("  "), "未命名项目");
 actions.closeNewProjectDialog();
 
-for (const directory of ["tube-designer", "tube-one", "laser-3d-cam"]) {
+for (const directory of ["tube-designer", "five-axis-cam"]) {
   const product = JSON.parse(readFileSync(new URL(`../../apps/${directory}/product.manifest.json`, import.meta.url), "utf8"));
   state.appState = { products: [product] };
   state.selectedProductId = product.productId;

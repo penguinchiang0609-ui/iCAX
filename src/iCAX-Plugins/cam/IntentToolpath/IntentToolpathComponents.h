@@ -31,12 +31,18 @@ class _INTENT_TOOLPATH_EXP CIntentGeometryComponent final : public iCAX::Databas
     DECLARE_ICAX_COMPONENT(CIntentGeometryComponent, CComponentBase)
     DECLARE_ICAX_COMPONENT_CREATOR(CIntentGeometryComponent)
 
+    // Fixed-version authority used by versioned CAM products. A product must
+    // choose one geometry contract; it must not fall back to a latest URL.
+    DECLARED_ICAX_FIELD(CIntentGeometryComponent, iCAX::Data::ObjectMap, CurveRef, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+    DECLARED_ICAX_FIELD(CIntentGeometryComponent, std::string, CurveFrame, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, std::string, CurveResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, double, StartParameter, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, double, EndParameter, 1.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, bool, Reversed, false, BoolEqual, ToBoolVariant, FromBoolVariant)
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, std::string, SupportSurfaceResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
     DECLARED_ICAX_FIELD(CIntentGeometryComponent, std::string, CoordinateSystemResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+    DECLARED_ICAX_FIELD(CIntentGeometryComponent, iCAX::Data::ObjectMap, CurveData, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
 };
 
 // 当前生成树。Parent/Children是所有权关系；Revision在子项、顺序或输出角色变化时递增。
@@ -149,7 +155,9 @@ class _INTENT_TOOLPATH_EXP CCutIntentComponent final : public iCAX::Database::CC
 {
     DECLARE_ICAX_COMPONENT(CCutIntentComponent, CComponentBase)
     DECLARE_ICAX_COMPONENT_CREATOR(CCutIntentComponent)
+    DECLARED_ICAX_FIELD(CCutIntentComponent, iCAX::Data::ObjectMap, ProcessRef, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     DECLARED_ICAX_FIELD(CCutIntentComponent, std::string, ParameterSetResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+    DECLARED_ICAX_FIELD(CCutIntentComponent, iCAX::Data::ObjectMap, ProcessData, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
 };
 
 class _INTENT_TOOLPATH_EXP CMicroJointIntentComponent final : public iCAX::Database::CComponentBase

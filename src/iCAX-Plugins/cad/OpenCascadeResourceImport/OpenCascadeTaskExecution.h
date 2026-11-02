@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Task/Task.h>
+#include "OpenCascadeCancellation.h"
 #include <algorithm>
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -38,4 +40,28 @@ namespace iCAX::OpenCascade::detail
             for (const auto& _Task : Tasks) _Task.Result();
         }
     };
+
+    // Independent geometry jobs use the existing bounded CAD Task pool.
+    // Nested synchronous CAD calls on that pool stay inline: Task has no
+    // work stealing, so filling its workers with child waits would deadlock.
+    template<class TWork>
+    std::size_t ForGeometryIndices(std::size_t Count_,std::size_t MaximumConcurrency_,TWork&& Work_)
+    {
+        if(!Count_)return 0;
+        const auto scheduler=GeometryTaskScheduler();
+        const auto workers=iCAX::Tasks::CurrentScheduler()==scheduler?std::size_t{1}
+            :std::min(Count_,GeometryConcurrency(MaximumConcurrency_));
+        std::atomic<std::size_t> next{0};
+        const auto cancellation=COpenCascadeCancellationScope::Capture();
+        const auto consume=[&]{
+            COpenCascadeCancellationScope scope(cancellation);
+            for(auto i=next.fetch_add(1);i<Count_;i=next.fetch_add(1)){
+                scope.ThrowIfCancellationRequested();Work_(i);
+            }
+        };
+        SGeometryTaskBatch batch;batch.Tasks.reserve(workers-1);
+        for(std::size_t i=1;i<workers;++i)
+            batch.Tasks.push_back(iCAX::Tasks::Run(consume,scheduler));
+        consume();batch.Complete();return workers;
+    }
 }

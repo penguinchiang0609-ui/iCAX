@@ -8,7 +8,8 @@ import {
   handleDesignerRibbonCommand,
 } from "../../apps/tube-designer/webpage/designerActions.mjs";
 import { renderDesignerDialogs } from "../../apps/tube-designer/webpage/designerViews.mjs";
-import { handlePartsAreaAction, renderNestingLeftPane, renderNestingRightPane } from "../../apps/tube-designer/webpage/partsArea.mjs";
+import { handlePartsAreaAction, renderNestingLeftPane, renderNestingRightPane, renderNestingViewportOverlay } from "../../apps/tube-designer/webpage/partsArea.mjs";
+import { createTubeCadFixture, tubeCadFixtureResult } from "./fixtures/tubeCadDocument.mjs";
 import { buildAutomaticDimensionReport } from "../../apps/tube-designer/webpage/partInspection.mjs";
 import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 
@@ -23,6 +24,7 @@ const part = {
   profile, partKind: "tube", length: 1200,
   properties: {
     "tubeDesigner.profile": profile, "manufacturing.partKind": "tube",
+    "tubeDesigner.cadDocument":{documentResourceId:"imported-document",documentResourceVersion:1},
     "manufacturing.materialCategory": "tube", "manufacturing.sourcing": "made",
     "manufacturing.process": "straight-cut", "manufacturing.requiresBending": false,
     "manufacturing.imported": true, "manufacturing.import.sourceFileName": "横杆.IGES",
@@ -37,6 +39,7 @@ const notices = [];
 const context = {
   sceneProxy: { async invoke(method, payload) {
     calls.push({ method, payload });
+    if(method==="TubeDesigner.GetTubeCadDocument")return tubeCadFixtureResult(part,createTubeCadFixture(1200));
     return {
       partEntityId: "part-1", profile, sourceFileName: "横杆.IGES",
       recognition: { available: true, length: 1200, section: profile, features: [] },
@@ -198,9 +201,13 @@ assert.equal(view.tubeDesignerOperation, null);
 assert.match(notices[0], /40 × 20/);
 assert.match(renderNestingRightPane({}, view), /data-tube-designer-part-field="material"/);
 assert.match(renderNestingRightPane({}, view), /data-tube-designer-part-field="quantity"/);
-await assert.rejects(handlePartsAreaAction(context, view, "tube-designer-punch-open", {
+assert.match(renderNestingViewportOverlay({},view),/tube-designer-punch-open/);
+await handleDesignerAreaAction(context, view, "tube-designer-punch-open", {
   dataset: { tubeDesignerPartId: "part-1" },
-}, ops), /请先选择下料区的冲孔件/, "Imported CAD cannot enter the punch editor through a direct action");
+}, ops);
+assert.equal(calls.at(-1).method,"TubeDesigner.GetTubeCadDocument");
+assert.equal(view.tubeDesignerCadEditor.mode,"punch","Imported CAD opens the same neutral document as authored parts");
+await handleDesignerAreaAction(context,view,"tube-designer-cad-close",{},ops);
 
 for (const [fileName, name] of [
   ["part.STEP", "part"], ["long.part.stp", "long.part"], ["开孔管.igs", "开孔管"],
@@ -253,8 +260,9 @@ view.tubeDesignerPartMeasurementState = {
 };
 const detailHtml = renderNestingRightPane({}, view);
 assert.doesNotMatch(detailHtml, /自动复尺/, "Removed measurement summary must stay hidden; feature details remain available");
-assert.match(detailHtml, /中心距首端/);
-assert.match(detailHtml, /⌀10/);
+assert.match(detailHtml, /data-tube-designer-part-field="quantity"/);
+assert.deepEqual(view.tubeDesignerPartMeasurementState.report,buildAutomaticDimensionReport({geometryMeasurement}),
+  "The native geometry measurement remains available to dimensions without duplicating a feature-edit recipe");
 
 const selectionView = {
   ...view,

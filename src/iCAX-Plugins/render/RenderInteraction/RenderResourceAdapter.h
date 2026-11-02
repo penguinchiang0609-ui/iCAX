@@ -1,9 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "RenderInteractionExport.h"
 
 #include "RenderData/RenderDataTypes.h"
+#include "GeometryData/BRepDisplay.h"
 #include "Resources/ResourceInfo.h"
+#include "Resources/FlatBufferResource.h"
 
 namespace iCAX::Resource
 {
@@ -12,10 +14,18 @@ namespace iCAX::Resource
 
 namespace iCAX::RenderInteraction
 {
+    // Pure packing of an explicitly prepared display mesh, without CAD mutation.
+    _RENDER_INTERACTION_EXP iCAX::Resource::CFlatBufferResource MakeFrontendBRepGeometry(
+        const iCAX::GeometryData::BRepModel& Model_,
+        const iCAX::GeometryData::BRepDisplayEdges& Edges_, uint64_t Version_);
     /*
     * @brief 把业务/CAD 资源派生为前端可直接读取的标准渲染资源。
     * @details 返回值始终是资源池中的版本化 URL；这里不创建渲染场景，也不发布 PDO。
     */
+    _RENDER_INTERACTION_EXP iCAX::Resource::CResourceReference
+        EnsureFrontendBRepGeometryResource(iCAX::Resource::CResourceLibrary& Resources_,
+            const std::string& strSourceResourceURL_, const iCAX::GeometryData::BRepDisplayEdges& Edges_);
+
     _RENDER_INTERACTION_EXP iCAX::Resource::CResourceReference
         EnsureFrontendGeometryResource(
             IN iCAX::Resource::CResourceLibrary& Resources_,

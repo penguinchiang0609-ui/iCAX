@@ -2,6 +2,7 @@
 #include "TpmTransport.h"
 #include "TrialRuntime.h"
 #include "LicenseFiles.h"
+#include "EndorsementMaterial.h"
 #include <wincrypt.h>
 
 namespace tube::license {
@@ -82,7 +83,9 @@ inline Bytes CreateEnrollmentRequest(bool trial = false, std::uint32_t* ownedInd
     // Extra chain data is optional and untrusted. Issuer still builds a complete
     // valid chain to its independently configured manufacturer roots.
     try { AppendIntelNvChain(ctx, certs); } catch (const std::exception&) {}
-    Require(!certs.empty(), "TPM endorsement certificate unavailable; device cannot enroll automatically");
+    try { AppendCachedEnrollmentCertificate(certs, ek.publicArea, EnrollmentCacheDirectory()); } catch (const std::exception&) {}
+    Require(std::any_of(certs.begin(), certs.end(), [&](const auto& der) { return EnrollmentCertificateMatches(der, ek.publicArea); }),
+        "本机缺少 TPM 厂商证书，请点击“关于 → 检查并修复授权环境”后重新导出申请。");
     Bytes request{'T','D','R','E','Q','0','0', static_cast<unsigned char>(trial ? '3' : '2')};
     AppendText(request, Product); AppendField(request, nonce); AppendField(request, ak.publicArea);
     AppendField(request, ak.qualifiedName); AppendField(request, ek.publicArea);

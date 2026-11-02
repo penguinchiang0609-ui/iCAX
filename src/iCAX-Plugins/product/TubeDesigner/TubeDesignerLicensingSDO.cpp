@@ -2,6 +2,7 @@
 #include "TubeDesignerExport.h"
 #include "../../../licensing/include/LicenseRuntime.h"
 #include "../../../licensing/include/LicenseActivation.h"
+#include "../../../licensing/include/EnrollmentRepair.h"
 #include "ApplicationContext/IApplicationContext.h"
 #include "Data/VariantSerializer.h"
 #include "TemplateRuntime/StandardJsonCodec.h"
@@ -42,6 +43,7 @@ iCAX::Interaction::CInvocationResult Status(const iCAX::Interaction::CInvocation
     }
     ObjectMap status{{"configured", trust::PublicKey.size() == 72}, {"activated", false},
         {"developmentBypass", DevelopmentBypass}, {"releaseBypass", false},
+        {"authorizationReissueFormat", std::string(ReissueFormat)}, {"supportsExplicitReissue", true},
         {"featureSchemaVersion", static_cast<unsigned long long>(FeatureSchemaVersion)},
         {"featureCatalog", catalog}, {"capabilities", capabilities}};
     if constexpr (AuthorizationBypass) {
@@ -50,6 +52,10 @@ iCAX::Interaction::CInvocationResult Status(const iCAX::Interaction::CInvocation
     }
     try {
         Require(trust::PublicKey.size() == 72, "尚未配置正式签发公钥");
+        if (!std::filesystem::exists(LicenseDirectory() / L"license.tdlic")) {
+            status["message"] = std::string("尚未导入授权文件。请先导出申请，收到签发文件后导入激活。");
+            return Response(status);
+        }
         const auto file = ReadFileBounded(LicenseDirectory() / L"license.tdlic", 8192);
         const auto c = VerifyCertificate(file, trust::Issuer, trust::PublicKey);
         tpm::Context ctx; tpm::Object ak(ctx, 0x40000001, tpm::AkTemplate());
@@ -107,12 +113,26 @@ iCAX::Interaction::CInvocationResult ExportLicenseFile(const iCAX::Interaction::
     tube::license::ExportLicenseFile(InputPath(request), trust::Issuer, trust::PublicKey);
     return Response({{"created", true}});
 }
+iCAX::Interaction::CInvocationResult RepairEnvironment(const iCAX::Interaction::CInvocation& request,
+    const iCAX::Application::IApplicationContext&, iCAX::Product::IProductContext*,
+    iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*) {
+    Require(InputPayload(request).empty(), "Environment repair does not accept configuration overrides");
+    const auto result = RepairEnrollmentEnvironment([](std::span<const unsigned char> area) {
+        const auto response = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(DownloadIntelEnrollmentResponse(area));
+        Require(response.Is<ObjectMap>(), "Intel 证书响应格式无效。");
+        const auto object = response.To<ObjectMap>(); const auto certificate = object.find("certificate");
+        Require(certificate != object.end() && certificate->second.Is<std::string>(), "Intel 响应中没有证书。");
+        return DecodeIntelEnrollmentCertificate(certificate->second.To<std::string>());
+    });
+    return Response({{"requestReady", result.requestReady}, {"code", result.code}, {"message", result.message}});
+}
 class CTubeDesignerLicensingSDO final : public iCAX::Interaction::CSDO {
 public:
     CTubeDesignerLicensingSDO() : CSDO("TubeDesignerLicensing") {
         ExposeMethod("Status", &Status); ExposeMethod("CheckAccess", &CheckAccess);
         ExposeMethod("Request", &Request); ExposeMethod("RequestTrial", &RequestTrial); ExposeMethod("Activate", &Activate);
         ExposeMethod("ExportLicenseFile", &ExportLicenseFile);
+        ExposeMethod("RepairEnvironment", &RepairEnvironment);
     }
 };
 }
@@ -143,6 +163,8 @@ extern "C" _TUBE_DESIGNER_EXP const char* TubeDesignerLicenseBuildPolicy() noexc
             {"authorizationEnforced", !tube::license::AuthorizationBypass},
             {"configured", tube::license::trust::PublicKey.size() == 72},
             {"certificateFormat", std::string(tube::license::CertificateFormat)},
+            {"authorizationReissueFormat", std::string(tube::license::ReissueFormat)},
+            {"supportsExplicitReissue", true},
             {"featureSchemaVersion", static_cast<unsigned long long>(tube::license::FeatureSchemaVersion)},
             {"issuer", std::string(tube::license::trust::Issuer)},
             {"issuerPublicKeyHex", std::move(issuerPublicKeyHex)},

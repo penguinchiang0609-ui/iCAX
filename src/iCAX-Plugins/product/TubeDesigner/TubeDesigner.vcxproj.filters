@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files"><UniqueIdentifier>{1D53C467-441C-4A45-8913-386A4F9446BB}</UniqueIdentifier><Extensions>cpp;c;cc;cxx</Extensions></Filter>
@@ -15,6 +15,8 @@
     <ClInclude Include="SketchTextOutlineService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PunchGeometry.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PartDrawingDefinition.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="PartDrawingBevelSDO.inc"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TubeCadDocumentSDO.inc"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RecoveredPartDrawingFeatures.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingResultExporter.h"><Filter>Header Files</Filter></ClInclude>

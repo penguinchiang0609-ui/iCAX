@@ -34,7 +34,10 @@ function key(node) {
     if(control)return node.tagName+":"+key(control);
   }
   if(node.matches("input,select,textarea,button"))return node.tagName+":"+JSON.stringify(
-    [...node.attributes].filter(a=>a.name.startsWith("data-")).map(a=>[a.name,a.value]).sort());
+    // The selected profile is mutable state of the same role/parameter editor.
+    // Retain that control and its listeners while patching its selected value.
+    [...node.attributes].filter(a=>a.name.startsWith("data-")
+      && a.name!=="data-tube-designer-profile-current-selection").map(a=>[a.name,a.value]).sort());
   return null;
 }
 function compatible(oldNode,nextNode) {

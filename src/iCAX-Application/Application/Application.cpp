@@ -2,6 +2,8 @@
 #include "Application.h"
 
 #include "Product/ProductManifest.h"
+#include "ProductSelection.h"
+#include <set>
 
 
 namespace
@@ -67,17 +69,38 @@ namespace
 
     void _LoadProductDefinitions(IN OUT iCAX::Application::CApplicationConfig& Config_)
     {
-        const auto _ProductRoot = _FindDefaultProductRoot();
-        if (_ProductRoot.empty())
+        auto _ProductRoot = _FindDefaultProductRoot();
+        std::vector<std::filesystem::path> _ManifestPaths;
+        // Only explicitly configured manifests are enabled, regardless of how
+        // many product plugin directories happen to be installed.
+        const auto _SelectionPath = _ExecutableDirectory() / "Application.Product.Setting";
+        const bool _ExplicitProduct = std::filesystem::is_regular_file(_SelectionPath);
+        if (_ExplicitProduct)
         {
-            throw std::runtime_error("找不到产品目录，无法加载 TubeDesigner。");
+            std::ifstream _Selection(_SelectionPath, std::ios::binary);
+            if (!_Selection) throw std::runtime_error("Cannot open Application.Product.Setting");
+            _ManifestPaths = iCAX::Application::ReadProductSelection(_Selection, _ExecutableDirectory());
+            _ProductRoot = _ManifestPaths.front().parent_path().parent_path();
+        }
+        else
+        {
+            // This distribution enables TubeDesigner by default.
+            _ManifestPaths.push_back(_ProductRoot / "tube-designer" / "product.manifest.json");
         }
 
-        // Application controls the enabled products; do not auto-register every installed manifest.
-        Config_.RuntimeConfig.Products = {
-            iCAX::Product::LoadProductManifest(
-                _PathToUTF8(_ProductRoot / "tube-designer" / "product.manifest.json")).Definition,
-        };
+        Config_.RuntimeConfig.Products.clear();
+        std::set<std::string> _ProductIDs;
+        for (const auto& _ManifestPath : _ManifestPaths)
+        {
+            if (!std::filesystem::is_regular_file(_ManifestPath))
+                throw std::runtime_error("找不到启动产品清单：" + _PathToUTF8(_ManifestPath));
+            auto _Product = iCAX::Product::LoadProductManifest(_PathToUTF8(_ManifestPath)).Definition;
+            if (!_ProductIDs.insert(_Product.ProductID).second)
+                throw std::runtime_error("重复配置产品：" + _Product.ProductID);
+            Config_.RuntimeConfig.Products.push_back(std::move(_Product));
+        }
+        Config_.RuntimeConfig.Descriptor.AppName = Config_.RuntimeConfig.Products.size() == 1
+            ? Config_.RuntimeConfig.Products.front().ProductName : "工作台";
         std::ifstream _Branding(_ProductRoot / "Branding.Setting");
         std::string _Line;
         const auto _Trim = [](const std::string& Text) {
@@ -122,7 +145,7 @@ namespace
         const auto _ApplicationSettingsPath = _ProfileRoot / "Application.Setting";
         _Config.RuntimeConfig.strApplicationSettingsPath = _PathToUTF8(_ApplicationSettingsPath);
         _Config.RuntimeConfig.Descriptor.AppID = "icax";
-        _Config.RuntimeConfig.Descriptor.AppName = "TubeDesigner";
+        _Config.RuntimeConfig.Descriptor.AppName = "工作台";
         _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_InstallRoot);
         _Config.RuntimeConfig.Paths.UserConfigDirectory = _PathToUTF8(_ProfileRoot);
         _Config.RuntimeConfig.Paths.UserDataDirectory = _PathToUTF8(_UserDataRoot);

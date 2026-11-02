@@ -27,22 +27,22 @@ function Write-FixtureProject([string]$Name, [string]$TargetName, [bool]$Disable
     return '<Project Path="' + $Name + '.vcxproj">' + $buildXml + '</Project>'
 }
 $projects = @(
-    (Write-FixtureProject 'Laser3DCAM' 'CamRuntime'),
+    (Write-FixtureProject 'SourceProject' 'CamRuntime'),
     (Write-FixtureProject 'OptionalRenderer' 'RendererRuntime' $true),
     (Write-FixtureProject 'DisabledDefault' '' $true),
     (Write-FixtureProject 'CurrentService' '')
 )
 ('<Solution>' + ($projects -join '') + '</Solution>') | Set-Content -LiteralPath (Join-Path $fixtureRoot 'fixture.slnx') -Encoding utf8
-foreach ($name in @('Laser3DCAM.dll', 'CamRuntime.dll', 'OptionalRenderer.dll', 'RendererRuntime.dll', 'DisabledDefault.dll', 'CurrentService.dll', 'ThirdParty.dll')) {
+foreach ($name in @('SourceProject.dll', 'CamRuntime.dll', 'OptionalRenderer.dll', 'RendererRuntime.dll', 'DisabledDefault.dll', 'CurrentService.dll', 'ThirdParty.dll')) {
     [IO.File]::WriteAllText((Join-Path $buildRoot $name), 'fixture')
 }
 $excluded = @(Get-ReleasePackageExcludedDlls -SolutionPath (Join-Path $fixtureRoot 'fixture.slnx') -BuildRoot $buildRoot)
 $selected = @(Get-ChildItem -LiteralPath $buildRoot -File -Filter '*.dll' | Where-Object { $_.Name -notin $excluded } | ForEach-Object Name)
-Assert-Selection ('CamRuntime.dll' -in $selected -and 'Laser3DCAM.dll' -notin $selected) 'Renamed project must ship only its current target.'
+Assert-Selection ('CamRuntime.dll' -in $selected -and 'SourceProject.dll' -notin $selected) 'Renamed project must ship only its current target.'
 Assert-Selection ('OptionalRenderer.dll' -notin $selected -and 'RendererRuntime.dll' -notin $selected -and 'DisabledDefault.dll' -notin $selected) 'Disabled project outputs must not ship.'
 Assert-Selection ('CurrentService.dll' -in $selected) 'Enabled current default target must remain.'
 Assert-Selection ('ThirdParty.dll' -in $selected) 'Unrelated third-party DLL must remain.'
-Assert-Selection ('Laser3DCAMDebug.dll' -notin $excluded) 'Debug-only property must not determine Release target.'
+Assert-Selection ('SourceProjectDebug.dll' -notin $excluded) 'Debug-only property must not determine Release target.'
 [IO.File]::Delete((Join-Path $buildRoot 'CamRuntime.dll'))
 $missingRejected = $false
 try { Get-ReleasePackageExcludedDlls -SolutionPath (Join-Path $fixtureRoot 'fixture.slnx') -BuildRoot $buildRoot | Out-Null }

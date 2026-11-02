@@ -2,6 +2,8 @@
 #include <wincrypt.h>
 #include <shlobj.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 
@@ -32,7 +34,14 @@ std::string WideToUtf8(std::wstring_view value) {
 namespace {
 Bytes ReadBounded(const std::filesystem::path& path, std::size_t limit) {
     std::ifstream stream(path, std::ios::binary);
-    Require(static_cast<bool>(stream), "Cannot read issuer configuration");
+    if (!stream) {
+        const auto error = errno;
+        unsigned long windowsError{};
+        _get_doserrno(&windowsError);
+        throw std::runtime_error("Cannot read issuer configuration: " + WideToUtf8(path.wstring())
+            + " (Windows error " + std::to_string(windowsError)
+            + ", errno " + std::to_string(error) + ")");
+    }
     Bytes data(limit + 1);
     stream.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
     const auto amount = stream.gcount();
@@ -219,6 +228,70 @@ void WriteAtomic(const std::filesystem::path& path, std::span<const unsigned cha
         throw std::runtime_error("Cannot replace signing settings");
     }
 }
+bool ReparseFree(const std::filesystem::path& path) {
+    std::error_code error;
+    const auto absolute = std::filesystem::absolute(path, error);
+    if (error) return false;
+    auto current = absolute.root_path();
+    for (const auto& part : absolute.relative_path()) {
+        current /= part;
+        const auto attributes = GetFileAttributesW(current.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) return false;
+    }
+    return true;
+}
+bool DatedRelease(const std::filesystem::path& directory) {
+    const auto name = directory.filename().wstring();
+    if (name.size() < 8 || (name.size() > 8 && name[8] != L'-')) return false;
+    unsigned value{};
+    for (std::size_t index = 0; index < 8; ++index) {
+        if (name[index] < L'0' || name[index] > L'9') return false;
+        value = value * 10 + static_cast<unsigned>(name[index] - L'0');
+    }
+    SYSTEMTIME date{}; date.wYear = static_cast<WORD>(value / 10000);
+    date.wMonth = static_cast<WORD>((value / 100) % 100); date.wDay = static_cast<WORD>(value % 100);
+    FILETIME checked{};
+    return SystemTimeToFileTime(&date, &checked) != FALSE;
+}
+void AppendReleaseHistory(const ProductDescriptor& product, const std::filesystem::path& executable,
+    std::vector<std::filesystem::path>& candidates) {
+    // A common tool directory can sit beside dated releases. Only inspect this
+    // product's immediate release root, never ancestors or a recursive drive scan.
+    const auto root = executable.parent_path();
+    const auto name = root.filename().wstring();
+    if (CompareStringOrdinal(name.c_str(), static_cast<int>(name.size()), product.settingsDirectory.data(),
+        static_cast<int>(product.settingsDirectory.size()), TRUE) != CSTR_EQUAL || !ReparseFree(root)) return;
+    std::error_code error;
+    std::vector<std::filesystem::path> dated;
+    std::size_t inspected{};
+    for (std::filesystem::directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, error), end;
+        it != end && !error; it.increment(error)) {
+        // Refuse partial selection rather than selecting an older incomplete
+        // history if an unexpected directory exceeds the bounded inventory.
+        if (++inspected > 512) return;
+        if (DatedRelease(it->path()) && ReparseFree(it->path()) && it->is_directory(error)) dated.push_back(it->path());
+    }
+    if (error) return;
+    std::sort(dated.rbegin(), dated.rend());
+    for (const auto& directory : dated) {
+        for (const auto* tool : {L"授权签发", L"签发工具"}) {
+            candidates.push_back(directory / tool / L"Signing" / L"primary");
+            candidates.push_back(directory / tool / L"primary");
+            candidates.push_back(directory / tool / L"签发库");
+        }
+        candidates.push_back(directory / L"Signing" / L"primary");
+        candidates.push_back(directory / L"primary");
+        candidates.push_back(directory / L"签发库");
+    }
+}
+bool AutomaticStore(const ProductDescriptor& product, const std::filesystem::path& candidate) {
+    // Check components before opening public metadata, including junctions and
+    // symlinked files. Explicit saved settings retain their existing validation.
+    if (!ReparseFree(candidate) || !ReparseFree(candidate / L"issuer-public.blob")
+        || !ReparseFree(candidate / L"issuer.json") || !ReparseFree(candidate / L"issuer-private.pem")) return false;
+    (void)CheckStore(product, candidate);
+    return true;
+}
 }
 std::filesystem::path DiscoverStore(const ProductDescriptor& product) {
     std::vector<std::filesystem::path> candidates;
@@ -230,18 +303,19 @@ std::filesystem::path DiscoverStore(const ProductDescriptor& product) {
     }
     const std::filesystem::path signingRoot(product.signingRoot);
     std::error_code error;
-    if (std::filesystem::is_directory(signingRoot, error)) {
+    if (std::filesystem::is_directory(signingRoot, error) && ReparseFree(signingRoot)) {
         std::vector<std::filesystem::path> dated;
         for (std::filesystem::directory_iterator it(signingRoot,
             std::filesystem::directory_options::skip_permission_denied, error), end;
             it != end && !error; it.increment(error)) {
-            if (it->is_directory(error)) dated.push_back(it->path() / L"primary");
+            if (ReparseFree(it->path()) && it->is_directory(error)) dated.push_back(it->path() / L"primary");
         }
         std::sort(dated.rbegin(), dated.rend());
         candidates.insert(candidates.end(), dated.begin(), dated.end());
     }
+    AppendReleaseHistory(product, executable, candidates);
     for (const auto& candidate : candidates) {
-        try { (void)CheckStore(product, candidate); return std::filesystem::weakly_canonical(candidate); }
+        try { if (AutomaticStore(product, candidate)) return std::filesystem::weakly_canonical(candidate); }
         catch (const std::exception&) {}
     }
     return {};

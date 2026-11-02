@@ -2273,6 +2273,25 @@ def _preview_definition_plan(template_id, supplied_values=None, process_drafts=N
     return result
 
 
+def _example_direction_frames(plan):
+    """Observe declared example poses; bound products retain native BRep proof."""
+    parts=plan['manufacturingParts']
+    branches=[p for p in parts if any(e.get('toolRef',{}).get('id')=='paired-end-tabs'
+                                    for e in p['request'].get('ends',{}).values())]
+    for host in parts:
+        for feature in host['request'].get('features',[]):
+            if feature.get('toolRef',{}).get('id')!='paired-side-slots':continue
+            candidates=[p for p in branches if p is not host]
+            if len(candidates)!=1:continue
+            branch=candidates[0];hm,bm=host['compareMatrix'],branch['compareMatrix']
+            def axis(column):
+                world=[bm[4*i+column] for i in range(3)]
+                return [sum(hm[4*j+i]*world[j] for j in range(3)) for i in range(3)]
+            feature['section']['directionFrame']={'uAxis':axis(1),'vAxis':axis(2),
+                                                  'yAxis':axis(1),'zAxis':axis(2)}
+    return plan
+
+
 def preview_plan(template_id, supplied_values=None, process_drafts=None,
                  scene_parts=None, scene_parameters=None, finished_product=None,
                  manufacturing_only=False, process_input=None):
@@ -2289,7 +2308,7 @@ def preview_plan(template_id, supplied_values=None, process_drafts=None,
                                     manufacturing_only, process_input)
     descriptor = _template_by_id(template_id)
     if not formal or descriptor["manufacturingPlan"]["realization"] != "separate":
-        return plan
+        return _example_direction_frames(plan)
     local = plan["processInput"]
     evaluated = evaluate_process(template_id, local, supplied_values, process_drafts)
     if not evaluated["applicable"]:
@@ -2328,7 +2347,7 @@ def preview_plan(template_id, supplied_values=None, process_drafts=None,
     plan["resolvedWorkflow"]["partOperations"] = actual_operations
     plan["resolvedWorkflow"]["operations"] = copy.deepcopy(evaluated["operations"])
     plan["resolvedWorkflow"]["scope"] = "process-instance"
-    return plan
+    return _example_direction_frames(plan)
 
 
 def _bound_number(value, label, minimum=-math.inf, maximum=math.inf):
@@ -2820,13 +2839,12 @@ def _validate_tab_slot_wall_mapping(check, participants):
     dot = lambda a, b: sum(x * y for x, y in zip(a, b))
     if (any(abs(dot(axis, axis) - 1) > 1e-6 for axis in vectors)
             or abs(dot(u, v)) > 1e-6
-            or max(abs(dot(z, u)), abs(dot(z, v))) < 1 - 1e-6):
-        raise ValueError("公母插舌的制造壁面与真实方矩管截面不对齐")
+            or abs(dot(z, _cross(u, v))) > 1e-6):
+        raise ValueError("公母插舌的制造方向须位于真实截面内")
     face = host["anchor"]["face"]
     normal_index, across_index = (2, 1) if face in ("top", "bottom") else (1, 2)
-    if (abs(z[normal_index]) > 1e-6
-            or max(abs(z[0]), abs(z[across_index])) < 1 - 1e-6):
-        raise ValueError("公母插舌的制造壁面与主管接触面不对齐")
+    if abs(z[normal_index]) > 1e-6 or abs(abs(_cross(u,v)[normal_index])-1) > 1e-6:
+        raise ValueError("公母插舌的真实截面须与主管接触法向正交")
 
 
 def _bound_operation_check(process_id, participant, entry, target):
@@ -2913,6 +2931,8 @@ def _bound_operation(process, tool, resolved_values, rule, participant, particip
         if section_role not in participants or section_role == role:
             raise ValueError(f"{process['id']} 缺少其他实际构件的截面输入")
         entry["section"] = {"profile": copy.deepcopy(participants[section_role]["section"])}
+        if tool['id'] == 'paired-side-slots':
+            entry['section']['branchEnd'] = participants[section_role]['anchor']['end']
     if target == "end":
         entry["trim"] = _bound_number(operation.get("trim", 0), "工艺端部余量", 0, 100000) + anchor["trim"]
         entry["rotation"] = (anchor["rotation"] + _bound_number(operation.get("rotation", 0), "工艺轴向旋转") + 180) % 360 - 180

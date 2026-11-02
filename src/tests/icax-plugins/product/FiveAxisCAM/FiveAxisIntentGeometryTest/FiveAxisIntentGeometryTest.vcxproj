@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{0bd53711-d4e9-4da9-b47a-c421e14c2d85}</ProjectGuid><RootNamespace>FiveAxisIntentGeometryTest</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet><UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
+  <ItemDefinitionGroup>
+    <ClCompile><WarningLevel>Level3</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><PrecompiledHeader>NotUsing</PrecompiledHeader><PreprocessorDefinitions>NOMINMAX;_FIVE_AXIS_CAM;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\product;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cad;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cam;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /FS /bigobj /wd4251 %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="FiveAxisIntentGeometryTests.cpp" />
+    <ClCompile Include="FiveAxisIntentOperationsTests.cpp" />
+    <ClCompile Include="FiveAxisIntentPoseFieldTests.cpp" />
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\FiveAxisCAM\FiveAxisIntentGeometry.cpp" />
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\FiveAxisCAM\FiveAxisIntentProjection.cpp" />
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\FiveAxisCAM\FiveAxisIntentOperations.cpp" />
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\FiveAxisCAM\FiveAxisIntentBranchProcess.cpp" />
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\FiveAxisCAM\FiveAxisIntentPoseField.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\cam\IntentToolpath\IntentToolpath.vcxproj"><Project>{7f21c2a4-bda0-4f50-a60f-4b95ab58cb85}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj"><Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\geometry\OpenCascadeGeometryServices\OpenCascadeGeometryServices.vcxproj" />
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"><Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj"><Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj"><Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\GeometryAlgo\GeometryAlgo.vcxproj"><Project>{9d763025-4802-45a0-a25e-512561f5a8c7}</Project></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets"><Import Project="..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" /></ImportGroup>
+</Project>

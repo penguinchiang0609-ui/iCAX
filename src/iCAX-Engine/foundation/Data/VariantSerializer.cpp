@@ -3,6 +3,8 @@
 #include <limits>
 #include <locale>
 #include <deque>
+#include <charconv>
+#include <cmath>
 
 using namespace iCAX::Data;
 
@@ -10,9 +12,9 @@ using namespace iCAX::Data;
 * @brief 获取类型名称
 * @return std::string
 */
-static std::string _GetTypeName(IN const Variant& Value_)
+static const char* _GetTypeName(IN const Variant& Value_)
 {
-    return std::visit([](auto&& arg) -> std::string {
+    return std::visit([](auto&& arg) -> const char* {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, std::monostate>) return "null";
         else if constexpr (std::is_same_v<T, bool>) return "bool";
@@ -129,7 +131,7 @@ static std::string _GetTypeName(IN const Variant& Value_)
 //    return conv.from_bytes(s);
 //}
 
-static void _WriteEscaped(std::ostringstream& oss, const std::string& str)
+static void _WriteEscaped(std::string& oss, const std::string& str)
 {
     std::size_t begin = 0;
     for (std::size_t i = 0; i < str.size(); ++i)
@@ -148,12 +150,12 @@ static void _WriteEscaped(std::ostringstream& oss, const std::string& str)
         }
         if (!escape) continue;
         if (i != begin)
-            oss.write(str.data() + begin, static_cast<std::streamsize>(i - begin));
-        oss.write(escape, 2);
+            oss.append(str.data() + begin, i - begin);
+        oss.append(escape, 2);
         begin = i + 1;
     }
     if (begin != str.size())
-        oss.write(str.data() + begin, static_cast<std::streamsize>(str.size() - begin));
+        oss.append(str.data() + begin, str.size() - begin);
 }
 
 static void _SkipWhitespace(const std::string& str, size_t& pos)
@@ -236,22 +238,60 @@ std::vector<T> _ParseVector(const std::string& str, size_t& pos, size_t dim, std
     return tmp;
 }
 
-static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
+// Numeric ostream formatting repeatedly consults locale facets. Large exact
+// toolpath fingerprints serialize many numbers on the scene queue; format the
+// same classic-locale digits directly instead. Keep the wire precision and the
+// legacy spelling of non-finite values (and character-valued array entries).
+template<class T>
+static void _WriteNumber(std::string& oss, T value)
+{
+    if constexpr (std::is_same_v<T, char> || std::is_same_v<T, signed char>
+        || std::is_same_v<T, unsigned char>)
+    {
+        oss.push_back(static_cast<char>(value));
+    }
+    else if constexpr (std::is_same_v<T, bool>) oss += value ? "1" : "0";
+    else
+    {
+        const auto legacy = [&] {
+            std::ostringstream stream;
+            stream.imbue(std::locale::classic());
+            stream.precision(std::numeric_limits<double>::max_digits10);
+            stream << value;
+            oss += stream.str();
+        };
+        char buffer[128];
+        std::to_chars_result converted;
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(value)) { legacy(); return; }
+            converted = std::to_chars(buffer, buffer + sizeof(buffer), value,
+                std::chars_format::general, std::numeric_limits<double>::max_digits10);
+        }
+        else converted = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        if (converted.ec == std::errc{}) oss.append(buffer, converted.ptr - buffer);
+        else legacy();
+    }
+}
+
+static void _Dump(IN std::string& oss, IN const Variant& var)
 
 {
     std::visit([&](auto&& arg)
         {
             using T = std::decay_t<decltype(arg)>;
-            oss << "{\"__variant_type\":\"" << _GetTypeName(var) << "\",\"value\":";
-            if constexpr (std::is_same_v<T, std::monostate>) oss << "null";
-            else if constexpr (std::is_same_v<T, bool>) oss << (arg ? "true" : "false");
+            oss += "{\"__variant_type\":\"";
+            oss += _GetTypeName(var);
+            oss += "\",\"value\":";
+            if constexpr (std::is_same_v<T, std::monostate>) oss += "null";
+            else if constexpr (std::is_same_v<T, bool>) oss += (arg ? "true" : "false");
             else if constexpr (std::is_same_v<T, char>)
             {
-                oss << static_cast<int>(arg);
+                _WriteNumber(oss, static_cast<int>(arg));
             }
             else if constexpr (std::is_same_v<T, uint8_t>)
             {
-                oss << static_cast<unsigned int>(arg);
+                _WriteNumber(oss, static_cast<unsigned int>(arg));
             }
             else if constexpr (std::is_same_v<T, short>
                 || std::is_same_v<T, unsigned short>
@@ -262,13 +302,13 @@ static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
                 || std::is_same_v<T, float>
                 || std::is_same_v<T, double>)
             {
-                oss << arg;
+                _WriteNumber(oss, arg);
             }
             else if constexpr (std::is_same_v<T, std::string>)
             {
-                oss << "\"";
+                oss += "\"";
                 _WriteEscaped(oss, arg);
-                oss << "\"";
+                oss += "\"";
             }
             //else if constexpr (std::is_same_v<T, wchar_t>)
             //{
@@ -287,9 +327,9 @@ static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
             //}
             else if constexpr (std::is_same_v<T, uuid>)
             {
-                oss << "\"";
+                oss += "\"";
                 _WriteEscaped(oss, to_string(arg));
-                oss << "\"";
+                oss += "\"";
             }
             else if constexpr (std::is_same_v<T, Bool1>
                 || std::is_same_v<T, Bool2>
@@ -334,13 +374,13 @@ static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
                 || std::is_same_v<T, Double5>
                 || std::is_same_v<T, Double6>)
             {
-                oss << "[";
+                oss += "[";
                 for (int i = 0; i < (int)arg.size(); ++i)
                 {
-                    if (i > 0) oss << ",";
-                    oss << arg[i];
+                    if (i > 0) oss += ",";
+                    _WriteNumber(oss, arg[i]);
                 }
-                oss << "]";
+                oss += "]";
             }
             else if constexpr (std::is_same_v<T, Bool2x2>
                 || std::is_same_v<T, Bool3x3>
@@ -364,7 +404,7 @@ static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
                 || std::is_same_v<T, Double3x3>
                 || std::is_same_v<T, Double4x4>)
             {
-                oss << "[";
+                oss += "[";
                 bool bFirst = true;
                 for (int i = 0; i < arg.Rows(); ++i)
                 {
@@ -372,45 +412,45 @@ static void _Dump(IN std::ostringstream& oss, IN const Variant& var)
                     {
                         if (!bFirst)
                         {
-                            oss << ",";
+                            oss += ",";
                         }
-                        oss << arg(i, j);
+                        _WriteNumber(oss, arg(i, j));
                         bFirst = false;
                     }
                 }
-                oss << "]";
+                oss += "]";
             }
 
             else if constexpr (std::is_same_v<T, ObjectMap>)
             {
-                oss << "{";
+                oss += "{";
                 bool first = true;
                 for (auto& [k, v] : arg)
                 {
-                    if (!first) oss << ",";
+                    if (!first) oss += ",";
                     first = false;
-                    oss << "\"";
+                    oss += "\"";
                     _WriteEscaped(oss, k);
-                    oss << "\":";
+                    oss += "\":";
                     _Dump(oss, v);
                 }
-                oss << "}";
+                oss += "}";
             }
             else if constexpr (std::is_same_v<T, VariantArray>)
             {
-                oss << "[";
+                oss += "[";
                 for (size_t i = 0; i < arg.size(); ++i)
                 {
-                    if (i > 0) oss << ",";
+                    if (i > 0) oss += ",";
                     _Dump(oss, arg[i]);
                 }
-                oss << "]";
+                oss += "]";
             }
             else
             {
-                oss << "unknown";
+                oss += "unknown";
             }
-            oss << "}";
+            oss += "}";
         }, var.m_Value);
 }
 
@@ -779,11 +819,10 @@ static Variant _Parse(const std::string& str, size_t& pos)
 
 std::string VariantSerializer::Serialize(IN const Variant& var)
 {
-    std::ostringstream oss;
-    oss.imbue(std::locale::classic());
-    oss.precision(std::numeric_limits<double>::max_digits10);
+    std::string oss;
+    oss.reserve(256);
     _Dump(oss, var);
-    return oss.str();
+    return oss;
 }
 
 // 反序列化（简化版本，可后续补充完整）

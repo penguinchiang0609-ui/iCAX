@@ -34,6 +34,18 @@ function Get-ReleasePackageExcludedDlls([string]$SolutionPath, [string]$BuildRoo
         if ([IO.Path]::GetExtension($solutionProject.Path) -ne '.vcxproj') { continue }
         $projectPath = Join-Path $solutionRoot $solutionProject.Path
         [xml]$project = Get-Content -LiteralPath $projectPath -Raw
+        # Determine the output kind before inspecting target names. Application
+        # projects can select a product-specific EXE name; they do not contribute
+        # DLL exclusions and their custom output conditions are irrelevant here.
+        $configurationType = ''
+        foreach ($group in $project.Project.PropertyGroup) {
+            $types = @($group.ChildNodes | Where-Object { $_.LocalName -eq 'ConfigurationType' })
+            if (-not $types.Count -or -not (Test-ReleaseProjectCondition $group.GetAttribute('Condition'))) { continue }
+            foreach ($type in $types) {
+                if (Test-ReleaseProjectCondition $type.GetAttribute('Condition')) { $configurationType = $type.InnerText.Trim() }
+            }
+        }
+        if ($configurationType -ne 'DynamicLibrary') { continue }
         $projectName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
         $targetName = $projectName
         $hasTargetName = $false
@@ -75,6 +87,25 @@ function Get-ReleasePackageExcludedDlls([string]$SolutionPath, [string]$BuildRoo
     return @($excluded | Sort-Object)
 }
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$productManifest = Get-Content -LiteralPath (Join-Path $sourceRoot 'apps/tube-designer/product.manifest.json') -Raw | ConvertFrom-Json
+$productVersion = [string]$productManifest.productVersion
+if ($productVersion -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$' -or
+    @($productVersion.Split('.') | Where-Object { [long]$_ -gt 65535 }).Count) {
+    throw 'Product version must contain three numeric Windows version components (0..65535).'
+}
+$releaseNotes = Join-Path $sourceRoot "apps/tube-designer/releases/$productVersion.md"
+if (-not (Test-Path -LiteralPath $releaseNotes -PathType Leaf)) {
+    throw "Release README is required for version $productVersion`: $releaseNotes"
+}
+$releaseText = Get-Content -LiteralPath $releaseNotes -Raw -Encoding utf8
+if ($releaseText -notmatch ('(?m)^# TubeDesigner ' + [regex]::Escape($productVersion) + '\r?$') -or
+    $releaseText -notmatch '(?m)^## Fix(?:[（(]|\s|$)' -or $releaseText -notmatch '(?m)^## Add(?:[（(]|\s|$)') {
+    throw 'Release README must name the exact product version and contain Fix and Add sections (write none when empty).'
+}
+$aboutText = Get-Content -LiteralPath (Join-Path $sourceRoot 'apps/tube-designer/webpage/aboutArea.mjs') -Raw -Encoding utf8
+if (-not $aboutText.Contains("<dt>版本</dt><dd>$productVersion</dd>")) {
+    throw "About page version must match product manifest: $productVersion"
+}
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\')
 $outputPrefix = $outputRoot + '\'
@@ -104,6 +135,10 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -or
     (Get-Item -LiteralPath $executable).VersionInfo.IsDebug) {
     throw "A Release TubeDesigner.exe is required: $executable"
 }
+$executableVersion = (Get-Item -LiteralPath $executable).VersionInfo
+if ($executableVersion.ProductVersion -ne $productVersion -or $executableVersion.FileVersion -ne "$productVersion.0") {
+    throw "Rebuild TubeDesigner.exe for version $productVersion (current: $($executableVersion.ProductVersion))."
+}
 & (Join-Path $PSScriptRoot 'validate_tube_designer_licensing.ps1') -BuildDirectory $buildRoot
 if (-not $VisualCppRuntimeDirectory) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
@@ -128,7 +163,7 @@ foreach ($required in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'
 
 # Ship only production binaries and CEF data. Tests, symbols, intermediate
 # files, log files and user data from the build directory are never copied.
-$nativeFiles = @{'TubeDesigner.exe' = $executable}
+$nativeFiles = @{'TubeDesigner.exe' = $executable; 'README.md' = $releaseNotes}
 $excludedProjectDlls = @(Get-ReleasePackageExcludedDlls -SolutionPath (Join-Path $sourceRoot 'iCAX.slnx') -BuildRoot $buildRoot)
 Write-Output "Excluded obsolete or disabled project DLLs: $($excludedProjectDlls -join ', ')"
 foreach ($file in Get-ChildItem -LiteralPath $buildRoot -File -Filter '*.dll') {
@@ -207,4 +242,4 @@ foreach ($file in Get-ChildItem -LiteralPath $outputRoot -Recurse -File -Force |
     $relative = $file.FullName.Substring($outputRoot.Length).TrimStart('\')
     if (-not $expectedFiles.Contains($relative)) { throw "Unexpected file in the release package: $($file.FullName)" }
 }
-Write-Output "Validated Release package: $($nativeFiles.Count) native/CEF files, $($crtFiles.Count) x64 VC runtime DLLs; $outputRoot"
+Write-Output "Validated Release package: $($nativeFiles.Count) native/CEF/README files, $($crtFiles.Count) x64 VC runtime DLLs; $outputRoot"

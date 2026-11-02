@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-28",
+  "issuerVersion": "0.1.2",
+  "issuerReleaseDeployed": true,
+  "issuerExecutable": "D:/penguinchinage0609/release/tubedesigner/授权签发/iCAX-License-Issuer.exe",
+  "issuerSha256": "1395D7BC2DDED88695E695D31DB7F1666A996C825C21088F1B04CE43E5C6AFCC",
+  "clientModuleSha256": "138F6D98184FB49E9CBF0BCD30C7FB8B7A2D92B44EDE2A6015CE1E12ABE619D9",
+  "nativeTestGroups": {
+    "passed": 7,
+    "log": "delivery-tests.log",
+    "failed": 0
+  },
+  "nativeIssuerChecks": 441,
+  "deployedActualRequestReadOnlyCheck": {
+    "historyFound": true,
+    "previousFile": "TubeDesigner-2026-10-10T13-39-00-142Z.tdact",
+    "passed": true,
+    "report": "delivered-request-selection.txt",
+    "previousIssuedAtLocal": "2026-10-10 23:58:50 +08:00",
+    "fullCurrentStoreSelected": true,
+    "originalFileExists": true,
+    "reissueEnabled": true
+  },
+  "releaseStandaloneSmoke": {
+    "authorizationReissueFormat": "TDREI001",
+    "developmentBypass": false,
+    "passed": true,
+    "nativeBusinessMocked": false,
+    "releaseBypass": false,
+    "report": "client-runtime-smoke.json"
+  },
+  "clientUpdaterIsolatedTests": {
+    "passed": true,
+    "windowsPowerShell51": true,
+    "realInstalledDirectoryChanged": false
+  },
+  "priorArtifactsHashRecheck": "original-artifacts-recheck.json",
+  "newProductionLicenseIssued": false,
+  "realTpmReissueImported": false,
+  "secretsOrCustomerLicensesInDelivery": false,
+  "newInstaller": {
+    "version": "0.3.2",
+    "status": "delivered",
+    "path": "D:/penguinchinage0609/release/tubedesigner/20261028-v0.3.2/安装包/TubeDesigner-0.3.2-20261028-x64-Setup.exe",
+    "bytes": 190429955,
+    "sha256": "ADD19D8491DEDC7330A123A97A64EFC04185B167A4A52B4011BE1FE917925AB8",
+    "extractedPayloadFilesMatched": 1006,
+    "extractedPayloadDifferences": 0,
+    "actualExtractedStandaloneStarted": true,
+    "nativeLicenseStatusPassed": true,
+    "debugAndReleaseBypass": false,
+    "actualInstallationOrUninstallationTested": false,
+    "nativeSmokeReport": "D:/penguinchinage0609/iCAX/output/tests/tubedesigner-release-0.3.2-20261028/packaged-runtime-acceptance/成品程序原生状态.json"
+  }
+}

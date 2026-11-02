@@ -166,7 +166,7 @@
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\..\..\..\..\icax-engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" Condition="Exists('..\..\..\..\..\icax-engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
   </ImportGroup>
-  <Target Name="SyncDatabaseTestRuntime" AfterTargets="Build">
+  <Target Name="SyncDatabaseTestRuntime" AfterTargets="Build" Condition="'$(ICAXSkipTestRuntimeSync)' != 'true'">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\..\..\..\tools\test\sync_vcxproj_test_runtime.ps1&quot; -TestProject &quot;$(MSBuildProjectFullPath)&quot; -OutDir &quot;$(OutDir).&quot; -Configuration &quot;$(Configuration)&quot; -Platform &quot;$(Platform)&quot;" />
   </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">

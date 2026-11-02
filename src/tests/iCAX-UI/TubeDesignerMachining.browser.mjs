@@ -5,6 +5,98 @@ import { fileURLToPath } from "node:url";
 import { resolve, sep } from "node:path";
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 
+async function checkMachiningWorkflow(page, output) {
+  await page.evaluate(async () => {
+    const f = globalThis.__pageNavigation;
+    f.view.tubeDesignerLicense = { activated:true, capabilities:{"page.machining":true,"machining.toolpath":true} };
+    const { encodeNestingGeometry } = await import("/src/apps/tube-designer/webpage/nestingPreview.mjs");
+    const { pathEditor } = await import("/src/apps/tube-designer/webpage/machiningEditor.mjs");
+    // A neutral rectangular tube mesh supplies a visible browser fixture.
+    const positions = [], outer = [[-20,-20],[20,-20],[20,20],[-20,20]], inner = [[-18,-18],[18,-18],[18,18],[-18,18]];
+    const vertex = (x, p) => [x, ...p];
+    const quad = (a,b,c,d) => positions.push(...a,...b,...c,...a,...c,...d);
+    for (let i=0;i<4;i++) {
+      const j=(i+1)%4;
+      quad(vertex(0,outer[i]),vertex(600,outer[i]),vertex(600,outer[j]),vertex(0,outer[j]));
+      quad(vertex(0,inner[j]),vertex(600,inner[j]),vertex(600,inner[i]),vertex(0,inner[i]));
+      for (const x of [0,600]) quad(vertex(x,outer[i]),vertex(x,outer[j]),vertex(x,inner[j]),vertex(x,inner[i]));
+    }
+    f.geometry = encodeNestingGeometry({ positions });
+    const paths = Array.from({length:36},(_,i)=>({id:`path-${i}`,name:`顶面开孔 ${String(i+1).padStart(2,"0")}`,origin:"analysis",closed:true,
+      points:[[25+i*15,-20.05,-8],[35+i*15,-20.05,-8],[35+i*15,-20.05,8],[25+i*15,-20.05,8]]}));
+    f.jobs = Array.from({length:28},(_,i)=>({id:`cam-${i}`,name:`方管 40×40×2 · ${String(i+1).padStart(2,"0")}`,sourceKind:"cad",resourceId:`model-${i}`,resourceVersion:1,sourceFileName:"方管加工样件.step",solidCount:1,
+      analysis:{revision:`analysis-${i}`,independent:true,paths:structuredClone(paths)}}));
+    f.view.scene.tubeDesigner.machiningTask = {revision:"cam-task-1",jobs:f.jobs};
+    f.state.tubeDesigner.machiningTask = structuredClone(f.view.scene.tubeDesigner.machiningTask);
+    f.previewResponse = () => new Promise(resolve => { f.releasePreview = () => resolve({geometryResourceId:"cam-fixture-mesh",geometryResourceVersion:1}); });
+    await globalThis.__icaxWorkbench.executeAreaAction("tube-machining-select",{dataset:{jobId:"cam-0"}});
+    f.editor = pathEditor(f.view,f.jobs[0]);
+  });
+  await page.waitForFunction(() => typeof globalThis.__pageNavigation.releasePreview === "function");
+  assert.equal(await page.locator('[data-tube-machining-workflow] button').count(),5);
+  const search = page.getByRole("searchbox",{name:"筛选加工清单"});
+  await search.fill("未提交的搜索草稿");
+  await search.evaluate(node => node.setSelectionRange(2,7));
+  await page.evaluate(() => {
+    const f=globalThis.__pageNavigation;
+    f.search=document.activeElement; f.searchEvents=0; f.search.addEventListener("interaction-probe",()=>f.searchEvents++);
+    const left=document.querySelector(".cam-context-pane"),right=document.querySelector(".cam-info-pane"),jobs=document.querySelector(".tube-machining-job-list"),paths=document.querySelector(".tube-machining-path-list");
+    // Continue scrolling after the preview request began.
+    left.scrollTop=45; right.scrollTop=210; jobs.scrollTop=350; paths.scrollTop=165;
+    f.expectedScroll=[left,right,jobs,paths].map(n=>n.scrollTop);
+    f.releasePreview();
+  });
+  await page.waitForFunction(() => globalThis.__pageNavigation.view.tubeDesignerMachining.preview?.ready);
+  const interaction=await page.evaluate(() => {
+    const f=globalThis.__pageNavigation,search=document.querySelector('[aria-label="筛选加工清单"]');
+    search.dispatchEvent(new Event("interaction-probe"));
+    return {sameInput:search===f.search,focused:document.activeElement===search,value:search.value,selection:[search.selectionStart,search.selectionEnd],
+      sameCanvas:f.view.viewport.renderer.domElement===f.canvas,events:f.searchEvents,scroll:[".cam-context-pane",".cam-info-pane",".tube-machining-job-list",".tube-machining-path-list"].map(s=>document.querySelector(s).scrollTop),expected:f.expectedScroll};
+  });
+  assert.equal(interaction.sameInput,true); assert.equal(interaction.focused,true); assert.equal(interaction.sameCanvas,true); assert.equal(interaction.events,1);
+  assert.equal(interaction.value,"未提交的搜索草稿"); assert.deepEqual(interaction.selection,[2,7]); assert.deepEqual(interaction.scroll,interaction.expected);
+  assert.ok(interaction.scroll[1]>0 && interaction.scroll[2]>0 && interaction.scroll[3]>0);
+  await search.fill(""); await search.press("Tab");
+  await page.evaluate(() => { for (const selector of [".cam-context-pane",".cam-info-pane",".tube-machining-job-list",".tube-machining-path-list"]) document.querySelector(selector).scrollTop=0; });
+  await page.screenshot({path:resolve(output,"cam-program.png")});
+  for (const stage of ["process","machine","simulation","output"]) {
+    await page.locator(`[data-machining-stage="${stage}"]`).click();
+    await page.waitForFunction(stage=>document.querySelector(`[data-machining-stage-panel="${stage}"]`),stage);
+    assert.ok(await page.locator(`[data-machining-stage-panel="${stage}"] button:disabled`).count());
+    if(stage==="process") assert.equal(await page.locator(".tube-cam-process-tabs button.active").innerText(),"引线");
+    await page.screenshot({path:resolve(output,`cam-${stage}.png`)});
+  }
+  await page.locator('[data-machining-stage="program"]').click();
+  await page.locator('button[data-path-id="path-0"]').click();
+  assert.ok(await page.locator('[data-path-field="dx"]').isVisible());
+  await page.evaluate(async () => {
+    const f=globalThis.__pageNavigation;
+    f.removed=document.querySelector('[data-path-field="dx"]'); f.removed.focus();
+    await globalThis.__icaxWorkbench.executeAreaAction("tube-path-select",{dataset:{pathId:""}});
+  });
+  assert.equal(await page.locator('[data-path-field="dx"]').count(),0);
+  assert.equal(await page.evaluate(()=>document.activeElement?.hasAttribute("data-path-field")),false);
+  // Patch a retained SVG repeatedly, then draw once: one click adds one point.
+  await page.locator('[data-cam-action="tube-path-space"]').click();
+  await page.locator('[data-path-mode="draw"]').click();
+  await page.evaluate(async () => {
+    const f=globalThis.__pageNavigation;f.svg=document.querySelector('[data-machining-side-canvas]');
+    for(let i=0;i<3;i++)await globalThis.__icaxWorkbench.executeAreaAction("tube-machining-select",{dataset:{jobId:"cam-0"}});
+    f.svg.dispatchEvent(new MouseEvent("click",{clientX:f.svg.getBoundingClientRect().x+150,clientY:f.svg.getBoundingClientRect().y+150,bubbles:true}));
+  });
+  assert.equal(await page.evaluate(()=>globalThis.__pageNavigation.editor.drawing.length),1);
+  assert.equal(await page.evaluate(()=>globalThis.__pageNavigation.svg===document.querySelector('[data-machining-side-canvas]')),true);
+  await page.locator('[data-cam-action="tube-path-cancel-draw"]').click();
+  for(const width of [1100,1920]) {
+    await page.setViewportSize({width,height:900});
+    const bounds=await page.locator('[data-tube-machining-workflow]').boundingBox();
+    assert.ok(bounds.width<=width && bounds.height<150);
+    assert.equal(await page.locator('[data-tube-machining-workflow] button').count(),5);
+  }
+  await page.setViewportSize({width:1440,height:900});
+  writeFileSync(resolve(output,"cam-workspace-report.json"),JSON.stringify({interaction,stages:5,retainedSvg:true,singleClickSinglePoint:true,responsiveWidths:[1100,1440,1920],backend:"isolated browser fixture; no production NC output"},null,2));
+}
+
 async function checkPublicPageNavigation(browser) {
   const source = fileURLToPath(new URL("../../", import.meta.url));
   const output = resolve(source, "../output/tests/tube-designer-page-navigation");
@@ -39,9 +131,10 @@ async function checkPublicPageNavigation(browser) {
     Object.assign(view, { scene: structuredClone(state), tubeDesignerLoaded: true, tubeDesignerUserDataLoaded: true,
       tubeDesignerParameterPanelProductId: instance.entityId, tubeDesignerParameterDisclosureState: { initialized: true } });
     const snapshot = { viewId: "navigation-view", revision: "1", rows: [] };
-    const sceneProxy = { state, pdo: { enabled: false }, resources: { get() { throw new Error("Navigation should not load empty geometry"); } },
+    const sceneProxy = { state, pdo: { enabled: false }, resources: { get(url) { if(url==="cam-fixture-mesh")return Promise.resolve(new Response(globalThis.__pageNavigation.geometry)); throw new Error("Unexpected geometry: "+url); } },
       views: { async start() { return { snapshot, async poll() { return snapshot; }, async stop() {} }; } },
       async getState() { return structuredClone(state); }, async invoke(method) { requests.push(method);
+        if (method === "TubeDesigner.MachiningData") return globalThis.__pageNavigation.previewResponse();
         if (method === "TubeDesigner.GetProductTemplateDescriptor") return { template };
         if (method === "TubeDesigner.GetPunchTools") return { tools: [] };
         if (method === "TubeDesigner.List") return { tubeDesigner: structuredClone(state.tubeDesigner) };
@@ -51,6 +144,7 @@ async function checkPublicPageNavigation(browser) {
     const productState = { productId: "icax.tube-designer", productName: "TubeDesigner", isStarted: true,
       frontendEntry: "/src/apps/tube-designer/webpage/entry.mjs", catalogs: [{ mainProject: projectState }], projectFile: { fileExtensions: ["icax"] } };
     const productProxy = { productId: productState.productId, state: productState, async getState() { return productState; },
+      async invoke(method) { if(method==="TubeDesignerLicensing.Status") return {activated:true,featureSchemaVersion:1,capabilities:{"page.product":true,"page.nesting":true,"page.machining":true,"machining.toolpath":true}}; throw new Error("Unexpected product-channel request: "+method); },
       getProject() { return projectProxy; }, async openProjectCatalog() { return { projectProxy, sceneProxy, catalog: { mainProject: projectState } }; } };
     const appProxy = { bridge: {}, products: new Map([[productState.productId, productProxy]]), async getState() { return { products: [productState] }; },
       getProduct() { return productProxy; }, async startProduct() { return productProxy; } };
@@ -75,6 +169,7 @@ async function checkPublicPageNavigation(browser) {
   assert.match(await page.locator(".tube-machining-empty-stage").innerText(), /准备三维加工/);
   assert.ok(await page.locator('[data-command-id="machining.receive"]').isVisible());
   await page.screenshot({ path: resolve(output, "machining.png") });
+  await checkMachiningWorkflow(page,output);
   await tab("about").click();
   await page.waitForFunction(() => globalThis.__pageNavigation.view.activeAreaId === "about" && document.querySelector(".tube-designer-about-viewport"));
   assert.match(await page.locator(".cam-info-pane").innerText(), /软件授权/);

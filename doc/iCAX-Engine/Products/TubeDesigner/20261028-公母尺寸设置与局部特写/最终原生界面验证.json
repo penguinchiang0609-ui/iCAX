@@ -1,0 +1,951 @@
+{
+  "passed": true,
+  "nativeBusinessMocked": false,
+  "actualReleaseStandalone": true,
+  "finalAssetsReloaded": true,
+  "nativeProfileSelection": {
+    "sameNode": true,
+    "listenerCount": 1
+  },
+  "parameters": {
+    "barCount": 2,
+    "barLayoutMode": "fixed_count",
+    "firstBarTopOffset": 55,
+    "frameCornerRadius": 2,
+    "frameDepth": 30,
+    "frameProfileType": "round",
+    "frameType": "two_vertical",
+    "frameWallThickness": 1.5,
+    "frameWidth": 40,
+    "fullHeadTotalClearance": 0.1,
+    "handleBottom": 475,
+    "handleCenterOffset": 0,
+    "handleClosure": "closed",
+    "handleEnabled": "no",
+    "handleHeight": 200,
+    "handleSide": "left",
+    "handleWidth": 200,
+    "height": 1250,
+    "holeTotalClearanceDepth": 0.35,
+    "holeTotalClearanceHeight": 0.35,
+    "innerCornerRadius": 1,
+    "innerDepth": 5,
+    "innerProfileType": "rect",
+    "innerWallThickness": 0.8,
+    "innerWidth": 10,
+    "installHoleBottomOffset": 50,
+    "installHoleCountPerSide": 3,
+    "installHoleEnabled": "no",
+    "installHoleLargeDiameter": 6,
+    "installHoleMinimumWeb": 0.2,
+    "installHoleOrientation": "side",
+    "installHoleSmallDiameter": 4,
+    "installHoleTopOffset": 50,
+    "jointMode": "male_female_half_hole",
+    "lastBarBottomOffset": 55,
+    "lowerBarCount": 3,
+    "maleCornerSize": 0.5,
+    "maleCornerType": "square",
+    "maleEndForm": "tongue",
+    "maleHeadLength": 3.5,
+    "maleHeadWidth": 6,
+    "maleTabAngle": 0,
+    "maleTabCount": "two",
+    "maximumClearGap": 110,
+    "middleBarCount": 1,
+    "minimumFeatureWeb": 0.2,
+    "productCode": "JJFHW",
+    "tubeDesignerProfileOverrides": {
+      "frame": {
+        "contentDigest": "sha256:158c3a7d1b50e8d352e5b6caba219ed8482995a04f77b42f6ed4cadbf8f3c947",
+        "contourCount": 2,
+        "contours": [
+          {
+            "closed": true,
+            "kind": "path",
+            "segments": [
+              {
+                "end": [
+                  1.2246467991473533e-15,
+                  20
+                ],
+                "kind": "arc",
+                "middle": [
+                  14.142135623730951,
+                  14.142135623730951
+                ],
+                "start": [
+                  20,
+                  0
+                ]
+              },
+              {
+                "end": [
+                  -20,
+                  2.4492935982947065e-15
+                ],
+                "kind": "arc",
+                "middle": [
+                  -14.14213562373095,
+                  14.142135623730951
+                ],
+                "start": [
+                  1.2246467991473533e-15,
+                  20
+                ]
+              },
+              {
+                "end": [
+                  -3.673940397442059e-15,
+                  -20
+                ],
+                "kind": "arc",
+                "middle": [
+                  -14.142135623730955,
+                  -14.14213562373095
+                ],
+                "start": [
+                  -20,
+                  2.4492935982947065e-15
+                ]
+              },
+              {
+                "end": [
+                  20,
+                  0
+                ],
+                "kind": "arc",
+                "middle": [
+                  14.142135623730947,
+                  -14.142135623730955
+                ],
+                "start": [
+                  -3.673940397442059e-15,
+                  -20
+                ]
+              }
+            ]
+          },
+          {
+            "closed": true,
+            "kind": "path",
+            "segments": [
+              {
+                "end": [
+                  1.1327982892113017e-15,
+                  18.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  13.08147545195113,
+                  13.08147545195113
+                ],
+                "start": [
+                  18.5,
+                  0
+                ]
+              },
+              {
+                "end": [
+                  -18.5,
+                  2.2655965784226034e-15
+                ],
+                "kind": "arc",
+                "middle": [
+                  -13.081475451951128,
+                  13.08147545195113
+                ],
+                "start": [
+                  1.1327982892113017e-15,
+                  18.5
+                ]
+              },
+              {
+                "end": [
+                  -3.398394867633905e-15,
+                  -18.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  -13.081475451951132,
+                  -13.081475451951128
+                ],
+                "start": [
+                  -18.5,
+                  2.2655965784226034e-15
+                ]
+              },
+              {
+                "end": [
+                  18.5,
+                  0
+                ],
+                "kind": "arc",
+                "middle": [
+                  13.081475451951126,
+                  -13.081475451951132
+                ],
+                "start": [
+                  -3.398394867633905e-15,
+                  -18.5
+                ]
+              }
+            ]
+          }
+        ],
+        "cornerRadius": 0,
+        "depth": 40,
+        "editableParameters": true,
+        "frozenGeometry": false,
+        "geometrySource": "idealizedFallback",
+        "hollow": true,
+        "kind": "profile-package",
+        "manufacturing": {
+          "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+          "topology": "closed-hollow",
+          "validationLevel": "parametric-geometry"
+        },
+        "manufacturingRoute": "Unspecified",
+        "name": "圆管",
+        "packageDigest": "sha256:158c3a7d1b50e8d352e5b6caba219ed8482995a04f77b42f6ed4cadbf8f3c947",
+        "packageVersion": "2026.9.16.1",
+        "parameterDefinitions": [
+          {
+            "defaultValue": 40,
+            "displayName": "外径 / mm",
+            "key": "width",
+            "min": 1,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 2,
+            "displayName": "名义壁厚 / mm",
+            "key": "wallThickness",
+            "min": 0.1,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 0,
+            "displayName": "内孔水平偏心 / mm",
+            "key": "innerOffsetX",
+            "min": -10000,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 0,
+            "displayName": "内孔竖直偏心 / mm",
+            "key": "innerOffsetY",
+            "min": -10000,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number"
+          }
+        ],
+        "parameterDiagram": {
+          "annotations": [
+            {
+              "axis": "x",
+              "description": "外圆直径",
+              "from": [
+                -20,
+                0
+              ],
+              "kind": "linear",
+              "parameter": "width",
+              "side": "top",
+              "to": [
+                20,
+                0
+              ]
+            },
+            {
+              "axis": "x",
+              "description": "右侧壁厚",
+              "from": [
+                18.5,
+                0
+              ],
+              "kind": "linear",
+              "parameter": "wallThickness",
+              "side": "bottom",
+              "to": [
+                20,
+                0
+              ]
+            },
+            {
+              "axis": "x",
+              "description": "内孔水平偏心",
+              "from": [
+                0,
+                -20
+              ],
+              "kind": "linear",
+              "parameter": "innerOffsetX",
+              "side": "bottom",
+              "to": [
+                0,
+                -20
+              ]
+            },
+            {
+              "axis": "y",
+              "description": "内孔竖直偏心",
+              "from": [
+                -20,
+                0
+              ],
+              "kind": "linear",
+              "parameter": "innerOffsetY",
+              "side": "left",
+              "to": [
+                -20,
+                0
+              ]
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "parameters": {
+          "innerOffsetX": 0,
+          "innerOffsetY": 0,
+          "wallThickness": 1.5,
+          "width": 40
+        },
+        "profileDefinitionId": "round",
+        "profileForm": "parametric",
+        "profilePackageId": "round",
+        "profileScope": "system",
+        "provenance": {
+          "dimensionSource": "editable-example",
+          "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+          "familyCode": "P01",
+          "standardConformance": "not-certified",
+          "surveyIds": [
+            1
+          ]
+        },
+        "schema": "icax.imported-tube-profile",
+        "schemaVersion": 1,
+        "sectionKind": "round",
+        "sectionModel": "round",
+        "sourceFileName": "round/profile.py",
+        "sourceFormat": "icax.system-profile",
+        "sourceRevision": "",
+        "specification": "圆管 40.0 × 40.0 mm",
+        "wallThickness": 1.5,
+        "width": 40
+      },
+      "inner": {
+        "contentDigest": "sha256:2a00ea4da34b20a14316862df9778878020d7288de77acec9275eba88e4fb4cf",
+        "contourCount": 2,
+        "contours": [
+          {
+            "closed": true,
+            "kind": "path",
+            "segments": [
+              {
+                "end": [
+                  -5,
+                  -1.5
+                ],
+                "kind": "line",
+                "start": [
+                  -5,
+                  1.5
+                ]
+              },
+              {
+                "end": [
+                  -4,
+                  -2.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  -4.707106781186548,
+                  -2.2071067811865475
+                ],
+                "start": [
+                  -5,
+                  -1.5
+                ]
+              },
+              {
+                "end": [
+                  4,
+                  -2.5
+                ],
+                "kind": "line",
+                "start": [
+                  -4,
+                  -2.5
+                ]
+              },
+              {
+                "end": [
+                  5,
+                  -1.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  4.707106781186548,
+                  -2.2071067811865475
+                ],
+                "start": [
+                  4,
+                  -2.5
+                ]
+              },
+              {
+                "end": [
+                  5,
+                  1.5
+                ],
+                "kind": "line",
+                "start": [
+                  5,
+                  -1.5
+                ]
+              },
+              {
+                "end": [
+                  4,
+                  2.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  4.707106781186548,
+                  2.2071067811865475
+                ],
+                "start": [
+                  5,
+                  1.5
+                ]
+              },
+              {
+                "end": [
+                  -4,
+                  2.5
+                ],
+                "kind": "line",
+                "start": [
+                  4,
+                  2.5
+                ]
+              },
+              {
+                "end": [
+                  -5,
+                  1.5
+                ],
+                "kind": "arc",
+                "middle": [
+                  -4.707106781186548,
+                  2.2071067811865475
+                ],
+                "start": [
+                  -4,
+                  2.5
+                ]
+              }
+            ]
+          },
+          {
+            "closed": true,
+            "kind": "path",
+            "segments": [
+              {
+                "end": [
+                  -4.2,
+                  -0.7000000000000001
+                ],
+                "kind": "line",
+                "start": [
+                  -4.2,
+                  0.7000000000000001
+                ]
+              },
+              {
+                "end": [
+                  -3.2,
+                  -1.7
+                ],
+                "kind": "arc",
+                "middle": [
+                  -3.907106781186548,
+                  -1.4071067811865476
+                ],
+                "start": [
+                  -4.2,
+                  -0.7000000000000001
+                ]
+              },
+              {
+                "end": [
+                  3.2,
+                  -1.7
+                ],
+                "kind": "line",
+                "start": [
+                  -3.2,
+                  -1.7
+                ]
+              },
+              {
+                "end": [
+                  4.2,
+                  -0.7000000000000001
+                ],
+                "kind": "arc",
+                "middle": [
+                  3.9071067811865476,
+                  -1.4071067811865476
+                ],
+                "start": [
+                  3.2,
+                  -1.7
+                ]
+              },
+              {
+                "end": [
+                  4.2,
+                  0.7000000000000001
+                ],
+                "kind": "line",
+                "start": [
+                  4.2,
+                  -0.7000000000000001
+                ]
+              },
+              {
+                "end": [
+                  3.2,
+                  1.7
+                ],
+                "kind": "arc",
+                "middle": [
+                  3.9071067811865476,
+                  1.4071067811865476
+                ],
+                "start": [
+                  4.2,
+                  0.7000000000000001
+                ]
+              },
+              {
+                "end": [
+                  -3.2,
+                  1.7
+                ],
+                "kind": "line",
+                "start": [
+                  3.2,
+                  1.7
+                ]
+              },
+              {
+                "end": [
+                  -4.2,
+                  0.7000000000000001
+                ],
+                "kind": "arc",
+                "middle": [
+                  -3.9071067811865476,
+                  1.4071067811865476
+                ],
+                "start": [
+                  -3.2,
+                  1.7
+                ]
+              }
+            ]
+          }
+        ],
+        "cornerRadius": 1,
+        "depth": 5,
+        "editableParameters": true,
+        "frozenGeometry": false,
+        "geometrySource": "idealizedFallback",
+        "hollow": true,
+        "kind": "profile-package",
+        "manufacturing": {
+          "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+          "topology": "closed-hollow",
+          "validationLevel": "parametric-geometry"
+        },
+        "manufacturingRoute": "Unspecified",
+        "name": "方管",
+        "packageDigest": "sha256:2a00ea4da34b20a14316862df9778878020d7288de77acec9275eba88e4fb4cf",
+        "packageVersion": "2026.9.13.6",
+        "parameterDefinitions": [
+          {
+            "defaultValue": 60,
+            "displayName": "宽 / mm",
+            "key": "width",
+            "min": 1,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 40,
+            "displayName": "高 / mm",
+            "key": "depth",
+            "min": 1,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 2,
+            "displayName": "壁厚 / mm",
+            "key": "wallThickness",
+            "min": 0.1,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 3,
+            "displayName": "R（外）/ mm",
+            "key": "cornerRadius",
+            "min": 0,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 1,
+            "displayName": "R（内）/ mm",
+            "key": "innerRadius",
+            "min": 0,
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": false,
+            "displayName": "启用独立外圆角",
+            "key": "useOuterRadii",
+            "presentation": {
+              "advanced": true,
+              "diagramVisible": false,
+              "line": "full"
+            },
+            "valueType": "boolean"
+          },
+          {
+            "defaultValue": 3,
+            "displayName": "左下外圆角 R1 / mm",
+            "key": "outerRadius1",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useOuterRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 3,
+            "displayName": "右下外圆角 R2 / mm",
+            "key": "outerRadius2",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useOuterRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 3,
+            "displayName": "右上外圆角 R3 / mm",
+            "key": "outerRadius3",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useOuterRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 3,
+            "displayName": "左上外圆角 R4 / mm",
+            "key": "outerRadius4",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useOuterRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": false,
+            "displayName": "启用独立内圆角",
+            "key": "useInnerRadii",
+            "presentation": {
+              "advanced": true,
+              "diagramVisible": false,
+              "line": "full"
+            },
+            "valueType": "boolean"
+          },
+          {
+            "defaultValue": 1,
+            "displayName": "左下内圆角 r1 / mm",
+            "key": "innerRadius1",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useInnerRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 1,
+            "displayName": "右下内圆角 r2 / mm",
+            "key": "innerRadius2",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useInnerRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 1,
+            "displayName": "右上内圆角 r3 / mm",
+            "key": "innerRadius3",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useInnerRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 1,
+            "displayName": "左上内圆角 r4 / mm",
+            "key": "innerRadius4",
+            "min": 0,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number",
+            "visibleWhen": {
+              "op": "eq",
+              "parameter": "useInnerRadii",
+              "value": true
+            }
+          },
+          {
+            "defaultValue": 0,
+            "displayName": "内孔水平偏心 / mm",
+            "key": "innerOffsetX",
+            "min": -10000,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number"
+          },
+          {
+            "defaultValue": 0,
+            "displayName": "内孔竖直偏心 / mm",
+            "key": "innerOffsetY",
+            "min": -10000,
+            "presentation": {
+              "advanced": true
+            },
+            "step": 1,
+            "valueType": "number"
+          }
+        ],
+        "parameterDiagram": {
+          "annotations": [
+            {
+              "axis": "x",
+              "description": "宽度基准",
+              "from": [
+                -5,
+                2.5
+              ],
+              "kind": "linear",
+              "parameter": "width",
+              "side": "top",
+              "to": [
+                5,
+                2.5
+              ]
+            },
+            {
+              "axis": "y",
+              "description": "高度基准",
+              "from": [
+                -5,
+                -2.5
+              ],
+              "kind": "linear",
+              "parameter": "depth",
+              "side": "left",
+              "to": [
+                -5,
+                2.5
+              ]
+            },
+            {
+              "axis": "x",
+              "description": "直边壁厚",
+              "from": [
+                4.2,
+                0
+              ],
+              "kind": "linear",
+              "parameter": "wallThickness",
+              "side": "bottom",
+              "to": [
+                5,
+                0
+              ]
+            },
+            {
+              "description": "外角半径 R",
+              "kind": "leader",
+              "parameter": "cornerRadius",
+              "point": [
+                4.707106781186548,
+                2.2071067811865475
+              ],
+              "side": "right"
+            },
+            {
+              "description": "内角半径 R",
+              "kind": "leader",
+              "parameter": "innerRadius",
+              "point": [
+                3.9071067811865476,
+                1.4071067811865476
+              ],
+              "side": "right"
+            },
+            {
+              "axis": "x",
+              "description": "内孔水平偏心",
+              "from": [
+                0,
+                -2.5
+              ],
+              "kind": "linear",
+              "parameter": "innerOffsetX",
+              "side": "bottom",
+              "to": [
+                0,
+                -2.5
+              ]
+            },
+            {
+              "axis": "y",
+              "description": "内孔竖直偏心",
+              "from": [
+                -5,
+                0
+              ],
+              "kind": "linear",
+              "parameter": "innerOffsetY",
+              "side": "left",
+              "to": [
+                -5,
+                0
+              ]
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "parameters": {
+          "cornerRadius": 1,
+          "depth": 5,
+          "innerOffsetX": 0,
+          "innerOffsetY": 0,
+          "innerRadius": 1,
+          "innerRadius1": 1,
+          "innerRadius2": 1,
+          "innerRadius3": 1,
+          "innerRadius4": 1,
+          "outerRadius1": 3,
+          "outerRadius2": 3,
+          "outerRadius3": 3,
+          "outerRadius4": 3,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 0.8,
+          "width": 10
+        },
+        "profileDefinitionId": "rect",
+        "profileForm": "parametric",
+        "profilePackageId": "rect",
+        "profileScope": "system",
+        "provenance": {
+          "dimensionSource": "editable-example",
+          "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+          "familyCode": "P02",
+          "standardConformance": "not-certified",
+          "surveyIds": [
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "schema": "icax.imported-tube-profile",
+        "schemaVersion": 1,
+        "sectionKind": "rect",
+        "sourceFileName": "rect/profile.py",
+        "sourceFormat": "icax.system-profile",
+        "sourceRevision": "",
+        "specification": "方矩管 10.0 × 5.0 mm",
+        "wallThickness": 0.8,
+        "width": 10
+      }
+    },
+    "upperBarCount": 4,
+    "width": 568
+  }
+}

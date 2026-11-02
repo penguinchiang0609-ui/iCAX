@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.24)
+project(iCAXFixtureGeometry LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(VTK_BUILD_TESTING OFF CACHE STRING "" FORCE)
+set(VTK_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(VTK_BUILD_ALL_MODULES OFF CACHE BOOL "" FORCE)
+set(VTK_GROUP_ENABLE_StandAlone DONT_WANT CACHE STRING "" FORCE)
+set(VTK_GROUP_ENABLE_Rendering DONT_WANT CACHE STRING "" FORCE)
+set(VTK_MODULE_ENABLE_VTK_FiltersCore YES CACHE STRING "" FORCE)
+set(VTK_WRAP_PYTHON OFF CACHE BOOL "" FORCE)
+set(VTK_WRAP_JAVA OFF CACHE BOOL "" FORCE)
+set(VTK_SMP_IMPLEMENTATION_TYPE STDThread CACHE STRING "" FORCE)
+add_subdirectory(VTK-9.5.2)
+add_library(icax_clipper2 STATIC
+  Clipper2-Clipper2_1.5.4/CPP/Clipper2Lib/src/clipper.engine.cpp
+  Clipper2-Clipper2_1.5.4/CPP/Clipper2Lib/src/clipper.offset.cpp
+  Clipper2-Clipper2_1.5.4/CPP/Clipper2Lib/src/clipper.rectclip.cpp)
+target_include_directories(icax_clipper2 PUBLIC Clipper2-Clipper2_1.5.4/CPP/Clipper2Lib/include)
+install(TARGETS icax_clipper2 ARCHIVE DESTINATION lib)

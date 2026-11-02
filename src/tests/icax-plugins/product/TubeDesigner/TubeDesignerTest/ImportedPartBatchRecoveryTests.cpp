@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include <ApplicationContext/IApplicationContext.h>
 #include <Data/VariantSerializer.h>
 #include <Database/IRepository.h>
@@ -10,9 +10,10 @@
 #include <ProjectContext/ISceneContext.h>
 #include <Resources/ResourceLibrary.h>
 #include <SDO/SDORegistrationCatalog.h>
+#include <Services/ServiceRegistrationCatalog.h>
+#include <Services/ServiceProvider.h>
 #include <TubeDesigner/TubeDesigner.h>
 #include <TubeDesigner/TubeDesignerComponents.h>
-#include <TubeDesigner/RecoveredPartDrawingFeatures.h>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
@@ -49,22 +50,25 @@ using iCAX::GeometryData::BRepModel;
 
 class Application final : public iCAX::Application::IApplicationContext {
 public:
-    Application() { paths.InstallDirectory = std::filesystem::current_path().string(); }
+    Application() { paths.InstallDirectory = std::filesystem::current_path().string();
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services); }
     const iCAX::Application::CApplicationDescriptor& GetDescriptor() const override { return descriptor; }
     const iCAX::Application::CApplicationPaths& GetPaths() const override { return paths; }
     iCAX::Data::PropertyBag GetSettings() const override { return {}; }
     const iCAX::Services::CServiceProvider& Services() const override {
-        throw std::logic_error("No service provider in recovery test");
+        return services;
     }
 private:
     iCAX::Application::CApplicationDescriptor descriptor;
     iCAX::Application::CApplicationPaths paths;
+    mutable iCAX::Services::CServiceProvider services;
 };
 
 class Scene final : public iCAX::Project::ISceneContext {
 public:
     Scene() : project(iCAX::Data::GenerateNewUUID()), id(iCAX::Data::GenerateNewUUID()) {
         (void)iCAX::TubeDesigner::GetTubeDesignerContractVersion();
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services);
         auto registry = iCAX::Database::CreateMetaRegistry();
         wchar_t exe[32768]{}, db[32768]{}, render[32768]{}, transform[32768]{};
         GetModuleFileNameW(nullptr, exe, 32768);
@@ -110,13 +114,14 @@ public:
     iCAX::PDO::IPDOHub& PDOHub() override { throw std::logic_error("No PDO in test"); }
     const iCAX::PDO::IPDOHub& PDOHub() const override { throw std::logic_error("No PDO in test"); }
     iCAX::Services::CServiceProvider& Services() const override {
-        throw std::logic_error("No scene services in test");
+        return services;
     }
 private:
     iCAX::Data::uuid project, id;
     std::string name = "Imported tube hole recovery";
     std::shared_ptr<iCAX::Database::IRepository> repository;
     iCAX::Resource::CResourceLibrary resources;
+    mutable iCAX::Services::CServiceProvider services;
 };
 
 struct Invocation {
@@ -168,8 +173,8 @@ Invocation Invoke(Scene& scene, const std::string& method, const ObjectMap& payl
 }
 
 // Opt-in probe: one real CAD file per process keeps errors and timeouts isolated.
-// A rejected recovery is reported as unsupported, never as a successful replay.
-TEST(ImportedPartBatchRecoverySDO, ExternalFileReplaysThroughPublicEditorAPI) {
+// Import attaches its neutral document directly; save uses the current CAD API.
+TEST(ImportedPartBatchRecoverySDO, ExternalFileRoundTripsThroughCurrentCadDocumentAPI) {
     const auto environment = [](const wchar_t* name) {
         const DWORD capacity = GetEnvironmentVariableW(name, nullptr, 0);
         if (!capacity) return std::wstring();
@@ -304,56 +309,36 @@ TEST(ImportedPartBatchRecoverySDO, ExternalFileReplaysThroughPublicEditorAPI) {
         report["importedSolidCount"] = solids;
         report["lengthMm"] = part->GetLength();
         report["originalVolumeMm3"] = MaterialVolume(originalShape.Shape);
-        const auto recovered = timed(scene, "recover", "RecoverImportedPartDrawing",
-            {{"partEntityId", id}, {"resourceVersion", sourceVersion}});
-        const auto currentPart = getPart();
-        require(bool(currentPart), "Recovery removed the original part");
-        const auto afterRecovery = scene.Resources().Get<BRepModel>(
-            currentPart->GetManufacturingGeometryResourceID(), currentPart->GetManufacturingGeometryResourceVersion());
-        const bool untouched = currentPart->GetManufacturingGeometryResourceID() == sourceId
-            && currentPart->GetManufacturingGeometryResourceVersion() == sourceVersion
-            && afterRecovery && originalBytes == iCAX::GeometryData::Persistence::Serialize(*afterRecovery);
-        report["originalUnchangedByRecovery"] = untouched;
-        require(untouched, "Recovery changed the imported BRep");
-        const auto drawingComponent = entity->GetComponent(iCAX::TubeDesigner::CPartDrawingComponent::S_ClassName);
-        if (!recovered.OK) {
-            require(!drawingComponent, "Rejected recovery left an editable recipe");
-            report["status"] = std::string("unsupported");
-            report["reason"] = recovered.Error;
-            write();
-            return;
-        }
-        require(bool(drawingComponent), "Accepted recovery did not create an editable recipe");
-        if (recovered.Payload.contains("relativeSymmetricDifference"))
-            report["recoveryRelativeSymmetricDifference"] = recovered.Payload.at("relativeSymmetricDifference");
-        const auto fetched = timed(scene, "readDefinition", "GetPartDrawing", {{"partEntityId", id}});
+        const auto fetched = timed(scene, "readCadDocument", "GetTubeCadDocument", {{"partEntityId", id}});
         require(fetched.OK, fetched.Error);
-        const auto definition = fetched.Payload.at("definition").To<ObjectMap>();
-        report["featureCount"] = static_cast<int>(definition.at("features").To<VariantArray>().size());
-        report["definition"] = definition;
-        const auto applied = timed(scene, "saveDrawing", "ApplyPartDrawing", {
-            {"partEntityId", id}, {"resourceId", sourceId}, {"resourceVersion", sourceVersion},
-            {"drawing", definition.at("drawing")}, {"features", definition.at("features")},
-            {"ends", definition.at("ends")}});
+        const auto cadComponent = entity->GetComponent(iCAX::TubeDesigner::CTubePartCadComponent::S_ClassName);
+        require(bool(cadComponent), "Import did not attach its neutral CAD document");
+        const auto geometry = fetched.Payload.at("geometry").To<ObjectMap>();
+        report["solidNodeCount"] = static_cast<int>(geometry.at("SolidNodes").To<VariantArray>().size());
+        report["documentResourceId"] = fetched.Payload.at("documentResourceId");
+        report["geometry"] = geometry;
+        const auto applied = timed(scene, "saveCadDocument", "ApplyTubeCadDocument", {
+            {"partEntityId", id}, {"resourceVersion", sourceVersion},
+            {"revision", fetched.Payload.at("revision")}, {"geometry", geometry}});
         require(applied.OK, applied.Error);
         report["stage"] = std::string("compareReplay");
         stages["compareReplay"] = ObjectMap{{"status", std::string("running")}};
         write();
         const auto comparedAt = Clock::now();
         const auto finalPart = getPart();
-        require(bool(finalPart), "Editor save removed the part");
+        require(bool(finalPart), "CAD save removed the part");
         const auto finalBRep = scene.Resources().Get<BRepModel>(
             finalPart->GetManufacturingGeometryResourceID(), finalPart->GetManufacturingGeometryResourceVersion());
-        require(bool(finalBRep), "Editor save did not store BRep");
+        require(bool(finalBRep), "CAD save did not store BRep");
         const auto finalShape = iCAX::OpenCascade::BuildOpenCascadeShape(*finalBRep);
-        require(finalShape.bOK && BRepCheck_Analyzer(finalShape.Shape).IsValid(), "Editor replay BRep is invalid");
+        require(finalShape.bOK && BRepCheck_Analyzer(finalShape.Shape).IsValid(), "CAD document BRep is invalid");
         const auto error = RelativeSymmetricDifference(originalShape.Shape, finalShape.Shape);
         report["relativeSymmetricDifference"] = std::isfinite(error) ? error : -1.0;
         report["replayedVolumeMm3"] = MaterialVolume(finalShape.Shape);
         const bool equivalent = std::isfinite(error) && error <= 1.0e-8;
         stages["compareReplay"] = ObjectMap{{"status", std::string(equivalent ? "ok" : "failed")},
             {"seconds", std::chrono::duration<double>(Clock::now() - comparedAt).count()}};
-        require(equivalent, "Saved editor geometry differs from original BRep (relative symmetric difference > 1e-8)");
+        require(equivalent, "Saved CAD geometry differs from original BRep (relative symmetric difference > 1e-8)");
         report["stage"] = std::string("complete");
         report["status"] = std::string("passed");
         report["passed"] = true;

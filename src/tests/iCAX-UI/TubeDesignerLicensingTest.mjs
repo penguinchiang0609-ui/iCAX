@@ -7,6 +7,7 @@ import {
 } from "../../apps/tube-designer/webpage/licensing.mjs";
 import { renderAboutRightPane } from "../../apps/tube-designer/webpage/aboutArea.mjs";
 import { getRibbonDefinition, ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
+import { installDialogPathMemory } from "../../iCAX-UI/SDK/Bridge/dialogPathMemory.mjs";
 
 const features = JSON.parse(readFileSync(new URL('../../licensing/features.json', import.meta.url))).features;
 const status = ids => ({ activated: true, kind: "永久授权", licenseId: "example", featureSchemaVersion: 1,
@@ -14,7 +15,7 @@ const status = ids => ({ activated: true, kind: "永久授权", licenseId: "exam
   capabilities: Object.fromEntries(features.map(item => [item.id, ids.includes(item.id) && (!item.parent || ids.includes(item.parent))])) });
 const calls = [];
 const fileDialogs = [];
-let selectedAuthorization = 'D:\\激活.tdact';
+let selectedAuthorization = 'D:\\客户资料\\激活.tdact';
 let nativeStatus = status(['page.product', 'product.design']);
 const logs = [];
 const context = { actions: { log: (level, message) => logs.push({ level, message }) }, productProxy: { productChannelId: 'license-product', invoke: async (name, payload) => {
@@ -27,6 +28,11 @@ const context = { actions: { log: (level, message) => logs.push({ level, message
 }, bridge: { openDirectoryDialog: async () => 'D:\\授权', openFileDialog: async options => {
   fileDialogs.push(options); return selectedAuthorization;
 } } } };
+const dialogDirectories = new Map();
+installDialogPathMemory(context.productProxy.bridge, { memory: {
+  read: key => dialogDirectories.get(key) ?? '',
+  write: (key, field, directory) => dialogDirectories.set(key, directory),
+} });
 const view = { pending: false }, otherView = { pending: false };
 const ops = { renderProject: () => { throw Error('Licensing must not reconstruct the workbench'); } };
 
@@ -46,14 +52,14 @@ assert.match(logs.at(-1).message, /产品拆单未授权/);
 assert.equal(view.tubeDesignerLicenseNotice, undefined);
 
 const ribbon = getRibbonDefinition({ licenseContext: context, licenseView: view });
-assert.equal(ribbon.tabs.find(tab => tab.id === 'nesting').authorizationRequired, false);
+assert.deepEqual(ribbon.tabs.map(tab => tab.id), ['view', 'resources', 'about']);
 assert.equal(ribbon.tabs.find(tab => tab.id === 'view').authorizationRequired, false);
 assert.equal(ribbon.tabs.find(tab => tab.id === 'about').authorizationRequired, false);
 const commands = ribbon.tabs.flatMap(tab => tab.groups.flatMap(group => group.commands));
 assert.equal(commands.find(c => c.id === 'designer.add').authorizationRequired, false);
 assert.equal(commands.find(c => c.id === 'designer.disassemble').authorizationRequired, true);
 assert.match(commands.find(c => c.id === 'designer.disassemble').unavailableReason, /产品拆单未授权/);
-assert.ok(commands.filter(c => c.id.startsWith('nesting.')).every(c => c.authorizationRequired));
+assert.ok(commands.every(c => !c.id.startsWith('nesting.') && !c.id.startsWith('machining.')));
 assert.ok(commands.filter(c => c.id.startsWith('licensing.')).every(c => !c.authorizationRequired));
 assert.equal(commandLicenseFeature('nesting.start'), 'nesting.calculate');
 assert.equal(commandLicenseFeature('machining.export'), 'machining.export');
@@ -71,19 +77,20 @@ assert.equal(calls.at(-1)[0], 'TubeDesignerLicensing.RequestTrial');
 nativeStatus = status(['page.nesting', 'nesting.edit']);
 await handleLicenseCommand(context, view, 'licensing.activate', ops);
 assert.equal(calls.at(-1)[0], 'TubeDesignerLicensing.Activate');
-assert.deepEqual(calls.at(-1)[1], { path: 'D:\\激活.tdact' });
+assert.deepEqual(calls.at(-1)[1], { path: selectedAuthorization });
 assert.deepEqual(fileDialogs.at(-1).filters[0].extensions, ['tdact']);
+assert.equal(fileDialogs.at(-1).defaultPath, undefined, 'first authorization chooser has no default filename');
+assert.equal(fileDialogs.at(-1).initialDirectory, undefined, 'first authorization chooser has no remembered directory');
 selectedAuthorization = 'D:\\升级.tdact';
 nativeStatus = status(['page.nesting', 'nesting.edit', 'nesting.calculate']);
 await handleLicenseCommand(context, view, 'licensing.activate', ops);
 assert.deepEqual(calls.at(-1), ['TubeDesignerLicensing.Activate', { path: selectedAuthorization }]);
+assert.equal(fileDialogs.at(-1).initialDirectory, 'D:\\客户资料', 'authorization import receives previous directory separately');
+assert.equal(fileDialogs.at(-1).defaultPath, undefined, 'authorization directory cannot become an invalid filename');
 assert.equal(hasLicenseFeature(context, otherView, 'nesting.edit'), true);
 assert.equal(hasLicenseFeature(context, otherView, 'nesting.calculate'), true);
 const nestingRibbon = getRibbonDefinition({ licenseContext: context, licenseView: otherView });
-assert.ok(nestingRibbon.tabs.find(tab => tab.id === 'nesting').groups
-  .flatMap(group => group.commands)
-  .filter(command => ['nesting.start', 'nesting.add-standard-part'].includes(command.id))
-  .every(command => !command.authorizationRequired));
+assert.deepEqual(nestingRibbon.tabs.map(tab => tab.id), ['view', 'resources', 'about'], 'license grants do not expose unreleased pages');
 nativeStatus = status(['page.nesting', 'nesting.edit']);
 await handleLicenseCommand(context, view, 'licensing.status', ops);
 assert.equal(view.tubeDesignerLicenseBusy, false);
@@ -141,6 +148,32 @@ assert.ok(readOnlyRibbon.tabs.flatMap(tab => tab.groups.flatMap(group => group.c
   .every(command => command.authorizationRequired === !command.id.startsWith('licensing.')));
 
 assert.deepEqual(ribbonDefinition.tabs.find(tab => tab.id === 'about').groups.flatMap(group => group.commands).map(c => c.id), [
-  'licensing.request', 'licensing.request-trial', 'licensing.activate', 'licensing.export-license',
+  'licensing.request', 'licensing.request-trial', 'licensing.activate', 'licensing.export-license', 'licensing.repair-environment',
 ]);
+// Repair is available without activation and must never publish grants.
+let finishRepair, repairCalls = 0;
+const repairView = { tubeDesignerLicense: { activated: false, capabilities: {} } };
+const repairContext = { productProxy: { invoke: async (method, payload) => {
+  if (method === 'TubeDesignerLicensing.Status') return {activated:false, featureSchemaVersion:1, capabilities:{}};
+  assert.equal(method, 'TubeDesignerLicensing.RepairEnvironment'); assert.deepEqual(payload, {});
+  repairCalls++; return new Promise(resolve => { finishRepair = resolve; });
+} } };
+await ensureLicenseStatus(repairContext, repairView);
+const pendingRepair = handleLicenseCommand(repairContext, repairView, 'licensing.repair-environment', ops);
+assert.equal(repairView.tubeDesignerLicenseBusy, true);
+await handleLicenseCommand(repairContext, repairView, 'licensing.repair-environment', ops);
+assert.equal(repairCalls, 1);
+finishRepair({requestReady:true, code:'repaired', message:'证书已获取', activated:true, capabilities:{'page.product':true}});
+await pendingRepair;
+assert.equal(repairView.tubeDesignerLicense.activated, false);
+assert.deepEqual(repairView.tubeDesignerLicense.capabilities, {});
+assert.equal(repairView.tubeDesignerLicenseBusy, false);
+assert.equal(repairView.tubeDesignerLicenseNotice, '证书已获取');
+repairContext.productProxy.invoke = async () => ({requestReady:false, code:'network_timeout', message:'连接超时'});
+await handleLicenseCommand(repairContext, repairView, 'licensing.repair-environment', ops);
+assert.equal(repairView.error, '连接超时');
+repairContext.productProxy.invoke = async () => ({activated:true});
+await handleLicenseCommand(repairContext, repairView, 'licensing.repair-environment', ops);
+assert.match(repairView.error, /有效结果/);
+assert.equal(repairView.tubeDesignerLicense.activated, false);
 console.log('TubeDesigner licensing UI checks passed');

@@ -1,0 +1,2514 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "minimal-protective-grille",
+  "version": "2.3.1",
+  "displayName": {
+    "zh-CN": "极简防护网"
+  },
+  "description": "独立极简防护网，支持两竖管、四边框和下横管，以及可调整位置的局部把手开口。",
+  "extensions": {
+    "parameterDependencies": {
+      "creationOnly": [
+        "frameType"
+      ],
+      "manufacturingOnly": [
+        "jointMode",
+        "maleHeadLength",
+        "maleHeadWidth",
+        "maleCornerType",
+        "maleCornerSize",
+        "holeTotalClearanceDepth",
+        "holeTotalClearanceHeight",
+        "minimumFeatureWeb",
+        "installHoleOrientation",
+        "installHoleLargeDiameter",
+        "installHoleSmallDiameter",
+        "installHoleMinimumWeb",
+        "maleEndForm",
+        "fullHeadTotalClearance",
+        "maleTabCount",
+        "maleTabAngle"
+      ]
+    },
+    "catalog": {
+      "categoryPath": [
+        "窗"
+      ],
+      "groupOrder": 10,
+      "templateOrder": 15,
+      "listed": true,
+      "icon": "resource/icon.svg",
+      "schematic": "resource/schematic.svg"
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "width",
+      "heightParameter": "height"
+    },
+    "addDialog": {
+      "structureParameters": [
+        "frameType",
+        "handleEnabled",
+        "handleSide",
+        "handleClosure"
+      ],
+      "parameterGroups": [
+        {
+          "key": "frame",
+          "displayName": {
+            "zh-CN": "主体框架"
+          },
+          "parameters": [
+            "frameType"
+          ]
+        },
+        {
+          "key": "handle",
+          "displayName": {
+            "zh-CN": "把手位"
+          },
+          "parameters": [
+            "handleEnabled",
+            "handleSide",
+            "handleClosure"
+          ]
+        }
+      ]
+    },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        {
+          "parameter": "width",
+          "axis": "x",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "group": "overall",
+          "order": 0,
+          "editable": true,
+          "offset": [
+            0,
+            0,
+            -120
+          ]
+        },
+        {
+          "parameter": "height",
+          "axis": "z",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "group": "overall",
+          "order": 10,
+          "editable": true,
+          "offset": [
+            -120,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleEnabled",
+          "axis": "x",
+          "label": {
+            "zh-CN": "预留把手位"
+          },
+          "group": "handle",
+          "order": 20,
+          "editable": true,
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.92
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleSide",
+          "axis": "x",
+          "label": {
+            "zh-CN": "把手位置"
+          },
+          "group": "handle",
+          "order": 30,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.8150000000000001
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleClosure",
+          "axis": "x",
+          "label": {
+            "zh-CN": "把手口形式"
+          },
+          "group": "handle",
+          "order": 40,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.7100000000000001
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleBottom",
+          "axis": "x",
+          "label": {
+            "zh-CN": "把手净口离底"
+          },
+          "group": "handle",
+          "order": 50,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.605
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleHeight",
+          "axis": "x",
+          "label": {
+            "zh-CN": "把手净高"
+          },
+          "group": "handle",
+          "order": 60,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.5
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleWidth",
+          "axis": "x",
+          "label": {
+            "zh-CN": "把手净宽"
+          },
+          "group": "handle",
+          "order": 70,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.395
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "handleCenterOffset",
+          "axis": "x",
+          "label": {
+            "zh-CN": "双把手左右偏移"
+          },
+          "group": "handle",
+          "order": 80,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "handleSide",
+                "value": "center_double"
+              }
+            ]
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 0
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.29000000000000004
+            }
+          ],
+          "offset": [
+            -210,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "barLayoutMode",
+          "axis": "x",
+          "label": {
+            "zh-CN": "内杆排布"
+          },
+          "group": "layout",
+          "order": 90,
+          "editable": true,
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.92
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "maximumClearGap",
+          "axis": "x",
+          "label": {
+            "zh-CN": "最大净距"
+          },
+          "group": "layout",
+          "order": 100,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "maximum_gap"
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.8150000000000001
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "upperBarCount",
+          "axis": "x",
+          "label": {
+            "zh-CN": "上区内杆数"
+          },
+          "group": "layout",
+          "order": 110,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.7100000000000001
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "lowerBarCount",
+          "axis": "x",
+          "label": {
+            "zh-CN": "下区内杆数"
+          },
+          "group": "layout",
+          "order": 120,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.605
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "middleBarCount",
+          "axis": "x",
+          "label": {
+            "zh-CN": "中区内杆数"
+          },
+          "group": "layout",
+          "order": 130,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "yes"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.5
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "barCount",
+          "axis": "x",
+          "label": {
+            "zh-CN": "内杆根数"
+          },
+          "group": "layout",
+          "order": 140,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "handleEnabled",
+                "value": "no"
+              },
+              {
+                "op": "eq",
+                "parameter": "barLayoutMode",
+                "value": "fixed_count"
+              }
+            ]
+          },
+          "kind": "parameter",
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.395
+            }
+          ],
+          "offset": [
+            190,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "firstBarTopOffset",
+          "axis": "z",
+          "label": {
+            "zh-CN": "首杆中心离顶"
+          },
+          "group": "layout",
+          "order": 150,
+          "editable": true,
+          "kind": "linear",
+          "origin": [
+            {
+              "parameter": "width"
+            },
+            0,
+            0
+          ],
+          "offset": [
+            75,
+            0,
+            0
+          ],
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "frameType",
+            "value": "closed_frame"
+          }
+        },
+        {
+          "parameter": "lastBarBottomOffset",
+          "axis": "z",
+          "label": {
+            "zh-CN": "末杆中心离底"
+          },
+          "group": "layout",
+          "order": 160,
+          "editable": true,
+          "kind": "linear",
+          "origin": [
+            {
+              "parameter": "width"
+            },
+            0,
+            0
+          ],
+          "offset": [
+            75,
+            0,
+            0
+          ],
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "frameType",
+            "value": "two_vertical"
+          }
+        },
+        {
+          "parameter": "installHoleEnabled",
+          "kind": "parameter",
+          "axis": "z",
+          "label": {
+            "zh-CN": "安装孔"
+          },
+          "group": "mounting_layout",
+          "order": 170,
+          "editable": true,
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.26
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "installHoleCountPerSide",
+          "kind": "parameter",
+          "axis": "z",
+          "label": {
+            "zh-CN": "每侧组数"
+          },
+          "group": "mounting_layout",
+          "order": 180,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          },
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.18
+            }
+          ],
+          "offset": [
+            180,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "installHoleTopOffset",
+          "kind": "linear",
+          "axis": "z",
+          "label": {
+            "zh-CN": "顶部孔中心离顶"
+          },
+          "group": "mounting_layout",
+          "order": 190,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          },
+          "offset": [
+            150,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "installHoleBottomOffset",
+          "kind": "linear",
+          "axis": "z",
+          "label": {
+            "zh-CN": "底部孔中心离底"
+          },
+          "group": "mounting_layout",
+          "order": 200,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "installHoleEnabled",
+            "value": "yes"
+          },
+          "offset": [
+            150,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "resourceRoles": {
+      "profiles": {
+        "frame": {
+          "parameter": "frameProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "defaultParametersByResource": {
+            "system:rect": {
+              "width": 10,
+              "depth": 5,
+              "wallThickness": 0.8,
+              "cornerRadius": 1
+            },
+            "system:round": {
+              "width": 10,
+              "wallThickness": 0.8
+            }
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "frameWidth",
+              "depth": "frameDepth",
+              "wallThickness": "frameWallThickness",
+              "cornerRadius": "frameCornerRadius"
+            },
+            "round": {
+              "width": "frameWidth",
+              "wallThickness": "frameWallThickness"
+            }
+          },
+          "managedParameters": [
+            "frameWidth",
+            "frameDepth",
+            "frameWallThickness",
+            "frameCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽"
+              },
+              "depth": {
+                "zh-CN": "高"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        },
+        "inner": {
+          "parameter": "innerProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect": "system:rect",
+            "round": "system:round"
+          },
+          "defaultParametersByResource": {
+            "system:rect": {
+              "width": 10,
+              "depth": 5,
+              "wallThickness": 0.8,
+              "cornerRadius": 1
+            },
+            "system:round": {
+              "width": 10,
+              "wallThickness": 0.8
+            }
+          },
+          "parameterBindingsBySectionKind": {
+            "rect": {
+              "width": "innerWidth",
+              "depth": "innerDepth",
+              "wallThickness": "innerWallThickness",
+              "cornerRadius": "innerCornerRadius"
+            },
+            "round": {
+              "width": "innerWidth",
+              "wallThickness": "innerWallThickness"
+            }
+          },
+          "managedParameters": [
+            "innerWidth",
+            "innerDepth",
+            "innerWallThickness",
+            "innerCornerRadius"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect": {
+              "width": {
+                "zh-CN": "宽"
+              },
+              "depth": {
+                "zh-CN": "高"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              },
+              "cornerRadius": {
+                "zh-CN": "圆角 R"
+              }
+            },
+            "round": {
+              "width": {
+                "zh-CN": "外径"
+              },
+              "wallThickness": {
+                "zh-CN": "壁厚"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "overall": "all",
+        "handle": "all",
+        "layout": {
+          "memberStableKeyPrefixes": [
+            "inner."
+          ]
+        },
+        "frame_profile": {
+          "memberStableKeyPrefixes": [
+            "frame."
+          ]
+        },
+        "inner_profile": {
+          "memberStableKeyPrefixes": [
+            "inner."
+          ]
+        },
+        "joint": "all",
+        "joint_connection": "all",
+        "joint_male": "all",
+        "joint_female": "all"
+      },
+      "profileRoles": {
+        "frame": {
+          "parameters": [
+            "frameProfileType",
+            "frameWidth",
+            "frameDepth",
+            "frameWallThickness",
+            "frameCornerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "frame."
+          ]
+        },
+        "inner": {
+          "parameters": [
+            "innerProfileType",
+            "innerWidth",
+            "innerDepth",
+            "innerWallThickness",
+            "innerCornerRadius"
+          ],
+          "memberStableKeyPrefixes": [
+            "inner."
+          ]
+        }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "产品规格"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "overall",
+            "handle",
+            "layout",
+            "mounting_layout"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "用料"
+          },
+          "order": 20,
+          "allowPresets": true,
+          "groups": [
+            "frame_profile",
+            "inner_profile"
+          ]
+        },
+        {
+          "key": "process",
+          "displayName": {
+            "zh-CN": "装配"
+          },
+          "order": 30,
+          "allowPresets": true,
+          "groups": [
+            "joint",
+            "joint_connection",
+            "joint_male",
+            "joint_female",
+            "installation"
+          ]
+        }
+      ]
+    },
+    "productDiagram": {
+      "schemaVersion": 1,
+      "kind": "minimal-protective-grille",
+      "bindings": {
+        "width": "width",
+        "height": "height",
+        "frameType": "frameType",
+        "frameWidth": "frameWidth",
+        "innerWidth": "innerWidth",
+        "handleEnabled": "handleEnabled",
+        "handleSide": "handleSide",
+        "handleClosure": "handleClosure",
+        "handleBottom": "handleBottom",
+        "handleHeight": "handleHeight",
+        "handleWidth": "handleWidth",
+        "handleCenterOffset": "handleCenterOffset",
+        "barLayoutMode": "barLayoutMode",
+        "maximumClearGap": "maximumClearGap",
+        "upperBarCount": "upperBarCount",
+        "lowerBarCount": "lowerBarCount",
+        "middleBarCount": "middleBarCount",
+        "barCount": "barCount",
+        "firstBarTopOffset": "firstBarTopOffset",
+        "lastBarBottomOffset": "lastBarBottomOffset",
+        "installHoleEnabled": "installHoleEnabled",
+        "installHoleCountPerSide": "installHoleCountPerSide",
+        "installHoleTopOffset": "installHoleTopOffset",
+        "installHoleBottomOffset": "installHoleBottomOffset"
+      }
+    },
+    "parameterGroupDetails": [
+      {
+        "kind": "directional-insert-joint",
+        "group": "joint_male",
+        "part": "male",
+        "bindings": {
+          "jointMode": "jointMode",
+          "maleEndForm": "maleEndForm",
+          "maleHeadLength": "maleHeadLength",
+          "maleHeadWidth": "maleHeadWidth",
+          "maleCornerType": "maleCornerType",
+          "maleCornerSize": "maleCornerSize",
+          "maleTabCount": "maleTabCount",
+          "maleTabAngle": "maleTabAngle",
+          "holeTotalClearanceDepth": "holeTotalClearanceDepth",
+          "holeTotalClearanceHeight": "holeTotalClearanceHeight",
+          "fullHeadTotalClearance": "fullHeadTotalClearance",
+          "frameWidth": "frameWidth",
+          "frameDepth": "frameDepth",
+          "frameWallThickness": "frameWallThickness",
+          "frameProfileType": "frameProfileType",
+          "frameCornerRadius": "frameCornerRadius",
+          "innerWidth": "innerWidth",
+          "innerDepth": "innerDepth",
+          "innerWallThickness": "innerWallThickness",
+          "innerProfileType": "innerProfileType",
+          "innerCornerRadius": "innerCornerRadius"
+        }
+      },
+      {
+        "kind": "directional-insert-joint",
+        "group": "joint_female",
+        "part": "female",
+        "bindings": {
+          "jointMode": "jointMode",
+          "maleEndForm": "maleEndForm",
+          "maleHeadLength": "maleHeadLength",
+          "maleHeadWidth": "maleHeadWidth",
+          "maleCornerType": "maleCornerType",
+          "maleCornerSize": "maleCornerSize",
+          "maleTabCount": "maleTabCount",
+          "maleTabAngle": "maleTabAngle",
+          "holeTotalClearanceDepth": "holeTotalClearanceDepth",
+          "holeTotalClearanceHeight": "holeTotalClearanceHeight",
+          "fullHeadTotalClearance": "fullHeadTotalClearance",
+          "frameWidth": "frameWidth",
+          "frameDepth": "frameDepth",
+          "frameWallThickness": "frameWallThickness",
+          "frameProfileType": "frameProfileType",
+          "frameCornerRadius": "frameCornerRadius",
+          "innerWidth": "innerWidth",
+          "innerDepth": "innerDepth",
+          "innerWallThickness": "innerWallThickness",
+          "innerProfileType": "innerProfileType",
+          "innerCornerRadius": "innerCornerRadius"
+        }
+      }
+    ]
+  },
+  "groups": [
+    {
+      "key": "overall",
+      "displayName": {
+        "zh-CN": "成品尺寸"
+      }
+    },
+    {
+      "key": "handle",
+      "displayName": {
+        "zh-CN": "把手位"
+      }
+    },
+    {
+      "key": "layout",
+      "displayName": {
+        "zh-CN": "内杆排布"
+      }
+    },
+    {
+      "key": "frame_profile",
+      "displayName": {
+        "zh-CN": "A 管 · 边框"
+      }
+    },
+    {
+      "key": "inner_profile",
+      "displayName": {
+        "zh-CN": "B 管 · 内杆"
+      }
+    },
+    {
+      "key": "joint",
+      "displayName": {
+        "zh-CN": "接头装配"
+      }
+    },
+    {
+      "key": "joint_connection",
+      "parentKey": "joint",
+      "displayName": {
+        "zh-CN": "连接方式"
+      }
+    },
+    {
+      "key": "joint_male",
+      "parentKey": "joint",
+      "displayName": {
+        "zh-CN": "公头尺寸"
+      }
+    },
+    {
+      "key": "joint_female",
+      "parentKey": "joint",
+      "displayName": {
+        "zh-CN": "母孔尺寸"
+      }
+    },
+    {
+      "key": "mounting_layout",
+      "displayName": {
+        "zh-CN": "安装孔位"
+      }
+    },
+    {
+      "key": "installation",
+      "displayName": {
+        "zh-CN": "安装孔"
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "JJFHW",
+      "group": "overall",
+      "order": 10
+    },
+    {
+      "key": "frameType",
+      "displayName": {
+        "zh-CN": "主体框架"
+      },
+      "valueType": "enum",
+      "defaultValue": "two_vertical",
+      "group": "overall",
+      "order": 20,
+      "choices": [
+        {
+          "value": "two_vertical",
+          "displayName": {
+            "zh-CN": "两竖管"
+          }
+        },
+        {
+          "value": "closed_frame",
+          "displayName": {
+            "zh-CN": "四边框"
+          }
+        },
+        {
+          "value": "bottom_rail",
+          "displayName": {
+            "zh-CN": "下横管"
+          }
+        }
+      ]
+    },
+    {
+      "key": "width",
+      "displayName": {
+        "zh-CN": "成品宽"
+      },
+      "valueType": "number",
+      "defaultValue": 568,
+      "group": "overall",
+      "order": 30,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "height",
+      "displayName": {
+        "zh-CN": "成品高"
+      },
+      "valueType": "number",
+      "defaultValue": 1250,
+      "group": "overall",
+      "order": 40,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "handleEnabled",
+      "displayName": {
+        "zh-CN": "把手位"
+      },
+      "valueType": "enum",
+      "defaultValue": "yes",
+      "group": "handle",
+      "order": 50,
+      "choices": [
+        {
+          "value": "yes",
+          "displayName": {
+            "zh-CN": "有把手位"
+          }
+        },
+        {
+          "value": "no",
+          "displayName": {
+            "zh-CN": "无把手位"
+          }
+        }
+      ]
+    },
+    {
+      "key": "handleSide",
+      "displayName": {
+        "zh-CN": "把手位置"
+      },
+      "valueType": "enum",
+      "defaultValue": "left",
+      "group": "handle",
+      "order": 60,
+      "choices": [
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左侧"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右侧"
+          }
+        },
+        {
+          "value": "center_double",
+          "displayName": {
+            "zh-CN": "中间双把手"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "handleClosure",
+      "displayName": {
+        "zh-CN": "把手口形式"
+      },
+      "valueType": "enum",
+      "defaultValue": "closed",
+      "group": "handle",
+      "order": 70,
+      "choices": [
+        {
+          "value": "closed",
+          "displayName": {
+            "zh-CN": "封闭把手位"
+          }
+        },
+        {
+          "value": "open_slot",
+          "displayName": {
+            "zh-CN": "开槽把手位"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "handleBottom",
+      "displayName": {
+        "zh-CN": "把手净口离底"
+      },
+      "valueType": "number",
+      "defaultValue": 475,
+      "group": "handle",
+      "order": 80,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handleEnabled",
+        "value": "yes"
+      },
+      "description": "从成品底部到把手净空下缘的距离。创建后可通过场景标注调整。"
+    },
+    {
+      "key": "handleHeight",
+      "displayName": {
+        "zh-CN": "把手净高"
+      },
+      "valueType": "number",
+      "defaultValue": 200,
+      "group": "handle",
+      "order": 90,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "handleWidth",
+      "displayName": {
+        "zh-CN": "把手净宽"
+      },
+      "valueType": "number",
+      "defaultValue": 200,
+      "group": "handle",
+      "order": 100,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handleEnabled",
+        "value": "yes"
+      },
+      "description": "单个把手位的净空宽度；中间双把手时为每侧净宽。"
+    },
+    {
+      "key": "handleCenterOffset",
+      "displayName": {
+        "zh-CN": "双把手左右偏移"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "handle",
+      "order": 110,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": -10000,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          {
+            "op": "eq",
+            "parameter": "handleSide",
+            "value": "center_double"
+          }
+        ]
+      },
+      "description": "中间双把手整体相对成品中心横移，正值向右。"
+    },
+    {
+      "key": "barLayoutMode",
+      "displayName": {
+        "zh-CN": "内杆排布"
+      },
+      "valueType": "enum",
+      "defaultValue": "maximum_gap",
+      "group": "layout",
+      "order": 120,
+      "choices": [
+        {
+          "value": "maximum_gap",
+          "displayName": {
+            "zh-CN": "按最大净距均分"
+          }
+        },
+        {
+          "value": "fixed_count",
+          "displayName": {
+            "zh-CN": "按根数均分"
+          }
+        }
+      ]
+    },
+    {
+      "key": "maximumClearGap",
+      "displayName": {
+        "zh-CN": "最大净距"
+      },
+      "valueType": "number",
+      "defaultValue": 110,
+      "group": "layout",
+      "order": 130,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "barLayoutMode",
+        "value": "maximum_gap"
+      }
+    },
+    {
+      "key": "upperBarCount",
+      "displayName": {
+        "zh-CN": "上区内杆数"
+      },
+      "valueType": "integer",
+      "defaultValue": 4,
+      "group": "layout",
+      "order": 140,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "fixed_count"
+          }
+        ]
+      },
+      "description": "该区内横杆总根数，包含适用的首杆或末杆，不包含把手口边界横杆。"
+    },
+    {
+      "key": "lowerBarCount",
+      "displayName": {
+        "zh-CN": "下区内杆数"
+      },
+      "valueType": "integer",
+      "defaultValue": 3,
+      "group": "layout",
+      "order": 150,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "fixed_count"
+          }
+        ]
+      },
+      "description": "该区内横杆总根数，包含适用的首杆或末杆，不包含把手口边界横杆。"
+    },
+    {
+      "key": "middleBarCount",
+      "displayName": {
+        "zh-CN": "中区内杆数"
+      },
+      "valueType": "integer",
+      "defaultValue": 1,
+      "group": "layout",
+      "order": 160,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "yes"
+          },
+          {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "fixed_count"
+          }
+        ]
+      },
+      "description": "把手净口高度范围内、净口外侧的横杆排数，不包含把手口上下边界横杆；中间双把手时左右每侧各按此排数。"
+    },
+    {
+      "key": "barCount",
+      "displayName": {
+        "zh-CN": "内杆根数"
+      },
+      "valueType": "integer",
+      "defaultValue": 10,
+      "group": "layout",
+      "order": 170,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "handleEnabled",
+            "value": "no"
+          },
+          {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "fixed_count"
+          }
+        ]
+      },
+      "description": "无把手位时的内横杆总根数，包含适用的首杆和末杆；不包含外框横管。"
+    },
+    {
+      "key": "firstBarTopOffset",
+      "displayName": {
+        "zh-CN": "首杆中心离顶"
+      },
+      "valueType": "number",
+      "defaultValue": 55,
+      "group": "layout",
+      "order": 180,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "description": "从成品顶部端面到首根内横杆中心；两竖管和下横管款适用，四边框由上边框限定排布。固定根数包含这根横杆。",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "frameType",
+        "value": "closed_frame"
+      }
+    },
+    {
+      "key": "lastBarBottomOffset",
+      "displayName": {
+        "zh-CN": "末杆中心离底"
+      },
+      "valueType": "number",
+      "defaultValue": 55,
+      "group": "layout",
+      "order": 190,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "description": "从成品底部端面到末根内横杆中心；仅两竖管款适用。固定根数包含这根横杆。",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "frameType",
+        "value": "two_vertical"
+      }
+    },
+    {
+      "key": "frameProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "frame_profile",
+      "order": 200,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ],
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "frame",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "frameWidth",
+      "displayName": {
+        "zh-CN": "宽"
+      },
+      "valueType": "number",
+      "defaultValue": 10,
+      "group": "frame_profile",
+      "order": 210,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "frameDepth",
+      "displayName": {
+        "zh-CN": "高"
+      },
+      "valueType": "number",
+      "defaultValue": 5,
+      "group": "frame_profile",
+      "order": 220,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "frameProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "frameWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 0.8,
+      "group": "frame_profile",
+      "order": 230,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "frameCornerRadius",
+      "displayName": {
+        "zh-CN": "圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "frame_profile",
+      "order": 240,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 250
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "frameProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "innerProfileType",
+      "displayName": {
+        "zh-CN": "管型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "inner_profile",
+      "order": 250,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ],
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "inner",
+        "profileConstraints": {
+          "hollow": true,
+          "minimumContourCount": 2,
+          "sectionKinds": [
+            "rect",
+            "round"
+          ]
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "innerWidth",
+      "displayName": {
+        "zh-CN": "宽"
+      },
+      "valueType": "number",
+      "defaultValue": 10,
+      "group": "inner_profile",
+      "order": 260,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "innerDepth",
+      "displayName": {
+        "zh-CN": "高"
+      },
+      "valueType": "number",
+      "defaultValue": 5,
+      "group": "inner_profile",
+      "order": 270,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "innerProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "innerWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 0.8,
+      "group": "inner_profile",
+      "order": 280,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "innerCornerRadius",
+      "displayName": {
+        "zh-CN": "圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "inner_profile",
+      "order": 290,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 250
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "innerProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "jointMode",
+      "displayName": {
+        "zh-CN": "边框与横杆连接"
+      },
+      "valueType": "enum",
+      "defaultValue": "butt_weld",
+      "group": "joint_connection",
+      "order": 300,
+      "choices": [
+        {
+          "value": "butt_weld",
+          "displayName": {
+            "zh-CN": "平口贴焊"
+          }
+        },
+        {
+          "value": "male_female_half_hole",
+          "displayName": {
+            "zh-CN": "单边半孔公母"
+          }
+        },
+        {
+          "value": "male_female_through_hole",
+          "displayName": {
+            "zh-CN": "双边对穿公母"
+          }
+        }
+      ],
+      "description": "边框和横杆支持圆管与方矩管互相插接。选择单边或双边母口、公头形式；双边端头按接收管真实对侧外表面修齐。母口允许跨圆角，按加工后的真实实体检查连通性。"
+    },
+    {
+      "key": "maleEndForm",
+      "displayName": {
+        "zh-CN": "公头形式"
+      },
+      "valueType": "enum",
+      "defaultValue": "tongue",
+      "group": "joint_male",
+      "order": 305,
+      "choices": [
+        {
+          "value": "tongue",
+          "displayName": {
+            "zh-CN": "窄公头插接"
+          }
+        },
+        {
+          "value": "full_section",
+          "displayName": {
+            "zh-CN": "整管端头插接"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "jointMode",
+            "value": "male_female_half_hole"
+          },
+          {
+            "op": "eq",
+            "parameter": "jointMode",
+            "value": "male_female_through_hole"
+          }
+        ]
+      },
+      "description": "窄公头保留设定宽度的端头；整管端头保留实际管材的完整截面。两种形式均可用于圆管或方矩管。"
+    },
+    {
+      "key": "maleHeadLength",
+      "displayName": {
+        "zh-CN": "伸出长度"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "joint_male",
+      "order": 310,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "jointMode",
+        "value": "male_female_half_hole"
+      },
+      "description": "单边插接时，公头从母管接触侧外表面向内伸出的长度；须穿过该侧管壁且不到对侧管壁。双边对穿时自动按母管实际宽度及对侧外表面确定，不使用此草稿值。"
+    },
+    {
+      "key": "maleHeadWidth",
+      "displayName": {
+        "zh-CN": "公头宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "joint_male",
+      "order": 320,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "description": "窄公头每个方位保留的插舌宽度，方向随插舌周向角旋转；不改变公管原截面尺寸。"
+    },
+    {
+      "key": "maleCornerType",
+      "displayName": {
+        "zh-CN": "公头转角"
+      },
+      "valueType": "enum",
+      "defaultValue": "square",
+      "group": "joint_male",
+      "order": 330,
+      "choices": [
+        {
+          "value": "square",
+          "displayName": {
+            "zh-CN": "直角"
+          }
+        },
+        {
+          "value": "chamfer",
+          "displayName": {
+            "zh-CN": "倒角"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆角"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      }
+    },
+    {
+      "key": "maleCornerSize",
+      "displayName": {
+        "zh-CN": "圆角／倒角尺寸"
+      },
+      "valueType": "number",
+      "defaultValue": 0.5,
+      "group": "joint_male",
+      "order": 340,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "jointMode",
+                    "value": "male_female_half_hole"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "jointMode",
+                    "value": "male_female_through_hole"
+                  }
+                ]
+              },
+              {
+                "op": "ne",
+                "parameter": "maleCornerType",
+                "value": "square"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      }
+    },
+    {
+      "key": "fullHeadTotalClearance",
+      "displayName": {
+        "zh-CN": "孔口配合余量"
+      },
+      "valueType": "number",
+      "defaultValue": 0.1,
+      "group": "joint_female",
+      "order": 345,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "full_section"
+          }
+        ]
+      },
+      "description": "整管插接时，母孔相对公管完整外轮廓的总配合余量。轮廓每侧向外让出总量的一半；不改变公管截面。"
+    },
+    {
+      "key": "holeTotalClearanceDepth",
+      "displayName": {
+        "zh-CN": "孔口厚向余量"
+      },
+      "valueType": "number",
+      "defaultValue": 0.1,
+      "group": "joint_female",
+      "order": 350,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "description": "母孔相对公头真实管壁轮廓的厚向总余量。外轮廓向外、内轮廓向内各让出总量的一半；不修改公管或母管壁厚。"
+    },
+    {
+      "key": "holeTotalClearanceHeight",
+      "displayName": {
+        "zh-CN": "孔口宽向余量"
+      },
+      "valueType": "number",
+      "defaultValue": 0.1,
+      "group": "joint_female",
+      "order": 360,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "description": "母孔相对公头插舌宽度的总余量，均分到插舌宽度两侧，每侧为总量的一半；孔口宽度按公头宽度加此总余量计算。"
+    },
+    {
+      "key": "minimumFeatureWeb",
+      "displayName": {
+        "zh-CN": "公头肩部余量"
+      },
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "group": "joint_male",
+      "order": 370,
+      "description": "公头两侧最少保留的肩部余料，用于校验公头宽度；不是母孔到母管边缘的距离，不限制母孔跨圆角。母管是否被截断按最终实体判断。",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.01,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "presentation": {
+        "advanced": true
+      }
+    },
+    {
+      "key": "installHoleEnabled",
+      "displayName": {
+        "zh-CN": "安装孔"
+      },
+      "valueType": "enum",
+      "defaultValue": "no",
+      "group": "mounting_layout",
+      "order": 400,
+      "choices": [
+        {
+          "value": "no",
+          "displayName": {
+            "zh-CN": "不生成"
+          }
+        },
+        {
+          "value": "yes",
+          "displayName": {
+            "zh-CN": "生成"
+          }
+        }
+      ],
+      "description": "左右竖管各布置一排安装孔；每组按所选方向，在相对两壁各生成一个同轴圆孔，分别为大孔和小孔。"
+    },
+    {
+      "key": "installHoleCountPerSide",
+      "displayName": {
+        "zh-CN": "每侧组数"
+      },
+      "valueType": "enum",
+      "defaultValue": 3,
+      "group": "mounting_layout",
+      "order": 410,
+      "choices": [
+        {
+          "value": 2,
+          "displayName": {
+            "zh-CN": "2"
+          }
+        },
+        {
+          "value": 3,
+          "displayName": {
+            "zh-CN": "3"
+          }
+        },
+        {
+          "value": 4,
+          "displayName": {
+            "zh-CN": "4"
+          }
+        },
+        {
+          "value": 5,
+          "displayName": {
+            "zh-CN": "5"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      },
+      "description": "按成品全高，在底部首孔与顶部尾孔之间均匀布置；每组包含两壁上的一大一小两个同轴孔。"
+    },
+    {
+      "key": "installHoleTopOffset",
+      "displayName": {
+        "zh-CN": "顶部孔中心离顶"
+      },
+      "valueType": "number",
+      "defaultValue": 50,
+      "group": "mounting_layout",
+      "order": 420,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "installHoleBottomOffset",
+      "displayName": {
+        "zh-CN": "底部孔中心离底"
+      },
+      "valueType": "number",
+      "defaultValue": 50,
+      "group": "mounting_layout",
+      "order": 430,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "installHoleOrientation",
+      "displayName": {
+        "zh-CN": "安装孔方向"
+      },
+      "valueType": "enum",
+      "defaultValue": "side",
+      "group": "installation",
+      "order": 435,
+      "choices": [
+        {
+          "value": "side",
+          "displayName": {
+            "zh-CN": "侧装"
+          }
+        },
+        {
+          "value": "front",
+          "displayName": {
+            "zh-CN": "正装"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      },
+      "description": "侧装沿护网左右方向打孔；正装沿护网前后方向打孔。"
+    },
+    {
+      "key": "installHoleLargeDiameter",
+      "displayName": {
+        "zh-CN": "大孔直径"
+      },
+      "valueType": "number",
+      "defaultValue": 6,
+      "group": "installation",
+      "order": 440,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.01,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "installHoleSmallDiameter",
+      "displayName": {
+        "zh-CN": "小孔直径"
+      },
+      "valueType": "number",
+      "defaultValue": 4,
+      "group": "installation",
+      "order": 450,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.01,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "installHoleMinimumWeb",
+      "displayName": {
+        "zh-CN": "最小剩余壁料"
+      },
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "group": "installation",
+      "order": 460,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.01,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installHoleEnabled",
+        "value": "yes"
+      }
+    },
+    {
+      "key": "maleTabCount",
+      "displayName": {
+        "zh-CN": "插舌方位"
+      },
+      "valueType": "enum",
+      "defaultValue": "two",
+      "choices": [
+        {
+          "value": "two",
+          "displayName": {
+            "zh-CN": "对边（两个相对方位）"
+          }
+        },
+        {
+          "value": "four",
+          "displayName": {
+            "zh-CN": "四边（每隔90°）"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "group": "joint_male",
+      "order": 306
+    },
+    {
+      "key": "maleTabAngle",
+      "displayName": {
+        "zh-CN": "插舌周向角"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "unit": "°",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_half_hole"
+              },
+              {
+                "op": "eq",
+                "parameter": "jointMode",
+                "value": "male_female_through_hole"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "maleEndForm",
+            "value": "tongue"
+          }
+        ]
+      },
+      "group": "joint_male",
+      "order": 307,
+      "quantity": "angle",
+      "constraints": {
+        "minimum": -360,
+        "maximum": 360
+      }
+    }
+  ]
+}

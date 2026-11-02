@@ -1,0 +1,57 @@
+ICAX-CL 2: cutting-point trajectory
+
+Coordinate system: each SETUP block has its own Setup frame. XYZ uses mm.
+IJK is a unit vector from the cutting point towards the cutting head.
+Cutting points do not include the nozzle follow-height offset.
+
+FROM/X,Y,Z,I,J,K establishes a path start and the modal axis.
+FROM/X,Y,Z starts another path while retaining the modal axis.
+GOTO/X,Y,Z,I,J,K updates the cutting point and modal axis together.
+GOTO/X,Y,Z retains the previous IJK. A missing IJK never means zero.
+Every new SETUP block explicitly establishes its first IJK, including after M00.
+PROCESS/ON and PROCESS/OFF delimit the path. There is no implicit rapid or
+connecting move between paths. M00 occurs only between included setups.
+
+For sampled motion, points and axes are the native CAM execution samples,
+including samples inserted by the CAM pose interpolator. Position is linear
+between successive samples; direction uses the CAM minimum-rotation rule.
+Do not reduce this sequence to authored keyposes or apply a different smoothing
+rule while retaining a previous collision qualification.
+
+CURVE/<JSON> declares exact geometry for the following GOTO. It replaces the
+straight segment to that endpoint. Consumers must reject unsupported CURVE
+records, never silently ignore them and connect the endpoints with a line.
+Only paths with analytically constant axis policies (or planar normal policies)
+and no varying active pose controls are eligible. Generated unit axes are also
+checked for agreement. Otherwise native sampled motion is retained.
+
+Curve JSON schema: icax.cl-curve/1
+  segmentId: stable segment identifier
+  role: construction role, such as LeadIn or LeadOut; empty for original cuts
+  parameterization: original native/canonical parameter convention
+  range: {first, last, reversed}; exact finite trim and traversal direction
+  geometry: an exact definition in Setup coordinates
+
+Geometry kinds:
+  Line/Ray: origin, direction (and Ray.first)
+  Segment: start, end
+  Circle/Arc: placement {origin,x,y,z}, radius; arcs also retain startAngle,
+              endAngle and counterClockwise
+  Ellipse/EllipseArc: placement, majorRadius, minorRadius; ellipse arcs also
+              retain startAngle, endAngle and counterClockwise
+  Polyline: original points and closed flag; this is not a fitted smooth curve
+  Bezier: original transformed poles
+  BSpline: degree, poles, knots, multiplicities, periodic
+  NURBS: degree, poles, weights, knots, multiplicities, periodic
+  Clothoid: placement, startCurvature, endCurvature, length
+  DirectionalOffset: exact source definition, signedDistance, referenceDirection
+
+Positions and poles are transformed by the placement rotation and translation.
+Directions and placement axes use rotation only. Scalar radii, weights, knots,
+multiplicities and native parameter ranges remain unchanged.
+
+This is controller-neutral trajectory data, not certified machine NC. The
+export result keeps machineReady=false and collisionStatus=
+RequiresPostprocessedReplay. An actual controller must support the curve and
+modal-axis semantics, and its postprocessed motion must be replayed and checked
+against the configured machine, head and fixtures before machine qualification.

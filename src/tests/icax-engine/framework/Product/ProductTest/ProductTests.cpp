@@ -13,6 +13,7 @@
 #include <Project/ProjectRuntime.h>
 #include <Project/ProjectSDO.h>
 #include <Resources/ResourceLoaderRegistry.h>
+#include <Resources/BinaryResource.h>
 #include <SDO/SDOChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 #include <Data/Variant.h>
@@ -38,6 +39,7 @@ namespace
     class CMemoryProductDataStore final : public IProductDataStore
     {
     public:
+        bool FailSave = false;
         CProductData Load(IN const std::string& strProductID_) const override
         {
             auto _Iter = m_Data.find(strProductID_);
@@ -50,6 +52,7 @@ namespace
 
         void Save(IN const std::string& strProductID_, IN const CProductData& Data_) const override
         {
+            if (FailSave) throw std::runtime_error("Injected product settings storage failure");
             m_Data[strProductID_] = Data_;
         }
 
@@ -124,7 +127,9 @@ namespace
     std::shared_ptr<CProductRuntime> MakeRuntime(
         IN const std::string& strProductID_ = "robot",
         IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
-        IN const std::string& strUserDataProductID_ = std::string())
+        IN const std::string& strUserDataProductID_ = std::string(),
+        std::shared_ptr<iCAX::Application::IProductUserDataStore> userStore = nullptr,
+        std::vector<CProductUserDataFeatureDefinition> userFeatures = {})
     {
         iCAX::Application::CApplicationDescriptor _Descriptor;
         _Descriptor.AppID = "icax-test";
@@ -145,6 +150,7 @@ namespace
         _Definition.ProjectFile.Magic = "ICAX_ROBOT";
         _Definition.ProjectFile.FormatVersion = "1.0";
         _Definition.ProjectFile.FileExtensions.push_back(".robot");
+        _Definition.UserDataFeatures=std::move(userFeatures);
 
         auto _pProductDataStore = pProductDataStore_
             ? std::move(pProductDataStore_)
@@ -160,7 +166,7 @@ namespace
             _Definition,
             _pContext,
             _pSDOChannelRegistry,
-            std::make_shared<iCAX::Application::CProductUserDataStore>(
+            userStore?userStore:std::make_shared<iCAX::Application::CProductUserDataStore>(
                 std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"),
                 strUserDataProductID_.empty() ? strProductID_ : strUserDataProductID_),
             _pProductDataStore);
@@ -371,7 +377,7 @@ TEST(ProductManifestTest, ParsesResourceAndUserDataBindings)
     std::filesystem::remove_all(_Root);
 }
 
-// Opt-in integration check: requires the three products' built runtime DLLs.
+// Opt-in integration check: uses the active product's built runtime DLLs.
 TEST(ProductRuntimeIntegrationTest, DISABLED_RealProductManifestsStartIndependentScenes)
 {
     auto sourceRoot = std::filesystem::absolute(__FILE__).parent_path();
@@ -380,10 +386,13 @@ TEST(ProductRuntimeIntegrationTest, DISABLED_RealProductManifestsStartIndependen
     ASSERT_TRUE(std::filesystem::is_directory(sourceRoot / "apps"));
 
     std::vector<std::shared_ptr<CProductRuntime>> runtimes;
-    for (const auto* folder : { "tube-designer", "tube-one", "laser-3d-cam" })
+    for (const auto* productID : { "icax.tube-designer", "icax.test.parallel-product" })
     {
-        SCOPED_TRACE(folder);
-        const auto manifest = LoadProductManifest((sourceRoot / "apps" / folder / "product.manifest.json").string());
+        SCOPED_TRACE(productID);
+        auto manifest = LoadProductManifest((sourceRoot / "apps" / "tube-designer" / "product.manifest.json").string());
+        // A second isolated definition exercises multi-product registration
+        // without restoring a retired production product or adding an entry.
+        manifest.Definition.ProductID = productID;
         iCAX::Application::CApplicationDescriptor descriptor;
         descriptor.AppID = "icax-product-isolation-test";
         descriptor.AppName = "Product isolation test";
@@ -400,11 +409,10 @@ TEST(ProductRuntimeIntegrationTest, DISABLED_RealProductManifestsStartIndependen
         catch (const std::exception& error) { FAIL() << error.what(); }
         EXPECT_TRUE(runtime->GetMetaRegistry().HasTypeByName("CSceneBootstrapComponent"));
         EXPECT_TRUE(runtime->GetBehaviourRegistry().HasBehaviourByType("CSceneBootstrapBehaviour"));
-        const bool cam = std::string(folder) != "tube-designer";
-        EXPECT_EQ(cam, runtime->GetMetaRegistry().HasTypeByName("CCamSceneBootstrapComponent"));
-        EXPECT_EQ(cam, runtime->GetBehaviourRegistry().HasBehaviourByType("CCamSceneBootstrapBehaviour"));
-        const auto path = std::string("memory://product-isolation/") + folder;
-        auto catalog = runtime->OpenProjectCatalog(folder, path, folder, path);
+        EXPECT_FALSE(runtime->GetMetaRegistry().HasTypeByName("CCamSceneBootstrapComponent"));
+        EXPECT_FALSE(runtime->GetBehaviourRegistry().HasBehaviourByType("CCamSceneBootstrapBehaviour"));
+        const auto path = std::string("memory://product-isolation/") + productID;
+        auto catalog = runtime->OpenProjectCatalog(productID, path, productID, path);
         ASSERT_NE(nullptr, catalog);
         auto project = catalog->GetMainProject();
         ASSERT_NE(nullptr, project);
@@ -571,7 +579,7 @@ TEST(ProductRuntimeTest, DuplicateFileOpenKeepsOriginalProjectRunning)
 TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
 {
     auto _pProductDataStore = std::make_shared<CMemoryProductDataStore>();
-    auto _pRuntime = MakeRuntime("laser-3d-cam", _pProductDataStore);
+    auto _pRuntime = MakeRuntime("test.cam-product", _pProductDataStore);
     _pRuntime->Start();
 
     iCAX::Data::PropertyBag _Settings;
@@ -587,7 +595,7 @@ TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
 
     _pRuntime->Stop();
 
-    const auto _SavedData = _pProductDataStore->Load("laser-3d-cam");
+    const auto _SavedData = _pProductDataStore->Load("test.cam-product");
     EXPECT_EQ(
         "D:/tools/laser",
         _SavedData.Settings
@@ -893,3 +901,97 @@ TEST(ProductRuntimeCoroutineTest, RunsOnProductWorkerAndCancelsWithProduct)
     _pRuntime->Stop();
 }
 
+
+TEST(ProductRuntimeSDOTest, SettingsHistoryUsesRepositoryAndIsolatesScopesAndPersistenceFailures)
+{
+    using namespace iCAX::Data;
+    auto store = std::make_shared<CMemoryProductDataStore>();
+    auto runtime = MakeRuntime("history-test", store);
+    runtime->Start();
+    runtime->ReplaceSettings(PropertyBag({{"catalog", std::string("initial")}, {"theme", std::string("dark")}}));
+    auto endpoint = runtime->GetProductFrontendSDOEndpoint();
+    auto call = [&](const std::string& method, bool success = true) {
+        endpoint.Send(MakeRequestFrame(3100, iCAX::Interaction::MakeSDOMethodCode("Product", method.c_str()),
+            Variant(ObjectMap{{"scope", std::string("catalog")}})));
+        auto frames = WaitForProductFrames(runtime, endpoint);
+        EXPECT_EQ(1u, frames.size());
+        if (frames.empty()) return ObjectMap{};
+        EXPECT_EQ(success, frames[0].nStatus == iCAX::Interaction::EInvocationStatus::Ok);
+        return success ? DecodeObjectPayload(frames[0]) : ObjectMap{};
+    };
+    auto update = [&](const char* value) {
+        runtime->UpdateSettingsWithHistory("catalog", PropertyBag({{"catalog", std::string(value)}}), "Edit catalog");
+    };
+    EXPECT_FALSE(call("GetSettingsHistory").at("canUndo").To<bool>());
+    update("imported"); update("disabled");
+    EXPECT_EQ(2u, call("GetSettingsHistory").at("undoSteps").To<VariantArray>().size());
+    call("UndoSettings");
+    EXPECT_EQ("imported", runtime->GetSettings().Get("catalog").To<std::string>());
+    update("imported"); // No-op preserves redo.
+    EXPECT_TRUE(call("GetSettingsHistory").at("canRedo").To<bool>());
+    auto settings = runtime->GetSettings(); settings.Set("theme", std::string("light"));
+    runtime->ReplaceSettings(settings); // Unrelated preference does not erase catalog history.
+    call("RedoSettings");
+    EXPECT_EQ("disabled", store->Load("history-test").Settings.Get("catalog").To<std::string>());
+    EXPECT_EQ("light", runtime->GetSettings().Get("theme").To<std::string>());
+    store->FailSave = true;
+    EXPECT_THROW(update("failed"), std::runtime_error);
+    call("UndoSettings", false); // Undo persistence failure is reversed by the native repository.
+    store->FailSave = false;
+    EXPECT_EQ("disabled", runtime->GetSettings().Get("catalog").To<std::string>());
+    EXPECT_EQ(2u, call("GetSettingsHistory").at("undoSteps").To<VariantArray>().size());
+    call("UndoSettings"); update("branch");
+    EXPECT_FALSE(call("GetSettingsHistory").at("canRedo").To<bool>());
+    EXPECT_THROW(runtime->UpdateSettingsWithHistory("other", PropertyBag({{"catalog", std::string("overlap")}}), "Overlap"), std::invalid_argument);
+    settings = runtime->GetSettings(); settings.Set("catalog", std::string("external"));
+    runtime->ReplaceSettings(settings);
+    EXPECT_FALSE(call("GetSettingsHistory").at("canUndo").To<bool>());
+    runtime->Stop();
+}
+
+TEST(ProductRuntimeSDOTest, UserResourceHistoryRestoresDeletedRecordsAndKeepsNativeRedoOnStorageFailure)
+{
+    using namespace iCAX::Application;using namespace iCAX::Data;
+    struct Store final:IProductUserDataStore {
+        std::shared_ptr<IProductUserDataStore> inner;bool fail=false,concurrentWrite=false;
+        const std::string& GetProductID()const noexcept override{return inner->GetProductID();}
+        std::vector<CProductUserDataRecord> List(const CProductUserDataQuery& q)override{return inner->List(q);}
+        std::optional<CProductUserDataRecord> Get(const std::string& f,const std::string& t,const std::string& i,bool d=false)override{if(concurrentWrite){concurrentWrite=false;auto r=*inner->Get(f,t,i);r.Payload=std::string("concurrent external");inner->Put(r,r.Revision);}return inner->Get(f,t,i,d);}
+        CProductUserDataRecord Put(const CProductUserDataRecord& r,std::optional<uint64_t> v=std::nullopt)override{if(fail)throw std::runtime_error("disk failure");return inner->Put(r,v);}
+        bool Delete(const std::string& f,const std::string& t,const std::string& i,std::optional<uint64_t> v=std::nullopt)override{if(fail)throw std::runtime_error("disk failure");return inner->Delete(f,t,i,v);}
+    };
+    CUserDataRecordTypeDescriptor type;type.RecordType="item";type.SubjectTypes={"fixture"};
+    CUserDataFeatureDescriptor feature;feature.FeatureID="library";feature.RecordTypes={type};
+    auto original=std::make_shared<Store>();original->inner=std::make_shared<CProductUserDataStore>(std::make_shared<CSqliteUserDataStore>(":memory:"),"resource-history",std::vector{feature});
+    CProductUserDataRecordTypeDefinition productType;productType.RecordType="item";productType.SubjectTypes={"fixture"};
+    CProductUserDataFeatureDefinition productFeature;productFeature.FeatureID="library";productFeature.RecordTypes={productType};
+    auto runtime=MakeRuntime("resource-history",nullptr,"",original,{productFeature});runtime->Start();
+    auto store=runtime->GetUserDataStore();auto endpoint=runtime->GetProductFrontendSDOEndpoint();
+    const auto call=[&](const char* method,bool success=true){
+        endpoint.Send(MakeRequestFrame(4500,iCAX::Interaction::MakeSDOMethodCode("Product",method),Variant(ObjectMap{{"featureId",std::string("library")}})));
+        const auto frames=WaitForProductFrames(runtime,endpoint);EXPECT_EQ(frames.size(),1u);if(frames.empty())return ObjectMap{};
+        EXPECT_EQ(success,frames[0].nStatus==iCAX::Interaction::EInvocationStatus::Ok);return success?DecodeObjectPayload(frames[0]):ObjectMap{};
+    };
+    CProductUserDataRecord record;record.FeatureID="library";record.RecordType="item";record.RecordID="fixture";record.SubjectType="fixture";record.SubjectID="fixture";record.Payload=std::string("initial");
+    auto saved=store->Put(record,0);record.Payload=std::string("renamed");saved=store->Put(record,saved.Revision);
+    EXPECT_EQ(call("GetUserDataHistory").at("undoSteps").To<VariantArray>().size(),2u);
+    call("UndoUserData");EXPECT_EQ(store->Get("library","item","fixture")->Payload.To<std::string>(),"initial");
+    original->fail=true;call("RedoUserData",false);EXPECT_TRUE(call("GetUserDataHistory").at("canRedo").To<bool>());original->fail=false;
+    call("RedoUserData");saved=*store->Get("library","item","fixture");EXPECT_EQ(saved.Payload.To<std::string>(),"renamed");
+    store->Delete("library","item","fixture",saved.Revision);EXPECT_FALSE(store->Get("library","item","fixture"));
+    call("UndoUserData");const auto restored=*store->Get("library","item","fixture");EXPECT_GT(restored.Revision,saved.Revision);EXPECT_EQ(restored.Payload.To<std::string>(),"renamed");
+    store->Put(restored,restored.Revision);EXPECT_TRUE(call("GetUserDataHistory").at("canRedo").To<bool>());
+    record.Payload=std::string("branch");store->Put(record,store->Get("library","item","fixture")->Revision);EXPECT_FALSE(call("GetUserDataHistory").at("canRedo").To<bool>());
+    original->fail=true;EXPECT_THROW(store->Delete("library","item","fixture"),std::runtime_error);original->fail=false;
+    call("UndoUserData");EXPECT_EQ(store->Get("library","item","fixture")->Payload.To<std::string>(),"renamed");
+    // A separate runtime's write must not be overwritten by an obsolete undo.
+    record.Payload=std::string("external");original->Put(record,store->Get("library","item","fixture")->Revision);
+    EXPECT_FALSE(call("GetUserDataHistory").at("canUndo").To<bool>());EXPECT_EQ(store->Get("library","item","fixture")->Payload.To<std::string>(),"external");
+    record.Payload=std::string("history change");store->Put(record,store->Get("library","item","fixture")->Revision);
+    original->concurrentWrite=true;call("UndoUserData",false);
+    EXPECT_EQ(store->Get("library","item","fixture")->Payload.To<std::string>(),"concurrent external");
+    EXPECT_FALSE(call("GetUserDataHistory").at("canUndo").To<bool>());
+    runtime->Stop();
+}
+
+#include "ProjectAutoSaveTests.inc"

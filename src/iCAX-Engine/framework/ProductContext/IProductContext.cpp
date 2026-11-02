@@ -16,6 +16,12 @@ void iCAX::Product::IProductContext::ReplaceSettings(IN const iCAX::Data::Proper
     throw std::logic_error("Product settings are not writable in this ProductContext");
 }
 
+void iCAX::Product::IProductContext::UpdateSettingsWithHistory(const std::string&,
+    const iCAX::Data::PropertyBag&, const std::string&)
+{
+    throw std::logic_error("Product settings history is not available in this ProductContext");
+}
+
 const iCAX::Data::uuid& iCAX::Product::IProductContext::GetProductChannelID() const
 {
     static const iCAX::Data::uuid _Nil = iCAX::Data::GenerateNilUUID();

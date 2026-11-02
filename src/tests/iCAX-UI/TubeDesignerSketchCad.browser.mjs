@@ -346,6 +346,100 @@ try {
   assert.ok(!(await state()).command.issues.some(issue => issue.type === "self-intersection")); await cancel();
   results.push({ case: "explicit self crossing clip splits closed loops and preserves undo" });
 
+  const bevelFigure = { id: "bevel-rectangle", kind: "rectangle", x: 20, y: 120, width: 20, height: 20 };
+  await selectSources([bevelFigure]);
+  const bevelField = key => page.locator(`[data-cad-bevel-field="${key}"]`);
+  await bevelField("enabled").check();
+  assert.deepEqual((await entities())[0].bevel, { enabled: true, side: "outer", angleDegrees: 45, rootFace: 0 });
+  await bevelField("side").selectOption("both");
+  await bevelField("rootFace").fill("1.2"); await bevelField("rootFace").dispatchEvent("change");
+  await bevelField("angleDegrees").fill("60"); await bevelField("angleDegrees").dispatchEvent("change");
+  await bevelField("scope").selectOption("selected");
+  await page.locator('[data-cad-bevel-segment="1"]').check();
+  await page.locator('[data-cad-bevel-segment="0"]').uncheck();
+  assert.deepEqual((await entities())[0].bevel.segmentIndices, [1]);
+  assert.equal(await page.locator('[data-sketch-bevel-guide] path').count(), 1);
+  await enter("undo"); assert.deepEqual((await entities())[0].bevel.segmentIndices, [0, 1]);
+  await enter("redo"); assert.deepEqual((await entities())[0].bevel.segmentIndices, [1]);
+  results.push({ case: "CAD bevel parameters selected boundary guides and undo redo" });
+
+  await bevelField("angleDegrees").fill("90"); await bevelField("angleDegrees").dispatchEvent("change");
+  assert.equal(await page.evaluate(() => window.check.sketch.validateSideSketchDraft(window.check.draft(), { length: 300 }, window.check.view.tubeDesignerSketch.sideReference).ready), false);
+  await bevelField("enabled").uncheck();
+  assert.equal((await entities())[0].bevel.angleDegrees, 90);
+  assert.equal(await page.evaluate(() => window.check.sketch.validateSideSketchDraft(window.check.draft(), { length: 300 }, window.check.view.tubeDesignerSketch.sideReference).ready), true);
+  await bevelField("enabled").check();
+  await bevelField("angleDegrees").fill("45"); await bevelField("angleDegrees").dispatchEvent("change");
+  results.push({ case: "disabled bevel retains invalid child draft without blocking ordinary cut" });
+
+  await page.evaluate(() => { window.check.holdPreview = true; });
+  await page.getByRole("button", { name: "预览三维", exact: true }).click();
+  const bevelRetention = await page.evaluate(async () => {
+    const c = window.check, canvas = document.querySelector(".fixture-three-canvas");
+    const input = document.querySelector('[data-cad-bevel-field="rootFace"]');
+    const svg = document.querySelector("[data-tube-sketch-canvas]");
+    let probes = 0; input.addEventListener("bevel-input-probe", () => probes++);
+    input.focus({ preventScroll: true });
+    const panes = [...document.querySelectorAll(".tube-section-sketch-body>aside")], nested = document.querySelector(".tube-sketch-property-body");
+    panes[0].scrollTop = 55; panes[1].scrollTop = 40; nested.scrollTop = 100;
+    const positions = [panes[0].scrollTop, panes[1].scrollTop, nested.scrollTop];
+    c.resolvePreview(); await new Promise(resolve => setTimeout(resolve, 30));
+    const next = document.querySelector('[data-cad-bevel-field="rootFace"]'); next.dispatchEvent(new Event("bevel-input-probe"));
+    return { sameInput: input === next, sameCanvas: canvas === document.querySelector(".fixture-three-canvas"),
+      sameSvg: svg === document.querySelector("[data-tube-sketch-canvas]"), focused: document.activeElement === next,
+      positions, actualPositions: [panes[0].scrollTop, panes[1].scrollTop, nested.scrollTop], probes };
+  });
+  assert.equal(bevelRetention.sameInput, true); assert.equal(bevelRetention.sameCanvas, true); assert.equal(bevelRetention.sameSvg, true);
+  assert.equal(bevelRetention.focused, true); assert.deepEqual(bevelRetention.actualPositions, bevelRetention.positions); assert.equal(bevelRetention.probes, 1);
+  await bevelField("scope").focus(); await bevelField("scope").selectOption("all");
+  assert.equal(await page.locator('[data-cad-bevel-segment]').count(), 0);
+  assert.equal(await bevelField("scope").evaluate(node => node === document.activeElement), true);
+  results.push({ case: "bevel late preview and conditional edge controls retain DOM focus and pane scroll", ...bevelRetention });
+  await page.screenshot({ path: resolve(output, "sketch-bevel-editor.png"), fullPage: true });
+
+  const bevelBeforeTransform = (await entities())[0].bevel;
+  await enter("move"); await setField("dx", 2); await setField("dy", 4); await apply(); await noCadError();
+  assert.deepEqual((await entities())[0].bevel, bevelBeforeTransform);
+  results.push({ case: "CAD transform retains editable bevel recipe" });
+  await bevelField("scope").selectOption("selected");
+  await page.locator('[data-cad-bevel-segment="1"]').check(); await page.locator('[data-cad-bevel-segment="0"]').uncheck();
+  const beforeMirror = (await entities())[0];
+  await enter("mirror"); await setField("x1", 0); await setField("y1", 0); await setField("x2", 0); await setField("y2", 100); await apply(); await noCadError();
+  const mirrored = (await entities())[0];
+  assert.equal(mirrored.kind, "path"); assert.deepEqual(mirrored.bevel.segmentIndices, [1]);
+  near(mirrored.segments[1].x1, -(beforeMirror.x + beforeMirror.width));
+  near(mirrored.segments[1].x2, -(beforeMirror.x + beforeMirror.width));
+  await enter("undo"); assert.deepEqual((await entities())[0], beforeMirror);
+  await selectSources([{ id: "reverse-bevel", kind: "polyline", closed: true,
+    points: [[20, 120], [40, 120], [40, 140], [20, 140]],
+    bevel: { enabled: true, side: "outer", angleDegrees: 45, rootFace: 0.5, segmentIndices: [0] } }]);
+  await page.locator('[data-cam-action="tube-designer-sketch-reverse"]').click();
+  assert.deepEqual((await entities())[0].bevel.segmentIndices, [2]);
+  assert.deepEqual((await entities())[0].points.slice(2, 4), [[40, 120], [20, 120]]);
+  results.push({ case: "mirror and reverse keep bevel attached to the same geometric boundary" });
+
+  await selectSources([{ id: "split-bevel", kind: "polyline", closed: true,
+    points: [[20, 120], [40, 120], [40, 140], [20, 140]],
+    bevel: { enabled: true, side: "both", angleDegrees: 60, rootFace: .5, segmentIndices: [1] } }]);
+  await enter("insert-point"); await clickModel(40, 130);
+  assert.deepEqual((await entities())[0].bevel.segmentIndices, [1, 2]);
+  await enter("break"); await clickModel(40, 130);
+  const openedBevel = (await entities())[0];
+  assert.deepEqual(openedBevel.bevel.segmentIndices, [0, 4]);
+  assert.equal(openedBevel.closed, false); assert.equal(openedBevel.bevel.rootFace, .5);
+  assert.equal(await page.locator('[data-sketch-bevel-guide] path').count(), 2);
+  await enter("undo"); assert.deepEqual((await entities())[0].bevel.segmentIndices, [1, 2]);
+  await enter("undo"); assert.deepEqual((await entities())[0].bevel.segmentIndices, [1]);
+  await selectSources([{ id: "opened-closing-bevel", kind: "polyline", closed: true,
+    points: [[20, 120], [40, 120], [40, 140], [20, 140]],
+    bevel: { enabled: true, side: "outer", angleDegrees: 45, rootFace: .5, segmentIndices: [3] } }]);
+  await page.locator('[data-cam-action="tube-designer-sketch-toggle-closed"]').click();
+  assert.equal((await entities())[0].closed, false);
+  assert.equal((await entities())[0].bevel.enabled, false);
+  assert.deepEqual((await entities())[0].bevel.segmentIndices, []);
+  await enter("undo"); assert.deepEqual((await entities())[0].bevel.segmentIndices, [3]);
+  results.push({ case: "insert and break remap bevel selection onto the same physical boundary with undo" });
+
   await selectSources(sources); await enter("import"); await page.waitForFunction(() => !window.check.view.pending);
   assert.equal((await entities()).length, 4, "DXF import appends all figures and open line");
   await enter("export"); await page.waitForFunction(() => !window.check.view.pending);

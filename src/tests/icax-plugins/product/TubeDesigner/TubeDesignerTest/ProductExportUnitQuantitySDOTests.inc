@@ -78,13 +78,13 @@ SExportEvidence checkExport(Scene& scene, const ObjectMap& exported, const Varia
         evidence.ProductionCount += row.at("quantity").To<std::uint64_t>();
     }
     evidence.Files = exported.at("exportedFiles").To<VariantArray>();
-    EXPECT_EQ(exported.at("exportedCount").To<std::uint64_t>(), evidence.UnitCount);
-    EXPECT_EQ(evidence.Files.size(), evidence.UnitCount);
+    EXPECT_EQ(exported.at("exportedCount").To<std::uint64_t>(), parts.size());
+    EXPECT_EQ(evidence.Files.size(), parts.size());
     std::set<std::string> uniquePaths;
     std::size_t physicalFiles = 0;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root))
         if (entry.is_regular_file() && entry.path().extension() == ".step") ++physicalFiles;
-    EXPECT_EQ(physicalFiles, evidence.UnitCount);
+    EXPECT_EQ(physicalFiles, parts.size());
     for (const auto& file : evidence.Files) {
         const auto text = file.To<std::string>();
         EXPECT_TRUE(uniquePaths.insert(text).second);
@@ -144,7 +144,7 @@ SExportEvidence checkExport(Scene& scene, const ObjectMap& exported, const Varia
             const auto partRow = value.To<ObjectMap>();
             if (partRow.at("index").To<std::uint64_t>() == partIndex
                 && partRow.at("partNumber").To<std::string>() == partNumber)
-                EXPECT_EQ(filesInRow, partRow.at("unitQuantity").To<std::uint64_t>());
+                EXPECT_EQ(filesInRow, 1u);
         }
         ++rowCount;
     }
@@ -160,10 +160,10 @@ SExportEvidence checkExport(Scene& scene, const ObjectMap& exported, const Varia
     EXPECT_FALSE(reports.empty());
     if (!reports.empty()) {
         EXPECT_EQ(reports.front().at("phase").To<std::string>(), "preparing");
-        EXPECT_EQ(reports.front().at("total").To<std::uint64_t>(), evidence.UnitCount);
+        EXPECT_EQ(reports.front().at("total").To<std::uint64_t>(), parts.size());
         EXPECT_EQ(reports.back().at("phase").To<std::string>(), "completed");
-        EXPECT_EQ(reports.back().at("completed").To<std::uint64_t>(), evidence.UnitCount);
-        EXPECT_EQ(reports.back().at("total").To<std::uint64_t>(), evidence.UnitCount);
+        EXPECT_EQ(reports.back().at("completed").To<std::uint64_t>(), parts.size());
+        EXPECT_EQ(reports.back().at("total").To<std::uint64_t>(), parts.size());
     }
     VariantArray reportValues;
     for (const auto& report : reports) reportValues.emplace_back(report);
@@ -198,7 +198,7 @@ TEST(ProductExportUnitQuantitySDO, PersistedSelectionKeepsSingleProductFileCount
     const auto root = testDirectory("persisted");
     std::vector<ObjectMap> firstReports;
     const auto first = exportParts(scene, selected, root / "quantity-one", firstReports);
-    ASSERT_EQ(first.at("exportedCount").To<std::uint64_t>(), 8u);
+    ASSERT_EQ(first.at("exportedCount").To<std::uint64_t>(), 1u);
     const auto firstEvidence = checkExport(scene, first, selected, firstReports, root / "quantity-one");
     iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_TUBE_DESIGNER",.ProductID="icax.tube-designer",.CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});
     iCAX::ProjectFile::CProjectDocumentInfo info;
@@ -212,7 +212,7 @@ TEST(ProductExportUnitQuantitySDO, PersistedSelectionKeepsSingleProductFileCount
     ASSERT_EQ(selectedAfterReopen.size(), 1u);
     std::vector<ObjectMap> secondReports;
     const auto second = exportParts(reopened, selectedAfterReopen, root / "quantity-three", secondReports, "ExportAll");
-    ASSERT_EQ(second.at("exportedCount").To<std::uint64_t>(), 8u);
+    ASSERT_EQ(second.at("exportedCount").To<std::uint64_t>(), 1u);
     const auto secondEvidence = checkExport(reopened, second, selectedAfterReopen, secondReports, root / "quantity-three");
     EXPECT_EQ(firstEvidence.UnitCount, secondEvidence.UnitCount);
     EXPECT_EQ(secondEvidence.ProductionCount, 3 * firstEvidence.ProductionCount);
@@ -260,7 +260,7 @@ TEST(ProductExportUnitQuantitySDO, LinkedTransientSelectionUsesTheSameCopyAndWor
     const auto root = testDirectory("transient");
     std::vector<ObjectMap> reports;
     const auto exported = exportParts(scene, selected, root, reports);
-    ASSERT_EQ(exported.at("exportedCount").To<std::uint64_t>(), 8u);
+    ASSERT_EQ(exported.at("exportedCount").To<std::uint64_t>(), 1u);
     checkExport(scene, exported, selected, reports, root);
 }
 
@@ -281,8 +281,7 @@ TEST(ProductExportUnitQuantitySDO, OverridesAndCollidingTypeFileNamesPreserveTot
         const auto row = value.To<ObjectMap>();
         const auto component = part(scene, row.at("entityId").To<std::string>());
         ASSERT_TRUE(component);
-        ASSERT_TRUE(component->SetFileName(row.at("unitQuantity").To<std::uint64_t>() == 1
-            ? "same-type-name-件01.step" : "same-type-name.step"));
+        ASSERT_TRUE(component->SetFileName("same-type-name.step"));
     }
     const auto repeated = part(scene, selected.front().To<ObjectMap>().at("entityId").To<std::string>());
     const auto count = repeated->GetQuantity();

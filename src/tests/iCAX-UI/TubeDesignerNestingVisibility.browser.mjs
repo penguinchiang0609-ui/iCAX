@@ -64,7 +64,7 @@ try {
     window.fixture = { area, view, context, counters, delays, render };
     render();
   });
-  await page.addStyleTag({ content: readFileSync(new URL("../../apps/_shared/workbench/styles/laser3dcam.css", import.meta.url), "utf8") });
+  await page.addStyleTag({ content: readFileSync(new URL("../../apps/_shared/workbench/styles/workbench.css", import.meta.url), "utf8") });
   const progress = page.locator("[data-tube-designer-part-progress]");
   await progress.waitFor({ state: "visible" });
   assert.match(await progress.innerText(), /正在加载三维模型/);

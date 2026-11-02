@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ICAXOmplRoot>$(MSBuildThisFileDirectory)</ICAXOmplRoot></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(ICAXOmplRoot)install\$(Platform)\$(Configuration)\include;$(ICAXOmplRoot)ompl-2.0.2\src;$(ICAXOmplRoot)..\coal\boost_1_87_0;$(ICAXOmplRoot)..\coal\eigen-3.4.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>NOMINMAX;BOOST_ALL_NO_LIB;_ENABLE_EXTENDED_ALIGNED_STORAGE;_HAS_AUTO_PTR_ETC=0;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <Link><AdditionalDependencies>$(ICAXOmplRoot)install\$(Platform)\$(Configuration)\lib\icax_ompl.lib;$(ICAXOmplRoot)install\$(Platform)\$(Configuration)\lib\icax_ompl_serialization.lib;psapi.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <Target Name="RequireOmpl" BeforeTargets="PrepareForBuild"><Error Condition="!Exists('$(ICAXOmplRoot)install\$(Platform)\$(Configuration)\lib\icax_ompl.lib')" Text="Build OMPL first: src/third_party/ompl/prepare-ompl.ps1 -Configuration $(Configuration)" /></Target>
+  <Target Name="CopyOmplNotices" AfterTargets="Build"><ItemGroup><OmplNotices Include="$(ICAXOmplRoot)install\$(Platform)\$(Configuration)\licenses\*" /></ItemGroup><Copy SourceFiles="@(OmplNotices)" DestinationFolder="$(OutDir)Licenses\OMPL" SkipUnchangedFiles="true" /></Target>
+</Project>

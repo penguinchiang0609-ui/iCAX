@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ICAXInspectionBridgeSource>$(MSBuildProjectDirectory)\TubeCadComponentAcceptance.cpp</ICAXInspectionBridgeSource>
+    <ICAXInspectionBridgeOutputRoot>$(SolutionDir)..\output\tests\cad-side-components\service</ICAXInspectionBridgeOutputRoot>
+  </PropertyGroup>
+  <Import Project="$(MSBuildThisFileDirectory)SecurityWindowFramesBridge.targets" />
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>TubeCadComponentAcceptance</TargetName>
+    <TargetPath>$(OutDir)$(TargetName)$(TargetExt)</TargetPath>
+  </PropertyGroup>
+  <ItemGroup><ClCompile Update="$(ICAXInspectionBridgeSource)"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile></ItemGroup>
+</Project>

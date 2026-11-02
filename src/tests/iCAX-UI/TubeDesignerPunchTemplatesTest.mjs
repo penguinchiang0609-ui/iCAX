@@ -57,7 +57,7 @@ const context={sceneProxy:{invoke(method,payload,options){
   invocation={method,payload,options};return new Promise(resolve=>release=resolve);
 }}};
 const ops={renderProject(){}};
-const pending=previewPunch(context,view,part,ops);
+const pending=previewPunch(context,view,part,ops,{length:500,profileRef:{id:"fixture"},parameters:{}});
 await Promise.resolve();
 assert.equal(view.pending,true);assert.equal(view.tubeDesignerOperation.kind,"punch");
 const revision=state.revision;
@@ -68,10 +68,9 @@ release({toolsOnly:true,baseGeometry:{url:"base",version:1},toolGeometry:{url:"p
 await pending;
 assert.equal(view.pending,false);assert.equal(view.tubeDesignerOperation,null);
 assert.equal(state.preview.revision,revision);
-assert.equal(invocation.payload.resourceId,"old-id");
+assert.equal(invocation.payload.resourceId,undefined);
 assert.equal(invocation.method,"TubeDesigner.PreviewPunchWizard");
-part.manufacturingGeometryResourceId="new-id"; // UI still sends the originally captured identity.
-assert.equal(getPunchWizardPayload(view).resourceId,"old-id");
+assert.equal(getPunchWizardPayload(view).partEntityId,undefined,"Creation transport has no saved-part identity.");
 const options=beginPunchOperation({},view,"test");
 options.onReport({message:"真实进度",completed:3,total:8});
 assert.equal(view.tubeDesignerOperation.phaseLabel,"3 / 8");
@@ -85,9 +84,9 @@ const relocated={...part,thumbnailGeometryResourceId:"saved-mesh",thumbnailGeome
     toolRef:{id:"fixed-fixture",version:"1.0.0",digest:"original"},toolParameters:{},toolLabel:"测试定式刀具",toolKind:"fixed",
     toolSnapshot:{descriptor:{parameters:["must not travel"]},geometry:{mode:"profile"}}
   }],ends:{start:{type:"keep"},end:{type:"keep"}}}}};
-const relocatedView={tubeDesignerPunchWizard:createPunchWizardState(relocated),pending:false};
+const relocatedView={tubeDesignerPunchWizard:createPunchWizardState(part,relocated.properties["tubeDesigner.punchWizard"]),pending:false};
 installPunchCatalogue(relocatedView.tubeDesignerPunchWizard,{tools:[]});
-assert.equal(relocatedView.tubeDesignerPunchWizard.preview.geometry.url,"saved-mesh");
+assert.equal(relocatedView.tubeDesignerPunchWizard.preview,null);
 assert.equal(missingPunchTools(relocatedView.tubeDesignerPunchWizard).length,1);
 assert.match(validatePunchWizard(relocatedView,relocated),/本机缺少/);
 assert.match(renderPunchWizardDialog(relocated,relocatedView),/仍可查看、排样和导出/);
@@ -98,8 +97,7 @@ frozenFeature.frozenTool={schema:"icax.frozen-punch-tool",schemaVersion:1,ref:st
   parameters:{},instance:structuredClone(frozenFeature),geometry:{mode:"profile",contours:[{kind:"circle",radius:6}]}};
 frozenFeature.frozenCut={url:"embedded-cutter",version:1,coordinateSpace:"part"};
 // A frozen record arrives from a saved drawing, not by mutating a locked UI node.
-relocatedView.tubeDesignerPunchWizard=createPunchWizardState({...relocated,properties:{...relocated.properties,
-  "tubeDesigner.punchWizard":{...relocated.properties["tubeDesigner.punchWizard"],features:[structuredClone(frozenFeature)]}}});
+relocatedView.tubeDesignerPunchWizard=createPunchWizardState(part,{...relocated.properties["tubeDesigner.punchWizard"],features:[structuredClone(frozenFeature)]});
 relocatedState=relocatedView.tubeDesignerPunchWizard;frozenFeature=relocatedState.features[0];
 installPunchCatalogue(relocatedState,{tools:[]});
 assert.equal(missingPunchTools(relocatedState).length,0);

@@ -121,6 +121,53 @@ std::vector<HWND> ownedBrowserWindows() {
     },reinterpret_cast<LPARAM>(&result));
     return result;
 }
+
+void verifyMaximizedWorkArea(HWND window, const char* phase) {
+    MONITORINFO monitor{sizeof(monitor)};
+    if(!GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor))
+        throw std::runtime_error("Cannot read test window's monitor work area");
+    RECT actual{};
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+    do {
+        GetWindowRect(window,&actual);
+        if(IsZoomed(window) && EqualRect(&actual,&monitor.rcWork)) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    } while(std::chrono::steady_clock::now()<deadline);
+    std::ostringstream detail;
+    detail << phase << " window=" << actual.left << ',' << actual.top << ',' << actual.right << ',' << actual.bottom
+        << " work=" << monitor.rcWork.left << ',' << monitor.rcWork.top << ',' << monitor.rcWork.right << ',' << monitor.rcWork.bottom
+        << " dpi=" << GetDpiForWindow(window);
+    event("maximized_bounds",detail.str());
+    if(!IsZoomed(window) || !EqualRect(&actual,&monitor.rcWork))
+        throw std::runtime_error("Maximized CEF window must exactly occupy the monitor work area: "+detail.str());
+    MINMAXINFO limits{};
+    SendMessageW(window,WM_GETMINMAXINFO,0,reinterpret_cast<LPARAM>(&limits));
+    if(limits.ptMinTrackSize.x>monitor.rcWork.right-monitor.rcWork.left ||
+        limits.ptMinTrackSize.y>monitor.rcWork.bottom-monitor.rcWork.top)
+        throw std::runtime_error("Minimum window size exceeds the monitor work area");
+}
+
+void verifyWindowBounds(HWND window) {
+    verifyMaximizedWorkArea(window,"initial-maximize");
+    std::vector<RECT> workAreas;
+    EnumDisplayMonitors(nullptr,nullptr,[](HMONITOR handle,HDC,LPRECT,LPARAM data)->BOOL {
+        MONITORINFO monitor{sizeof(monitor)};
+        if(GetMonitorInfoW(handle,&monitor)) reinterpret_cast<std::vector<RECT>*>(data)->push_back(monitor.rcWork);
+        return TRUE;
+    },reinterpret_cast<LPARAM>(&workAreas));
+    for(const auto& work:workAreas) {
+        SendMessageW(window,WM_SYSCOMMAND,SC_RESTORE,0);
+        if(IsZoomed(window)) throw std::runtime_error("CEF window did not restore");
+        SetWindowPos(window,nullptr,work.left,work.top,work.right-work.left,work.bottom-work.top,SWP_NOACTIVATE|SWP_NOZORDER);
+        SendMessageW(window,WM_SYSCOMMAND,SC_MAXIMIZE,0);
+        verifyMaximizedWorkArea(window,"restore-move-maximize");
+        SendMessageW(window,WM_SYSCOMMAND,SC_MINIMIZE,0);
+        if(!IsIconic(window)) throw std::runtime_error("CEF window did not minimize");
+        SendMessageW(window,WM_SYSCOMMAND,SC_RESTORE,0);
+        verifyMaximizedWorkArea(window,"minimize-restore");
+    }
+    event("window_bounds_passed",std::to_string(workAreas.size())+" monitors");
+}
 }
 
 int wmain(int argc,wchar_t** argv) {
@@ -128,7 +175,7 @@ int wmain(int argc,wchar_t** argv) {
     if(subprocess>=0) return subprocess;
     if(argc<3) return 2;
     const std::wstring requestedMode=argv[1];
-    if(requestedMode!=L"window" && requestedMode!=L"stop" && requestedMode!=L"immediate" && requestedMode!=L"popup") return 2;
+    if(requestedMode!=L"window" && requestedMode!=L"stop" && requestedMode!=L"immediate" && requestedMode!=L"popup" && requestedMode!=L"bounds") return 2;
     const std::string mode(requestedMode.begin(),requestedMode.end());
     const auto directory=std::filesystem::absolute(argv[2]);
     std::filesystem::create_directories(directory);
@@ -136,6 +183,7 @@ int wmain(int argc,wchar_t** argv) {
     std::wstring executable(32768,L'\0'); executable.resize(GetModuleFileNameW(nullptr,executable.data(),static_cast<DWORD>(executable.size())));
     std::vector<Child> children;
     bool runtimeStarted=false, shutdownCalled=false;
+    std::string boundsFailure;
     try {
         std::ofstream page(directory/"fixture.html");
         page << "<!doctype html><meta charset='utf-8'><title>CefCloseFixture</title><p>Isolated browser close fixture</p>";
@@ -163,6 +211,10 @@ int wmain(int argc,wchar_t** argv) {
             const auto windowDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
             while(!(window=ownedWindow()) && std::chrono::steady_clock::now()<windowDeadline) std::this_thread::sleep_for(std::chrono::milliseconds(20));
             if(!window) throw std::runtime_error("Owned native CEF browser window did not appear");
+            if(mode=="bounds") {
+                try { verifyWindowBounds(window); }
+                catch(const std::exception& error) { boundsFailure=error.what(); }
+            }
             ShowWindow(window,SW_HIDE);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             children=ownedChildren(executable);
@@ -180,7 +232,7 @@ int wmain(int argc,wchar_t** argv) {
             if(popups.size()<2) throw std::runtime_error("Actual CEF popup did not open");
             event("popup_observed",std::to_string(popups.size()));
         }
-        if(mode=="window" || mode=="popup") {
+        if(mode=="window" || mode=="popup" || mode=="bounds") {
             DWORD owner=0; GetWindowThreadProcessId(window,&owner);
             if(owner!=GetCurrentProcessId()) throw std::runtime_error("Window ownership changed; refusing to close");
             event("browser_close_requested");
@@ -219,6 +271,7 @@ int wmain(int argc,wchar_t** argv) {
             event("child_exit",std::to_string(child.id)+":"+std::to_string(code));
         }
         if(alive(children)) throw std::runtime_error("Owned CEF children did not normally exit after ShutdownRuntime");
+        if(!boundsFailure.empty()) throw std::runtime_error(boundsFailure);
         event("passed");
         for(const auto& child:children) CloseHandle(child.handle);
         return 0;

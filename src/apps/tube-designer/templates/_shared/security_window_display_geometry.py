@@ -57,6 +57,30 @@ def frame_end_layout(segments, *, face, layout, support_interval):
             for end in ('start', 'end'):
                 point = segment[end]
                 inward = axis if end == 'start' else [-v for v in axis]
+                if family == 'access_door.fixed_frame.':
+                    # Continuous opening rails receive square jamb ends at
+                    # interior T nodes. Their own ends butt to the perimeter.
+                    receivers = []
+                    for other, mate in segments.items():
+                        if other == key or not other.startswith(('outer_frame.', 'access_door.fixed_frame.')):
+                            continue
+                        direction = _unit(_sub(mate['end'], mate['start']))
+                        if abs(_dot(direction, axis)) > 1.e-7:
+                            continue
+                        station = _dot(_sub(point, mate['start']), direction)
+                        closest = [a+station*b for a, b in zip(mate['start'], direction)]
+                        if -1.e-7 <= station <= math.dist(mate['start'], mate['end'])+1.e-7 and math.dist(point, closest) < 1.e-7:
+                            receivers.append((other, mate))
+                    if receivers:
+                        wraps_jamb = key.startswith(('access_door.fixed_frame.bottom.', 'access_door.fixed_frame.top.')) and all(
+                            other.startswith('access_door.fixed_frame.') for other, _ in receivers)
+                        normal = [-value for value in inward] if wraps_jamb else inward
+                        inset = max(support_interval(mate, normal, point)[1] for _, mate in receivers)
+                        if wraps_jamb:
+                            spec[end] = -inset if end == 'start' else length+inset
+                        else:
+                            spec[end] = inset if end == 'start' else length-inset
+                    continue
                 neighbours = [(other, side) for other, side, node in ends
                               if other != key and math.dist(node, point) < 1.e-7]
                 if multi_outer:

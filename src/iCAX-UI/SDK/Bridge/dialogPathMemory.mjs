@@ -16,20 +16,11 @@ function isAbsolute(path) {
   return /^[A-Za-z]:[\\/]/.test(path) || /^[\\/]/.test(path);
 }
 
-function fileName(path) {
-  return path.split(/[\\/]/).at(-1) ?? "";
-}
-
 function parentDirectory(path) {
   const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (index < 0) return "";
   // Preserve both Windows drive roots and POSIX roots.
   return path.slice(0, index || 1) + (index === 2 && /^[A-Za-z]:/.test(path) ? path[index] : "");
-}
-
-function joinDirectory(directory, name = "") {
-  const separator = directory.includes("\\") ? "\\" : "/";
-  return `${directory.replace(/[\\/]+$/, "")}${separator}${name}`;
 }
 
 /**
@@ -59,14 +50,11 @@ export function installDialogPathMemory(bridge, options = {}) {
         if (!prepared.initialDirectory && remembered) prepared.initialDirectory = remembered;
       } else {
         const defaultPath = String(prepared.defaultPath ?? "");
-        // A full save path belongs to the current entity and must remain intact.
-        // A new export supplies a filename, which follows the user's last folder.
+        // An entity path keeps its own location. A bare filename (or an empty
+        // open chooser) follows the last folder through the directory field.
         if (!isAbsolute(defaultPath) && !/[\\/]/.test(defaultPath)) {
-          const directory = String(prepared.initialDirectory || remembered);
-          if (directory) prepared.defaultPath = joinDirectory(directory, fileName(defaultPath));
+          if (!prepared.initialDirectory && remembered) prepared.initialDirectory = remembered;
         }
-        // OPENFILENAMEW consumes defaultPath rather than initialDirectory.
-        delete prepared.initialDirectory;
       }
       const result = await original.call(bridge, prepared);
       if (typeof result === "string" && result.trim()) {

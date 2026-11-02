@@ -1,67 +1,45 @@
 // Production drawing editor + scope-aware native scene/resources. Test-only
 // scroll spacers exercise both panes without inventing modelling records.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
-import { resolve, delimiter } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { browserAssetRoot, browserReportDirectory, importBrowserAsset, serveBrowserAsset } from './browserPackageRuntime.mjs';
+import { startSideSketchNativeBridge } from './fixtures/sideSketchNativeBridge.mjs';
 
 const output = browserReportDirectory('part-drawing-array-skip');
 const runtime = resolve(process.env.ICAX_DRAWING_NATIVE_RUNTIME || 'src/x64/Debug');
-const sourceBridge = resolve(process.env.ICAX_DRAWING_NATIVE_BRIDGE
-  || 'output/tests/punch-native-incremental/probe-host-v2/BatchExcelAutomationScopeBridge.exe');
-const isolatedNative = resolve(output, 'native-host');
-const bridge = resolve(isolatedNative, 'BatchExcelAutomationScopeBridge.exe');
 const report = { status: 'running', nativeBusinessResponsesMocked: false, checks: [], screenshots: [],
-  scope: 'Deployed production drawing UI/DOM/WebGL modules in a browser fixture with an isolated actual native scene. Scroll spacers are test-only. Standalone CEF application was not controlled.' };
-let host, browser, page, sequence = 0, stderr = '';
-const waiting = new Map(), nativeCalls = [], browserErrors = [];
-function rpc(scope, method, payload = {}) {
-  const request = { id: ++sequence, scope, method: method.replace(/^TubeDesigner\./, ''), payload };
-  return new Promise((complete, reject) => {
-    const timer = setTimeout(() => { waiting.delete(request.id); reject(new Error('Native timeout: ' + method)); }, 120000);
-    waiting.set(request.id, { timer, request, started: performance.now(), complete, reject });
-    host.stdin.write(JSON.stringify(request) + '\n');
-  });
-}
-function summarizeResponse(response) {
-  if (!response.ok) return { ok: false, error: response.error };
-  const r = response.result ?? {};
-  return { ok: true, keys: Object.keys(r), resultError: r.resultError, toolCount: r.toolCount,
-    partEntityId: r.partEntityId, baseGeometry: r.baseGeometry,
-    ...(r.base64 ? { resource: { url: r.url, version: r.version, bytes: r.bytes } } : {}),
-    toolPreviews: r.toolPreviews?.map(t => ({ key: t.key, target: t.target, geometry: t.geometry })) };
+  scope: 'Deployed production drawing UI/DOM/WebGL modules and registered scene CAD services in an isolated native host. Scroll spacers are test-only. Standalone CEF application was not controlled.' };
+let nativeBridge, browser, page;
+const nativeCalls = [], browserErrors = [];
+async function rpc(scope, method, payload = {}) {
+  method=method.replace(/^TubeDesigner\./,'');
+  const request={scope,method,payload},started=performance.now();
+  try {
+    let result;
+    if(scope==='native')result=await nativeBridge.rpc({action:method,payload});
+    else if(scope==='inspection'&&method==='ResetScene')result=await nativeBridge.rpc({action:'reset'});
+    else if(scope==='inspection'&&method==='ReadResource')result=await nativeBridge.rpc({action:'resource',payload});
+    else if(scope==='inspection'&&method==='GetResourceInfo') {
+      try {await nativeBridge.rpc({action:'resource',payload});result={exists:true};}
+      catch(error) {if(!/Real resource not present/.test(error.message))throw error;result={exists:false};}
+    } else result=await nativeBridge.invoke(method,payload,scope);
+    nativeCalls.push({request,response:{ok:true,keys:Object.keys(result),toolCount:result.toolCount},milliseconds:performance.now()-started});
+    return result;
+  } catch(error) {nativeCalls.push({request,response:{ok:false,error:error.message}});throw error;}
 }
 try {
-  mkdirSync(isolatedNative, { recursive: true });
-  if (sourceBridge !== bridge) copyFileSync(sourceBridge, bridge);
-  const currentDll = resolve(runtime, 'TubeDesigner.dll');
-  copyFileSync(currentDll, resolve(isolatedNative, 'TubeDesigner.dll'));
-  const expectedDllHash = createHash('sha256').update(readFileSync(currentDll)).digest('hex');
-  const env = { ...process.env, ICAX_AUTOMATION_USER_DATA: resolve(output, 'native-user-data') };
-  mkdirSync(env.ICAX_AUTOMATION_USER_DATA, { recursive: true });
-  const priorPath = Object.entries(env).find(([k]) => k.toLowerCase() === 'path')?.[1] ?? '';
-  for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
-  env.Path = runtime + delimiter + priorPath;
-  host = spawn(bridge, [], { cwd: runtime, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  host.stderr.on('data', bytes => { stderr += bytes; });
-  const abort = error => { for (const job of waiting.values()) { clearTimeout(job.timer); job.reject(error); } waiting.clear(); };
-  host.on('error', abort); host.on('exit', code => abort(new Error('Native host exited: ' + code)));
-  createInterface({ input: host.stdout }).on('line', line => {
-    let response; try { response = JSON.parse(line); } catch { stderr += line + '\n'; return; }
-    const job = waiting.get(response.id); if (!job) return;
-    waiting.delete(response.id); clearTimeout(job.timer);
-    nativeCalls.push({ request: job.request, response: summarizeResponse(response), milliseconds: performance.now() - job.started });
-    response.ok ? job.complete(response.result) : job.reject(new Error(response.error));
-  });
-  await rpc('inspection', 'ResetScene');
-  report.runtimeModules = (await rpc('inspection', 'GetRuntimeModules')).modules;
-  report.nativeModule = { path: report.runtimeModules['TubeDesigner.dll'],
-    sha256: createHash('sha256').update(readFileSync(report.runtimeModules['TubeDesigner.dll'])).digest('hex') };
-  assert.equal(resolve(report.nativeModule.path).toLowerCase(), resolve(isolatedNative, 'TubeDesigner.dll').toLowerCase());
-  assert.equal(report.nativeModule.sha256, expectedDllHash, 'Actual native module must match the selected current runtime DLL');
+  mkdirSync(output,{recursive:true});
+  nativeBridge=await startSideSketchNativeBridge(output);
+  const loaded=JSON.parse(execFileSync('powershell.exe',['-NoProfile','-Command',
+    '(Get-Process -Id '+nativeBridge.processId+' -ErrorAction Stop).Modules | Where-Object { $_.ModuleName -in @(\'TubeDesigner.dll\',\'OpenCascadeResourceImport.dll\') } | ForEach-Object { [pscustomobject]@{name=$_.ModuleName;path=$_.FileName} } | ConvertTo-Json -Compress'],{encoding:'utf8'}));
+  report.runtimeModules=Object.fromEntries(loaded.map(module=>[module.name,module.path]));
+  report.nativeModule={path:report.runtimeModules['TubeDesigner.dll'],
+    sha256:createHash('sha256').update(readFileSync(report.runtimeModules['TubeDesigner.dll'])).digest('hex')};
+  assert.equal(resolve(report.nativeModule.path).toLowerCase(),resolve(output,'runtime','TubeDesigner.dll').toLowerCase());
+  assert.equal(report.nativeModule.sha256,nativeBridge.dllHash);
   const id = 'round', descriptor = JSON.parse(readFileSync(resolve(browserAssetRoot, `apps/tube-designer/templates/profile/${id}/profile.json`), 'utf8'));
   descriptor.display = JSON.parse(readFileSync(resolve(browserAssetRoot, `apps/tube-designer/templates/profile/${id}/display.json`), 'utf8'));
   const defaultParameters = Object.fromEntries(descriptor.parameters.map(p => [p.key, p.defaultValue]));
@@ -77,7 +55,7 @@ try {
   await page.goto('http://drawing-skip.test/');
   const { tubeDesignerCss } = await importBrowserAsset('apps/tube-designer/webpage/styles/tubeDesigner.css.mjs');
   await page.addStyleTag({ content: '*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif}'
-    + readFileSync(resolve(browserAssetRoot, 'apps/_shared/workbench/styles/laser3dcam.css'), 'utf8') + tubeDesignerCss });
+    + readFileSync(resolve(browserAssetRoot, 'apps/_shared/workbench/styles/workbench.css'), 'utf8') + tubeDesignerCss });
   await page.evaluate(async ({ profile, scene }) => {
     const drawing = await import('/src/apps/tube-designer/webpage/partDrawing.mjs');
     const preview = await import('/src/apps/tube-designer/webpage/partDrawingPreview.mjs');
@@ -106,7 +84,7 @@ try {
       return new Response(Uint8Array.from(atob(result.base64), c => c.charCodeAt(0)));
     } } }, productProxy: { invoke: invoke('product') } };
     const ops = f.ops = { createPartDrawingViewport(options) { return f.viewport = createThreeViewport(options); }, showNotice() {}, renderProject() {
-      if (!view.tubeDesignerPartDrawing) { dialogs.replaceChildren(); return; }
+      if (!view.tubeDesignerPartDrawing) { preview.disposePartDrawingPreview(mount); dialogs.replaceChildren(); return; }
       let html = drawing.renderPartDrawingDialog(view);
       if (f.addScrollSpacers) {
         const template = document.createElement('template'); template.innerHTML = html;
@@ -145,6 +123,9 @@ try {
   const screenshot = async name => { const path = resolve(output, name + '.png'); await page.screenshot({ path }); report.screenshots.push(path); };
   const countCreates = () => page.evaluate(() => window.fixture.calls.filter(c => /\.(Add|Apply)PartDrawing$/.test(c.method)).length);
   await action('open').click(); await ready();
+  assert.equal(await page.evaluate(() => window.fixture.state.previewMode), 'finished');
+  assert.ok(await page.evaluate(() => window.fixture.state.preview.geometry?.url));
+  await page.locator('[data-drawing-preview-mode="tools"]').click(); await ready();
   await command('branch').click(); await ready();
   await change(page.locator('[data-drawing-section="branch"][data-drawing-parameter="width"]'), 8);
   await change(field('station'), 100);
@@ -232,8 +213,14 @@ try {
   await page.evaluate(() => { const f = window.fixture; f.addScrollSpacers = false; f.render(); document.querySelector('.td-draw-property-scroll').scrollTop = 10000; });
   await screenshot('02-skip-field-before-final-create');
   assert.equal(await countCreates(), 0);
+  const cancelledPreview = await page.evaluate(() => ({ key: window.fixture.state.previewResourceKey,
+    geometry: window.fixture.state.preview.geometry }));
   await page.getByRole('button', { name: '取消', exact: true }).click(); await idle();
+  await page.waitForFunction(key => window.fixture.calls.some(call => call.method === 'TubeDesigner.ReleasePartDrawingPreview'
+    && call.payload.previewResourceKey === key && call.result?.released), cancelledPreview.key);
+  assert.equal((await rpc('inspection', 'GetResourceInfo', { url: cancelledPreview.geometry.url })).exists, false);
   assert.equal(await countCreates(), 0);
+  report.checks.push('Closing disposes the real viewport and releases its native runtime geometry scope without creating a part');
   report.checks.push('Wildcard row/column skips work through the same native recipe; cancelling the drawing makes zero creation calls');
 
   await action('open').click(); await ready(); await command('branch').click(); await ready();
@@ -247,50 +234,37 @@ try {
   const created = await page.evaluate(() => window.fixture.calls.findLast(c => c.method === 'TubeDesigner.AddPartDrawing'));
   assert.ok(created?.result?.partEntityId, JSON.stringify(created)); assert.equal(created.error, undefined); assert.equal(await countCreates(), 1);
   const parts = persistedScene.tubeDesigner.nestingGroups.flatMap(g => g.parts ?? []);
-  assert.equal(parts.length, 1); const part = parts[0], recipe = part.properties['tubeDesigner.partDrawing'];
-  assert.equal(part.entityId, created.result.partEntityId); assert.equal(recipe.features.length, 1);
+  assert.equal(parts.length, 1); const part = parts[0], recipe = created.payload;
+  assert.equal(part.entityId, created.result.partEntityId);
+  assert.ok(part.properties['tubeDesigner.cadDocument']?.documentResourceId);
+  assert.equal(part.properties['tubeDesigner.partDrawing'], undefined);
+  assert.equal(recipe.features.length, 1);
   assert.deepEqual(recipe.features[0].skippedInstances, ['0:1', '1:2']);
   assert.equal(recipe.features[0].arrayCount, 3); assert.equal(recipe.features[0].rowCount, 2);
-  const branchFields = ['angle', 'azimuth', 'roll', 'offsetY', 'offsetZ', 'length', 'direction'];
-  const placementValues = item => Object.fromEntries(branchFields.map(key => [key, item[key]]));
-  assert.deepEqual(placementValues(recipe.features[0]), placementValues(created.payload.features[0]),
-    'Saved drawing recipe must retain every supplied branch placement field, before any editor defaults');
   assert.equal(recipe.features[0].length, 144); assert.equal(recipe.features[0].roll, 17);
+  const document = await rpc('scene', 'GetTubeCadDocument', { partEntityId: part.entityId,
+    resourceVersion: part.manufacturingGeometryResourceVersion });
+  assert.ok(document.geometry.SolidNodes.length > 2);
+  assert.ok(document.geometry.SolidNodes.some(node => node.ID === document.geometry.BaseNodeID));
   assert.ok(part.manufacturingGeometryResourceId);
-  const manufacturingInfo = await rpc('inspection', 'GetResourceInfo', { url: part.manufacturingGeometryResourceId });
-  assert.equal(manufacturingInfo.exists, true, 'The saved manufacturing BRep must exist');
+  const manufacturingInfo = await rpc('native', 'geometry', { partEntityId: part.entityId });
+  assert.equal(manufacturingInfo.valid, true, 'The saved manufacturing BRep must exist and be valid');
+  const documentMatch=await rpc('native','cad-document-geometry',{partEntityId:part.entityId});
+  assert.ok(documentMatch.directedDifferenceVolume<1e-5,'The canonical skipped array CAD document must reproduce its published manufacturing BRep');
   const finalResource = await rpc('inspection', 'ReadResource', { url: part.thumbnailGeometryResourceId,
     version: Number(part.thumbnailGeometryResourceVersion) || 0 });
   assert.ok(finalResource.bytes > 100, 'Final native display mesh must be readable');
-  report.saved = { entityId: part.entityId, skippedInstances: recipe.features[0].skippedInstances, arrayCount: 3, rowCount: 2,
-    manufacturingGeometryResourceId: part.manufacturingGeometryResourceId, manufacturingInfo,
-    thumbnailGeometryResourceId: part.thumbnailGeometryResourceId, displayResourceBytes: finalResource.bytes };
-  report.checks.push('Confirm creates exactly one actual part with the canonical skipped pairs persisted in its dedicated drawing recipe and real manufacturing resource');
-  await page.evaluate(({ scene, partId }) => {
-    const f = window.fixture; f.view.scene = scene;
-    const button = document.createElement('button'); button.textContent = '编辑已保存的二维阵列';
-    button.dataset.camAction = 'tube-designer-drawing-open'; button.dataset.tubeDesignerPartId = partId;
-    document.querySelector('#background').append(button);
-  }, { scene: persistedScene, partId: part.entityId });
-  await page.getByRole('button', { name: '编辑已保存的二维阵列', exact: true }).click(); await ready();
-  await page.locator(`[data-drawing-node="${recipe.features[0].id}"]`).click(); await ready();
-  assert.equal(await field('arrayDimension').inputValue(), 'two');
-  assert.equal(await field('skipInstancesText').inputValue(), '2:1, 3:2');
-  report.reopened = await arraySnapshot();
-  assert.deepEqual(placementValues(report.reopened.feature), placementValues(created.payload.features[0]),
-    'Reopened production preview must keep all persisted branch placement values exactly');
-  assert.deepEqual(await page.evaluate(() => {
-    const feature = window.fixture.state.features[0];
-    return Object.fromEntries(['angle', 'azimuth', 'roll', 'offsetY', 'offsetZ', 'length', 'direction'].map(key => [key, feature[key]]));
-  }), placementValues(created.payload.features[0]), 'Production reopened model must retain branch placement values');
-  assert.equal(report.reopened.toolCount, 4); assert.deepEqual(report.reopened.feature.skippedInstances, ['0:1', '1:2']);
-  assert.equal(report.reopened.visible, true); assert.ok(report.reopened.positions > 0);
-  await field('skipInstancesText').scrollIntoViewIfNeeded();
-  await screenshot('03-persisted-part-reopened-two-dimensional-skip');
-  await page.getByRole('button', { name: '取消', exact: true }).click(); await idle();
+  const reread = await rpc('scene', 'GetTubeCadDocument', { partEntityId: part.entityId,
+    resourceVersion: part.manufacturingGeometryResourceVersion });
+  assert.deepEqual(reread.geometry, document.geometry);
+  assert.equal(reread.revision, document.revision);
   assert.equal(await countCreates(), 1);
   assert.equal((await rpc('scene', 'List')).tubeDesigner.nestingGroups.flatMap(g => g.parts ?? []).length, 1);
-  report.checks.push('The actual persisted List part reopens through the production drawing action with the two-dimensional mode, original skip text and four real visible tools; cancelling it performs no second write');
+  report.saved = { entityId: part.entityId, skippedInstances: recipe.features[0].skippedInstances, arrayCount: 3, rowCount: 2,
+    document, documentMatch, manufacturingGeometryResourceId: part.manufacturingGeometryResourceId, manufacturingInfo,
+    thumbnailGeometryResourceId: part.thumbnailGeometryResourceId, displayResourceBytes: finalResource.bytes };
+  report.checks.push('Confirm creates exactly one part from the canonical skipped array and publishes its complete neutral CAD document and real manufacturing/display resources');
+  // Saved-part event routing and Apply are covered by the unified native browser suite.
   report.status = 'passed';
   assert.deepEqual(browserErrors, []); assert.deepEqual(await page.evaluate(() => window.fixture.failures), []);
   assert.equal(nativeCalls.filter(c => c.response.ok === false).length, 0);
@@ -303,7 +277,6 @@ try {
 } finally {
   report.nativeRequests = nativeCalls; report.browserErrors = browserErrors;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
-  writeFileSync(resolve(output, 'native-stderr.log'), stderr);
   if (browser) await browser.close();
-  if (host?.exitCode == null) { host.stdin.end(); host.kill(); }
+  await nativeBridge?.close();
 }
