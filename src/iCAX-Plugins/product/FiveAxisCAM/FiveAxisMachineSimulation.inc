@@ -10,9 +10,10 @@ namespace {
     std::vector<double> MachineJointValues(const MachineSnapshot& machine){std::vector<double> result;for(const auto& n:machine.Nodes)result.push_back(n.Position);return result;}
     std::vector<MachineFollower> MachineFollowingFrames(Scene& scene,const ID& setup,const Motion::Matrix& placement){
         std::vector<MachineFollower> result;if(setup.is_nil())return result;
+        const auto assembly=Motion::Multiply(placement,RigidMatrix(OperationAssemblyTransform(scene,setup)));
         for(const auto& entity:scene.Database().FilterEntities([](auto){return true;})){
-            if(const auto p=Component<CFiveAxisPlacementComponent>(entity);p&&p->GetSetupID()==setup)result.push_back({iCAX::Data::to_string(entity->GetID()),Motion::Multiply(placement,RigidMatrix(p->GetTransform()))});
-            if(const auto f=Component<CFiveAxisFixtureComponent>(entity);f&&f->GetSetupID()==setup)result.push_back({iCAX::Data::to_string(entity->GetID()),Motion::Multiply(placement,RigidMatrix(f->GetTransform()))});
+            if(const auto p=Component<CFiveAxisPlacementComponent>(entity);p&&p->GetSetupID()==setup)result.push_back({iCAX::Data::to_string(entity->GetID()),Motion::Multiply(assembly,RigidMatrix(p->GetTransform()))});
+            if(const auto f=Component<CFiveAxisFixtureComponent>(entity);f&&f->GetSetupID()==setup)result.push_back({iCAX::Data::to_string(entity->GetID()),Motion::Multiply(assembly,RigidMatrix(f->GetTransform()))});
         }return result;
     }
     std::vector<Motion::Matrix> MachineWorldFrames(const MachineSnapshot& machine,const std::vector<MachineFollower>& followers){
@@ -70,7 +71,7 @@ namespace {
     Map MachineSnapshotState(const MachineSnapshot& machine){
         Array nodes,positions;
         for(const auto& n:machine.Nodes){nodes.emplace_back(Map{{"id",n.ID},{"parent",n.Parent},{"type",n.Type},{"origin",MachineNumbers(n.Origin)},{"axis",MachineNumbers(n.Axis)},{"lower",n.Lower},{"upper",n.Upper},{"velocity",n.Velocity}});positions.emplace_back(n.Position);}
-        Map result{{"postprocessor",machine.Postprocessor},{"configuration",machine.Configuration},{"nodes",nodes},{"positions",positions},{"tool",machine.Target.Tool},{"support",machine.Target.Support},{"collisionDefinitions",machine.CollisionDefinitions},
+        Map result{{"postprocessor",machine.Postprocessor},{"configuration",machine.Configuration},{"effectivePlacement",MachineNumbers(machine.Placement)},{"nodes",nodes},{"positions",positions},{"tool",machine.Target.Tool},{"support",machine.Target.Support},{"collisionDefinitions",machine.CollisionDefinitions},
             {"collisionAlgorithm",Text("MachineDeclaredBoxesV5")},{"collisionScope",Text("MachineDeclaredBoxesAndWorkpieceFixtureMesh")},
             {"collisionRepresentation",Text("MachineBoxes; WorkpieceFixtureOwnMesh")},
             {"toolCollisionSource",Text("MachineDeclaredCollisionBoxes")},{"meshDeflectionMm",CollisionMeshDeflectionMm}};
@@ -78,10 +79,11 @@ namespace {
         result["modelKey"]=iCAX::Data::VariantSerializer::Serialize(result);return result;
     }
     MachineSnapshot CaptureSetupMachine(Scene& scene,const CFiveAxisSetupComponent& setup){
-        if(!setup.GetMachineSetup().empty())return CaptureMachine(scene,setup.GetMachineSetup());
+        const auto assembly=RigidMatrix(setup.GetAssemblyTransform());
+        if(!setup.GetMachineSetup().empty()){auto result=CaptureMachine(scene,setup.GetMachineSetup());result.Placement=Motion::Multiply(result.Placement,assembly);return result;}
         const auto head=HeadDefinition(scene,setup);
         if(!head.contains("motion"))throw std::invalid_argument("CAM_HEAD_INSTANCE_REQUIRED: 请先设置切割头。");
-        MachineSnapshot result;result.HeadMotion=head.at("motion").To<Map>();
+        MachineSnapshot result;result.Placement=assembly;result.HeadMotion=head.at("motion").To<Map>();
         result.Configuration={{"placement",HeadNumbers(Motion::Identity())},{"headInstanceId",iCAX::Data::to_string(setup.GetHeadInstanceID())},{"tcp",head.at("tcpLocalPosition")},{"beam",head.at("beamLocalDirection")}};
         result.Target.Tool=result.HeadMotion.at("tool").To<int>();result.Target.Support=result.HeadMotion.at("support").To<int>();
         result.Target.TCP=HeadParameterVector(head.at("tcpLocalPosition"));result.Target.Beam=HeadParameterVector(head.at("beamLocalDirection"),true);
@@ -248,20 +250,21 @@ Map MountMachineWithTemplates(Scene& scene,const Map& request,const Map& templat
             if(std::abs(std::sin(pose[3].To<double>()))>1e-9||std::abs(std::sin(pose[4].To<double>()))>1e-9)
                 throw std::invalid_argument("CAM_MACHINE_SUPPORT_REGISTRATION_REQUIRED: 倾斜工作台请手动设置装夹坐标。");
         }
+        const auto assembly=RigidMatrix(OperationAssemblyTransform(scene,id));
         auto orientation=Motion::Identity();Map mountingBasis;Motion::Vector mountingOrigin{};
         for(const auto& e:scene.Database().FilterEntities([](auto){return true;})){
             const auto fixture=Component<CFiveAxisFixtureComponent>(e);
             if(!fixture||fixture->GetSetupID()!=id||!fixture->GetEnabled())continue;
             const auto metadata=fixture->GetImportMetadata();if(!metadata.contains("mountingFrame"))continue;
             if(!mountingBasis.empty())throw std::invalid_argument("CAM_MACHINE_MOUNT_DATUM_AMBIGUOUS: 有多个工装安装基准，请手动设置装夹坐标。");
-            const auto frame=Motion::Multiply(RigidMatrix(fixture->GetTransform()),RigidMatrix(metadata.at("mountingFrame").To<Array>()));
+            const auto frame=Motion::Multiply(assembly,Motion::Multiply(RigidMatrix(fixture->GetTransform()),RigidMatrix(metadata.at("mountingFrame").To<Array>())));
             orientation=Motion::Inverse(frame);orientation[3]=orientation[7]=orientation[11]=0;
             mountingOrigin=Motion::Transform(orientation,{frame[3],frame[7],frame[11]});
             mountingBasis={{"fixtureId",iCAX::Data::to_string(e->GetID())},{"frame",MachineNumbers(frame)}};
         }
         Motion::Vector lo{1e100,1e100,1e100},hi{-1e100,-1e100,-1e100};Array included;std::size_t workpieces=0;SimulationCollisionSnapshot mountObstacles;
         const auto extend=[&](const ID& entityID,const Map& geometry,const Array& transform,bool collisionEnabled=true){
-            const auto mesh=CollisionMeshFor(scene,geometry);const auto matrix=RigidMatrix(transform);
+            const auto mesh=CollisionMeshFor(scene,geometry);const auto matrix=Motion::Multiply(assembly,RigidMatrix(transform));
             if(!mesh||mesh->Vertices.empty())throw std::invalid_argument("CAM_MACHINE_MOUNT_GEOMETRY_REQUIRED");
             const auto aligned=Motion::Multiply(orientation,matrix);
             for(const auto& vertex:mesh->Vertices){const auto point=Motion::Transform(aligned,vertex);for(int k=0;k<3;++k){lo[k]=std::min(lo[k],point[k]);hi[k]=std::max(hi[k],point[k]);}}
@@ -325,11 +328,12 @@ static std::pair<ID,Map> MachineMoveConfiguration(Scene& scene,const Map& reques
 }
 static SimulationCollisionSnapshot MachineMoveObstacles(Scene& scene,const ID& id){
     SimulationCollisionSnapshot input;
+    const auto assembly=RigidMatrix(OperationAssemblyTransform(scene,id));
     for(const auto& e:scene.Database().FilterEntities([](auto){return true;})){
         if(const auto p=Component<CFiveAxisPlacementComponent>(e);p&&p->GetSetupID()==id){const auto w=Require<CFiveAxisWorkpieceComponent>(scene.Database(),p->GetWorkpieceID());
-            input.Query.Obstacles.push_back(CollisionObstacle(scene,iCAX::Data::to_string(e->GetID()),w->GetGeometryRef(),RigidMatrix(p->GetTransform())));}
+            input.Query.Obstacles.push_back(CollisionObstacle(scene,iCAX::Data::to_string(e->GetID()),w->GetGeometryRef(),Motion::Multiply(assembly,RigidMatrix(p->GetTransform()))));}
         if(const auto f=Component<CFiveAxisFixtureComponent>(e);f&&f->GetSetupID()==id&&f->GetEnabled()&&f->GetCollisionEnabled())
-            input.Query.Obstacles.push_back(CollisionObstacle(scene,iCAX::Data::to_string(e->GetID()),f->GetGeometryRef(),RigidMatrix(f->GetTransform())));
+            input.Query.Obstacles.push_back(CollisionObstacle(scene,iCAX::Data::to_string(e->GetID()),f->GetGeometryRef(),Motion::Multiply(assembly,RigidMatrix(f->GetTransform()))));
     }
     return input;
 }

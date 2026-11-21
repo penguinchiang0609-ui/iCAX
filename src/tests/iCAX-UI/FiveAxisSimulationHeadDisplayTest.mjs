@@ -10,7 +10,7 @@ function fixture(tool,imported){
  const setup={id:'setup',headModel,rapidSettings:{followHeightMm:2,collisionThresholdMm:.1},generatedGeometry:{status:'Current',transitions:[],operations:[{intentId:'cut',placementId:'placement',order:1,parts:[{role:'Cut',points:[[10,20,30],[15,20,30]],directions:[[0,0,1],[0,0,1]]}]}]}};
  const domain={expected:{epoch:'epoch',mutationSequence:'1'},activeSetupId:'setup',setups:[setup],placements:[{id:'placement',setupId:'setup',transform:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}],fixtures:[]};
  const view={fiveAxisArea:'toolpath',fiveCamPage:'cutting',fiveCamInspector:tool==='collision'?'collision':'properties',fiveAxisUI:{selectedIntentId:'cut',tools:{toolpath:tool==='collision'?'select':tool}},scene:{intentToolpaths:[{id:'cut'}],domain},viewport:{id:'viewport',scene:new THREE.Scene(),sceneObjects:new Map()}};
- const context={mount:{querySelector:()=>null},isCurrentProject:()=>true,sceneProxy:{resources:{async get(url){assert.equal(url,preview.url);return new Response(encodeNestingGeometry({positions,indices:[0,1,2]}));}}}};
+ const context={mount:{querySelector:()=>null,querySelectorAll:()=>[],ownerDocument:{querySelectorAll:()=>[]}},isCurrentProject:()=>true,sceneProxy:{resources:{async get(url){assert.equal(url,preview.url);return new Response(encodeNestingGeometry({positions,indices:[0,1,2]}));}}}};
  return {view,context,domain,positions};
 }
 

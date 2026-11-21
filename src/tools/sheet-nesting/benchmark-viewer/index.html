@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>排样实时报告</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark" aria-hidden="true">▰</span><span>iCAX <small>排样实验室</small></span></a>
+    <div class="connection"><span id="live-dot" class="live-dot"></span><span id="live-status">正在连接</span><span id="last-update"></span></div>
+    <label class="auto-control"><input id="auto-refresh" type="checkbox" checked>自动更新</label>
+    <button id="refresh" class="compact">刷新</button>
+    <a href="/construction.html">构造过程与调度</a>
+    <a href="/materials.html">素材与柏楚对比</a>
+  </header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">原始输入 · 原生构造 · 独立核验</p><h1>排样实时报告</h1><p class="intro-copy">每个案例一组结果。计算完成后自动加入，排样图与本轮输出坐标一致。</p></div>
+      <div class="run-label"><span id="run-state" class="badge neutral">连接中</span><span id="run-configuration">全部适用初解方法</span></div>
+    </section>
+    <div id="connection-error" class="notice warning" role="status" hidden></div>
+    <section class="overview" aria-label="批测进度">
+      <article class="metric-card progress-card"><div class="metric-label">批测进度 <span id="progress-percent">—</span></div><div class="metric-number"><span id="executed-count">—</span><small id="runnable-count">/ —</small></div><div class="progress-track"><div id="progress-bar"></div></div><p id="progress-caption">等待读取批次</p></article>
+      <article class="metric-card"><div class="metric-label">已通过几何核验</div><div id="valid-count" class="metric-number">—</div><p id="review-caption">完整性另行统计</p></article>
+      <article class="metric-card"><div class="metric-label">完整排齐</div><div id="complete-count" class="metric-number">—</div><p id="complete-caption">排齐不代表布局好</p></article>
+      <article class="metric-card"><div class="metric-label">一分钟内返回</div><div id="minute-count" class="metric-number">—</div><p id="minute-caption">采用整次原生进程耗时</p></article>
+    </section>
+    <section class="quality-overview" aria-label="参考标量比较">
+      <div class="quality-card"><span class="quality-label">公开同条件标量</span><strong id="public-target-count">—</strong><span id="public-target-caption">按同条件和公开报告精度比较</span></div>
+      <div class="quality-card"><span class="quality-label">有条件参考</span><strong id="conditional-target-count">—</strong><span id="conditional-target-caption">旋转等条件未核定，单独统计</span></div>
+      <div class="quality-card muted-card"><span class="quality-label">无直接可比目标 / 输入受限</span><strong id="unrated-count">—</strong><span>仍保留原件、计算结果及原因</span></div>
+    </section>
+    <button id="g025-card" class="g025-card" type="button"><span class="case-icon" aria-hidden="true">▱</span><span><b>G025 5板重复结果</b><small id="g025-caption">正在读取三次独立实测</small></span><span id="g025-result" class="g025-result">查看排样图 →</span></button>
+    <section class="workspace" aria-label="逐案例结果">
+      <section class="case-panel">
+        <div class="panel-title"><div><h2>案例结果</h2><p id="list-caption">等待读取数据</p></div><span id="new-results" class="new-results" aria-live="polite"></span></div>
+        <div class="filters">
+          <input id="search" type="search" placeholder="搜索案例、来源或编号" aria-label="搜索案例">
+          <div class="filter-row"><label>来源<select id="source-filter"><option value="all">全部来源</option></select></label><label>比较范围<select id="group-filter"><option value="all">全部范围</option><option value="public">公开同条件</option><option value="conditional">有条件参考</option><option value="no-target">无直接目标</option><option value="blocked">输入受限</option></select></label></div>
+          <div class="filter-row"><label>状态<select id="status-filter"><option value="executed" selected>已有结果</option><option value="all">全部案例</option><option value="complete">完整排齐</option><option value="quality-met">达到目标</option><option value="incomplete">未排齐</option><option value="quality-missed">排齐但目标未达</option><option value="invalid">核验未通过 / 异常</option><option value="pending">等待计算</option><option value="blocked">输入受限</option><option value="over-minute">超过一分钟</option></select></label><label>排序<select id="sort-order"><option value="index">按案例顺序</option><option value="latest">最新完成优先</option><option value="slowest">耗时从长到短</option><option value="boards">板数从多到少</option><option value="source">按来源名称</option></select></label></div>
+        </div>
+        <div id="case-scroll" class="case-scroll" tabindex="0" aria-label="案例列表">
+          <table class="case-table"><thead><tr><th>案例 / 来源</th><th>排齐</th><th>对照标量</th><th>板数</th><th>耗时</th></tr></thead><tbody id="case-rows"></tbody></table>
+          <p id="empty-list" class="empty" hidden>没有符合当前筛选的案例。</p>
+        </div>
+        <div class="pagination"><button id="previous-page" class="compact">上一页</button><span id="page-caption">—</span><button id="next-page" class="compact">下一页</button></div>
+      </section>
+      <section class="detail-panel" aria-label="选中案例详情">
+        <div class="detail-heading"><div><p id="detail-source" class="eyebrow">选择案例</p><h2 id="detail-title">查看对应数据与排样图</h2></div><span id="detail-status" class="badge neutral">尚未选择</span></div>
+        <div id="detail-notice" class="detail-notice" hidden></div>
+        <div class="detail-metrics"><div><span>零件</span><b id="detail-placed">—</b></div><div><span>板数 / 参考</span><b id="detail-boards">—</b></div><div><span>原生耗时</span><b id="detail-seconds">—</b></div><div><span>对照标量</span><b id="detail-quality">—</b></div></div>
+        <nav class="detail-tabs" aria-label="详情内容"><button class="active" data-tab="layout" aria-selected="true">排样图</button><button data-tab="facts" aria-selected="false">参数与核验</button><button data-tab="raw" aria-selected="false">原始数据</button></nav>
+        <div id="detail-scroll" class="detail-scroll">
+          <div id="tab-layout" class="tab-content">
+            <div class="drawing-controls"><label><input id="show-labels" type="checkbox" checked>显示零件编号</label><label class="zoom-control">缩放<input id="zoom" type="range" min="50" max="250" step="10" value="100"><output id="zoom-value">100%</output></label><button id="reset-zoom" class="compact">适合宽度</button></div>
+            <p id="drawing-caption" class="drawing-caption">选择左侧案例后显示本轮真实轮廓。</p>
+            <div id="boards" class="boards"><div class="empty drawing-empty"><span>▱</span><p>每张板的原件、孔洞及位置将在这里显示。</p></div></div>
+            <section id="remaining-section" class="remaining-section" hidden><h3>未排零件</h3><div id="remaining-list"></div></section>
+          </div>
+          <div id="tab-facts" class="tab-content" hidden><dl id="case-facts" class="case-facts"></dl><details id="part-list-details"><summary>原件规格与库存</summary><div id="part-list"></div></details><details><summary>核验记录</summary><pre id="review-json"></pre></details></div>
+          <div id="tab-raw" class="tab-content" hidden><div class="raw-toolbar"><span>本轮输入、输出及核验字段</span><button id="download-json" class="compact">下载此案例 JSON</button></div><pre id="raw-json">尚未选择案例。</pre></div>
+        </div>
+      </section>
+    </section>
+    <details class="scope-note"><summary>如何读这份报告</summary><p>当前批测已停止，正在审查构造实现。几何合法、排齐、板数或占长满足参考，都不能证明布局紧凑或构造质量合格。对照栏只比较指定标量，未作综合质量结论。</p><p>NDTM 是原索引固定宽度上限下的构造记录。历史优化后成绩单独保留。缺少完整输入的案例列为输入受限。</p><p>板图根据本轮原始轮廓及最终坐标绘制，板边虚线表示预留边距。图形显示用于查看；合法性以对应核验记录为准。</p></details>
+    <footer><span id="batch-label">本地实时数据</span><span>自动刷新不改变筛选、当前案例与缩放。</span><a href="/reports/current" target="_blank" rel="noopener">文字报告</a><a href="/reports/csv">下载数据表</a></footer>
+  </main>
+  <script src="viewer.js" defer></script>
+</body>
+</html>

@@ -1037,10 +1037,11 @@ namespace
 namespace
 {
     TopoDS_Shape NormalizeLinearPartAlongAxis(
-        IN const TopoDS_Shape& Shape_, IN const gp_Dir& Axis_)
+        IN const TopoDS_Shape& Shape_, IN const gp_Dir& Axis_, gp_Trsf& SourceToPart_)
     {
         gp_Trsf _Rotation;
         _Rotation.SetRotation(gp_Quaternion(gp_Vec(Axis_), gp_Vec(1.0, 0.0, 0.0)));
+        SourceToPart_ = _Rotation;
         auto _Normalized = BRepBuilderAPI_Transform(Shape_, _Rotation, true).Shape();
         // A closed circular edge has only one seam vertex; measure the actual
         // section bounds rather than shifting the tube by seam-vertex extents.
@@ -1055,21 +1056,37 @@ namespace
             -(_MinimumX + _MaximumX) * 0.5,
             -(_MinimumY + _MaximumY) * 0.5,
             -(_MinimumZ + _MaximumZ) * 0.5));
+        SourceToPart_ = _Translation.Multiplied(_Rotation);
         return BRepBuilderAPI_Transform(_Normalized, _Translation, true).Shape();
     }
 }
 
 TopoDS_Shape NormalizeLinearPartForManufacturing(IN const TopoDS_Shape& Shape_)
 {
+    gp_Trsf _SourceToPart;
+    return NormalizeLinearPartForManufacturing(Shape_, _SourceToPart);
+}
+
+TopoDS_Shape NormalizeLinearPartForManufacturing(IN const TopoDS_Shape& Shape_, gp_Trsf& SourceToPart_)
+{
+    SourceToPart_ = gp_Trsf();
     if (Shape_.IsNull()) return Shape_;
     const auto _Frame = MeasureBodyFrame(Shape_);
     if (!_Frame || _Frame->HalfLength <= kLinearTolerance) return Shape_;
-    return NormalizeLinearPartAlongAxis(Shape_, _Frame->Axis);
+    return NormalizeLinearPartAlongAxis(Shape_, _Frame->Axis, SourceToPart_);
 }
 
 TopoDS_Shape NormalizeLinearPartForManufacturing(
     IN const TopoDS_Shape& Shape_, IN const gp_Dir& KnownAxis_)
 {
+    gp_Trsf _SourceToPart;
+    return NormalizeLinearPartForManufacturing(Shape_, KnownAxis_, _SourceToPart);
+}
+
+TopoDS_Shape NormalizeLinearPartForManufacturing(
+    IN const TopoDS_Shape& Shape_, IN const gp_Dir& KnownAxis_, gp_Trsf& SourceToPart_)
+{
+    SourceToPart_ = gp_Trsf();
     if (Shape_.IsNull()) return Shape_;
     const auto _CanonicalAxis = CanonicalDirection(KnownAxis_);
     // Keep the original geometric inference for unexpected solids. A template
@@ -1077,8 +1094,8 @@ TopoDS_Shape NormalizeLinearPartForManufacturing(
     // with the same longest linear edge used by that inference.
     const auto _ObservedAxis = MeasureLinearBodyAxis(Shape_);
     if (!_ObservedAxis || Dot(*_ObservedAxis, _CanonicalAxis) < 1.0 - 1.0e-8)
-        return NormalizeLinearPartForManufacturing(Shape_);
-    return NormalizeLinearPartAlongAxis(Shape_, _CanonicalAxis);
+        return NormalizeLinearPartForManufacturing(Shape_, SourceToPart_);
+    return NormalizeLinearPartAlongAxis(Shape_, _CanonicalAxis, SourceToPart_);
 }
 
 SLinearNestingGeometry MeasureLinearNestingGeometry(IN const TopoDS_Shape& Shape_)

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>MakeFileProj</Keyword>
+    <ProjectGuid>{C33FD013-64F7-4788-92D2-22352740AD6D}</ProjectGuid>
+    <RootNamespace>iPlaneNesting</RootNamespace>
+    <ProjectName>iPlaneNesting</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <!-- This standalone SDK owns its build/install paths and retains its PN2 exports. -->
+    <OutDir>$(MSBuildProjectDirectory)\dist\$(Configuration)\bin\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\build\$(Configuration)\msbuild\</IntDir>
+    <TargetName>iPlaneNesting</TargetName>
+    <TargetExt>.dll</TargetExt>
+    <NMakeOutput>$(MSBuildProjectDirectory)\dist\$(Configuration)\bin\iPlaneNesting.dll</NMakeOutput>
+    <NMakeBuildCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build.ps1&quot; -Configuration &quot;$(Configuration)&quot; -Action Build</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build.ps1&quot; -Configuration &quot;$(Configuration)&quot; -Action Rebuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build.ps1&quot; -Configuration &quot;$(Configuration)&quot; -Action Clean</NMakeCleanCommandLine>
+    <NMakeUseOemCodePage>false</NMakeUseOemCodePage>
+    <NMakeIncludeSearchPath>$(MSBuildProjectDirectory)\include;$(MSBuildProjectDirectory)\src;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
+    <NMakePreprocessorDefinitions>WIN32;_WINDOWS;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="src\**\*.cpp;cmake\**\*.cpp;tests\**\*.cpp;tests\**\*.c;examples\**\*.cpp;examples\**\*.c" Exclude="build\**;dist\**" />
+    <ClInclude Include="include\**\*.h;include\**\*.hpp;src\**\*.h;src\**\*.hpp;src\**\*.inl;src\**\*.inc;cmake\**\*.h;cmake\**\*.hpp;tests\**\*.h;tests\**\*.hpp;tests\**\*.inl;tests\**\*.inc;examples\**\*.h;examples\**\*.hpp" Exclude="build\**;dist\**" />
+    <None Include="CMakeLists.txt;build.ps1;README.md;provenance.json;.gitignore" />
+    <None Include="cmake\**\*.cmake;cmake\**\*.cmake.in;cmake\**\CMakeLists.txt;tests\**\*.mjs;tests\**\*.json;tests\**\*.ps1;tests\**\*.cmake;tests\**\CMakeLists.txt;examples\**\*.pn2;examples\**\*.json;examples\**\*.md" Exclude="build\**;dist\**" />
+    <None Include="third_party\**\LICENSE*;third_party\**\LICENCE*;third_party\**\COPYING*;third_party\**\NOTICE*" Exclude="build\**;dist\**" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

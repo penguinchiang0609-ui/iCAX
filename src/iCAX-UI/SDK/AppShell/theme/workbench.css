@@ -731,6 +731,62 @@ button:disabled {
   font-weight: 800;
 }
 
+.bottom-dock.has-product-panels {
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 28px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.bottom-dock-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  background: #eef2f4;
+}
+
+.bottom-dock-tabs [role="tab"] {
+  min-width: 58px;
+  padding: 3px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #526a75;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bottom-dock-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: #244d59;
+  background: #fff;
+}
+
+.bottom-dock-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.bottom-dock-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bottom-dock-panel[hidden] {
+  display: none;
+}
+
+.bottom-dock-panel[data-bottom-dock-panel="logs"] {
+  padding: 7px 10px;
+  overflow: hidden;
+}
+
 .log-list {
   min-width: 0;
   height: 100%;

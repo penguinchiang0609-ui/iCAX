@@ -81,6 +81,9 @@ try {
     await page.waitForFunction(() => __icaxAppShell.getState().startupPhase === 'ready');
     assert.deepEqual(await page.evaluate(() => __fixture.opens), [{ productId: product.productId, path: '' }]);
     assert.equal(await page.locator('[data-test-project]').isVisible(), true);
+    assert.equal(await page.locator('[data-bottom-dock-tab]').count(), 0, 'products without a dock definition keep the original log-only footer');
+    assert.equal(await page.locator('.bottom-title').innerText(), '日志');
+    assert.equal(await page.locator('.log-list').count(), 1);assert.equal(await page.locator('.log-list').isVisible(), true);
     await page.waitForFunction(() => !document.querySelector('[data-startup-screen]'));
     await page.locator('[data-action="open-start-center"]').click();
     assert.equal(await page.locator('.start-products').count(), 0, 'single product stays single in the project menu');

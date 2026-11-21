@@ -119,6 +119,8 @@ namespace {
 void BindFixtureLibraryStore(Scene& scene,std::shared_ptr<LibraryStore> store) {
     if(store&&store->GetProductID()!="icax.five-axis-cam")throw std::invalid_argument("CAM_LIBRARY_PRODUCT_MISMATCH");
     Runtime(scene)->FixtureLibraryStore=std::move(store);
+    CaptureInitialProductHeadDefault(scene);
+    CaptureInitialProductMachineTypeDefault(scene);
 }
 Map ReadFixtureLibrary(Scene& scene,const Map&) {
     auto& store=FixtureStore(scene);const auto defaults=FixtureDefaults(store);const auto defaultID=DefaultFixtureID(store);

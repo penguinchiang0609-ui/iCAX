@@ -33,7 +33,13 @@ else {
     try { await page.waitForFunction(() => globalThis.__icaxAppShell?.getState().startupPhase === 'ready', null, { timeout: 15000 }); }
     catch (error) { console.log(await page.evaluate(() => ({ state: globalThis.__icaxAppShell?.getState(), text: document.body.innerText }))); await page.screenshot({ path: resolve(output, 'failure.png') }); throw error; }
     await page.locator('[data-five-area="workpiece"]').waitFor();
-    if(process.env.ICAX_DOCKED_EXTRACTION_ONLY){
+    if(process.env.ICAX_RIBBON_NAVIGATION_ONLY){
+      const {verifyRibbonNavigation}=await import('./FiveAxisRibbonNavigation.browser.mjs');
+      cases.push(...await verifyRibbonNavigation(page,output));
+    } else if(process.env.ICAX_RAPID_GENERATION_PARAMETERS_ONLY){
+      const {verifyRapidGenerationParameters}=await import('./FiveAxisRapidGenerationParameters.browser.mjs');
+      cases.push(...await verifyRapidGenerationParameters(page,output));
+    } else if(process.env.ICAX_DOCKED_EXTRACTION_ONLY){
       const { verifyDockedExtraction } = await import('./FiveAxisDockedExtraction.browser.mjs');
       cases.push(...await verifyDockedExtraction(page,output));
     } else if(process.env.ICAX_WINDOW_LAYOUT_ONLY){
@@ -48,7 +54,7 @@ else {
     const importIndex=commands.indexOf('workpiece.import');
     assert.deepEqual(commands.slice(importIndex+1,importIndex+5),['five.tool.select','five.tool.translate','five.tool.rotate','five.tool.scale']);
     await page.screenshot({ path: resolve(output, '01-project.png') });
-    assert.deepEqual(await page.locator('.ribbon-tab').allTextContents().then(values => values.map(value => value.trim())), ['工件', 'CAD', 'CAM', '孪生', '帮助']);
+    assert.deepEqual(await page.locator('.ribbon-tab').allTextContents().then(values => values.map(value => value.trim())), ['工件', '工序', '刀路', '孪生', '帮助']);
     assert.equal(await page.locator('[data-tab-id="file"]').count(), 0);
     assert.equal(await page.locator('[data-command-id="app.save"]').count(), 1, 'keep the shell save entry');
     for (const area of ['workpiece', 'cad', 'toolpath', 'simulation', 'help']) {

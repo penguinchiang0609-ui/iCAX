@@ -13,7 +13,7 @@ TEST(FiveAxisFixtureSkeleton, SparseFrameHasRealContactsAndLowerNonContactConnec
     EXPECT_TRUE(parts.back().Supported);EXPECT_LE(parts.size(),10u);EXPECT_LT(parts.size(),in.Stations.size()+1);size_t bearings=0,connections=0;
     for(const auto& part:parts){const auto native=iCAX::OpenCascade::BuildOpenCascadeShape(part.Geometry);ASSERT_TRUE(native.bOK);EXPECT_TRUE(BRepCheck_Analyzer(native.Shape).IsValid());if(part.Base)continue;
         if(part.Connection){++connections;EXPECT_TRUE(part.Contacts.empty());EXPECT_EQ(part.ContactLength,0);EXPECT_GE(part.Distance+1e-6,in.Gap);size_t crossing=0;for(const auto& j:part.Joints)if(j.Type=="LapTop"||j.Type=="LapBottom")++crossing;EXPECT_GE(crossing,2u);
-            for(auto p:part.Outline)EXPECT_LT(part.Frame[11]+p[1],-in.Gap);
+            for(auto p:part.Outline)EXPECT_LE(part.Frame[11]+p[1],-in.Gap+1e-7);
         }else{++bearings;EXPECT_FALSE(part.Contacts.empty());EXPECT_GT(part.ContactLength,0);}
     }
     EXPECT_GE(bearings,2u);EXPECT_EQ(connections,2u);EXPECT_LE(parts.back().MaximumUnsupportedSpan,in.MaximumSupportSpan+1e-6);EXPECT_LE(parts.back().MaximumEndOverhang,in.MaximumSupportSpan/2+1e-6);
@@ -102,7 +102,7 @@ TEST(FiveAxisFixtureCounts, CurvedSheetUsesExactMassAndBaseBoundInRotatedSupport
         in.Stations=service->SuggestStations(in,220);const auto parts=service->Build(in,{});ASSERT_EQ(6u,parts.size());const auto& base=parts.back();EXPECT_TRUE(base.Supported);EXPECT_EQ("UniformSheet",base.CenterMethod);EXPECT_EQ(0.,base.MeshDeflection);EXPECT_EQ(in.BaseDrop,base.Distance);
         const auto center=centroid.Transformed(rotation);for(int k=0;k<3;++k)EXPECT_NEAR(center.Coord(k+1),base.CenterOfMass[k],1e-6);
         const auto world=work.Moved(TopLoc_Location(rotation));for(const auto& part:parts){const auto shape=ClearanceShape(part);EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid());BRepExtrema_DistShapeShape distance(shape,world);ASSERT_TRUE(distance.IsDone());
-            if(part.Base)EXPECT_GE(distance.Value()+1e-6,in.BaseDrop);else if(part.Connection)EXPECT_GE(distance.Value()+1e-6,in.Gap);else {EXPECT_GT(distance.Value(),1e-6);EXPECT_LE(distance.Value(),2*part.TopRetreat+.001);EXPECT_FALSE(part.Contacts.empty());}}
+            if(part.Base)EXPECT_GE(distance.Value()+1e-6,in.BaseDrop);else if(part.Connection)EXPECT_GE(distance.Value()+1e-6,in.Gap);else {EXPECT_LE(distance.Value(),1e-6);EXPECT_DOUBLE_EQ(part.TopRetreat,0.);EXPECT_FALSE(part.Contacts.empty());}}
     }
     EXPECT_EQ(before,iCAX::GeometryData::Persistence::Serialize(*in.Geometry));
 }
@@ -115,23 +115,27 @@ TEST(FiveAxisFixtureCounts, DISABLED_RealPillarCountLayoutHasValidNonIntersectin
     iCAX::Geometry::SectionPlateInput in;in.Geometry=scene.Resources().Get<iCAX::GeometryData::BRepModel>(ref.at("url").To<Text>(),std::stoull(ref.at("version").To<Text>()));
     const auto transform=state.at("placements").To<Array>().front().To<Map>().at("transform").To<Array>();for(size_t i=0;i<16;++i)in.Transform[i]=transform[i].To<double>();
     in.FaceIDs={3,4,7,8,19,23,26,27,28,29,30,32,34,36,38,39,43,44,45,46,47,48,49,51,53,54,56,58,60,62,63,64,65,66};
+    if(!fixture_parallel_tests::Environment("ICAX_FIXTURE_PILLAR_SINGLE_FACE").empty())in.FaceIDs={66};
     in.Automatic=true;in.Pattern="Skeleton";in.CountLayout=true;in.SupportCount=5;in.ConnectionCount=2;in.SolidBase=true;in.JointMode="TabSlot";
     in.WindowMode="Automatic";in.WindowWeb=10;in.AvoidOpeningBoundaries=true;in.OpeningBoundaryMargin=1;in.OpeningReliefDepth=5;
     const auto service=scene.Services().Resolve<iCAX::Geometry::ISectionPlateService>();in.Stations=service->SuggestStations(in,220);
     const auto before=iCAX::GeometryData::Persistence::Serialize(*in.Geometry);const auto started=std::chrono::steady_clock::now();const auto parts=service->Build(in,{});
     const double elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();ASSERT_EQ(8u,parts.size());EXPECT_TRUE(parts.back().Supported);
     const auto built=iCAX::OpenCascade::BuildOpenCascadeShape(*in.Geometry);ASSERT_TRUE(built.bOK);const auto work=built.Shape.Moved(TopLoc_Location(DirectionTransform(in.Transform)));
-    Array audit;size_t bearings=0,rails=0;
+    Array audit;size_t bearings=0,rails=0;std::vector<TopoDS_Shape> auditedSolids;
     for(const auto& part:parts){
         std::cout<<"Pillar BRep audit "<<(part.Base?"base":part.Connection?"connection":"support")<<' '<<part.StationIndex<<std::endl;
         const auto shape=ClearanceShape(part);const bool valid=BRepCheck_Analyzer(shape).IsValid();EXPECT_TRUE(valid)<<part.StationIndex;
-        BRepExtrema_DistShapeShape distance;distance.LoadS1(shape);distance.LoadS2(work);distance.SetMultiThread(true);ASSERT_TRUE(distance.Perform());EXPECT_FALSE(distance.InnerSolution());EXPECT_GT(distance.Value(),1e-7)<<part.StationIndex;
+        BRepExtrema_DistShapeShape distance;distance.LoadS1(shape);distance.LoadS2(work);distance.SetMultiThread(false);ASSERT_TRUE(distance.Perform());EXPECT_FALSE(distance.InnerSolution());if(part.Base||part.Connection)EXPECT_GT(distance.Value(),1e-7)<<part.StationIndex;else EXPECT_LE(distance.Value(),1e-5)<<part.StationIndex;
+        const auto intersectionVolume=[](const TopoDS_Shape& a,const TopoDS_Shape& b){BRepAlgoAPI_Common overlap;NCollection_List<TopoDS_Shape> arguments,tools;arguments.Append(a);tools.Append(b);overlap.SetArguments(arguments);overlap.SetTools(tools);overlap.SetNonDestructive(true);overlap.SetRunParallel(false);overlap.Build();if(!overlap.IsDone())throw std::runtime_error("Independent intersection failed");GProp_GProps volume;BRepGProp::VolumeProperties(overlap.Shape(),volume);return std::abs(volume.Mass());};
+        const double workpieceOverlap=intersectionVolume(shape,work);EXPECT_LE(workpieceOverlap,1e-7)<<part.StationIndex;
+        for(const auto& other:auditedSolids)EXPECT_LE(intersectionVolume(shape,other),1e-7)<<part.StationIndex;auditedSolids.push_back(shape);
         size_t crossings=0;for(const auto& joint:part.Joints)if(joint.Type=="LapTop"||joint.Type=="LapBottom")++crossings;
         if(part.Base){EXPECT_TRUE(part.WindowHoleIndices.empty());EXPECT_EQ(part.Holes.size(),part.Joints.size());EXPECT_DOUBLE_EQ(part.Distance,in.BaseDrop);EXPECT_GE(distance.Value()+1e-6,in.BaseDrop);}
-        else {const auto& station=in.Stations[part.StationIndex];EXPECT_DOUBLE_EQ(station.NominalCoordinate,station.Coordinate);EXPECT_DOUBLE_EQ(part.MeshDeflection,.005);
+        else {const auto& station=in.Stations[part.StationIndex];EXPECT_DOUBLE_EQ(station.NominalCoordinate,station.Coordinate);EXPECT_DOUBLE_EQ(part.MeshDeflection,0.);
             if(part.Connection){++rails;EXPECT_EQ(5u,crossings);EXPECT_TRUE(part.Contacts.empty());EXPECT_GE(part.Distance,in.Gap);EXPECT_GE(distance.Value()+1e-6,in.Gap);}
             else {++bearings;EXPECT_EQ(2u,crossings);EXPECT_FALSE(part.Contacts.empty());EXPECT_LE(part.Distance,2*part.TopRetreat+.001);EXPECT_LE(distance.Value(),2*part.TopRetreat+.001);}}
-        audit.emplace_back(Map{{"station",static_cast<UInt>(part.StationIndex)},{"base",part.Base},{"connection",part.Connection},{"validBRep",valid},{"exactDistanceMm",distance.Value()},{"innerSolution",distance.InnerSolution()},{"crossingCount",static_cast<UInt>(crossings)}});
+        audit.emplace_back(Map{{"station",static_cast<UInt>(part.StationIndex)},{"base",part.Base},{"connection",part.Connection},{"validBRep",valid},{"exactDistanceMm",distance.Value()},{"workpieceIntersectionVolumeMm3",workpieceOverlap},{"innerSolution",distance.InnerSolution()},{"crossingCount",static_cast<UInt>(crossings)}});
         std::cout<<"Pillar BRep distance "<<distance.Value()<<" mm"<<std::endl;
     }
     EXPECT_EQ(5u,bearings);EXPECT_EQ(2u,rails);EXPECT_EQ(before,iCAX::GeometryData::Persistence::Serialize(*in.Geometry));

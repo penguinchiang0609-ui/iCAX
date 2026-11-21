@@ -1,0 +1,29 @@
+{
+  "case": "Terashima TG004",
+  "scope": "Same original 36 parts and 12 sheets; public original finite quarters, zero gap/margin",
+  "immutableOriginalProblem": true,
+  "originalCount": 36,
+  "exactOriginalPairsChecked": [
+    630,
+    630
+  ],
+  "A": {
+    "tailNetMaterialArea": 812000,
+    "certifiedRegularRemnant": 187999.99989641947,
+    "root": "D:\\penguinchinage0609\\iCAX\\output\\research\\plane-nesting\\20261106\\native-convex-tail-current28-01\\cases\\terashima1-TG004\\current-source-root.json",
+    "rootSha256": "2bd3ffa872e6862844e82a1a43d19700b4fe272416dd7f61cf00ef67da380b82"
+  },
+  "B": {
+    "tailNetMaterialArea": 791410,
+    "certifiedRegularRemnant": 82549.99991452378,
+    "root": "D:\\penguinchinage0609\\iCAX\\output\\research\\plane-nesting\\20261106\\native-convex-tail-current28-01\\cases\\terashima1-TG004\\planned.json",
+    "rootSha256": "675987abff09e2a038b80eb83a67800d7b62f05aac5337c122355fd6263e0ca1"
+  },
+  "fixtureFiles": {
+    "A.layouts": "951c769832d68cc2756a65517e2a6d5ce7aa715311d2df41f47393f68b6ef1eb",
+    "B.layouts": "d53e4369767f35b443a27d49bd65071c8426159d7cfce11fade52aec2f0c0f69",
+    "original.problem": "dd669c08a14841de2f2a40031ee99d6e0808d5316bfe74a1deea81893c515dae"
+  },
+  "oldQualityMetric": "D:\\penguinchinage0609\\iCAX\\output\\research\\plane-nesting\\20261106\\native-convex-tail-current28-metrics-01\\summary.json",
+  "frozenOldArtifactsUnmodified": true
+}

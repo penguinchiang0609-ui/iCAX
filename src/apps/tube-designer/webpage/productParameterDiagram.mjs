@@ -4,6 +4,7 @@ import { catalogText, getTemplateVisualAsset } from "./productCatalog.mjs";
 import { productControlFields, productStructureEditors } from "./productControls.mjs";
 import { creationOnlyParameterKeys } from "./productParameterDependencies.mjs";
 import { renderMinimalGrilleArtwork, minimalGrilleStyleLabel } from "./minimalGrilleDiagram.mjs";
+import { renderInvisibleGrilleArtwork, invisibleGrilleStyleLabel } from "./invisibleGrilleDiagram.mjs";
 
 function escapeText(value) {
   return String(value ?? "")
@@ -1047,6 +1048,7 @@ function declaredArtwork(template, values, options) {
   if (diagram.kind === "security-window") return securityWindowArtwork(template, diagram, values, options);
   if (diagram.kind === "guardrail") return guardrailArtwork(template, diagram, values, options);
   if (diagram.kind === "minimal-protective-grille") return renderMinimalGrilleArtwork(template, diagram, values, options);
+  if (diagram.kind === "invisible-protective-grille") return renderInvisibleGrilleArtwork(template, diagram, values, options);
   if (diagram.kind === "layered-svg") {
     const layers = (diagram.layers ?? []).filter(layer => matchesParameterCondition(layer.visibleWhen, values));
     const artwork = layers.map(layer => linkedGroup(String(layer.svg ?? ""), layer.parameters ?? [],
@@ -1084,7 +1086,9 @@ export function renderProductParameterDiagram(template, values = {}, options = {
   const compact = options.compact === true;
   const diagram = productDiagram(template);
   const minimalGrille = diagram?.kind === "minimal-protective-grille";
+  const invisibleGrille = diagram?.kind === "invisible-protective-grille";
   const description = minimalGrille ? minimalGrilleStyleLabel(template, diagram, values)
+    : invisibleGrille ? invisibleGrilleStyleLabel(template, diagram, values)
     : compact ? "随结构选项联动" : "结构、分截及尺寸随参数联动 · 点击图中标注定位参数";
   const dynamicArtwork = declaredArtwork(template, values, { ...options, mode });
   const source = getTemplateVisualAsset(template, "schematic") || getTemplateVisualAsset(template, "icon");

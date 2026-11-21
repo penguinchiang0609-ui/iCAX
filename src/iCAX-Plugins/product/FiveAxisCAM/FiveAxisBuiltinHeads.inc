@@ -9,7 +9,7 @@ Map ListBuiltinHeads(Scene& scene,const Map& request){
         const auto item=value.To<Map>();if(dedicated?!item.contains("standaloneHead"):!item.contains("headRoot"))continue;
         auto kind=String(item,"kind");if(kind=="4+1")kind="A";if(kind=="3+2")kind="Fixed";
         const auto name=dedicated?item.at("name"):Variant(kind=="Fixed"?Text("固定切割头"):kind+" 切割头");
-        Map listed{{"id",item.at("id")},{"name",name},{"kind",kind},{"workpieceAxes",Array{}}};if(item.contains("headAxes"))listed["headAxes"]=item.at("headAxes");items.emplace_back(std::move(listed));
+        Map listed{{"id",item.at("id")},{"name",name},{"kind",kind},{"workpieceAxes",Array{}},{"machineTypes",Array{}}};if(item.contains("headAxes")){listed["headAxes"]=item.at("headAxes");const auto count=item.at("headAxes").To<Array>().size();if(count<=2)listed["machineTypes"]=Array{Text(count==2?"HeadHead":count==1?"HeadTable":"TableTable")};}items.emplace_back(std::move(listed));
     }
     return {{"items",items}};
 }
@@ -66,7 +66,7 @@ namespace {
         if(!iCAX::CAM::LoadMachineDescription(String(source,"sourcePath"),description,error))throw std::runtime_error("内置切割头定义读取失败："+error);
         return DeclaredBuiltinHeadCollisionMetadata(BuiltinHeadTool(description));
     }
-    Map BuiltinHeadPart(Scene& scene,const Map& source,const iCAX::CAM::SMachineElementData& element){
+    Map BuiltinHeadPart(Scene& scene,const Map& source,const iCAX::CAM::SMachineElementData& element,iCAX::Resource::EResourcePersistenceMode persistence){
         const auto* tool=&element;
         if(tool->Visuals.empty())throw std::runtime_error("内置机床定义缺少切割头模型。");
         auto model=std::make_shared<iCAX::GeometryData::BRepModel>();std::vector<Ref> dependencies;
@@ -76,7 +76,8 @@ namespace {
             if(relative.empty()||relative.is_absolute())throw std::runtime_error("内置切割头网格路径必须相对于机床定义。");
             for(const auto& part:relative)if(part=="..")throw std::runtime_error("内置切割头网格路径不能越出机床定义目录。");
             const auto raw=String(source,"sourcePath");const auto path=(std::filesystem::path(std::u8string(raw.begin(),raw.end())).parent_path()/relative).u8string();
-            iCAX::Resource::CResourceImportRequest request;request.SourcePath=Text(path.begin(),path.end());request.FormatID="geometry.stl";request.Persistence=iCAX::Resource::EResourcePersistenceMode::Embedded;
+            iCAX::Resource::CResourceImportRequest request;request.SourcePath=Text(path.begin(),path.end());request.FormatID="geometry.stl";request.Persistence=persistence;
+            if(persistence==iCAX::Resource::EResourcePersistenceMode::RuntimeOnly)request.TargetResourceID=scene.Resources().AllocateResourceURL();
             iCAX::Resource::CResourceImportResult imported;const auto mesh=scene.Resources().Import<iCAX::GeometryData::CTriangleMeshResource>(request,&imported);
             if(!mesh)throw std::runtime_error("内置切割头模型读取失败："+imported.Error);
             if(!imported.PrimaryResourceID.empty())dependencies.push_back({imported.PrimaryResourceID,scene.Resources().GetVersion(imported.PrimaryResourceID)});
@@ -86,18 +87,18 @@ namespace {
             for(auto& point:record.Geometry.Vertices){const auto x=point.X,y=point.Y,z=point.Z;point={transform(0,0)*x+transform(0,1)*y+transform(0,2)*z+transform(0,3),transform(1,0)*x+transform(1,1)*y+transform(1,2)*z+transform(1,3),transform(2,0)*x+transform(2,1)*y+transform(2,2)*z+transform(2,3)};}
             model->Triangulations3.push_back(std::move(record));
         }
-        const auto name=String(source,"name");const auto geometry=Publish(scene,model,"geometry.brep",name,dependencies);
+        const auto name=String(source,"name");const auto geometry=Publish(scene,model,"geometry.brep",name,dependencies,persistence);
         auto preview=std::make_shared<iCAX::Resource::CFlatBufferResource>(iCAX::RenderInteraction::MakeFrontendBRepGeometry(*model,{},1));
-        const auto display=Publish(scene,preview,iCAX::Resource::CFlatBufferResource::kResourceTypeName,name,{geometry});
+        const auto display=Publish(scene,preview,iCAX::Resource::CFlatBufferResource::kResourceTypeName,name,{geometry},persistence);
         Map head{{"kind",Text("Builtin")},{"motionType",Text("Rigid")},{"rotaryAxisCount",0},{"name",name},{"builtinDefinitionId",source.at("id")},{"calibrated",true},
             {"geometryRef",StoredRef(geometry)},{"previewRef",StoredRef(display)},{"tcpLocalPosition",tool->Tool.TcpLocalPosition},{"beamLocalDirection",tool->Tool.BeamLocalDirection}};
         for(const auto& [key,value]:DeclaredBuiltinHeadCollisionMetadata(*tool))head[key]=value;
         return head;
     }
-    Map BuiltinHeadDefinition(Scene& scene,const Text& definitionID){
+    Map BuiltinHeadDefinition(Scene& scene,const Text& definitionID,iCAX::Resource::EResourcePersistenceMode persistence=iCAX::Resource::EResourcePersistenceMode::Embedded){
         const auto source=BuiltinHeadSource(scene,definitionID);iCAX::CAM::CMachineDescriptionResource description;Text error;
         if(!iCAX::CAM::LoadMachineDescription(String(source,"sourcePath"),description,error))throw std::runtime_error("内置切割头定义读取失败："+error);
-        const auto& tool=BuiltinHeadTool(description);auto head=BuiltinHeadPart(scene,source,tool);
+        const auto& tool=BuiltinHeadTool(description);auto head=BuiltinHeadPart(scene,source,tool,persistence);
         if(!source.contains("headRoot"))return head;
         std::vector<const iCAX::CAM::SMachineElementData*> chain;const auto* part=&tool;
         for(;;){chain.push_back(part);if(part->OriginalName==String(source,"headRoot"))break;
@@ -106,7 +107,7 @@ namespace {
         }
         std::reverse(chain.begin(),chain.end());Array nodes;
         for(std::size_t i=0;i<chain.size();++i){const auto& e=*chain[i];const auto& j=e.JointToParent;
-            const auto body=&e==&tool?head:BuiltinHeadPart(scene,source,e);Array origin=Identity();
+            const auto body=&e==&tool?head:BuiltinHeadPart(scene,source,e,persistence);Array origin=Identity();
             if(i){const auto& p=j.bValid?j.Pose:e.Pose;const auto matrix=iCAX::Transform::MakeLocalMatrix(p[0]*1000,p[1]*1000,p[2]*1000,p[5],p[4],p[3],1,1,1);for(int r=0;r<4;++r)for(int c=0;c<4;++c)origin[r*4+c]=matrix(r,c);}
             nodes.emplace_back(Map{{"name",e.Name},{"parent",static_cast<int>(i)-1},{"origin",origin},{"type",j.bValid?j.JointType:Text("fixed")},{"joint",j.Name},
                 {"axis",j.Axis.bValid?j.Axis.XYZ:Array{0.,0.,1.}},{"lower",j.dLowerLimit},{"upper",j.dUpperLimit},{"position",j.dHomePosition},

@@ -104,7 +104,7 @@
        other projects do not write the output tree. -->
   <Target Name="ICAXCopyTubeDesignerTemplates"
           AfterTargets="Build"
-          Condition="('$(MSBuildProjectName)' == 'TubeDesigner' or '$(MSBuildProjectName)' == 'Application') and '$(DesignTimeBuild)' != 'true'">
+          Condition="('$(MSBuildProjectName)' == 'TubeDesigner' or '$(MSBuildProjectName)' == 'Application') and '$(DesignTimeBuild)' != 'true' and '$(ICAXSkipTubeDesignerDeployment)' != 'true'">
     <!-- Mirror templates so removed packages disappear from the running catalogue. -->
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ICAXSourceRoot)tools\build\sync_tube_designer_templates.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ICAXSourceRoot)tools\build\sync_tube_designer_web_assets.ps1&quot; -OutputDirectory &quot;$(OutDir).&quot;" />

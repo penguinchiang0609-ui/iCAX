@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>截面分区</title>
+<style>
+:root{font:14px system-ui,"Microsoft YaHei",sans-serif;color:#223247;background:#f4f6f8}*{box-sizing:border-box}
+body{margin:0}header,section{padding:12px 16px}header{background:#fff;border-bottom:1px solid #d7e0e9}
+h1,h2,p{margin:0}h1{font-size:17px}h2{font-size:14px}.muted{color:#526678}
+#model{max-width:100%;padding:5px}button,select{font:inherit}button{border:1px solid #bacbda;background:#fff;color:inherit;border-radius:4px;padding:5px 7px;cursor:pointer}
+button[aria-pressed=true]{background:#d9eaf8;border-color:#4f7c9e}
+main{display:grid;grid-template-columns:minmax(260px,1fr) 218px;min-height:380px}
+.plot{min-width:0;background:white;border-right:1px solid #dce3e9}
+svg{display:block;width:100%;height:clamp(235px,52vh,620px)}
+.material{stroke:#3d5468;stroke-width:1.2;vector-effect:non-scaling-stroke;fill:#9fc3df;cursor:pointer}
+.shared{fill:#ecb775}.selected{stroke:#172e46;stroke-width:3}.mutedCell{opacity:.24}
+.outline{fill:none;stroke:#203d54;stroke-width:1.2;vector-effect:non-scaling-stroke;pointer-events:none}
+.stack{display:grid;gap:6px}.stack button{text-align:left}.group{margin-top:9px}
+#owners{line-height:1.5;min-height:2.4em;font-size:12px}#links{display:flex;flex-wrap:wrap;gap:8px}a{color:#275d96}
+#modelNote{line-height:1.45;min-height:1.4em}#error:not(:empty){padding:12px;color:#993721}
+@media(max-width:550px){main{grid-template-columns:minmax(0,1fr)}.plot{border-right:0;border-bottom:1px solid #dce3e9}svg{height:clamp(190px,46vh,370px)}}
+</style></head><body>
+<header class="stack"><h1>截面分区</h1><p id="batch" class="muted"></p><select id="model" aria-label="选择轮廓"></select>
+<p id="modelNote" role="status"></p></header>
+<main><section class="plot"><svg id="plot" role="img" aria-label="截面材料块和共享归属"></svg><div id="links"></div></section>
+<section class="stack"><p id="owners" role="status">选择壁区或点选材料块。</p>
+<div class="group stack" id="walls"></div><div class="group stack" id="junctions"></div></section></main>
+<p id="error" role="alert"></p>
+<script type="module">
+const el=id=>document.getElementById(id);
+const plot=el('plot'), model=el('model'), ns='http://www.w3.org/2000/svg';
+const embedded=new URLSearchParams(location.search).has('embedded');
+const state={complete:'已完成',unresolved:'支撑或交界待解',unsupported:'曲线暂不支持',failed:'计算失败',running:'运行中','not-run':'未运行',pending:'待运行'};
+const formatArea=value=>Number.isFinite(value)?Number(value.toPrecision(8)).toLocaleString('zh-CN',{maximumFractionDigits:8}):'—';
+const read=async url=>{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error(`${r.status} · ${url}`);return r.json()};
+const pathOf=wires=>(wires||[]).filter(w=>w.length>1).map(loop=>'M'+loop.map(p=>p[0]+','+(-p[1])).join('L')+'Z').join('');
+const svgPath=(wires,cls)=>{
+ const node=document.createElementNS(ns,'path');node.setAttribute('d',pathOf(wires));node.setAttribute('class',cls);node.setAttribute('fill-rule','evenodd');plot.append(node);return node;
+};
+let records=[],active,token=0;
+function file(label,url){if(!url)return;const a=document.createElement('a');a.textContent=label;a.href=url;a.download='';el('links').append(a);}
+function group(node,label,items,select){
+ node.replaceChildren();
+ if(!items.length)return;
+ const heading=document.createElement('h2');heading.textContent=label;node.append(heading);
+ for(const item of items){const button=document.createElement('button');button.type='button';button.setAttribute('aria-pressed','false');
+  button.textContent=item.label;button.onclick=()=>select(item,button);node.append(button);}
+}
+function fit(wires){
+ const points=wires.flat(1);
+ let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+ for(const [x,y] of points){left=Math.min(x,left);right=Math.max(x,right);top=Math.min(-y,top);bottom=Math.max(-y,bottom);}
+ const width=right-left,height=bottom-top,margin=Math.max(width,height)*.1;
+ if(Number.isFinite(margin)&&margin>0)plot.setAttribute('viewBox',[left-margin,top-margin,width+2*margin,height+2*margin].join(' '));
+}
+async function show(id){
+ const row=records.find(item=>String(item.id)===id);
+ if(!row||row===active)return;
+ active=row;const request=++token;model.value=id;el('error').textContent='';
+ for(const name of ['plot','links','walls','junctions'])el(name).replaceChildren();
+ el('owners').textContent='选择壁区或点选材料块。';
+ el('modelNote').textContent=[state[row.status]||row.status,row.reason].filter(Boolean).join(' · ');
+ history.replaceState(null,'','#'+encodeURIComponent(id));
+ const fittingUrl=row.fittingUrl||'/section/SectionRegionWork-20261118/contours/'+encodeURIComponent(id)+'/contour-fitting.json';
+ file('轮廓拟合与原轮廓数据',fittingUrl);
+ if(row.status!=='complete'||!row.dataUrl){
+  try{const raw=await read(fittingUrl);if(request!==token)return;
+   const wires=(raw.originalDisplayWires||[]).flat(1);svgPath(wires,'outline');fit(wires);}
+  catch(error){if(request===token)el('error').textContent=error.message;}
+  return;
+ }
+ try{
+  const result=await read(row.dataUrl);
+  if(request!==token)return;
+  const names=new Map(result.walls.map(w=>[w.id,w.label||'W'+w.id]));
+  const ownerNames=ids=>ids.map(id=>names.get(id)||'W'+id).join('、');
+  const paths=[];
+  const highlight=(ids,message,button)=>{
+   const keys=new Set(ids);
+   for(const [cell,element] of paths){element.classList.toggle('selected',keys.has(cell.id));element.classList.toggle('mutedCell',!keys.has(cell.id));}
+   for(const b of document.querySelectorAll('section button'))b.setAttribute('aria-pressed',String(b===button));
+   el('owners').textContent=message;
+  };
+  for(const cell of result.cells){const shared=cell.ownerWallIds.length>1;
+   const node=svgPath(cell.displayWires,'material'+(shared?' shared':''));
+   const label=`C${cell.id} · ${ownerNames(cell.ownerWallIds)} · ${formatArea(cell.area)} mm²`;
+   const title=document.createElementNS(ns,'title');title.textContent=label;node.append(title);
+   node.onclick=()=>highlight([cell.id],label);paths.push([cell,node]);
+  }
+  fit(result.cells.flatMap(cell=>cell.displayWires));
+  el('modelNote').textContent=`${result.walls.length} 条壁区 · ${result.cells.length} 块材料 · 共享 ${formatArea(result.sharedArea)} mm²`;
+  group(el('walls'),'完整壁区',result.walls,(w,b)=>highlight(w.cellIds,`${w.label} · ${formatArea(w.area)} mm² · ${w.cellIds.length} 块材料`,b));
+  group(el('junctions'),'交界',result.junctions,(j,b)=>highlight(j.cellIds,`${j.label} · ${ownerNames(j.wallIds)}`,b));
+  file('完整材料 BREP',row.brepUrl);file('原生验收数据',row.evidenceUrl);
+ }catch(error){if(request===token)el('error').textContent=error.message;}
+}
+try{
+ const batch=await read('manifest.json');records=batch.records||batch.cases||[];
+ el('batch').hidden=model.hidden=embedded;
+ if(!embedded){
+  el('batch').textContent=`${records.length} 份轮廓 · ${records.filter(row=>row.status==='complete').length} 份完成`;
+  for(const row of records){const option=document.createElement('option');option.value=String(row.id);
+   option.textContent=row.name+' · '+(state[row.status]||row.status);model.append(option);}
+  model.onchange=()=>show(model.value);
+ }
+ const id=decodeURIComponent(location.hash.slice(1));
+ if(records.some(row=>String(row.id)===id))show(id);
+ else if(!embedded&&records.length)show(String(records[0].id));
+ else el('error').textContent='未找到所选轮廓的分区记录';
+ window.addEventListener('hashchange',()=>show(decodeURIComponent(location.hash.slice(1))));
+}catch(error){el('error').textContent=error.message;}
+</script></body></html>

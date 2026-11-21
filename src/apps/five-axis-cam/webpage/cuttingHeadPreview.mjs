@@ -1,4 +1,6 @@
-import {previewAxes,draftHeadMotion} from './headMotionDraft.mjs';
+import {previewAxes,draftHeadMotion,headPreviewDraft} from './headMotionDraft.mjs';
+import {headWorkspaceHead,headWorkspaceSelection,hasHeadWorkspacePreview,headPreviewAxis} from './headWorkspaceSelection.mjs';
+import {syncHeadAssignments} from './headAssignmentScopes.mjs';
 import {syncHeadChoicePicker} from './headChoicePicker.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 import {loadRenderResource} from '../../../iCAX-UI/SDK/Viewport/renderResource.mjs';
@@ -19,8 +21,8 @@ const angleText=degrees=>String(Number(degrees.toFixed(3)));
 
 export function renderCuttingHeadPreview(view){
  const s=view.fiveHeadPreview;
- const head=view.scene?.domain?.setups?.find(x=>x.id===view.scene.domain.activeSetupId)?.headModel;
- const axes=previewAxes(view),requested=view.fiveHeadEditor?.axis||0,selected=axes[requested]?.target==='Head'?requested:axes.findIndex(a=>a.target==='Head');
+ const head=headWorkspaceHead(view);
+ const axes=previewAxes(view),requested=headPreviewAxis(view),selected=axes[requested]?.target==='Head'?requested:axes.findIndex(a=>a.target==='Head');
  const controls=axes.map((axis,i)=>{
   if(axis.target!=='Head')return '';
   const value=Number(s?.axisAngles?.[axis.index]||0)*180/Math.PI;
@@ -30,7 +32,7 @@ export function renderCuttingHeadPreview(view){
   <div class="five-head-preview-stage" data-five-key="head-preview-stage"><canvas data-five-key="head-preview-canvas" data-five-head-preview width="${s?.canvas.width||300}" height="${s?.canvas.height||300}" tabindex="0" aria-label="切割头模型，右键拖动旋转，中键拖动平移，滚轮缩放" data-preview-ready="${s?.phase==='ready'}"></canvas>${renderHeadColliderTools(view)}<div class="five-head-preview-status" data-five-key="head-preview-status" role="status" ${s?.phase==='ready'?'hidden':''}>${esc(s?.message||'正在加载模型…')}</div></div>
   <div class="five-head-preview-tools"><span>右键旋转 · 中键平移 · 滚轮缩放</span><button type="button" data-five-head-preview-reset>${s?.phase==='error'?'重试预览':'复位视角'}</button></div>
   ${controls?`<div class="five-head-preview-joints" data-five-key="head-preview-joints"><header><span>预览转角</span><button type="button" data-five-head-joints-reset ${s?.phase==='ready'?'':'disabled'}>关节复位</button></header>${controls}</div>`:''}
-  <small class="five-head-preview-legend" data-five-key="head-preview-legend">${esc(s?.legend||'红点：喷嘴端点 · 箭头：光束方向')}</small>
+  <small class="five-head-preview-legend" data-five-key="head-preview-legend">${esc(s?.legend||'红点：切割点（TCP） · 箭头：光束方向')}</small>
  </section>`;
 }
 
@@ -46,10 +48,10 @@ export function poseCuttingHeadPreview(group,positions){
 function updateMotionPreview(s,force=false){
  if(!s.model)return;
  try{
-  const motion=draftHeadMotion(s.head,s.view.fiveHeadEditor?.draft);if(!motion)return;
-  const key=JSON.stringify([motion,s.view.fiveHeadEditor?.axis]);if(!force&&s.motionKey===key)return;s.motionKey=key;s.motion=motion;s.axisAngles??={};
+  const motion=draftHeadMotion(s.head,headPreviewDraft(s.view));if(!motion)return;
+  const key=JSON.stringify([motion,headPreviewAxis(s.view)]);if(!force&&s.motionKey===key)return;s.motionKey=key;s.motion=motion;s.axisAngles??={};
   const positions=motion.nodes.map(n=>n.parameterIndex==null?Number(n.position||0):THREE.MathUtils.clamp(s.axisAngles[previewAxes(s.view)[n.parameterIndex]?.index]||0,n.lower,n.upper));
-  const world=machineForward(motion,positions),axes=previewAxes(s.view),selected=s.view.fiveHeadEditor?.axis||0;s.motionWorld=world;
+  const world=machineForward(motion,positions),axes=previewAxes(s.view),selected=headPreviewAxis(s.view);s.motionWorld=world;
   const parameterFor=i=>{for(let n=i;n>=0;n=motion.nodes[n].parent)if(motion.nodes[n].parameterIndex!=null)return motion.nodes[n].parameterIndex;return axes.findIndex(a=>a.target==='Head');};
   if(s.model.userData.assembly)s.model.children.forEach((part,i)=>{part.matrix.copy(world[motion.headNodes[i]]);part.matrixWorldNeedsUpdate=true;const parameter=parameterFor(motion.headNodes[i]);part.traverse(o=>o.userData.previewParameter=parameter);});
   else {s.model.matrixAutoUpdate=false;s.model.matrix.copy(world[motion.headNodes[0]]);s.model.matrixWorldNeedsUpdate=true;s.model.traverse(o=>o.userData.previewParameter=parameterFor(motion.headNodes[0]));}
@@ -101,7 +103,7 @@ function paintStatus(s){
  const status=s.host.querySelector('.five-head-preview-status');
  if(status){status.hidden=s.phase==='ready';status.textContent=s.message;}
  const reset=s.host.querySelector('[data-five-head-preview-reset]');if(reset)reset.textContent=s.phase==='error'?'重试预览':'复位视角';
- const legend=s.host.querySelector('.five-head-preview-legend');if(legend)legend.textContent=s.legend||'红点：喷嘴端点 · 箭头：光束方向';
+ const legend=s.host.querySelector('.five-head-preview-legend');if(legend)legend.textContent=s.legend||'红点：切割点（TCP） · 箭头：光束方向';
  for(const input of s.host.querySelectorAll('[data-five-head-joint]')){
   input.disabled=s.phase!=='ready';const value=previewDegrees(s.axisAngles?.[previewAxes(s.view)[Number(input.dataset.fiveHeadJoint)]?.index]||0);input.value=String(value);
   const output=s.host.querySelector(`[data-five-head-angle="${input.dataset.fiveHeadJoint}"]`);if(output)output.textContent=angleText(value)+'°';
@@ -138,7 +140,7 @@ function resize(s){
 function createPreview(context,view,host,canvas){
  const window=host.ownerDocument.defaultView;
  const s={host,canvas,context,view,phase:'loading',message:'正在加载模型…',token:0,dead:false,target:new THREE.Vector3(),radius:1};
- s.renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});s.renderer.setClearColor(0xedf3f5,1);
+ s.renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});s.renderer.setClearColor(view.fiveCamPage==='head'?0x13252d:0xedf3f5,1);
  s.scene=new THREE.Scene();s.camera=new THREE.PerspectiveCamera(34,1,.001,10000);s.camera.up.set(0,0,1);
  s.scene.add(new THREE.HemisphereLight(0xffffff,0x627c8d,2.5));
  const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(1,-2,3);s.scene.add(light);
@@ -186,22 +188,25 @@ function createPreview(context,view,host,canvas){
 
 export function disposeCuttingHeadPreview(view){view.fiveHeadPreview?.dispose();view.fiveHeadPreview=null;}
 export function syncCuttingHeadPreview(context,view,ops){
+ if(ops)syncHeadAssignments(context,view,ops);
  if(ops)syncHeadChoicePicker(context,view,ops);
  if(ops)headColliderState(view).binding={context,view,ops};
  const host=context.mount?.querySelector('[data-five-key="head-preview"]'),canvas=host?.querySelector('canvas');
- if(view.disposed||context.isCurrentProject?.()===false||view.fiveAxisArea!=='toolpath'||!view.fiveSimulation?.headOpen||!canvas){disposeCuttingHeadPreview(view);return;}
+ if(view.disposed||context.isCurrentProject?.()===false||view.fiveAxisArea!=='toolpath'||(!view.fiveSimulation?.headOpen&&view.fiveCamPage!=='head')||!canvas){disposeCuttingHeadPreview(view);return;}
  let s=view.fiveHeadPreview;
  if(s?.canvas!==canvas){disposeCuttingHeadPreview(view);try{s=view.fiveHeadPreview=createPreview(context,view,host,canvas);}catch(error){const status=host.querySelector('.five-head-preview-status');status.hidden=false;status.textContent='无法显示三维预览：'+error.message;return;}}
  s.context=context;resize(s);
- const setup=view.scene?.domain?.setups?.find(x=>x.id===view.scene.domain.activeSetupId),head=setup?.headModel,sim=view.fiveSimulation;
+ const setup=view.scene?.domain?.setups?.find(x=>x.id===view.scene.domain.activeSetupId),head=headWorkspaceHead(view),sim=view.fiveSimulation||{},selection=hasHeadWorkspacePreview(view)?headWorkspaceSelection(view):null;
  const requested=sim.queuedBuiltinHeadId??(sim.request?.payload.kind==='Builtin'?sim.request.payload.builtinDefinitionId:null);
  // Instance labels/profile provenance do not alter this physical display.
  // Effective geometry, joint frames/limits and TCP remain part of the key.
  const physicalHead=[head?.instance?.id,head?.kind,head?.previewRef,head?.machinePreviewRef,head?.assembly?.nodes.map(n=>n.previewRef)];
- const waiting=requested&&requested!==head?.builtinDefinitionId,key=JSON.stringify([setup?.id,physicalHead,waiting?requested:null]);
+ const waiting=selection?selection.loading:requested&&requested!==head?.builtinDefinitionId,key=JSON.stringify([setup?.id,physicalHead,selection?[selection.choice,selection.serial,selection.loading,selection.error]:null,waiting?requested:null]);
  s.head=head;if(s.key===key){updateMotionPreview(s);render(s);return;}
  s.key=key;const token=++s.token;disposeHeadColliderPreview(s);attachHeadColliderPreview(s);disposeObject(s.model);disposeObject(s.workpiece);s.workpiece=null;s.motionKey=null;s.axisAngles={};disposeObject(s.markers);s.model=null;s.motion=null;s.motionWorld=null;s.markers=null;s.phase='loading';s.message=waiting?'正在更新所选型号…':'正在加载模型…';s.legend='';render(s);
  if(waiting)return;
+  if(selection?.error){s.phase='error';s.message='预览加载失败：'+selection.error;render(s);return;}
+ if(!head){s.phase='empty';s.message='从左侧选择切割头，或使用上方“导入”。';render(s);return;}
  const current=()=>!s.dead&&token===s.token&&view.fiveHeadPreview===s&&!view.disposed&&s.context.isCurrentProject?.()!==false&&canvas.isConnected;
  void loadCuttingHeadPreview(context.sceneProxy.resources,head,current).then(result=>{
   if(!current()){disposeObject(result?.group);return;}if(!result)return;
@@ -212,7 +217,7 @@ export function syncCuttingHeadPreview(context,view,ops){
   const box=new THREE.Box3().setFromObject(s.model);if(s.workpiece)box.expandByObject(s.workpiece);if(box.isEmpty())throw Error('切割头模型为空。');
   box.getCenter(s.target);s.radius=Math.max(box.getSize(new THREE.Vector3()).length()/2,.01);
   if(!s.motion){s.previewPositions=result.positions;s.previewCalibrated=result.calibrated;showPoseMarkers(s,result);}
-  s.legend=result.schematic?'内置示意头 · 请选择具体型号查看实际外形':result.calibrated?'红点：喷嘴端点 · 箭头：光束方向':'模型原始坐标 · 尚未标定喷嘴端点与光束方向';
+  s.legend=result.schematic?'内置示意头 · 请选择具体型号查看实际外形':result.calibrated?'红点：切割点（TCP） · 箭头：光束方向':'模型原始坐标 · 尚未标定切割点（TCP）与光束方向';
   if(head?.motion)s.legend+='';
   s.camera.near=s.radius*.001;s.camera.far=s.radius*200;s.camera.updateProjectionMatrix();s.phase='ready';s.message='';updateMotionPreview(s,true);fit(s);
  }).catch(error=>{if(current()){disposeObject(s.model);disposeObject(s.markers);s.model=null;s.markers=null;s.phase='error';s.message='预览加载失败：'+error.message;render(s);}});

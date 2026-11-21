@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "productId": "icax.tube-designer",
   "productName": "TubeDesigner",
-  "productVersion": "0.3.3",
+  "productVersion": "0.3.4",
   "capabilities": {
     "platform": {
       "domain": "tube-product-design",
@@ -72,8 +72,14 @@
         },
         {
           "templateId": "minimal-protective-grille",
-          "version": "2.3.1",
+          "version": "2.5.0",
           "displayName": "窗/极简防护网",
+          "status": "available"
+        },
+        {
+          "templateId": "invisible-protective-grille",
+          "version": "1.0.0",
+          "displayName": "窗/隐形防护网",
           "status": "available"
         },
         {

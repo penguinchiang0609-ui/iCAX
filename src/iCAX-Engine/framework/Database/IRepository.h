@@ -582,6 +582,10 @@ namespace iCAX
             // False means no journal is open. An unhealthy stream throws;
             // an append failure must not later be acknowledged as saved.
             virtual bool FlushOperationLog() = 0;
+            // Runs before a persistent mutation can become committed. The
+            // owner may atomically checkpoint external persistent state;
+            // exceptions abort the mutation rather than notifying observers.
+            virtual void SetOperationLogCheckpoint(std::function<void()> Checkpoint_) = 0;
         };
 
         /*

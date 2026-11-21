@@ -82,3 +82,10 @@ test('a collision at the cleared cursor can be detected again after rewinding an
   s.cursor=.1;s.frameContact={status:'Clear',cursor:.1};paintSimulationTrace(view,s);s.cursor=.5;s.frameContact={status:'Collision',cursor:.5};paintSimulationTrace(view,s);assert.deepEqual([...s.trace.contacts],[0]);
   const line=s.trace.line;s.traceContactKey='new head or obstacle';s.frameContact={status:'Clear',cursor:.5};paintSimulationTrace(view,s);assert.deepEqual([...s.trace.contacts],[]);assert.equal(s.trace.line,line);
 });
+test('assembly placement moves displayed trace and collision layers while buffers and native frames remain local',()=>{
+ const {view,s}=fixture(),frame=new THREE.Matrix4().makeTranslation(30,-20,10).multiply(new THREE.Matrix4().makeRotationZ(.6)),before=s.frames.map(f=>({position:f.position.toArray(),target:f.target?.toArray()}));
+ view.scene={domain:{activeSetupId:'setup',setups:[{id:'setup',assemblyTransform:frame.clone().transpose().toArray()}]}};s.cursor=4.5;s.collisionReport={validity:'Current',segments:[{index:'0',status:'Collision'}]};
+ paintSimulationTrace(view,s);paintCollision(view,s);const local=vertices(s.trace)[0];s.trace.line.updateMatrixWorld(true);s.collisionOverlay.updateMatrixWorld(true);
+ near(local.clone().applyMatrix4(s.trace.line.matrixWorld),local.clone().applyMatrix4(frame));near(new THREE.Vector3(1,2,3).applyMatrix4(s.collisionOverlay.matrixWorld),new THREE.Vector3(1,2,3).applyMatrix4(frame));
+ const line=s.trace.line;paintSimulationTrace(view,s);assert.equal(s.trace.line,line);near(local.clone().applyMatrix4(line.matrix),local.clone().applyMatrix4(frame));assert.deepEqual(s.frames.map(f=>({position:f.position.toArray(),target:f.target?.toArray()})),before);
+});

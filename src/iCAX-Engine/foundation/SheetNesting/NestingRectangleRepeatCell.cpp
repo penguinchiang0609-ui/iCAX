@@ -262,6 +262,7 @@ namespace iCAX::SheetNesting
                         part.ID = original.ID; part.Material = original.Material;
                         part.Quantity = original.Quantity / cells; part.FreeRotation = original.FreeRotation;
                         part.Geometry.Radius = original.Geometry.Radius; part.Geometry.Center = original.Geometry.Center;
+                        part.Geometry.CommonEdgeRings = original.Geometry.CommonEdgeRings;
                         for (auto point : original.Geometry.Outer) { probe(); part.Geometry.Outer.push_back(point); }
                         for (const auto& hole : original.Geometry.Holes)
                         {

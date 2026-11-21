@@ -6,7 +6,7 @@ export async function verifyWorkpieceGeometry({page,read,rpc,refresh,output,sour
   const command=id=>page.evaluate(id=>fixture.entry.handleRibbonCommand(fixture.context,id),id);
   const idle=()=>page.waitForFunction(()=>!fixture.view.pending);
   const tabs=await page.evaluate(()=>fixture.entry.getRibbonDefinition(fixture.context).tabs);
-  assert.deepEqual(tabs.map(t=>t.title),['工件','装夹','CAM','孪生','帮助']);
+  assert.deepEqual(tabs.map(t=>t.title),['工件','工序','刀路','孪生','帮助']);
   const geometry=tabs[0].groups.find(g=>g.title==='几何');
   assert.deepEqual(geometry.commands.map(c=>c.title),['几何检查','几何修复','几何编辑','测量']);
   await page.evaluate(()=>fixture.geometryCanvas=fixture.view.viewport.renderer.domElement);

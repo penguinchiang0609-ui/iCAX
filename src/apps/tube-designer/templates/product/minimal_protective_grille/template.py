@@ -16,7 +16,7 @@ import sys
 from icax_template_sdk import NeutralModel, to_display_model
 
 TEMPLATE_ID = 'minimal-protective-grille'
-TEMPLATE_VERSION = '2.3.1'
+TEMPLATE_VERSION = '2.5.0'
 ROOT = Path(__file__).resolve().parent
 SHARED = ROOT.parents[1] / '_shared'
 EPS = 1.e-7
@@ -53,23 +53,25 @@ def _count(p, key):
     return int(value)
 
 
-def layout(p):
+def _planar_layout(p):
     """Resolve local clear openings and the minimum straight stock graph."""
     catalogue = _load(SHARED / 'tube_profile_catalog.py')
     frame, inner = (catalogue.load_profile(p, role) for role in ('frame', 'inner'))
-    if not frame.hollow or not inner.hollow or frame.kind not in ('rect', 'round') or inner.kind not in ('rect', 'round'):
-        raise ValueError('极简防护网的边框和内杆须选择中空方矩管或圆管')
+    if frame.kind not in ('rect-bar', 'rect', 'round') or inner.kind not in ('rect-bar', 'rect', 'round'):
+        raise ValueError('极简防护网的边框和内杆须选择扁钢、方矩管或圆管')
     width, height = _number(p, 'width', 100), _number(p, 'height', 100)
     fw, bw = frame.width, inner.width
     if width <= 2 * fw + bw or height <= 2 * fw + 3 * bw:
         raise ValueError('成品尺寸不足以容纳边框及内杆')
     frame_type = _choice(p, 'frameType', ('two_vertical', 'closed_frame', 'bottom_rail'))
     enabled = _choice(p, 'handleEnabled', ('yes', 'no')) == 'yes'
-    mode = _choice(p, 'barLayoutMode', ('maximum_gap', 'fixed_count'))
+    mode = _choice(p, 'barLayoutMode', ('center_spacing', 'maximum_gap', 'fixed_count'))
     maximum_gap = _number(p, 'maximumClearGap', 1, 2000) if mode == 'maximum_gap' else None
+    center_spacing = _number(p, 'barCenterSpacing', bw+EPS, 2000) if mode == 'center_spacing' else None
     bottom_frame, top_frame = frame_type != 'two_vertical', frame_type == 'closed_frame'
     low, high = (fw if bottom_frame else 0.), (height-fw if top_frame else height)
-    first = None if top_frame else height - _number(p, 'firstBarTopOffset', bw/2)
+    top_inactive = top_frame or (mode == 'center_spacing' and not enabled and not bottom_frame)
+    first = None if top_inactive else height - _number(p, 'firstBarTopOffset', bw/2)
     last = None if bottom_frame else _number(p, 'lastBarBottomOffset', bw/2)
     if first is not None and not low+bw/2 < first <= high-bw/2+EPS:
         raise ValueError('首根横杆顶部偏移超出可排布范围')
@@ -137,6 +139,17 @@ def layout(p):
             add(f'inner.center.{i:04d}', '中竖管', 'inner.center', inner, center, a, center, b)
 
     def rows(a, b, count_key, bottom=None, top=None):
+        if mode == 'center_spacing':
+            lo, hi = a+bw/2, b-bw/2
+            if hi < lo-EPS:
+                return []
+            if bottom is not None:
+                return [bottom+i*center_spacing for i in range(max(0,int(math.floor((hi-bottom)/center_spacing+EPS)))+1)]
+            if top is not None:
+                return sorted(top-i*center_spacing for i in range(max(0,int(math.floor((top-lo)/center_spacing+EPS)))+1))
+            n = int(math.floor((hi-lo)/center_spacing+EPS))+1
+            start = (lo+hi-(n-1)*center_spacing)/2
+            return [start+i*center_spacing for i in range(n)]
         fixed = []
         if bottom is not None:
             fixed.append(bottom)
@@ -224,10 +237,25 @@ def layout(p):
     installation = _load(ROOT / 'installation_holes.py').plan(p, members)
     return dict(members=members, connections=connections, facts=dict(
         frameType=frame_type, handleEnabled=enabled, handleSide=side, handleClosure=closure,
+        barLayoutMode=mode, barCenterSpacing=center_spacing,
         clearOpenings=openings, continuousHorizontalRows=center is None,
         centralMullion=center, mergedCentralSlot=bool(center is not None and closure == 'open_slot'),
         rowCenters={zone:zs for zone,zs in row_sets},
         memberCount=len(members), contactCount=len(connections), installationHoles=installation))
+
+
+def layout(p):
+    style = p.get('layoutStyle', 'planar')
+    if style == 'planar':
+        result = _planar_layout(p)
+        result['facts']['layoutStyle'] = 'planar'
+        return result
+    if style not in ('five_face', 'balcony_closure'):
+        raise ValueError('极简防护网款式无效')
+    # Derived front-frame choices are internal, never returned as normalized
+    # host input. Inactive planar drafts cannot affect a fixed five-face frame.
+    front = _planar_layout({**p, 'frameType':'closed_frame', 'installHoleEnabled':'no'})
+    return _load(ROOT / 'spatial_layout.py').extend(p, front, _load, ROOT)
 
 
 def display(parameter_values):
@@ -241,8 +269,11 @@ def display(parameter_values):
         start, end = member['start'], member['end']
         horizontal = start[2] == end[2]
         # Keep canonical section axes and a right-handed frame for each stock.
-        x, y, axis = (([0.,0.,1.],[0.,-1.,0.],[1.,0.,0.]) if horizontal else
-                      ([1.,0.,0.],[0.,1.,0.],[0.,0.,1.]))
+        if 'sectionFrame' in member:
+            x, y, axis = (member['sectionFrame'][name] for name in ('xAxis','yAxis','zAxis'))
+        else:
+            x, y, axis = (([0.,0.,1.],[0.,-1.,0.],[1.,0.,0.]) if horizontal else
+                          ([1.,0.,0.],[0.,1.,0.],[0.,0.,1.]))
         raw = builder.emit_tube(key, profile_arguments={
             'placement':{'origin':list(start),'xAxis':x,'yAxis':y}, 'contours':profile.contours()},
             extrude_arguments={'vector':[end[i]-start[i] for i in range(3)]})
@@ -250,11 +281,16 @@ def display(parameter_values):
         properties = profile.properties()
         properties.update(sectionResource=section, sectionCoordinateMap=[[1,0],[0,1]])
         length = math.dist(start, end)
+        category = member.get('profileRole') or ('support' if member['role'] == 'frame.support' else
+                    'frame' if member['role'].startswith('frame.') else 'inner')
         keys.append(model.item(key, member['name'], representations={'display':raw}, properties={
             'partNumber':f'{parameter_values["productCode"]}-{len(keys)+1:03d}',
             'length':length, 'quantity':1, 'partKind':'tube', 'materialCategory':'tube', 'sourcing':'made',
-            'categoryKey':'minimal-grille.'+('frame' if member['role'].startswith('frame.') else 'inner'),
-            'categoryName':'边框' if member['role'].startswith('frame.') else '内杆',
+            'categoryKey':'minimal-grille.'+category,
+            'categoryName':{'frame':'正面边框','inner':'内杆','support':'支撑竖杆',
+                            'projectionVertical':'飘面竖向骨架',
+                            'projectionHorizontal':'飘面横向骨架',
+                            'drying':'晾衣杆及吊臂'}[category],
             'tubeDesigner.profile':properties,
             'tubeDesigner.productRule':{'product':TEMPLATE_ID,'role':member['role']},
             'tubeDesigner.minimalGrille':deepcopy(state['facts']),
@@ -271,6 +307,11 @@ def display(parameter_values):
         point = [float(parameter_values['width'])+120.,0.,float(parameter_values['height'])-i*80.]
         annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'parameter',
             'start':point,'end':list(point),'offset':[0.,0.,0.], 'generatedValue':parameter_values[key]})
+    if state['facts']['barLayoutMode'] == 'center_spacing':
+        key = 'barCenterSpacing'
+        point = [float(parameter_values['width'])+120.,0.,float(parameter_values['height'])-320.]
+        annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'parameter',
+            'start':point,'end':list(point),'offset':[0.,0.,0.],'generatedValue':parameter_values[key]})
     if enabled:
         opening = state['facts']['clearOpenings'][0]
         a, b, bottom, top = (opening[k] for k in ('left','right','bottom','top'))
@@ -288,7 +329,8 @@ def display(parameter_values):
     frame_type = state['facts']['frameType']
     row_centers = [z for group in state['facts']['rowCenters'].values() for z in group]
     boundary_dimensions = []
-    if frame_type != 'closed_frame':
+    if frame_type != 'closed_frame' and not (state['facts']['barLayoutMode'] == 'center_spacing'
+                                            and not enabled and frame_type == 'two_vertical'):
         boundary_dimensions.append(('firstBarTopOffset', float(parameter_values['height']), max(row_centers)))
     if frame_type == 'two_vertical':
         boundary_dimensions.append(('lastBarBottomOffset', 0., min(row_centers)))
@@ -310,13 +352,81 @@ def display(parameter_values):
             'start':point,'end':list(point),'offset':[0.,0.,0.],
             'generatedValue':parameter_values[key]})
     if installation['enabled']:
-        x = next(m['start'][0] for m in state['members'] if m['role'] == 'frame.left')
+        left_hosts = [m for m in state['members'] if m['role'] == 'frame.left']
+        bottom_host = min(left_hosts, key=lambda m: m['start'][2])
+        top_host = max(left_hosts, key=lambda m: m['end'][2])
         for key, boundary, center in (
-                ('installHoleTopOffset', float(parameter_values['height']), installation['centers'][-1]),
-                ('installHoleBottomOffset', 0., installation['centers'][0])):
+                ('installHoleTopOffset', top_host['end'][2], installation['centers'][-1]),
+                ('installHoleBottomOffset', bottom_host['start'][2], installation['centers'][0])):
+            group = next(g for g in installation['groups']
+                         if g['side'] == 'left' and abs(g['point'][2]-center) <= EPS)
+            x, y = group['point'][:2]
             annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'linear',
-                'start':[x,0.,boundary],'end':[x,0.,center],'offset':[-x-75.,0.,0.],
+                'start':[x,y,boundary],'end':[x,y,center],'offset':[-x-75.,0.,0.],
                 'generatedValue':parameter_values[key]})
+    if state['facts'].get('layoutStyle') in ('five_face', 'balcony_closure'):
+        facts = state['facts']
+        rear_y = facts['mountingPlaneY']
+        front_outer_y = facts['frontOuterY']
+        top_rear_outer_y = facts['topRearOuterY']
+        bottom_rear_outer_y = facts['bottomRearOuterY']
+        w, h = float(parameter_values['width']), float(parameter_values['height'])
+        balcony = facts['layoutStyle'] == 'balcony_closure'
+        spatial_dimensions = (
+            [('balconyTopDepth',[w,front_outer_y,h],[w,top_rear_outer_y,h],[75.,0.,75.]),
+             ('balconyBottomDepth',[w,front_outer_y,0.],[w,bottom_rear_outer_y,0.],[75.,0.,-75.]),
+             ('balconyTopDrop',[w,top_rear_outer_y,h],[w,top_rear_outer_y,h+facts['topDrop']],[75.,0.,0.])]
+            if balcony else
+            [('projectionDepth',[w,front_outer_y,0.],[w,top_rear_outer_y,0.],[75.,0.,-75.]),
+             ('topDrop',[w,top_rear_outer_y,h],[w,top_rear_outer_y,h+facts['topDrop']],[75.,0.,0.])])
+        for key, start, end, offset in spatial_dimensions:
+            annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'linear',
+                                'start':start,'end':end,'offset':offset,'generatedValue':parameter_values[key]})
+        key = 'dryingRodEnabled'
+        point = [w+120.,rear_y,h-400.]
+        annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'parameter',
+            'start':point,'end':list(point),'offset':[0.,0.,0.],
+            'generatedValue':parameter_values[key]})
+        if parameter_values[key] == 'yes':
+            rod = next(m for m in state['members'] if m['key'] == 'frame.drying.rod.0001')
+            y,z = rod['start'][1:]
+            for key,start,end in (
+                    ('dryingRodRearOffset',[w,top_rear_outer_y,z],[w,y,z]),
+                    ('dryingRodDrop',[w,y,h],[w,y,z])):
+                annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'linear',
+                    'start':start,'end':end,'offset':[75.,0.,0.],
+                    'generatedValue':parameter_values[key]})
+        if facts.get('supportStyle') == 'double':
+            posts = sorted((m for m in state['members'] if m['role'] == 'frame.support'),
+                           key=lambda m:m['start'][0])
+            left, right = posts[:2]
+            key = 'supportPairClearGap'
+            annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'linear',
+                'start':[left['start'][0]+left['profile'].width/2,0.,h/2],
+                'end':[right['start'][0]-right['profile'].width/2,0.,h/2],
+                'offset':[0.,-75.,0.],'generatedValue':parameter_values[key]})
+            center = facts['supportGroupCenters'][0]
+            key = 'supportLinkCount'
+            point = [center,-125.,h/2+100.]
+            annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'parameter',
+                'start':point,'end':list(point),'offset':[0.,0.,0.],
+                'generatedValue':parameter_values[key]})
+            levels = facts.get('supportLinkCenters', [])
+            if levels:
+                dimensions = [('supportLinkBottomOffset',0.,levels[0])]
+                if len(levels) > 1:
+                    dimensions.append(('supportLinkTopOffset',h,levels[-1]))
+                for key,boundary,level in dimensions:
+                    annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'linear',
+                        'start':[center,0.,boundary],'end':[center,0.,level],
+                        'offset':[0.,-125.,0.],'generatedValue':parameter_values[key]})
+        # Maximum constraints are parameter annotations, not dimensions falsely
+        # pretending the uniformly distributed actual gap equals the limit.
+        for i, key in enumerate(('supportMaxSpacing','returnMaximumClearGap')):
+            point = [w/2,rear_y/2,h+facts['topDrop']+100.+i*80.]
+            annotations.append({'id':TEMPLATE_ID+'.'+key,'parameter':key,'kind':'parameter',
+                                'start':point,'end':list(point),'offset':[0.,0.,0.],
+                                'generatedValue':parameter_values[key]})
     document.setdefault('extensions',{})['tubeDesigner.specificationAnnotations'] = annotations
     return to_display_model(document)
 

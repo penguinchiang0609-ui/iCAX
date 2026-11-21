@@ -28,7 +28,7 @@ TEST(FiveAxisMultiWorkpiece, IndependentMachiningSelectionAndEmbeddedProjectPers
     }
     const auto before=Read(scene);ASSERT_EQ(3u,before.at("setups").To<Array>().size());
     for(int i=0;i<3;++i){EXPECT_EQ(parts[i].at("workpieceId"),before.at("workpieces").To<Array>()[i].To<Map>().at("id"));
-        EXPECT_EQ(parts[i].at("placementId"),before.at("placements").To<Array>()[i].To<Map>().at("id"));}
+        bool found=false;for(const auto& placed:before.at("placements").To<Array>())if(placed.To<Map>().at("id")==parts[i].at("placementId")){EXPECT_EQ(parts[i].at("workpieceId"),placed.To<Map>().at("workpieceId"));found=true;}EXPECT_TRUE(found);}
     const auto request=ActivateRequest(scene,parts[0]);const auto undo=scene.Database().GetUndoArray().size();
     const auto activated=Invoke(&scene,"CamWorkpiece","Activate",request);EXPECT_TRUE(activated.at("changed").To<bool>());
     EXPECT_EQ(activated,Invoke(&scene,"CamWorkpiece","Activate",request));EXPECT_EQ(undo,scene.Database().GetUndoArray().size());

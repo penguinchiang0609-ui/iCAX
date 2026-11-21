@@ -66,6 +66,7 @@
     <ClInclude Include="TubeCadWorkspaceSDO.inc" />
     <ClInclude Include="RecoveredPartDrawingFeatures.h" />
     <ClInclude Include="NestingAdapter.h" />
+    <ClInclude Include="NestingPairTableCache.inc" />
     <ClInclude Include="NestingResultExporter.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="PartListXlsxExporter.h" />

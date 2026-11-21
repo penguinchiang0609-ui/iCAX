@@ -13,6 +13,7 @@ import {renderMachineIKTransform,cancelMachinePoseDraft,syncMachineIK,beginMachi
 import {renderMachineColliders,renderMachineColliderHud,machineColliderValueChanged,cancelMachineColliderValue,disposeMachineColliders,machineColliderCommand} from '../../apps/five-axis-cam/webpage/machineColliders.mjs';
 import {renderToolAxisPointRotation} from '../../apps/five-axis-cam/webpage/toolAxisPointRotation.mjs';
 import {selectTool,workspaceState} from '../../apps/five-axis-cam/webpage/workspaceModel.mjs';
+import {rapidDependencyKey} from '../../apps/five-axis-cam/webpage/rapidDependencies.mjs';
 
 const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
 test('shared transform modes expose only supported W/E/R commands and exclude typing, modifiers, IME and repeated keys',()=>{
@@ -33,7 +34,7 @@ test('collider tools live beside the object in every mode, with M bounds and F f
 });
 
 test('fixture HUD reuses the absolute draft and shared matrix validation; invalid text disables the gizmo without native edits',()=>{
- const view={fiveAxisArea:'workpiece',scene:{intentToolpaths:[],domain:{expected:{epoch:'e'},activeSetupId:'s',setups:[{id:'s'}],fixtureUnits:[{id:'f',setupId:'s',partIds:['p'],inputRevision:1,transform:identity,name:'夹具'}],fixtures:[{id:'p',transform:identity}]}}};selectTool(view,'fixture');
+ const view={fiveAxisArea:'operation',scene:{intentToolpaths:[],domain:{expected:{epoch:'e'},activeSetupId:'s',setups:[{id:'s'}],fixtureUnits:[{id:'f',setupId:'s',partIds:['p'],inputRevision:1,transform:identity,name:'夹具'}],fixtures:[{id:'p',transform:identity}]}}};selectTool(view,'fixture');
  const object=new THREE.Mesh(new THREE.BoxGeometry(10,10,10)),previews=[],vp={sceneObjects:new Map([['p',object]]),getGridState:()=>({snapEnabled:false}),setTransformPreview(id,m){previews.push({id,m});},clearTransformPreview(){},clearTransformManipulator(){},setTransformManipulator(options){this.options=options;this.transformManipulator={};}};view.viewport=vp;
  const context={mount:{querySelectorAll:()=>[]}},ops={renderProject(){}};
  fixtureFieldChanged(view,'x','12');let html=renderFixturePlacement(view);assert.match(html,/data-five-fixture-field="x"[^>]*value="12"/);assert.match(html,/five.fixture.move-mode:rotate/);assert.doesNotMatch(html,/data-transform-mode="scale"/);
@@ -41,11 +42,11 @@ test('fixture HUD reuses the absolute draft and shared matrix validation; invali
  fixtureFieldChanged(view,'x','-');syncFixturePlacement(context,view,ops);assert.equal(vp.options.enabled,false);assert.match(renderFixturePlacement(view),/value="-"/);disposeFixturePlacement(view);object.geometry.dispose();object.material.dispose();
 });
 
-test('rapid and cut pose tools expose their supported modes and keep endpoints and insertion modes protected',()=>{
- const e={points:[[0,0,0],[1,2,3],[4,0,0]],directions:[[0,0,1],[0,0,1],[0,0,1]],selected:1,values:['1','2','3']},view={fiveAxisArea:'toolpath',scene:{intentToolpaths:[],domain:{expected:{epoch:'e'}}},fiveRapid:{open:true,pathEdit:e,key:'{"epoch":"e"}'}};selectTool(view,'rapid');
+test('rapid and cut pose tools expose supported modes while topology insertion suppresses numeric editing',()=>{
+ const e={points:[[0,0,0],[1,2,3],[4,0,0]],directions:[[0,0,1],[0,0,1],[0,0,1]],selected:1,values:['1','2','3']},view={fiveAxisArea:'toolpath',scene:{intentToolpaths:[],domain:{expected:{epoch:'e'}}},fiveRapid:{open:true,pathEdit:e}};selectTool(view,'rapid');view.fiveRapid.key=rapidDependencyKey(view);
  let html=renderRapidPathTransform(view);assert.match(html,/path-position/);assert.match(html,/path-pose/);assert.match(html,/浮动空移位置 X/);assert.doesNotMatch(html,/data-transform-mode="scale"/);
  e.poseEditing=true;html=renderRapidPathTransform(view);assert.match(html,/data-five-rapid-field="angle-2"[^>]*readonly/);assert.match(html,/<small>°<\/small>/);
- e.inserting=true;html=renderRapidPathTransform(view);assert.match(html,/aria-pressed="false"/);assert.doesNotMatch(html,/five-placement-hud/);e.selected=0;assert.equal(renderRapidPathTransform(view),'');
+ e.inserting=true;html=renderRapidPathTransform(view);assert.match(html,/aria-pressed="false"/);assert.doesNotMatch(html,/five-placement-hud/);e.selected=0;assert.doesNotMatch(renderRapidPathTransform(view),/five-placement-hud/);
  const cut={id:'c'},v={fiveAxisArea:'toolpath',scene:{intentToolpaths:[cut],domain:{}}};selectTool(v,'keypoint');Object.assign(workspaceState(v),{selectedIntentIds:['c'],selectedIntentId:'c'});v.fiveAxisPointEdit={id:'c',axis:{},pointId:'p'};
  html=renderToolAxisPointRotation(v);assert.match(html,/five.points.edit/);assert.match(html,/<kbd>E<\/kbd>/);assert.doesNotMatch(html,/data-transform-mode="translate"|data-transform-mode="scale"/);
  v.fiveAxisPointDelete=true;assert.match(renderToolAxisPointRotation(v),/aria-pressed="false"/);

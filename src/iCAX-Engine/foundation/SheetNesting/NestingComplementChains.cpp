@@ -186,13 +186,14 @@ namespace iCAX::SheetNesting::Detail
         using Slopes=std::map<double,std::vector<std::size_t>>;
         using Heights=std::map<double,Slopes>;
         using Widths=std::map<double,Heights>;
-        std::map<std::string,Widths> index;
+        std::map<std::size_t,Widths> index;
         for(const auto& singleton:output)
         {
             if(stopped())return output;
+            if(singleton.Members.size()!=1||problem.Parts[singleton.Members.front().PartIndex].Quantity<2)continue;
             if(auto shape=Describe(problem,singleton,stopped))
             {
-                index[shape->Material][shape->Envelope.Width][shape->Envelope.Height][shape->Shear].push_back(shapes.size());
+                index[shape->Source.PartIndex][shape->Envelope.Width][shape->Envelope.Height][shape->Shear].push_back(shapes.size());
                 shapes.push_back(std::move(*shape));
             }
         }
@@ -206,7 +207,9 @@ namespace iCAX::SheetNesting::Detail
             if(stopped()||additional>=options.MaxPatterns)break;
             if(!root.Pocket)continue;
             const double uTolerance=8*problem.Tolerance*std::hypot(1.0,root.Shear),vTolerance=8*problem.Tolerance;
-            const auto material=index.find(root.Material);if(material==index.end())continue;
+            // Complement discovery is local to one original specification;
+            // different originals remain independent ordinary board demand.
+            const auto family=index.find(root.Source.PartIndex);if(family==index.end())continue;
             Pattern chain;chain.Members.push_back(root.Source);consumed[root.Source.PartIndex]=1;
             std::size_t attempts=0;
             const auto finish=[&]()
@@ -225,8 +228,8 @@ namespace iCAX::SheetNesting::Detail
             {
                 if(stopped()||chain.Members.size()>=maxMembers||attempts>=perRootBudget)return false;
                 const double slopeTolerance=uTolerance/std::max(pocket.Height,problem.Tolerance);
-                for(auto widths=material->second.lower_bound(pocket.Width-uTolerance);
-                    widths!=material->second.end()&&widths->first<=pocket.Width+uTolerance;++widths)
+                for(auto widths=family->second.lower_bound(pocket.Width-uTolerance);
+                    widths!=family->second.end()&&widths->first<=pocket.Width+uTolerance;++widths)
                 for(auto heights=widths->second.lower_bound(pocket.Height-vTolerance);
                     heights!=widths->second.end()&&heights->first<=pocket.Height+vTolerance;++heights)
                 for(auto slopes=heights->second.lower_bound(root.Shear-slopeTolerance);

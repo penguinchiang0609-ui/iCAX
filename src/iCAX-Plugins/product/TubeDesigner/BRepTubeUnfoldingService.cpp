@@ -12,12 +12,14 @@
 
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepTools_WireExplorer.hxx>
+#include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <NCollection_HSequence.hxx>
@@ -40,6 +42,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <iomanip>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -955,6 +959,188 @@ namespace iCAX::TubeDesigner
             }
             Result_.PointCount = _PointCount;
         }
+
+        // The exact plane end of an annular circular cylinder is the first
+        // harmonic c+R*gy*cos(theta)+R*gz*sin(theta). An affine plane difference
+        // attains its maximum on the outer circle of the whole material disk,
+        // so this model includes the wall thickness, not just its exterior.
+        std::optional<STubeNestingEndProfiles> CertifyRoundPlanarEnds(
+            const TopoDS_Shape& Shape_, const STubeBRepUnfoldingResult& Unfolded_)
+        {
+            constexpr double _Scale = 100.0, _AngleTolerance = 1.0e-10;
+            if (!Unfolded_.bOK || std::abs(Unfolded_.Axis[0] - 1.0) > _AngleTolerance
+                || std::hypot(Unfolded_.Axis[1], Unfolded_.Axis[2]) > _AngleTolerance)
+                return std::nullopt;
+            TopTools_IndexedMapOfShape _Solids, _Shells, _Faces;
+            TopExp::MapShapes(Shape_, TopAbs_SOLID, _Solids);
+            TopExp::MapShapes(Shape_, TopAbs_SHELL, _Shells);
+            TopExp::MapShapes(Shape_, TopAbs_FACE, _Faces);
+            if (_Solids.Extent() != 1 || _Shells.Extent() != 1 || _Faces.Extent() != 4)
+                return std::nullopt;
+            std::vector<TopoDS_Face> _Cylinders, _Caps;
+            double _Tolerance = Precision::Confusion();
+            for (int _Index = 1; _Index <= _Faces.Extent(); ++_Index)
+            {
+                const auto _Face = TopoDS::Face(_Faces(_Index));
+                _Tolerance = std::max(_Tolerance, BRep_Tool::Tolerance(_Face));
+                const BRepAdaptor_Surface _Surface(_Face);
+                if (_Surface.GetType() == GeomAbs_Cylinder) _Cylinders.push_back(_Face);
+                else if (_Surface.GetType() == GeomAbs_Plane) _Caps.push_back(_Face);
+                else return std::nullopt;
+            }
+            if (_Cylinders.size() != 2 || _Caps.size() != 2
+                || !BRepCheck_Analyzer(Shape_, true).IsValid()) return std::nullopt;
+            GProp_GProps _SolidVolume;
+            BRepGProp::VolumeProperties(Shape_, _SolidVolume);
+            if (!IsFinite(_SolidVolume.Mass()) || _SolidVolume.Mass() <= 0.0) return std::nullopt;
+            TopTools_IndexedMapOfShape _Edges, _Vertices;
+            TopExp::MapShapes(Shape_, TopAbs_EDGE, _Edges);
+            TopExp::MapShapes(Shape_, TopAbs_VERTEX, _Vertices);
+            for (int _Index = 1; _Index <= _Edges.Extent(); ++_Index)
+                _Tolerance = std::max(_Tolerance, BRep_Tool::Tolerance(TopoDS::Edge(_Edges(_Index))));
+            for (int _Index = 1; _Index <= _Vertices.Extent(); ++_Index)
+                _Tolerance = std::max(_Tolerance, BRep_Tool::Tolerance(TopoDS::Vertex(_Vertices(_Index))));
+            if (!IsFinite(_Tolerance) || _Tolerance > 0.01) return std::nullopt;
+            const auto _Cylinder0 = BRepAdaptor_Surface(_Cylinders[0]).Cylinder();
+            const auto _Cylinder1 = BRepAdaptor_Surface(_Cylinders[1]).Cylinder();
+            const double _CenterY = _Cylinder0.Location().Y(), _CenterZ = _Cylinder0.Location().Z();
+            const double _Radius = std::max(_Cylinder0.Radius(), _Cylinder1.Radius());
+            if (!IsFinite(_Radius) || _Radius <= _Tolerance * 100.0
+                || std::abs(_Cylinder0.Radius() - _Cylinder1.Radius()) <= _Tolerance * 10.0
+                || _Cylinder1.Location().Y() != _CenterY
+                || _Cylinder1.Location().Z() != _CenterZ) return std::nullopt;
+            for (const auto& _Face : _Cylinders)
+            {
+                const auto _Direction = BRepAdaptor_Surface(_Face).Cylinder().Axis().Direction();
+                // An angular tolerance is not a bound on radial drift along a
+                // long tube. This limited analytic path accepts an exact X
+                // cylinder axis only; tilted imports retain NumericOnly.
+                if (_Direction.Y() != 0.0 || _Direction.Z() != 0.0) return std::nullopt;
+                double _U0, _U1, _V0, _V1;
+                BRepTools::UVBounds(_Face, _U0, _U1, _V0, _V1);
+                if (std::abs((_U1 - _U0) - 2.0 * std::numbers::pi_v<double>) > _AngleTolerance)
+                    return std::nullopt;
+            }
+            // Require both complete annular caps and their native side-wall
+            // adjacency. Split, slotted, partial or nonanalytic boundaries stay
+            // on the NumericOnly bridge, even if samples appear sinusoidal.
+            TopTools_IndexedDataMapOfShapeListOfShape _EdgeFaces;
+            TopExp::MapShapesAndAncestors(Shape_, TopAbs_EDGE, TopAbs_FACE, _EdgeFaces);
+            for (const auto& _Cap : _Caps)
+            {
+                TopTools_IndexedMapOfShape _CapEdges;
+                TopExp::MapShapes(_Cap, TopAbs_EDGE, _CapEdges);
+                if (_CapEdges.Extent() != 2) return std::nullopt;
+                std::array<bool, 2> _HasCylinder{false, false};
+                for (int _Index = 1; _Index <= _CapEdges.Extent(); ++_Index)
+                {
+                    const auto _Edge = TopoDS::Edge(_CapEdges(_Index));
+                    const BRepAdaptor_Curve _Curve(_Edge);
+                    if ((_Curve.GetType() != GeomAbs_Circle && _Curve.GetType() != GeomAbs_Ellipse)
+                        || std::abs((_Curve.LastParameter() - _Curve.FirstParameter())
+                            - 2.0 * std::numbers::pi_v<double>) > _AngleTolerance
+                        || !_EdgeFaces.Contains(_Edge)) return std::nullopt;
+                    const auto& _Owners = _EdgeFaces.FindFromKey(_Edge);
+                    if (_Owners.Extent() != 2) return std::nullopt;
+                    const auto& _Other = _Owners.First().IsSame(_Cap) ? _Owners.Last() : _Owners.First();
+                    bool _Found = false;
+                    for (std::size_t _Side = 0; _Side < _Cylinders.size(); ++_Side)
+                        if (_Other.IsSame(_Cylinders[_Side])) { _HasCylinder[_Side] = true; _Found = true; }
+                    if (!_Found) return std::nullopt;
+                }
+                if (!_HasCylinder[0] || !_HasCylinder[1]) return std::nullopt;
+            }
+            Bnd_Box _Box;
+            BRepBndLib::AddOptimal(Shape_, _Box, false, true);
+            if (_Box.IsVoid() || _Box.IsWhole()) return std::nullopt;
+            double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+            _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+            const double _Roundoff = 128.0 * std::numeric_limits<double>::epsilon()
+                * (1.0 + std::abs(_X0) + std::abs(_X1) + std::abs(_CenterY) + std::abs(_CenterZ) + _Radius);
+            if (!IsFinite(_X0) || !IsFinite(_X1) || _X1 <= _X0 || _X1 - _X0 > 1.0e10
+                || std::abs((_X1 - _X0) - Unfolded_.Length) > 0.02
+                || std::abs((_Y0 + _Y1) * 0.5 - _CenterY) > _Tolerance * 10.0 + _Roundoff
+                || std::abs((_Z0 + _Z1) * 0.5 - _CenterZ) > _Tolerance * 10.0 + _Roundoff)
+                return std::nullopt;
+            const double _CenterError = std::hypot((_Y0 + _Y1) * 0.5 - _CenterY,
+                (_Z0 + _Z1) * 0.5 - _CenterZ);
+            struct SPlaneEnd { gp_Pln Plane; double C, Y, Z, AxialError; };
+            std::vector<SPlaneEnd> _Ends;
+            for (const auto& _Cap : _Caps)
+            {
+                const auto _Plane = BRepAdaptor_Surface(_Cap).Plane();
+                const auto _Normal = _Plane.Axis().Direction();
+                if (std::abs(_Normal.X()) < 0.125) return std::nullopt;
+                const double _Y = -_Normal.Y() / _Normal.X(), _Z = -_Normal.Z() / _Normal.X();
+                const double _C = _Plane.Location().X() + _Y * (_CenterY - _Plane.Location().Y())
+                    + _Z * (_CenterZ - _Plane.Location().Z());
+                _Ends.push_back({_Plane, _C, _Y, _Z,
+                    (_Tolerance * 4.0 + _Roundoff) / std::abs(_Normal.X())
+                        + (_CenterError + _Tolerance * 2.0) * std::hypot(_Y, _Z)});
+            }
+            std::sort(_Ends.begin(), _Ends.end(), [](const auto& A_, const auto& B_) { return A_.C < B_.C; });
+            if (_Ends[1].C - _Ends[0].C <= _Radius
+                * std::hypot(_Ends[1].Y - _Ends[0].Y, _Ends[1].Z - _Ends[0].Z)
+                    + _Ends[0].AxialError + _Ends[1].AxialError) return std::nullopt;
+            // Complete-solid support bounds use analytic geometry, with
+            // triangulation disabled and native shape tolerances included.
+            for (std::size_t _Side = 0; _Side < _Ends.size(); ++_Side)
+            {
+                const auto& _End = _Ends[_Side];
+                const gp_Dir _Normal(1.0, -_End.Y, -_End.Z);
+                const gp_Ax3 _PlaneFrame(_End.Plane.Location(), _Normal, gp::DY());
+                const auto _U = _PlaneFrame.XDirection(), _V = _PlaneFrame.YDirection();
+                const gp_Vec _Origin(gp::Origin(), _End.Plane.Location());
+                gp_Trsf _Transform;
+                _Transform.SetValues(_Normal.X(), _Normal.Y(), _Normal.Z(), -_Origin.Dot(gp_Vec(_Normal)),
+                    _U.X(), _U.Y(), _U.Z(), -_Origin.Dot(gp_Vec(_U)),
+                    _V.X(), _V.Y(), _V.Z(), -_Origin.Dot(gp_Vec(_V)));
+                const auto _Transformed = BRepBuilderAPI_Transform(Shape_, _Transform, true).Shape();
+                Bnd_Box _Support;
+                BRepBndLib::AddOptimal(_Transformed, _Support, false, true);
+                if (_Support.IsVoid() || _Support.IsWhole()) return std::nullopt;
+                double _A0, _B0, _C0, _A1, _B1, _C1;
+                _Support.Get(_A0, _B0, _C0, _A1, _B1, _C1);
+                const double _Limit = _Tolerance * 8.0 + _Roundoff;
+                if ((_Side == 0 && _A0 < -_Limit) || (_Side == 1 && _A1 > _Limit)) return std::nullopt;
+                _Ends[_Side].AxialError += std::max(0.0, _Side == 0 ? -_A0 : _A1)
+                    / _Normal.X() + _Roundoff;
+            }
+            STubeNestingEndProfiles _Result;
+            _Result.bOK = true;
+            _Result.MaximumLength = static_cast<iCAX::TubeNesting::Length>(std::ceil((_X1 - _X0) * _Scale));
+            _Result.CertifiedLocalCenter = std::array<double, 3>{(_X0 + _X1) * 0.5, _CenterY, _CenterZ};
+            const double _OriginX = (_X0 + _X1) * 0.5
+                - static_cast<double>(_Result.MaximumLength) / (2.0 * _Scale);
+            const auto _Encode = [&](const SPlaneEnd& End_) {
+                iCAX::TubeNesting::FourierLevel _Level;
+                _Level.Order = 1;
+                _Level.Constant = (End_.C - _OriginX) * _Scale;
+                _Level.Cosine = {End_.Y * _Radius * _Scale};
+                _Level.Sine = {End_.Z * _Radius * _Scale};
+                _Level.ResidualUpper = std::nextafter(End_.AxialError * _Scale,
+                    std::numeric_limits<double>::infinity());
+                _Level.FirstDerivativeUpper = _Level.SecondDerivativeUpper = std::nextafter(
+                    std::hypot(_Level.Cosine[0], _Level.Sine[0]), std::numeric_limits<double>::infinity());
+                _Level.Certified = true;
+                iCAX::TubeNesting::PeriodicEndProfile _Profile;
+                _Profile.SourceQuality = iCAX::TubeNesting::ProfileSourceQuality::NativeCertified;
+                _Profile.CompleteSingleValued = true;
+                std::ostringstream _Hash;
+                _Hash << std::setprecision(17) << "native-annular-plane-v1:" << _Level.Constant << ':'
+                    << _Level.Cosine[0] << ':' << _Level.Sine[0] << ':' << _Level.ResidualUpper << ':' << _Radius;
+                _Profile.SourceHash = _Hash.str();
+                _Profile.Levels.push_back(std::move(_Level));
+                return _Profile;
+            };
+            _Result.Geometry.Left = _Encode(_Ends[0]);
+            _Result.Geometry.Right = _Encode(_Ends[1]);
+            // theta is the physical angle in the original YZ plane. Circular
+            // coaxial stock admits every rigid roll, independently of the
+            // arbitrary seam of the editable sampled unfolding.
+            _Result.Diagnostic = "已从原生同轴圆柱壁与完整平面端口生成解析周期谱（含全实体支撑界和拓扑公差）";
+            return _Result;
+        }
     }
 
     STubeBRepUnfoldingResult UnfoldTubeBRepSurface(
@@ -1246,6 +1432,17 @@ namespace iCAX::TubeDesigner
                 : "已按整圈侧壁矩形和自有截面弧长坐标生成展开；未使用第三方 UV";
             if (!_HasSideFaceEvidence)
                 _Result.Diagnostic += "；未找到可单独标注的侧面面片，仍保留完整矩形编辑域";
+            try
+            {
+                if (const auto _Analytic = CertifyRoundPlanarEnds(Shape_, _Result))
+                {
+                    _Result.AnalyticNestingGeometry = _Analytic->Geometry;
+                    _Result.AnalyticNestingMaximumLength = _Analytic->MaximumLength;
+                    _Result.AnalyticNestingLocalCenter = _Analytic->CertifiedLocalCenter;
+                }
+            }
+            catch (const Standard_Failure&) { /* Optional native certificate is unavailable. */ }
+            catch (const std::exception&) { /* Preserve the ordinary editable unfolding. */ }
             return _Result;
         }
         catch (const Standard_Failure& _Error)
@@ -1557,6 +1754,15 @@ namespace iCAX::TubeDesigner
         const std::size_t MaximumFourierOrder_)
     {
         STubeNestingEndProfiles _Output;
+        if (Result_.bOK && Result_.AnalyticNestingGeometry && Result_.AnalyticNestingMaximumLength > 0)
+        {
+            _Output.bOK = true;
+            _Output.Geometry = *Result_.AnalyticNestingGeometry;
+            _Output.MaximumLength = Result_.AnalyticNestingMaximumLength;
+            _Output.CertifiedLocalCenter = Result_.AnalyticNestingLocalCenter;
+            _Output.Diagnostic = "已使用原生圆管平面端口解析证书；未使用展开采样拟合";
+            return _Output;
+        }
         const auto _Count = std::clamp(SampleCount_, std::size_t{8}, std::size_t{256});
         const auto _Features = EncodeTubeUnfoldedEndFeatures(Result_, _Count);
         if (!_Features.bOK || !std::isfinite(Result_.Length) || Result_.Length <= 0.0)
@@ -1622,6 +1828,23 @@ namespace iCAX::TubeDesigner
             ? "已生成排样周期端口谱（采样桥接，不含原始 BRep 残差证书）"
             : "排样周期端口谱生成失败";
         return _Output;
+    }
+
+    bool RebaseTubeNestingGeometry(iCAX::TubeNesting::PairTypeGeometry& Geometry_,
+        const iCAX::TubeNesting::Length SourceMaximumLength_,
+        const iCAX::TubeNesting::Length TargetMaximumLength_)
+    {
+        if (SourceMaximumLength_ <= 0 || TargetMaximumLength_ < SourceMaximumLength_
+            || TargetMaximumLength_ > (iCAX::TubeNesting::Length{1} << 52))
+            return false;
+        const double _Shift = static_cast<double>(TargetMaximumLength_ - SourceMaximumLength_) * 0.5;
+        for (const auto* _Profile : {&Geometry_.Left, &Geometry_.Right})
+            for (const auto& _Level : _Profile->Levels)
+                if (!std::isfinite(_Level.Constant) || !std::isfinite(_Level.Constant + _Shift))
+                    return false;
+        for (auto* _Profile : {&Geometry_.Left, &Geometry_.Right})
+            for (auto& _Level : _Profile->Levels) _Level.Constant += _Shift;
+        return true;
     }
 
     iCAX::Data::ObjectMap SerializeTubeBRepUnfolding(

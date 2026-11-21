@@ -1,0 +1,15 @@
+namespace iCAX.Render;
+
+file_identifier "ICRT";
+file_extension "icrt";
+
+table RenderTextureResource {
+  schema_version:uint = 1;
+  data_version:ulong;
+  mime_type:string;
+  pixel_width:uint;
+  pixel_height:uint;
+  encoded_image:[ubyte];
+}
+
+root_type RenderTextureResource;

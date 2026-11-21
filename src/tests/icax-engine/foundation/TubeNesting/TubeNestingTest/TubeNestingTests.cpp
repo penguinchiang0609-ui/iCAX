@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <future>
+#include <map>
 #include <numeric>
 #include <numbers>
 #include <random>
@@ -907,6 +909,262 @@ TEST(TubeNestingPairTable, ResequencesPartsToFitTwoFiniteLengthBars)
     }));
 }
 
+TEST(TubeNestingPairTable, BoundedPackingCandidateEscapesDescendingOrderWithoutRandomSearch)
+{
+    auto Table = ManualTable({
+        PairPartType{"six", "profile", {}, 6, 6, 1, {true, false}},
+        PairPartType{"five", "profile", {}, 5, 5, 1, {true, false}},
+        PairPartType{"three", "profile", {}, 3, 3, 1, {true, false}},
+        PairPartType{"two", "profile", {}, 2, 2, 3, {true, false}},
+    });
+    for (std::size_t A = 0; A < Table.Types.size(); ++A)
+        for (std::size_t B = 0; B < Table.Types.size(); ++B)
+            SetPair(Table, A, Direction::Forward, B, Direction::Forward, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    Settings.LargeNeighborhoodIterations = 0;
+
+    const auto Result = PairTableSolver{}.Solve(
+        Table, {StockType{"ten", "profile", StockKind::Standard, 10}}, Settings);
+
+    // Independent length lower bound is 20/10=2. A descending contiguous
+    // sequence 6,5,3,2,2,2 needs three bars; a pattern is 6+2+2 and 5+3+2.
+    ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+    ASSERT_EQ(Result.Stocks.size(), 2U);
+    EXPECT_EQ(Result.Metrics.TotalStockLength, 20);
+    std::set<std::string> IDs;
+    for (const auto& Stock : Result.Stocks)
+    {
+        Length Sum = 0;
+        for (const auto& Placement : Stock.Placements)
+        {
+            EXPECT_TRUE(IDs.insert(Placement.InstanceID).second);
+            const auto Type = std::find_if(Table.Types.begin(), Table.Types.end(),
+                [&](const auto& Value) { return Value.ID == Placement.DemandID; });
+            ASSERT_NE(Type, Table.Types.end());
+            Sum += Type->MaximumLength;
+        }
+        EXPECT_EQ(Sum, 10);
+        EXPECT_EQ(Stock.ProcessedEnd, Sum);
+    }
+    EXPECT_EQ(IDs.size(), 6U);
+    EXPECT_TRUE(std::ranges::any_of(Result.Diagnostics, [](const auto& Value)
+    {
+        return Value.find("packing candidates") != std::string::npos
+            && Value.find("accepted=1") != std::string::npos;
+    }));
+}
+
+TEST(TubeNestingPairTable, ReusesRepeatedPackingPatternsAndPreservesEveryInstance)
+{
+    auto Table = ManualTable({
+        PairPartType{"long", "profile", {}, 60, 60, 120, {true, true}},
+        PairPartType{"short", "profile", {}, 40, 40, 120, {true, true}},
+    });
+    for (std::size_t A = 0; A < 2; ++A)
+        for (std::size_t B = 0; B < 2; ++B)
+            for (const auto DA : {Direction::Forward, Direction::Reverse})
+                for (const auto DB : {Direction::Forward, Direction::Reverse})
+                    SetPair(Table, A, DA, B, DB, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    Settings.LargeNeighborhoodIterations = 0;
+
+    const auto Result = PairTableSolver{}.Solve(
+        Table, {StockType{"hundred", "profile", StockKind::Standard, 100}}, Settings);
+
+    ASSERT_EQ(Result.Status, SolveStatus::Optimal);
+    EXPECT_EQ(Result.ProvenScope, ProofScope::FullIntegerModel);
+    ASSERT_EQ(Result.Stocks.size(), 120U);
+    std::set<std::string> IDs;
+    for (const auto& Stock : Result.Stocks)
+    {
+        ASSERT_EQ(Stock.Placements.size(), 2U);
+        EXPECT_EQ(Stock.OccupiedLength, 100);
+        EXPECT_NE(Stock.Placements[0].DemandID, Stock.Placements[1].DemandID);
+        for (const auto& Placement : Stock.Placements)
+            EXPECT_TRUE(IDs.insert(Placement.InstanceID).second);
+    }
+    EXPECT_EQ(IDs.size(), 240U);
+    EXPECT_TRUE(std::ranges::any_of(Result.Diagnostics, [](const auto& Value)
+    {
+        return Value.find("patterns=1, reused-bars=119") != std::string::npos;
+    }));
+}
+
+TEST(TubeNestingPairTable, ExhaustedTypesDoNotEnterTheRemainingQuantityGcd)
+{
+    auto Table = ManualTable({
+        PairPartType{"long", "profile", {}, 60, 60, 3, {true, false}},
+        PairPartType{"short", "profile", {}, 40, 40, 1, {true, false}},
+        PairPartType{"inactive", "profile", {}, 1, 1, 0, {true, false}},
+    });
+    for (std::size_t A = 0; A < Table.Types.size(); ++A)
+        for (std::size_t B = 0; B < Table.Types.size(); ++B)
+            SetPair(Table, A, Direction::Forward, B, Direction::Forward, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    // First pattern consumes the short type. The next quantity pool has GCD
+    // 60, so the exhausted 40-length type must not be divided by that GCD.
+    const auto Result = PairTableSolver{}.Solve(
+        Table, {StockType{"hundred", "profile", StockKind::Standard, 100}}, Settings);
+    ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+    ASSERT_EQ(Result.Stocks.size(), 3U);
+    std::size_t LongCount = 0, ShortCount = 0;
+    for (const auto& Stock : Result.Stocks)
+        for (const auto& Placement : Stock.Placements)
+        {
+            EXPECT_NE(Placement.DemandID, "inactive");
+            LongCount += Placement.DemandID == "long";
+            ShortCount += Placement.DemandID == "short";
+        }
+    EXPECT_EQ(LongCount, 3U);
+    EXPECT_EQ(ShortCount, 1U);
+}
+
+TEST(TubeNestingPairTable, PackingTransformationCountsPositiveAndNegativeSavingOnce)
+{
+    for (const Length Saving : {Length{10}, Length{-3}})
+    {
+        const Length LongLength = Saving > 0 ? 70 : 60;
+        const Length ShortLength = Saving > 0 ? 50 : 40;
+        const Length Capacity = LongLength + ShortLength - Saving;
+        auto Table = ManualTable({
+            PairPartType{"long", "profile", {}, LongLength, LongLength, 3, {true, false}},
+            PairPartType{"short", "profile", {}, ShortLength, ShortLength, 3, {true, false}},
+        });
+        for (std::size_t A = 0; A < 2; ++A)
+            for (std::size_t B = 0; B < 2; ++B)
+                SetPair(Table, A, Direction::Forward, B, Direction::Forward, Saving);
+        PairTableSolverSettings Settings;
+        Settings.Constraint = ConstraintMode::Disabled;
+        Settings.ConstructionRuns = 2;
+        Settings.LocalSearchPasses = 0;
+        Settings.LargeNeighborhoodIterations = 0;
+        const auto Result = PairTableSolver{}.Solve(
+            Table, {StockType{"stock", "profile", StockKind::Standard, Capacity, 3}}, Settings);
+        ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+        ASSERT_EQ(Result.Stocks.size(), 3U);
+        for (const auto& Stock : Result.Stocks)
+        {
+            ASSERT_EQ(Stock.Placements.size(), 2U);
+            EXPECT_EQ(Stock.ProcessedEnd, Capacity);
+            EXPECT_EQ(Stock.Placements[1].Start, Stock.Placements[0].End - Saving);
+            EXPECT_FALSE(Stock.Placements[1].CommonCutWithPrevious);
+        }
+    }
+}
+
+TEST(TubeNestingPairTable, PackingLowerBoundIncludesMarginsForBothSavingSigns)
+{
+    for (const Length Saving : {Length{10}, Length{-3}})
+    {
+        const Length LongLength = Saving > 0 ? 70 : 60;
+        const Length ShortLength = Saving > 0 ? 50 : 40;
+        const Length Usable = LongLength + ShortLength - Saving;
+        auto Table = ManualTable({
+            PairPartType{"long", "profile", {}, LongLength, LongLength, 20, {true, false}},
+            PairPartType{"short", "profile", {}, ShortLength, ShortLength, 20, {true, false}},
+        });
+        for (std::size_t A = 0; A < 2; ++A)
+            for (std::size_t B = 0; B < 2; ++B)
+                SetPair(Table, A, Direction::Forward, B, Direction::Forward, Saving);
+        StockType Stock{"stock", "profile", StockKind::Standard, Usable + 18};
+        Stock.FrontMargin = 7;
+        Stock.TailDeadZone = 11;
+        PairTableSolverSettings Settings;
+        Settings.Constraint = ConstraintMode::Disabled;
+        const auto Result = PairTableSolver{}.Solve(Table, {Stock}, Settings);
+        ASSERT_EQ(Result.Status, SolveStatus::Optimal);
+        EXPECT_EQ(Result.ProvenScope, ProofScope::FullIntegerModel);
+        ASSERT_EQ(Result.Stocks.size(), 20U);
+        for (const auto& Plan : Result.Stocks)
+        {
+            ASSERT_EQ(Plan.Placements.size(), 2U);
+            EXPECT_EQ(Plan.Placements.front().Start, 7);
+            EXPECT_EQ(Plan.ProcessedEnd + 11, Plan.TotalLength);
+        }
+    }
+}
+
+TEST(TubeNestingPairTable, UnreachedPackingBoundDoesNotClaimGlobalOptimality)
+{
+    auto Table = ManualTable({
+        PairPartType{"sixty", "profile", {}, 60, 60, 40, {true, false}},
+    });
+    SetPair(Table, 0, Direction::Forward, 0, Direction::Forward, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    const auto Result = PairTableSolver{}.Solve(
+        Table, {StockType{"hundred", "profile", StockKind::Standard, 100}}, Settings);
+    // The volume lower bound is 24, but each bar can only hold one piece.
+    // Failing to reach 24 must leave this bounded route without a global proof.
+    ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+    EXPECT_EQ(Result.Stocks.size(), 40U);
+    EXPECT_FALSE(Result.ExactSearchCompleted);
+    EXPECT_NE(Result.ProvenScope, ProofScope::FullIntegerModel);
+    EXPECT_FALSE(std::ranges::any_of(Result.Diagnostics, [](const auto& Value)
+        { return Value.find("lower bound reached") != std::string::npos; }));
+}
+
+TEST(TubeNestingPairTable, PackingCandidateDoesNotExceedFiniteInventory)
+{
+    auto Table = ManualTable({
+        PairPartType{"long", "profile", {}, 60, 60, 3, {true, false}},
+        PairPartType{"short", "profile", {}, 40, 40, 3, {true, false}},
+    });
+    for (std::size_t A = 0; A < 2; ++A)
+        for (std::size_t B = 0; B < 2; ++B)
+            SetPair(Table, A, Direction::Forward, B, Direction::Forward, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    Settings.LargeNeighborhoodIterations = 0;
+    const auto Result = PairTableSolver{}.Solve(Table, {
+        StockType{"hundred", "profile", StockKind::Standard, 100, 2},
+        StockType{"one-twenty", "profile", StockKind::Standard, 120, 1},
+    }, Settings);
+    ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+    EXPECT_EQ(Result.Stocks.size(), 3U);
+    EXPECT_EQ(Result.Metrics.TotalStockLength, 320);
+    EXPECT_EQ(std::count_if(Result.Stocks.begin(), Result.Stocks.end(), [](const auto& Value)
+        { return Value.StockTypeID == "hundred"; }), 2);
+}
+
+TEST(TubeNestingPairTable, ForbiddenDirectedEdgesPreventOneDimensionalReduction)
+{
+    auto Table = ManualTable({
+        PairPartType{"a", "profile", {}, 5, 5, 2, {true, false}},
+        PairPartType{"b", "profile", {}, 5, 5, 2, {true, false}},
+    });
+    SetPair(Table, 0, Direction::Forward, 0, Direction::Forward, 0);
+    SetPair(Table, 1, Direction::Forward, 1, Direction::Forward, 0);
+    PairTableSolverSettings Settings;
+    Settings.Constraint = ConstraintMode::Disabled;
+    Settings.ConstructionRuns = 2;
+    Settings.LocalSearchPasses = 0;
+    const auto Result = PairTableSolver{}.Solve(
+        Table, {StockType{"ten", "profile", StockKind::Standard, 10}}, Settings);
+    ASSERT_EQ(Result.Status, SolveStatus::Feasible);
+    ASSERT_EQ(Result.Stocks.size(), 2U);
+    for (const auto& Stock : Result.Stocks)
+    {
+        ASSERT_EQ(Stock.Placements.size(), 2U);
+        EXPECT_EQ(Stock.Placements[0].DemandID, Stock.Placements[1].DemandID);
+    }
+    EXPECT_FALSE(std::ranges::any_of(Result.Diagnostics, [](const auto& Value)
+        { return Value.find("packing candidates") != std::string::npos; }));
+}
+
 TEST(TubeNestingPairTable, OptimizesFiniteSixAndTwelveMetreInventoryJointly)
 {
     auto Table = ManualTable({
@@ -1177,3 +1435,9 @@ TEST(TubeNestingPairTable, DistinguishesProvenInfeasibleFromNoIncumbent)
     EXPECT_FALSE(Unproven.ExactSearchCompleted);
     EXPECT_EQ(Unproven.ProvenScope, ProofScope::None);
 }
+
+#include "TubeLargeBatchPatternTests.inc"
+#include "TubeAdaptiveNeighborhoodTests.inc"
+#include "TubeSearchStrategyTests.inc"
+#include "TubePairTableConsistencyTests.inc"
+#include "TubeVerifiedPatternReuseTests.inc"

@@ -1033,7 +1033,8 @@ namespace
         IN const std::string& strSourceID_,
         IN const double dTolerance_,
         SBRepConversionTiming* Timing_ = nullptr,
-        const iCAX::OpenCascade::BRepTriangulationProvider* Triangulations_ = nullptr)
+        const iCAX::OpenCascade::BRepTriangulationProvider* Triangulations_ = nullptr,
+        bool GeometryOnly_ = false)
     {
         using namespace iCAX::GeometryData;
         std::string _ConversionStage = "parameter conversion";
@@ -1074,7 +1075,7 @@ namespace
         auto _StageStart = std::chrono::steady_clock::now();
         const double _MeshDeflection = std::max(0.01, dTolerance_ * 10.0);
         _ConversionStage = "meshing";
-        if(!Triangulations_){BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);(void)_Mesh;}
+        if(!GeometryOnly_&&!Triangulations_){BRepMesh_IncrementalMesh _Mesh(_ExportShape, _MeshDeflection);(void)_Mesh;}
         if (Timing_) Timing_->MeshingMs = _Elapsed(_StageStart);
 
         _StageStart = std::chrono::steady_clock::now();
@@ -1180,6 +1181,7 @@ namespace
                 _SurfaceIdentities.emplace(_SourceSurface.get(), SLocatedGeometryRecord{_SurfaceLocation, _SurfaceID});
             }
 
+            if(!GeometryOnly_){
             Triangulation3Record _TriangulationRecord;
             _TriangulationRecord.Id = static_cast<std::uint64_t>(_Index);
             // Display data follows the actual face occurrence; canonical
@@ -1188,6 +1190,7 @@ namespace
                 : MakeTriangulation(_FaceOccurrence, static_cast<std::uint64_t>(_Index));
             _TriangulationRecord.Metadata = { "face triangulation " + std::to_string(_Index), strSourceID_, {} };
             _Model.Triangulations3.push_back(std::move(_TriangulationRecord));
+            }
 
             std::vector<std::uint64_t> _WireIDs;
             std::vector<ETopologyOrientation> _WireOrientations;
@@ -1270,7 +1273,7 @@ namespace
             BRepFace _FaceRecord;
             _FaceRecord.Id = static_cast<std::uint64_t>(_Index);
             _FaceRecord.Surface3Id = _SurfaceID;
-            _FaceRecord.Triangulation3Id = static_cast<std::uint64_t>(_Index);
+            _FaceRecord.Triangulation3Id = GeometryOnly_ ? 0 : static_cast<std::uint64_t>(_Index);
             _FaceRecord.WireIds = std::move(_WireIDs);
             _FaceRecord.WireOrientations = std::move(_WireOrientations);
             _FaceRecord.Domain = {
@@ -1875,6 +1878,12 @@ iCAX::GeometryData::BRepModel iCAX::OpenCascade::ConvertOpenCascadeShapeToBRepWi
 {
     if(!triangulations)throw std::invalid_argument("CAD_DISPLAY_PROVIDER_REQUIRED");
     return ConvertToBRepModel(shape,displayName,sourceID,0.001,nullptr,&triangulations);
+}
+
+iCAX::GeometryData::BRepModel iCAX::OpenCascade::ConvertOpenCascadeShapeToBRepGeometry(
+    const TopoDS_Shape& shape,const std::string& displayName,const std::string& sourceID)
+{
+    return ConvertToBRepModel(shape,displayName,sourceID,0.001,nullptr,nullptr,true);
 }
 
 std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(

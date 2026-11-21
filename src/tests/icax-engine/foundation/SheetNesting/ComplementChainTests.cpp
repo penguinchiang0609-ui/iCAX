@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 
 using namespace iCAX::SheetNesting;
@@ -71,22 +72,49 @@ int main()
     {
         for(double shear:{0.0,.25,-.4})
         {
-            const auto p=Nested(8,2,shear,0,true);const auto r=Solve(p,Budget());
-            if(!r.Checked.Valid||!r.Checked.Complete)
+            const auto p=Nested(8,2,shear,0,true);
+            const auto patterns=Detail::BuildComplementChains(p,Budget(),{});
+            auto singleOptions=Budget();singleOptions.EnableCombinations=false;
+            Require(Singletons(patterns)==Detail::BuildPatterns(p,singleOptions,{}).size(),
+                "same-original chain policy discarded ordinary original singleton directions");
+            for(const auto& pattern:patterns)
             {
-                std::cerr<<"shear="<<shear<<" patterns="<<r.Output.Stats.CandidatePatterns<<" groups="<<r.Output.Stats.CombinationGroups
-                    <<" placed="<<r.Checked.PlacedCount<<" attempts="<<r.Output.Stats.PlacementAttempts<<" layouts="<<r.Output.Layouts.size()<<'\n';
-                for(const auto& error:r.Checked.Errors)std::cerr<<error<<'\n';
+                Require(!pattern.Members.empty(),"complement chain lost its original member");
+                for(const auto& member:pattern.Members)
+                    Require(member.PartIndex==pattern.Members.front().PartIndex,
+                        "nested geometric families crossed the original PartIndex boundary");
             }
-            Require(r.Checked.Valid&&r.Checked.Complete,"all 64 multi-specification nested parts must fit using genuine complete units");
-            Require(r.Output.Layouts.size()==16&&r.Output.Stats.CombinationGroups==16,"64-part inventory must use sixteen four-member units");
         }
-        const auto large=Nested(12,3,.4);const auto all=Solve(large,Budget());
-        Require(all.Checked.Valid&&all.Checked.Complete&&all.Checked.PlacedCount==144,"all 144 original instances must remain identifiable and complete");
-        Require(all.Output.Layouts.size()==36&&all.Output.Stats.CombinationGroups==36,"144-part inventory must retain all twelve geometric families");
-        const auto rotated=Solve(Nested(4,2,.25,30,true,true),Budget());
-        Require(rotated.Checked.Valid&&rotated.Checked.Complete,"actual allowed angles, affine shear, material groups and shifted origins must be respected");
-        std::cout<<"PASS 64/144 pieces, positive/negative shear, collinear subdivisions, local origins, 30-degree directions and materials\n";
+        for(const auto& source:{Nested(12,3,.4),Nested(4,2,.25,30,true,true)})
+        {
+            auto singleOptions=Budget();singleOptions.EnableCombinations=false;
+            const auto patterns=Detail::BuildComplementChains(source,Budget(),{});
+            Require(Singletons(patterns)==Detail::BuildPatterns(source,singleOptions,{}).size(),
+                "large or transformed inventory lost an original singleton direction");
+            for(const auto& pattern:patterns)for(const auto& member:pattern.Members)
+                Require(member.PartIndex==pattern.Members.front().PartIndex,
+                    "large/transformed complement chain preassembled different originals");
+        }
+        for(const bool identicalContours:{false,true})
+        {
+            Problem ordinary;Part first;first.ID="ordinary-A";first.Quantity=identicalContours?1:2;
+            first.FreeRotation=false;first.AllowedAnglesDegrees={0};
+            first.Geometry.Outer={{0,0},{4,0},{4,2},{0,2}};
+            auto second=first;second.ID="ordinary-B";
+            if(!identicalContours)second.Geometry.Outer={{0,0},{2,0},{2,2},{0,2}};
+            ordinary.Parts={first,second};ordinary.Stocks={{"ordinary",identicalContours?8.:12.,2,1}};
+            const auto solved=Solve(ordinary,Budget());
+            Require(solved.Checked.Valid&&solved.Checked.Complete&&solved.Output.Layouts.size()==1,
+                "self-combination restriction prevented normal different-original placement on the same sheet");
+            std::map<std::size_t,std::string> groups;
+            for(const auto& placement:solved.Output.Layouts.front().Placements)if(placement.Group)
+            {
+                const auto [same,inserted]=groups.emplace(placement.Group,placement.PartID);
+                Require(inserted||same->second==placement.PartID,
+                    "ordinary same-sheet placement silently created a different-original object");
+            }
+        }
+        std::cout<<"PASS same-original discovery boundaries, retained 64/144-piece source directions and normal mixed-sheet placement\n";
         auto p=Nested(2,1,0);auto options=Budget();auto baseline=options;baseline.EnableCombinations=false;
         const auto base=Detail::BuildPatterns(p,baseline,{});const auto baseCount=base.size();
         for(int control=0;control<3;++control)

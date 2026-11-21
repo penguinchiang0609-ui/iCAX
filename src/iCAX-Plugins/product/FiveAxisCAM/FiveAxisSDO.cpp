@@ -150,6 +150,9 @@ namespace
     public:
         CFiveAxisHeadSDO() : CSDO("CamHead") {
             ExposeMethod("ListBuiltins", &Dispatch<iCAX::FiveAxisCAM::ListBuiltinHeads>);
+            ExposeMethod("Preview", &Dispatch<iCAX::FiveAxisCAM::PreviewHead>);
+            ExposeMethod("Assign", &Dispatch<iCAX::FiveAxisCAM::AssignHead>);
+            ExposeMethod("Assignments", &Dispatch<iCAX::FiveAxisCAM::ReadHeadAssignments>);
             ExposeMethod("Import", &Dispatch<iCAX::FiveAxisCAM::ImportHead>);
             ExposeMethod("Configure", &Dispatch<iCAX::FiveAxisCAM::ConfigureHead>);
             ExposeMethod("Instance", &Dispatch<iCAX::FiveAxisCAM::ManageHeadInstance>);
@@ -206,6 +209,13 @@ namespace
         ExposeMethod("SetRegistrationPlan", &Dispatch<iCAX::FiveAxisCAM::SetRegistrationPlan>);
         ExposeMethod("ExportRegistrationPlan", &Dispatch<iCAX::FiveAxisCAM::ExportRegistrationPlan>);
     }};
+    class CFiveAxisOperationSDO final : public iCAX::Interaction::CSDO {
+    public: CFiveAxisOperationSDO():CSDO("CamOperation") {
+        ExposeMethod("Manage", &Dispatch<iCAX::FiveAxisCAM::ManageOperations>);
+        ExposeMethod("AssignMachineType", &Dispatch<iCAX::FiveAxisCAM::AssignMachineType>);
+        ExposeMethod("MachineAssignments", &Dispatch<iCAX::FiveAxisCAM::ReadMachineTypeAssignments>);
+    }};
+    static_assert(iCAX::Interaction::IsStatelessSDOType<CFiveAxisOperationSDO>);
     class CFiveAxisPlacementSDO final : public iCAX::Interaction::CSDO
     {
     public:
@@ -321,6 +331,7 @@ ICAX_REGISTER_SDO(CFiveAxisFixtureSDO)
 ICAX_REGISTER_SDO(CFiveAxisWorkpieceSDO)
 ICAX_REGISTER_SDO(CFiveAxisPlacementSDO)
 ICAX_REGISTER_SDO(CFiveAxisSetupSDO)
+ICAX_REGISTER_SDO(CFiveAxisOperationSDO)
 ICAX_REGISTER_SDO(CFiveAxisCutSDO)
 ICAX_REGISTER_SDO(CFiveAxisPlanSDO)
 ICAX_REGISTER_SDO(CFiveAxisRapidSDO)

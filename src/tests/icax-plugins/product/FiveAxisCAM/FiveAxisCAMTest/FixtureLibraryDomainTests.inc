@@ -1,9 +1,9 @@
-std::shared_ptr<iCAX::Application::IProductUserDataStore> TestFixtureLibraryStore() {
+std::shared_ptr<iCAX::Application::IProductUserDataStore> TestFixtureLibraryStore(const Text& databasePath=":memory:") {
     using namespace iCAX::Application;
     CUserDataRecordTypeDescriptor assembly;assembly.RecordType="assembly";assembly.SubjectTypes={"product"};
     CUserDataRecordTypeDescriptor preferences;preferences.RecordType="preferences";preferences.SubjectTypes={"product"};preferences.AllowMultiple=false;
-    return std::make_shared<CProductUserDataStore>(std::make_shared<CSqliteUserDataStore>(":memory:"),"icax.five-axis-cam",
-        std::vector<CUserDataFeatureDescriptor>{{"fixture-library",{assembly,preferences}},{"head-configurations",{[] {CUserDataRecordTypeDescriptor d;d.RecordType="configuration";d.SubjectTypes={"product"};return d;}()}}});
+    return std::make_shared<CProductUserDataStore>(std::make_shared<CSqliteUserDataStore>(databasePath),"icax.five-axis-cam",
+        std::vector<CUserDataFeatureDescriptor>{{"fixture-library",{assembly,preferences}},{"machine-type-configurations",{preferences}},{"head-configurations",{[] {CUserDataRecordTypeDescriptor d;d.RecordType="configuration";d.SubjectTypes={"product"};return d;}(),preferences}}});
 }
 Map LibrarySaveAll(Scene& scene,const Text& name) {
     auto request=FixtureRequest(scene);Array ids;for(const auto& f:Read(scene).at("fixtures").To<Array>())ids.push_back(f.To<Map>().at("id"));
@@ -26,7 +26,7 @@ TEST(FiveAxisFixtureLibrary, ImportedSnapshotDefaultsIndependentCopiesRevisionsA
     EXPECT_EQ(iCAX::GeometryData::Persistence::Serialize(*a),iCAX::GeometryData::Persistence::Serialize(*b));
     edit=FixtureRequest(target,fixture.at("id").To<Text>());auto moved=pose;moved[3]=123.;edit["transform"]=moved;Invoke(&target,"CamFixture","Update",edit);
     EXPECT_EQ(pose,Read(source).at("fixtures").To<Array>()[0].To<Map>().at("transform").To<Array>());
-    auto create=FixtureRequest(target);create.erase("setupId");create["placementId"]=imported.at("placementId");create["action"]=Text("create");create["name"]=Text("翻面");
+    auto create=FixtureRequest(target);create.erase("setupId");create["placementId"]=imported.at("placementId");create["action"]=Text("create");create["name"]=Text("翻面");create["machineType"]=Text("HeadHead");
     Invoke(&target,"CamSetup","Manage",create);EXPECT_EQ(2u,Read(target).at("fixtures").To<Array>().size());
     ASSERT_TRUE(target.Database().Undo());EXPECT_EQ(1u,Read(target).at("fixtures").To<Array>().size());
     ASSERT_TRUE(target.Database().Redo());EXPECT_EQ(2u,Read(target).at("fixtures").To<Array>().size());

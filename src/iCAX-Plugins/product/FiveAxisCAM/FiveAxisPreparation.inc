@@ -29,12 +29,14 @@ namespace {
         else if(!whole)throw std::invalid_argument("CAM_SETUP_REQUIRED");
         else if(!Require<CFiveAxisWorkpieceComponent>(db,placement->GetWorkpieceID())->GetEnabled())throw std::invalid_argument("CAM_WORKPIECE_DISABLED");
         if(fixture)RequireSetupUnlocked(scene,setupID);
+        Text copiedMachineType;
+        if(!fixture&&!whole){copiedMachineType=EffectiveMachineTypeValue(scene,setupID);(void)RequiredOperationMachineType({{"machineType",copiedMachineType}});}
         const auto jobID=db.GetMetaEntity()->GetID();const auto job=Require<CFiveAxisJobComponent>(db,jobID);
         std::set<ID> owned,setupIDs;PreparationIds ids;iCAX::Data::uuid_name_generator cloneNames(Identifier(request,"commandId"));
         if(fixture){owned.insert(sourceID);}
         else{
             if(whole)owned.insert(placement->GetWorkpieceID());
-            for(const auto& e:db.FilterEntities([](auto){return true;}))if(const auto p=Component<CFiveAxisPlacementComponent>(e);p&&(whole?p->GetWorkpieceID()==placement->GetWorkpieceID():e->GetID()==sourceID)){owned.insert(e->GetID());if(!p->GetSetupID().is_nil()){owned.insert(p->GetSetupID());setupIDs.insert(p->GetSetupID());}}
+            for(const auto& e:db.FilterEntities([](auto){return true;}))if(const auto p=Component<CFiveAxisPlacementComponent>(e);p&&(whole?(p->GetWorkpieceID()==placement->GetWorkpieceID()&&p->GetSetupID().is_nil()):e->GetID()==sourceID)){owned.insert(e->GetID());if(!p->GetSetupID().is_nil()){owned.insert(p->GetSetupID());setupIDs.insert(p->GetSetupID());}}
         }
         for(const auto& e:db.FilterEntities([](auto){return true;})){
             if(const auto f=Component<CFiveAxisFixtureComponent>(e);f&&(fixture?f->GetUnitID()==sourceID:setupIDs.contains(f->GetSetupID())))owned.insert(e->GetID());
@@ -49,7 +51,12 @@ namespace {
         auto sequence=whole?NextSetupSequence(scene):SetupInsertionSequence(scene,placement?placement->GetWorkpieceID():ID());
         std::map<ID,UInt> sequenceByID;for(const auto& id:orderedSetups)sequenceByID[id]=sequence++;
         const auto mapped=[&](const ID& id){const auto found=ids.find(iCAX::Data::to_string(id));return found==ids.end()?id:found->second;};
-        const auto selected=mapped(sourceID),targetSetup=fixture?setupID:mapped(setupID);
+        ID sourceRootID=sourceID;
+        if(whole){
+            sourceRootID=ID();for(const auto& id:owned)if(const auto p=Component<CFiveAxisPlacementComponent>(db.GetEntity(id));p&&p->GetSetupID().is_nil()){sourceRootID=id;break;}
+            if(sourceRootID.is_nil())throw std::invalid_argument("CAM_WORKPIECE_SOURCE_REQUIRED");
+        }
+        const auto selected=mapped(sourceRootID),targetSetup=whole?ID():fixture?setupID:mapped(setupID);
         const Text undoName=whole?"复制工件":fixture?"复制夹具单元":"复制装夹姿态";
         std::map<ID,ID> targetPlans;std::vector<Map> commands;iCAX::CAM::Intent::SEditableToolpathHostEdit host;host.UndoName=undoName;
         if(!fixture)for(const auto& originalSetup:orderedSetups)
@@ -72,6 +79,7 @@ namespace {
                 for(const auto& type:entity->GetComponentClasses()){
                     auto properties=CopyPreparationValue(entity->GetComponent(type)->GetProperties(),ids).To<Map>();
                     if(type==CFiveAxisSetupComponent::S_ClassName){
+                        properties["MachineTypeAssignment"]=Map{{"mode",Text("Type")},{"machineType",copiedMachineType}};
                         properties["Sequence"]=sequenceByID.at(id);properties["Locked"]=false;properties["InputRevision"]=1ull;properties["PlanValidity"]=Text("Missing");properties["IntentPlanID"]=targetPlans.at(id);
                         for(const auto* key:{"RegistrationPlan","LastSuccessfulPlanRef","GeneratedToolpaths","GeneratedRapidPaths","SimulationCheckData","FixtureCheck","FixtureDesign"})properties[key]=Map();
                         if(!whole)properties["Name"]=properties.at("Name").To<Text>()+" 副本";

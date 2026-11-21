@@ -22,6 +22,8 @@
 #include "OpenCascadeResourceImport/CadDocumentImportService.h"
 #include "TemplateRuntime/StandardJsonCodec.h"
 #include <fstream>
+#include <iostream>
+#include <cstdlib>
 #include <bit>
 #include <span>
 #include <ShlObj.h>
@@ -348,6 +350,9 @@ namespace iCAX::FiveAxisCAM
         std::map<Text,Map> PosePointPositions;
         std::shared_ptr<iCAX::Application::IProductUserDataStore> FixtureLibraryStore;
         Array BuiltinHeadSources;
+        std::map<Text,Map> HeadPreviews;
+        bool CaptureInitialHeadDefault = false;
+        bool CaptureInitialMachineTypeDefault = false;
         const Text Epoch = iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());
         UInt Sequence = 0;
         std::map<Text, ImportTask> Tasks;
@@ -454,6 +459,14 @@ namespace iCAX::FiveAxisCAM
         void FinishCutRetainedFaces(Scene&,SceneRuntime&,ImportTask&);
         Map PublishScale(Scene&,const ImportTask&,ImportResult&&);
         Map DefaultPlanningProfile(Scene&);
+        void CaptureInitialProductHeadDefault(Scene&);
+        void CaptureInitialProductMachineTypeDefault(Scene&);
+        void EnsureIndependentWorkpiecePlacements(Scene&);
+        Text EffectiveMachineTypeValue(Scene&,const ID&);
+        Text RequiredOperationMachineType(const Map&);
+        Map PrepareOperationHead(Scene&,const ID&,const Text&);
+        void RequireHeadCatalogFitsOperation(Scene&,const ID&,const Array&);
+        ID InheritedHeadForWorkpiece(Scene&,const ID&);
         Array PrepareDefaultFixtures(Scene&);
         Map PublishFixtureLibraryImport(Scene&,const Ref&,const Ref&,const Text&);
         void AttachLibraryFixtures(iCAX::Database::ITransaction&,const ID&,const Array&);
@@ -617,7 +630,8 @@ namespace iCAX::FiveAxisCAM
             tx.ModifyComponent(setup->GetJobID(), CFiveAxisJobComponent::S_ClassName, {{"InputRevision", Next(job->GetInputRevision())}});
         }
         template<class T> Ref Publish(Scene& scene, std::shared_ptr<T> value, const std::string& type, const std::string& name,
-            const std::vector<Ref>& dependencies = {})
+            const std::vector<Ref>& dependencies = {},
+            iCAX::Resource::EResourcePersistenceMode persistence = iCAX::Resource::EResourcePersistenceMode::Embedded)
         {
             auto& resources = scene.Resources();
             const auto url = resources.AllocateResourceURL();
@@ -625,7 +639,7 @@ namespace iCAX::FiveAxisCAM
             info.Name = name; info.ResourceTypeID = type; info.nVersion = 1;
             info.nSchemaVersion = type == "geometry.brep" ? 2 : 1;
             info.nMinimumReaderVersion = info.nSchemaVersion;
-            info.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+            info.Persistence = persistence;
             info.Dependencies = dependencies;
             resources.Set<T>(url, std::move(value), info);
             return {url, resources.GetVersion(url)};
@@ -662,9 +676,9 @@ namespace iCAX::FiveAxisCAM
             }
             return head;
         }
-        Map HeadState(Scene& scene,const CFiveAxisSetupComponent& setup) {
-            auto head=EffectiveHeadDefinition(scene,setup);
-            auto instance=ProjectHeadInstance(scene,setup);if(!instance.empty()){
+        Map HeadSnapshot(Scene& scene,Map head,Map instance) {
+            head["machineTypes"]=instance.empty()?Array{}:HeadInstanceMachineTypes(instance);
+            if(!instance.empty()){
                 const auto model=instance.at("model").To<Map>();if(model.contains("assembly")){auto source=model.at("assembly").To<Map>();auto nodes=source.at("nodes").To<Array>();for(auto& v:nodes){auto n=v.To<Map>();for(const auto* key:{"previewRef","geometryRef","collisionBoxes"})n.erase(key);v=n;}source["nodes"]=nodes;head["sourceAssembly"]=source;}
                 instance.erase("model");head["instance"]=instance;}
             head["collisionModel"]=HeadCollisionState(scene,head);
@@ -672,6 +686,9 @@ namespace iCAX::FiveAxisCAM
                 if(head.contains(name))head[name]=WireRef(head.at(name).To<Map>());
             if(head.contains("assembly")){auto assembly=head.at("assembly").To<Map>();auto nodes=assembly.at("nodes").To<Array>();for(auto& value:nodes){auto node=value.To<Map>();for(const auto* name:{"geometryRef","previewRef"})if(node.contains(name))node[name]=WireRef(node.at(name).To<Map>());value=node;}assembly["nodes"]=nodes;head["assembly"]=assembly;}
             return head;
+        }
+        Map HeadState(Scene& scene,const CFiveAxisSetupComponent& setup) {
+            return HeadSnapshot(scene,EffectiveHeadDefinition(scene,setup),ProjectHeadInstance(scene,setup));
         }
         ID ActivePlacement(Scene& scene,const CFiveAxisJobComponent& job) {
             for(const auto& id:{job.GetActivePlacementID(),job.GetDefaultPlacementID()})
@@ -695,6 +712,7 @@ namespace iCAX::FiveAxisCAM
         {
             const bool fixture=(kind=="FixtureImport"||kind=="FixtureLibraryImport"), head=kind=="HeadImport";
             if(head&&prepared.HeadDescription)return PublishImportedHeadAssembly(scene,requestedSetupID,prepared);
+            if(head)RequireHeadCatalogFitsOperation(scene,requestedSetupID,Array{Text("TableTable")});
             auto& candidate = prepared.Import;
             auto initialTransform = Identity();
             if (!fixture && !head) {
@@ -802,6 +820,15 @@ namespace iCAX::FiveAxisCAM
             if (std::abs(det-1) > eps) throw std::invalid_argument("CAM_PLACEMENT_MATRIX: reflection is forbidden");
             return m;
         }
+        Array OperationAssemblyTransform(Scene& scene,const ID& setupID){
+            const auto setup=Component<CFiveAxisSetupComponent>(scene.Database().GetEntity(setupID));if(!setup)return Identity();
+            auto value=setup->GetAssemblyTransform();if(value.empty())value=Identity();(void)RigidMatrix(value);return value;
+        }
+        Array RigidFrameNumbers(const iCAX::CAM::Motion::Matrix& matrix){Array values;for(const auto n:matrix)values.emplace_back(n==0.?0.:n);return values;}
+        bool HasOperationTooling(Scene& scene,const ID& setupID){
+            for(const auto& entity:scene.Database().FilterEntities([](auto){return true;}))if(const auto fixture=Component<CFiveAxisFixtureComponent>(entity);fixture&&fixture->GetSetupID()==setupID)return true;
+            return false;
+        }
         void ProjectPlacement(Scene& scene, const ID& id, const Array& transform)
         {
             auto m = RigidMatrix(transform);
@@ -810,6 +837,7 @@ namespace iCAX::FiveAxisCAM
             ID setupID, parentID;
             if (const auto placement = Component<CFiveAxisPlacementComponent>(entity)) setupID = placement->GetSetupID();
             else if (const auto fixture = Component<CFiveAxisFixtureComponent>(entity)) setupID = fixture->GetSetupID();
+            if(!setupID.is_nil())m=iCAX::CAM::Motion::Multiply(RigidMatrix(OperationAssemblyTransform(scene,setupID)),m);
             if (const auto setup = Component<CFiveAxisSetupComponent>(db.GetEntity(setupID)); setup && !setup->GetMachineSetup().empty())
             {
                 const auto& configuration = setup->GetMachineSetup();
@@ -855,15 +883,20 @@ namespace iCAX::FiveAxisCAM
         auto& db = scene.Database();
         auto root = db.GetMetaEntity();
         if (!root) throw std::runtime_error("CAM_SCENE_META_MISSING");
-        if (!Component<CFiveAxisJobComponent>(root))
+        const bool newJob=!Component<CFiveAxisJobComponent>(root);
+        if (newJob)
         {
             Transaction(db, "初始化五轴作业", [&](auto& tx) {
                 if (!Component<CFiveAxisSceneComponent>(root)) tx.AttachComponent(root->GetID(), CFiveAxisSceneComponent::S_ClassName);
                 tx.AttachComponent(root->GetID(), CFiveAxisJobComponent::S_ClassName, {});
             }, false);
         }
-        (void)Runtime(scene);
+        const auto runtime=Runtime(scene);
+        if(newJob){runtime->CaptureInitialHeadDefault=true;runtime->CaptureInitialMachineTypeDefault=true;}
+        CaptureInitialProductHeadDefault(scene);
+        CaptureInitialProductMachineTypeDefault(scene);
         InitializeIntentDocument(scene);
+        EnsureIndependentWorkpiecePlacements(scene);
         PumpTasks(scene);
     }
     void PumpTaskProgressPDO(Scene& scene){const auto runtime=Runtime(scene);PumpTaskProgressPDOImpl(scene,*runtime);}
@@ -1088,26 +1121,34 @@ namespace iCAX::FiveAxisCAM
         RequireSetupUnlocked(scene,placement->GetSetupID());
         const auto setupID = Identifier(request, "setupId");
         if (placement->GetSetupID() != setupID) throw std::invalid_argument("CAM_SETUP_MISMATCH");
-        const auto matrix = RigidMatrix(request.at("transform").To<Array>());
-        Array transform;
-        for (double v : matrix) transform.emplace_back(v == 0. ? 0. : v);
-        Transaction(scene.Database(), "工件定位", [&](auto& tx) {
-            tx.ModifyComponent(placementID, CFiveAxisPlacementComponent::S_ClassName,
-                {{"Transform", transform}, {"RegistrationData", Map()}, {"RegistrationMethod", Text()},
-                 {"ApplicationMode", Text("Pending")}, {"InputRevision", Next(placement->GetInputRevision())}});
-            Invalidate(tx, scene.Database(), setupID);
-        });
-        ProjectPlacement(scene, placementID, transform);
         const auto setup=Require<CFiveAxisSetupComponent>(scene.Database(),setupID);
+        const auto matrix = RigidMatrix(request.at("transform").To<Array>());
+        const auto assembly=RigidMatrix(OperationAssemblyTransform(scene,setupID));const auto machineType=EffectiveMachineTypeValue(scene,setupID);
+        const bool whole=(machineType=="HeadTable"||machineType=="TableTable")&&HasOperationTooling(scene,setupID);
+        const auto nextAssembly=whole?iCAX::CAM::Motion::Multiply(matrix,iCAX::CAM::Motion::Inverse(RigidMatrix(placement->GetTransform()))):assembly;
+        const auto transform=whole?placement->GetTransform():RigidFrameNumbers(iCAX::CAM::Motion::Multiply(iCAX::CAM::Motion::Inverse(assembly),matrix));
         const auto job=Require<CFiveAxisJobComponent>(scene.Database(),setup->GetJobID());
+        Transaction(scene.Database(), "工件定位", [&](auto& tx) {
+            if(whole){
+                tx.ModifyComponent(setupID,CFiveAxisSetupComponent::S_ClassName,{{"AssemblyTransform",RigidFrameNumbers(nextAssembly)},{"PlanValidity",Text(setup->GetLastSuccessfulPlanRef().empty()?"Missing":"Stale")}});
+                tx.ModifyComponent(setup->GetJobID(),CFiveAxisJobComponent::S_ClassName,{{"InputRevision",Next(job->GetInputRevision())}});
+            }else{
+                tx.ModifyComponent(placementID, CFiveAxisPlacementComponent::S_ClassName,
+                    {{"Transform", transform}, {"RegistrationData", Map()}, {"RegistrationMethod", Text()},
+                     {"ApplicationMode", Text("Pending")}, {"InputRevision", Next(placement->GetInputRevision())}});
+                Invalidate(tx, scene.Database(), setupID);
+            }
+        });
+        if(whole)ProjectSetupPlacements(scene,setupID);else ProjectPlacement(scene, placementID, transform);
         // Placement authoring only persists its rigid transform. Return the
         // committed revision without reading or evaluating any machining graph.
+        Map placementPatch{{"id",iCAX::Data::to_string(placementID)},{"transform",transform},{"inputRevision",std::to_string(placement->GetInputRevision())}};
+        if(!whole)for(const auto& [key,value]:Map{{"registrationRef",Map()},{"registrationSummary",Map()},{"registrationMethod",Text()},{"applicationMode",Text("Pending")}})placementPatch[key]=value;
         Map patch{{"expected",Map{{"epoch",runtime->Epoch},{"mutationSequence",std::to_string(runtime->Sequence)}}},
             {"inputRevision",std::to_string(job->GetInputRevision())},
-            {"placement",Map{{"id",iCAX::Data::to_string(placementID)},{"transform",transform},
-                {"registrationRef",Map()},{"registrationSummary",Map()},{"registrationMethod",Text()},{"applicationMode",Text("Pending")},{"inputRevision",std::to_string(placement->GetInputRevision())}}},
-            {"setup",Map{{"id",iCAX::Data::to_string(setupID)},{"inputRevision",std::to_string(setup->GetInputRevision())},{"planValidity",setup->GetPlanValidity()}}}};
-        Map result{{"placementId", iCAX::Data::to_string(placementID)}, {"inputRevision", std::to_string(placement->GetInputRevision())},{"statePatch",patch}};
+            {"placement",placementPatch},
+            {"setup",Map{{"id",iCAX::Data::to_string(setupID)},{"assemblyTransform",OperationAssemblyTransform(scene,setupID)},{"inputRevision",std::to_string(setup->GetInputRevision())},{"planValidity",setup->GetPlanValidity()}}}};
+        Map result{{"placementId", iCAX::Data::to_string(placementID)}, {"inputRevision", std::to_string(placement->GetInputRevision())},{"motionScope",Text(whole?"Assembly":"Workpiece")},{"assemblyTransform",OperationAssemblyTransform(scene,setupID)},{"effectiveTransform",RigidFrameNumbers(matrix)},{"statePatch",patch}};
         runtime->Receipts.emplace(commandID, std::make_pair(payload, result));
         return result;
     }
@@ -1187,20 +1228,81 @@ namespace iCAX::FiveAxisCAM
         return result;
     }
 
+    namespace {
+        Map StandaloneBuiltinHeadDefinition(Scene& scene,const Text& definitionID,
+            iCAX::Resource::EResourcePersistenceMode persistence=iCAX::Resource::EResourcePersistenceMode::Embedded) {
+            const auto source=BuiltinHeadSource(scene,definitionID);
+            if(!source.contains("headRoot"))throw std::invalid_argument("CAM_HEAD_BUILTIN_REQUIRED: 请选择切割头，不能选择整机。");
+            auto head=BuiltinHeadDefinition(scene,definitionID,persistence);
+            auto kind=String(source,"kind");if(kind=="4+1")kind="A";if(kind=="3+2")kind="Fixed";
+            head["name"]=source.contains("standaloneHead")?source.at("name"):Variant(kind=="Fixed"?Text("固定切割头"):kind+" 切割头");
+            if(head.contains("assembly")){auto assembly=head.at("assembly").To<Map>();assembly["workpieceAxes"]=Array{};assembly["kind"]=kind;head["assembly"]=assembly;}
+            head["requiresMachineSimulation"]=false;
+            return head;
+        }
+        Map HeadPreviewSnapshot(Scene& scene,const Text& key,const Map& model,const Map& parameters,const Map& profile,bool confirmed,const Text& name={}) {
+            // A preview supplies the same calibration/kinematics snapshot as an
+            // assigned head, but never creates an instance in the job or setup.
+            Map instance{{"id","preview:"+key},{"name",name.empty()?model.at("name"):Variant(name)},{"model",model},{"parameters",parameters},
+                {"profile",profile},{"binding",Map{}},{"calibrationConfirmed",confirmed},{"revision",UInt(0)}};
+            auto head=HeadSnapshot(scene,CalibratedHeadModel(instance),instance);
+            head["previewOnly"]=true;
+            return head;
+        }
+    }
+    Map PreviewHead(Scene& scene,const Map& request) {
+        CutFields(request,{"setupId","kind","builtinDefinitionId","instanceId","entryId"});
+        if(scene.IsStopRequested())throw std::runtime_error("CAM_SCENE_CLOSING");
+        const auto setup=Require<CFiveAxisSetupComponent>(scene.Database(),Identifier(request,"setupId"));
+        const auto job=Require<CFiveAxisJobComponent>(scene.Database(),setup->GetJobID());
+        const auto kind=String(request,"kind");
+        if(kind=="Instance"){
+            CutFields(request,{"setupId","kind","instanceId"});
+            const auto id=Identifier(request,"instanceId");const auto instances=job->GetHeadInstances();const auto key=iCAX::Data::to_string(id);
+            if(!instances.contains(key))throw std::invalid_argument("CAM_HEAD_INSTANCE_MISSING");
+            // A referenced machine head must display its live machine frames
+            // and colliders, just as its owning setup does.
+            if(setup->GetHeadInstanceID()==id)return {{"head",HeadState(scene,*setup)}};
+            for(const auto& entity:scene.Database().FilterEntities([](auto){return true;}))
+                if(const auto source=Component<CFiveAxisSetupComponent>(entity);source&&source->GetJobID()==setup->GetJobID()&&source->GetHeadInstanceID()==id)
+                    return {{"head",HeadState(scene,*source)}};
+            const auto instance=instances.at(key).To<Map>();
+            return {{"head",HeadSnapshot(scene,CalibratedHeadModel(instance),instance)}};
+        }
+        const auto runtime=Runtime(scene);
+        constexpr auto persistence=iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+        if(kind=="Builtin"){
+            CutFields(request,{"setupId","kind","builtinDefinitionId"});
+            const auto id=String(request,"builtinDefinitionId");const auto source=BuiltinHeadSource(scene,id);
+            const auto key="Builtin:"+id+":"+iCAX::Data::VariantSerializer::Serialize(source);
+            if(const auto cached=runtime->HeadPreviews.find(key);cached!=runtime->HeadPreviews.end())return {{"head",cached->second}};
+            const auto model=StandaloneBuiltinHeadDefinition(scene,id,persistence);
+            auto head=HeadPreviewSnapshot(scene,"Builtin:"+id,model,NormalizeHeadParameters(model,DefaultHeadParameters(model)),{},false);
+            runtime->HeadPreviews[key]=head;return {{"head",std::move(head)}};
+        }
+        if(kind=="Configuration"){
+            CutFields(request,{"setupId","kind","entryId"});
+            const auto entry=FixtureStore(scene).Get(HeadConfigurationFeature,"configuration",String(request,"entryId"));
+            if(!entry)throw std::invalid_argument("CAM_HEAD_CONFIGURATION_MISSING");
+            const auto key="Configuration:"+entry->RecordID+":"+std::to_string(entry->Revision);
+            if(const auto cached=runtime->HeadPreviews.find(key);cached!=runtime->HeadPreviews.end())return {{"head",cached->second}};
+            const auto data=entry->Payload.To<Map>(),model=UnpackHeadConfiguration(scene,data,persistence);
+            auto head=HeadPreviewSnapshot(scene,key,model,NormalizeHeadParameters(model,data.at("parameters").To<Map>()),HeadConfigurationSummary(*entry),data.at("calibrationConfirmed").To<bool>(),String(data,"name"));
+            runtime->HeadPreviews[key]=head;return {{"head",std::move(head)}};
+        }
+        throw std::invalid_argument("CAM_HEAD_PREVIEW_KIND_REQUIRED");
+    }
+
     Map ConfigureHead(Scene& scene,const Map& request) {
         CutFields(request,{"commandId","expected","setupId","kind","builtinDefinitionId","tcpLocalPosition","beamLocalDirection"});
         return RapidMutation(scene,request,"ConfigureHead:",[&](const ID& id,const auto& setup){
             RequireSetupUnlocked(scene,id);if(!setup->GetMachineSetup().empty())throw std::invalid_argument("CAM_HEAD_MACHINE_BOUND");
             const auto kind=String(request,"kind");auto instance=ProjectHeadInstance(scene,*setup);
             if(kind=="Builtin"){
-                auto head=request.contains("builtinDefinitionId")?BuiltinHeadDefinition(scene,String(request,"builtinDefinitionId")):Map{{"kind",Text("Builtin")},{"motionType",Text("Rigid")},{"rotaryAxisCount",UInt(0)},{"name",Text("内置示意头")},{"calibrated",true},{"tcpLocalPosition",Array{0.,0.,0.}},{"beamLocalDirection",Array{0.,0.,-1.}}};
                 if(request.contains("builtinDefinitionId")){
-                    const auto source=BuiltinHeadSource(scene,String(request,"builtinDefinitionId"));if(!source.contains("headRoot"))throw std::invalid_argument("CAM_HEAD_BUILTIN_REQUIRED: 请选择切割头，不能选择整机。");
-                    auto kind=String(source,"kind");if(kind=="4+1")kind="A";if(kind=="3+2")kind="Fixed";
-                    head["name"]=source.contains("standaloneHead")?source.at("name"):Variant(kind=="Fixed"?Text("固定切割头"):kind+" 切割头");
-                    if(head.contains("assembly")){auto assembly=head.at("assembly").To<Map>();assembly["workpieceAxes"]=Array{};assembly["kind"]=kind;head["assembly"]=assembly;}
-                    head["requiresMachineSimulation"]=false;
-                }
+                    for(const auto& entry:ListBuiltinHeads(scene,{}).at("items").To<Array>()){const auto item=entry.To<Map>();if(item.at("id")==request.at("builtinDefinitionId"))RequireHeadCatalogFitsOperation(scene,id,item.at("machineTypes").To<Array>());}
+                }else RequireHeadCatalogFitsOperation(scene,id,Array{Text("TableTable")});
+                auto head=request.contains("builtinDefinitionId")?StandaloneBuiltinHeadDefinition(scene,String(request,"builtinDefinitionId")):Map{{"kind",Text("Builtin")},{"motionType",Text("Rigid")},{"rotaryAxisCount",UInt(0)},{"name",Text("内置示意头")},{"calibrated",true},{"tcpLocalPosition",Array{0.,0.,0.}},{"beamLocalDirection",Array{0.,0.,-1.}}};
                 ID created;Transaction(scene.Database(),"添加工程刀头",[&](auto& tx){created=AttachProjectHead(scene,tx,id,head);});return Map{{"changed",true},{"instanceId",iCAX::Data::to_string(created)}};
             }
             if(kind!="Imported"||instance.empty()||String(instance.at("model").To<Map>(),"kind")!="Imported")throw std::invalid_argument("CAM_HEAD_MODEL_REQUIRED");
@@ -1209,6 +1311,9 @@ namespace iCAX::FiveAxisCAM
             if(changed){instance["parameters"]=parameters;instance["calibrationConfirmed"]=true;WriteHeadInstance(scene,id,instance,true,"标定切割头");}return Map{{"changed",changed},{"instanceId",instance.at("id")}};
         });
     }
+
+    #include "FiveAxisHeadAssignments.inc"
+    #include "FiveAxisOperations.inc"
 
     Map IntentToolpathState(Scene& scene,const IntentCut& f)
     {
@@ -1248,7 +1353,8 @@ namespace iCAX::FiveAxisCAM
         const auto root = scene.Database().GetMetaEntity();
         const auto job = Require<CFiveAxisJobComponent>(scene.Database(), root->GetID());
         Array setups, placements,intents,fixtures,fixtureUnits,workpieces,headInstances;
-        for(const auto& [key,value]:job->GetHeadInstances()){auto instance=value.To<Map>();instance.erase("model");Array used;for(const auto& e:scene.Database().FilterEntities([](auto){return true;}))if(const auto s=Component<CFiveAxisSetupComponent>(e);s&&iCAX::Data::to_string(s->GetHeadInstanceID())==key)used.emplace_back(iCAX::Data::to_string(e->GetID()));instance["setupIds"]=used;headInstances.emplace_back(instance);}
+        const auto machineTypes=ReadMachineTypeScopeState(scene);
+        for(const auto& [key,value]:job->GetHeadInstances()){auto instance=value.To<Map>();instance["machineTypes"]=HeadInstanceMachineTypes(instance);instance.erase("model");Array used;for(const auto& e:scene.Database().FilterEntities([](auto){return true;}))if(const auto s=Component<CFiveAxisSetupComponent>(e);s&&iCAX::Data::to_string(s->GetHeadInstanceID())==key)used.emplace_back(iCAX::Data::to_string(e->GetID()));instance["setupIds"]=used;headInstances.emplace_back(instance);}
         std::map<Text,UInt> workpieceOrder;
         for (const auto& e : scene.Database().FilterEntities([](auto) { return true; }))
         {
@@ -1257,7 +1363,7 @@ namespace iCAX::FiveAxisCAM
                 PrimeIntentDesignPaths(scene,e->GetID());
                 const auto generated=GeneratedGeometryState(scene,e->GetID());
                 setups.emplace_back(Map{{"id", id}, {"name", s->GetName()}, {"sequence",s->GetSequence()}, {"enabled",s->GetEnabled()}, {"locked",s->GetLocked()}, {"registrationPlan",RegistrationPlanState(scene,e->GetID())},
-                {"inputRevision", std::to_string(s->GetInputRevision())}, {"planValidity", s->GetPlanValidity()},{"planningProfileRef",EngineeringIdentity(s->GetPlanningProfileData())},
+                {"inputRevision", std::to_string(s->GetInputRevision())}, {"planValidity", s->GetPlanValidity()},{"assemblyTransform",OperationAssemblyTransform(scene,e->GetID())},{"planningProfileRef",EngineeringIdentity(s->GetPlanningProfileData())},{"machineTypeAssignment",MachineTypeSummary(s->GetMachineTypeAssignment())},{"machineType",ResolveMachineType(machineTypes,e->GetID())},
                 {"fixtureCheck",FixtureCheckState(scene,e->GetID(),s->GetFixtureCheck())},{"fixtureDesign",ProjectFixtureDesignState(scene,e->GetID(),s->GetFixtureDesign(),fixtureSummaries)},{"headInstanceId",OptionalID(s->GetHeadInstanceID())},{"headModel",HeadState(scene,*s)},{"machineSetup",HeadMachineConfiguration(scene,s->GetMachineSetup())},{"machineMotionPlanRef",EngineeringIdentity(s->GetMachineMotionPlanData())},{"rapidSettings",RapidSettings(scene,e->GetID())},{"cutGroups",IntentCutGroups(scene,e->GetID())},{"definitionOrder",CutTreeOrder(scene,e->GetID(),&generated)},{"generatedGeometry",generated},{"simulationCheck",SimulationCollisionState(scene,e->GetID())}});
             }
             if(auto u=Component<CFiveAxisFixtureUnitComponent>(e)) {
@@ -1275,7 +1381,7 @@ namespace iCAX::FiveAxisCAM
                 workpieces.emplace_back(Map{{"id", id}, {"name", w->GetName()},
                     {"locked",WorkpieceLocked(scene,e->GetID())},{"enabled",w->GetEnabled()},
                     {"sourceRef", WireRef(w->GetSourceRef())}, {"geometryRef", WireRef(w->GetGeometryRef())}, {"previewRef", WireRef(w->GetPreviewRef())},
-                    {"importMetadata", w->GetImportMetadata()}, {"coordinateFrame",w->GetCoordinateFrame()}, {"inputRevision", std::to_string(w->GetInputRevision())}});
+                    {"importMetadata", w->GetImportMetadata()}, {"coordinateFrame",w->GetCoordinateFrame()},{"machineTypeAssignment",MachineTypeSummary(w->GetMachineTypeAssignment())}, {"inputRevision", std::to_string(w->GetInputRevision())}});
             }
             if (auto p = Component<CFiveAxisPlacementComponent>(e)) placements.emplace_back(Map{{"id", id},
                 {"setupId", OptionalID(p->GetSetupID())}, {"workpieceId", iCAX::Data::to_string(p->GetWorkpieceID())},
@@ -1287,15 +1393,24 @@ namespace iCAX::FiveAxisCAM
         for(const auto& f:IntentCuts(scene))intents.emplace_back(IntentToolpathState(scene,f));
         std::sort(setups.begin(),setups.end(),[](const Variant& a,const Variant& b){const auto x=a.To<Map>(),y=b.To<Map>();const auto sx=x.at("sequence").To<UInt>(),sy=y.at("sequence").To<UInt>();return sx==sy?String(x,"id")<String(y,"id"):sx<sy;});
         std::sort(workpieces.begin(),workpieces.end(),[&](const Variant& a,const Variant& b){return workpieceOrder.at(String(a.To<Map>(),"id"))<workpieceOrder.at(String(b.To<Map>(),"id"));});
-        std::sort(placements.begin(),placements.end(),[&](const Variant& a,const Variant& b){return workpieceOrder.at(String(a.To<Map>(),"workpieceId"))<workpieceOrder.at(String(b.To<Map>(),"workpieceId"));});
+        std::map<Text,UInt> setupOrder;for(const auto& value:setups){const auto setup=value.To<Map>();setupOrder[String(setup,"id")]=setup.at("sequence").To<UInt>();}
+        std::sort(placements.begin(),placements.end(),[&](const Variant& a,const Variant& b){
+            const auto x=a.To<Map>(),y=b.To<Map>();const auto wx=workpieceOrder.at(String(x,"workpieceId")),wy=workpieceOrder.at(String(y,"workpieceId"));if(wx!=wy)return wx<wy;
+            const auto sx=String(x,"setupId"),sy=String(y,"setupId");if(sx.empty()!=sy.empty())return !sx.empty();
+            if(!sx.empty()&&setupOrder.at(sx)!=setupOrder.at(sy))return setupOrder.at(sx)<setupOrder.at(sy);return String(x,"id")<String(y,"id");});
         std::sort(intents.begin(),intents.end(),[](const Variant& a,const Variant& b){const auto x=a.To<Map>(),y=b.To<Map>();return String(x,"setupId")!=String(y,"setupId")?String(x,"setupId")<String(y,"setupId"):std::stoull(String(x,"number"))<std::stoull(String(y,"number"));});
+        Array operations;
+        for(const auto& value:setups){const auto setup=value.To<Map>();Map operation;for(const auto* key:{"id","name","sequence","enabled","locked","inputRevision","assemblyTransform","machineTypeAssignment","machineType"})operation[key]=setup.at(key);operation["operationId"]=operation.at("id");operation["setupId"]=operation.at("id");operation["workpieceId"]=Text();operation["placementId"]=Text();
+            for(const auto& placed:placements){const auto placement=placed.To<Map>();if(placement.at("setupId")==operation.at("id")){operation["workpieceId"]=placement.at("workpieceId");operation["placementId"]=placement.at("id");break;}}
+            operations.emplace_back(std::move(operation));}
+        for(auto& value:workpieces){auto workpiece=value.To<Map>();workpiece["sourcePlacementId"]=Text();for(const auto& placed:placements){const auto placement=placed.To<Map>();if(String(placement,"setupId").empty()&&placement.at("workpieceId")==workpiece.at("id")){workpiece["sourcePlacementId"]=placement.at("id");break;}}value=std::move(workpiece);}
         Array intentGenerationTasks,intentGenerationErrors;
         for(const auto& [_,taskId]:runtime->IntentGenerationTasks)if(runtime->Tasks.contains(taskId))
         {const auto& task=runtime->Tasks.at(taskId);if(task.Status=="Running")intentGenerationTasks.emplace_back(TaskState(scene,*runtime,task));
          else if(task.Status=="Failed")intentGenerationErrors.emplace_back(TaskState(scene,*runtime,task));}
         return {{"layers",IntentDocument(scene).QueryLayers()},{"intentGenerationTasks",intentGenerationTasks},{"intentGenerationErrors",intentGenerationErrors},{"expected", Map{{"epoch", runtime->Epoch}, {"mutationSequence", std::to_string(runtime->Sequence)}}},
                 {"jobId", iCAX::Data::to_string(root->GetID())}, {"activeSetupId", OptionalID(ActiveSetup(scene,*job))},{"activePlacementId",OptionalID(ActivePlacement(scene,*job))},
-                {"inputRevision", std::to_string(job->GetInputRevision())}, {"headInstances",headInstances},{"setups", setups}, {"workpieces", workpieces}, {"placements", placements},{"intentToolpaths",intents},{"fixtures",fixtures},{"fixtureUnits",fixtureUnits}};
+                {"inputRevision", std::to_string(job->GetInputRevision())}, {"headInstances",headInstances},{"setups", setups},{"operations",operations}, {"workpieces", workpieces}, {"placements", placements},{"intentToolpaths",intents},{"fixtures",fixtures},{"fixtureUnits",fixtureUnits}};
     }
     Map ReadState(Scene& scene){return BuildSceneState(scene,false);}
     #include "FiveAxisStateProjection.inc"

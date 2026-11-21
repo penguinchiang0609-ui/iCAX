@@ -48,8 +48,19 @@ def displayed_stocks(document):
         if section["operator"] != "profile2d":
             raise AssertionError("The displayed extrusion must retain its actual section")
         contours = section["arguments"]["contours"]
-        if len(contours) != 2 or not all(c["closed"] for c in contours):
-            raise AssertionError("Expected a hollow closed rectangular tube")
+        profile = item["properties"]["tubeDesigner.profile"]
+        if profile["kind"] == "rect-bar":
+            if (profile["hollow"] is not False or profile["wallThickness"] != 0
+                    or len(contours) != 1):
+                raise AssertionError("Solid rectangular stock must have one actual outer contour and no hollow wall")
+        elif profile["kind"] in ("rect", "round"):
+            if (profile["hollow"] is not True or profile["wallThickness"] <= 0
+                    or len(contours) != 2):
+                raise AssertionError("Hollow tube stock must retain its actual outer and inner contours")
+        else:
+            raise AssertionError("Unexpected grille stock profile: " + profile["kind"])
+        if not all(c["closed"] for c in contours):
+            raise AssertionError("Every stock section boundary must be closed")
         frame = instance["placement"]
         profile_frame = section["arguments"].get("placement", {})
         vector = extrusion["arguments"]["vector"]
@@ -192,7 +203,7 @@ class MinimalProtectiveGrilleProductTests(unittest.TestCase):
     def test_maximum_clear_gap_is_respected_in_every_active_row_zone(self):
         for frame, gap in product(("two_vertical", "closed_frame", "bottom_rail"), (70., 110., 150.)):
             with self.subTest(frame=frame, gap=gap):
-                parameters = self.values(frameType=frame, maximumClearGap=gap)
+                parameters = self.values(frameType=frame, barLayoutMode='maximum_gap', maximumClearGap=gap)
                 rows = self.layout(parameters)["facts"]["rowCenters"]
                 low = 0 if frame == "two_vertical" else 10
                 high = 1240 if frame == "closed_frame" else 1250
@@ -228,7 +239,8 @@ class MinimalProtectiveGrilleProductTests(unittest.TestCase):
             {"handleHeight": -1}, {"handleSide": "center_double", "handleCenterOffset": 100},
             {"firstBarTopOffset": 4}, {"lastBarBottomOffset": 4},
             {"firstBarTopOffset": 1200}, {"lastBarBottomOffset": 600},
-            {"maximumClearGap": 0}, {"barLayoutMode": "fixed_count", "lowerBarCount": 1.5},
+            {"barLayoutMode": "maximum_gap", "maximumClearGap": 0},
+            {"barCenterSpacing": 0}, {"barLayoutMode": "fixed_count", "lowerBarCount": 1.5},
             {"barLayoutMode": "fixed_count", "lowerBarCount": 0},
             {"barLayoutMode": "fixed_count", "upperBarCount": 100},
             {"handleEnabled": "no", "barLayoutMode": "fixed_count", "barCount": 1},
@@ -267,7 +279,7 @@ class MinimalProtectiveGrilleProductTests(unittest.TestCase):
         self.assertEqual(MODULE.TEMPLATE_ID, DESCRIPTOR["id"])
         self.assertEqual(MODULE.TEMPLATE_VERSION, DESCRIPTOR["version"])
         dependencies = DESCRIPTOR["extensions"]["parameterDependencies"]
-        self.assertEqual(dependencies["creationOnly"], ["frameType"])
+        self.assertEqual(dependencies["creationOnly"], ["layoutStyle", "frameType", "supportStyle"])
         self.assertTrue(all(key not in dependencies["manufacturingOnly"] for key in
                             ("handleEnabled", "handleSide", "handleClosure", "handleBottom", "barLayoutMode")))
 
@@ -336,12 +348,20 @@ class MinimalProtectiveGrilleProductTests(unittest.TestCase):
                 for key in expected:
                     self.assertEqual(enriched[key], anchored[key], "Host must preserve the actual stock anchors")
 
-    def test_first_last_offset_visibility_follows_frame_not_handle(self):
+    def test_first_last_offset_visibility_follows_planar_frame_and_active_pitch_anchor(self):
         display = json.loads((DIRECTORY / "display.json").read_text(encoding="utf-8"))
-        conditions = {
+        planar_conditions = {
             "firstBarTopOffset": {"op": "ne", "parameter": "frameType", "value": "closed_frame"},
             "lastBarBottomOffset": {"op": "eq", "parameter": "frameType", "value": "two_vertical"},
         }
+        conditions = {key: {'op':'all','conditions':[
+            {'op':'eq','parameter':'layoutStyle','value':'planar'}, condition]}
+            for key, condition in planar_conditions.items()}
+        conditions['firstBarTopOffset'] = {'op':'all','conditions':[
+            conditions['firstBarTopOffset'], {'op':'any','conditions':[
+                {'op':'ne','parameter':'barLayoutMode','value':'center_spacing'},
+                {'op':'eq','parameter':'handleEnabled','value':'yes'},
+                {'op':'eq','parameter':'frameType','value':'bottom_rail'}]}]}
         declarations = {a["parameter"]: a for a in DESCRIPTOR["extensions"]["sceneSpecificationAnnotations"]["annotations"]}
         for key, condition in conditions.items():
             scene = display["views"]["scene"]["annotations"][key]
@@ -355,17 +375,21 @@ class MinimalProtectiveGrilleProductTests(unittest.TestCase):
         document = self.display(self.values(frameType="closed_frame", handleEnabled="no",
                                              barLayoutMode="fixed_count", barCount=0))
         self.assertFalse({a["parameter"] for a in document["annotations"]} & conditions.keys())
+        five = self.display(self.values(layoutStyle='five_face',frameType='two_vertical'))
+        self.assertFalse({a['parameter'] for a in five['annotations']} & conditions.keys())
 
     def test_equal_small_sections_keep_requested_corner_crossing_half_holes(self):
         # A declaration cannot decide connectivity from the flat-face width.
         # Real native final solids supply that decision after the cut.
-        self.manufacturing(self.values(jointMode="male_female_half_hole"))
+        self.manufacturing(self.values(jointMode="male_female_half_hole",
+                                      frameProfileType="rect", innerProfileType="rect"))
 
     def test_male_joints_only_apply_to_frame_and_horizontal_inner_members(self):
         for frame, handle in product(("two_vertical", "closed_frame", "bottom_rail"),
                                      ("left", "right", "center_double")):
             with self.subTest(frame=frame, handle=handle):
                 parameters = self.values(frameType=frame, handleSide=handle, frameDepth=12,
+                                         frameProfileType="rect", innerProfileType="rect",
                                          jointMode="male_female_half_hole")
                 layout = self.layout(parameters)
                 declaration = self.manufacturing(parameters)

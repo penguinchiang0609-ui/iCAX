@@ -31,13 +31,13 @@ export function renderJobExecution(view){
     ${button('five.job.stop','结束整任务仿真')}</div>`:'';
   if(!view.fiveJobOpen)return banner;
   const rows=jobSteps(view),busy=workpieceSelectionBusy(view)||!!run,enabled=rows.filter(r=>r.enabled);
-  return `${banner}<div class="five-position-dialog five-floating-dialog five-job-dialog" data-five-key="job-dialog" data-five-floating="job" ${floatingDialogStyle(view,'job')} role="dialog" aria-label="装夹工序与输出">
-    <header class="five-position-title" data-five-dialog-drag><strong>装夹工序与输出</strong>${button('five.job.close','×','aria-label="关闭工序管理"')}</header>
+  return `${banner}<div class="five-position-dialog five-floating-dialog five-job-dialog" data-five-key="job-dialog" data-five-floating="job" ${floatingDialogStyle(view,'job')} role="dialog" aria-label="工序与输出">
+    <header class="five-position-title" data-five-dialog-drag><strong>工序与输出</strong>${button('five.job.close','×','aria-label="关闭工序管理"')}</header>
     <div class="five-position-body"><p>每道工序对应一次装夹。刀路、姿态和单独仿真在该装夹内编辑；整任务按下列顺序执行。</p>
     <ol class="five-job-list">${rows.map((r,i)=>`<li data-five-key="job-${attr(r.setup.id)}"><div><strong>${i+1} · ${esc(r.setup.name)}</strong><small>${esc(r.workpiece?.name||'')} · ${esc(r.reason||'轨迹可预览')} · ${esc(r.outputReason||'可输出切割点 XYZ/IJK')}</small></div><div class="five-button-row">
       ${button(`five.job.edit:${r.setup.id}`,'编辑本工序',busy||!r.placement?'disabled':'')}
-      ${button(`five.job.up:${r.setup.id}`,'上移',busy||i===0||rows[i-1]?.workpiece?.id!==r.workpiece?.id?'disabled':'')}
-      ${button(`five.job.down:${r.setup.id}`,'下移',busy||i===rows.length-1||rows[i+1]?.workpiece?.id!==r.workpiece?.id?'disabled':'')}</div>
+      ${button(`five.job.up:${r.setup.id}`,'上移',busy||i===0?'disabled':'')}
+      ${button(`five.job.down:${r.setup.id}`,'下移',busy||i===rows.length-1?'disabled':'')}</div>
       ${i<rows.length-1?'<small class="five-job-boundary">M00 · 停机、换装夹、重新定位</small>':''}</li>`).join('')}</ol>
     <p>按工序顺序输出装夹坐标系中的 XYZ 和单位刀轴 IJK（mm）。IJK 按模态保持，仅在变化时更新；固定刀轴优先保留精确曲线，变化刀轴使用 CAM 姿态序列。每条刀路单独成段，工序切换之间插入 M00。</p>
     ${view.fiveJobError?`<p role="alert">${esc(view.fiveJobError)}</p>`:''}
@@ -81,11 +81,11 @@ export async function jobCommand(context,view,action,ops){
     if(action.startsWith('edit:')){
       const row=rows.find(r=>r.setup.id===action.slice(5));if(!row?.placement)return;
       await selectWorkpiece(context,view,row.placement.id,ops);view.fiveJobOpen=false;
-      await context.actions?.selectRibbonTab?.('toolpath');return;
+      await context.actions?.selectRibbonTab?.('operation');return;
     }
     if(action==='retry'||action.startsWith('up:')||action.startsWith('down:')){
       const [direction,id]=action.split(':'),i=ids.indexOf(id),j=i+(direction==='up'?-1:1);
-      if(action!=='retry'){if(i<0||j<0||j>=ids.length||rows[i].workpiece?.id!==rows[j].workpiece?.id)return;[ids[i],ids[j]]=[ids[j],ids[i]];}
+      if(action!=='retry'){if(i<0||j<0||j>=ids.length)return;[ids[i],ids[j]]=[ids[j],ids[i]];}
       await setSetupOrder(context,view,ids,ops);return;
     }
     const enabled=rows.filter(r=>r.enabled);
@@ -117,7 +117,7 @@ export async function setSetupOrder(context,view,ids,ops,expected=view.scene.dom
   try{await context.sceneProxy.invoke('CamSetup.SetSequence',request);}
   catch(error){const receipt=await context.sceneProxy.invoke('CamScene.QueryCommand',{epoch:request.expected.epoch,commandId:request.commandId});if(receipt.status!=='Completed'){if(receipt.status==='NotFound')view.fiveJobRequest=null;throw error;}}
   view.fiveJobRequest=null;await saveCommittedProjectEdit(context,view,ops);await ops.refreshSceneState(context,view);
-  ops.appendProjectLog(context,'ok','装夹姿态顺序已保存，整任务仿真和输出按此顺序执行。');
+  ops.appendProjectLog(context,'ok','工序顺序已保存，整任务仿真和输出按此顺序执行。');
  }catch(error){view.error=error.message;}
  finally{view.pending=false;if(!view.disposed&&context.isCurrentProject?.()!==false)ops.renderProject(context,view);}
 }

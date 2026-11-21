@@ -2,8 +2,11 @@
 #include <ExtrusionRecognition/HealWork.h>
 #include <OpenCascadeResourceImport/OpenCascadeTaskExecution.h>
 #include <atomic>
+#include <charconv>
 #include <ExtrusionRecognition/SectionExactClassifier.h>
 #include <ExtrusionRecognition/SectionMaterialProjection.h>
+#include <ExtrusionRecognition/SectionContourFitting.h>
+#include <ExtrusionRecognition/SectionRegionPartitionWork.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 #include <OpenCascadeResourceImport/OpenCascadeAssemblyImport.h>
@@ -36,6 +39,8 @@
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <Windows.h>
 #include <DbgHelp.h>
+#include <crtdbg.h>
+#include <cstdlib>
 #pragma comment(lib,"dbghelp.lib")
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -1401,16 +1406,280 @@ int FaceInventory(const fs::path& source,const fs::path& output) {
 }
 
 #include "MachiningEdgeAnalysisExport.inc"
+#include "MachiningPathAnalysisExport.inc"
+#include "MachiningFaceCutCoverageExport.inc"
+#include "MachiningPenetrationExport.inc"
+
+void PersistPathAnalysisCheckpoint(const R::SSectionFaceClassificationResult& classification,
+    const R::SSectionWiresResult& section,const fs::path& directory,const fs::path& source,
+    const ObjectMap& completedStages,bool sourceUnchanged) {
+    if(!sourceUnchanged)throw std::runtime_error("Cannot cache a changed source CAD input");
+    fs::create_directories(directory);
+    const auto persist=[&](const char* name,const G::BRepModel& model) {
+        const auto bytes=G::Persistence::Serialize(model);std::ofstream stream(directory/name,std::ios::binary);
+        stream.write(reinterpret_cast<const char*>(bytes.data()),bytes.size());
+        if(!stream)throw std::runtime_error("Cannot write exact machining analysis checkpoint");
+    };
+    persist("split.icaxbrep",classification.SplitGeometry);
+    persist("machining.icaxbrep",classification.MachiningGeometry);
+    persist("stock.icaxbrep",classification.NonMachiningGeometry);
+    G::BRepModel curves;VariantArray wires;std::uint64_t curveId=0;
+    for(const auto& wire:section.Wires) {
+        VariantArray edges;
+        for(const auto& edge:wire.Edges) {
+            G::Curve2Record curve;curve.Id=++curveId;curve.Geometry=edge.Curve;curves.Curves2.push_back(std::move(curve));
+            edges.emplace_back(ObjectMap{{"sourceEdgeId",std::to_string(edge.SourceEdgeId)},{"sourceFaceId",std::to_string(edge.SourceFaceId)},
+                {"first",edge.Range.First},{"last",edge.Range.Last},{"reversed",edge.bReversed},
+                {"start",VariantArray{edge.Start.X,edge.Start.Y}},{"end",VariantArray{edge.End.X,edge.End.Y}}});
+        }
+        wires.emplace_back(ObjectMap{{"area",wire.dSignedArea},{"closed",wire.bClosed},{"inner",wire.bInner},{"edges",edges}});
+    }
+    persist("section-curves.icaxbrep",curves);Save(directory/"section-domains.json",{{"wires",wires}});
+    ObjectMap stages;
+    for(const auto name:{"heal","align","contour","classify"}) {
+        const auto stage=completedStages.at(name).To<ObjectMap>();
+        const bool passed=stage.at("status").To<std::string>()=="passed";
+        if(!passed)throw std::runtime_error("Cannot cache an unvalidated upstream stage");
+        stages[name]=ObjectMap{{"passed",passed}};
+    }
+    Save(directory/"performance.json",{{"status",std::string("passed")},{"source",Utf8(source)},
+        {"sourceNeutralUnchanged",true},{"stages",stages},
+        {"scope",std::string("Exact neutral checkpoint from validated Classify; original face and edge IDs retained")}});
+}
+
+#include "TubeNativeSharedVertexAudit.inc"
+
+int NativeSurfaceControlAudit(const fs::path& source,const fs::path& output)
+{
+    std::ifstream input(source,std::ios::binary);const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(input)),{});
+    const auto geometry=G::Persistence::Deserialize(bytes);const auto built=O::ReconstructOpenCascadeShape(geometry);
+    if(!built.bOK)throw std::runtime_error("Cannot reconstruct native surface control audit");
+    VariantArray rows;
+    for(const auto& [id,face]:built.Faces) {
+        BRepAdaptor_Surface adaptor(face);ObjectMap row{{"faceId",std::to_string(id)},{"nativeType",static_cast<int>(adaptor.GetType())}};
+        double u0,u1,v0,v1;BRepTools::UVBounds(face,u0,u1,v0,v1);row["faceUVBounds"]=VariantArray{u0,u1,v0,v1};
+        TopLoc_Location location;const auto support=BRep_Tool::Surface(face,location);
+        row["geomLibPlanar1e7"]=GeomLib_IsPlanarSurface(support,1.e-7).IsPlanar();
+        const auto spline=Handle(Geom_BSplineSurface)::DownCast(support);
+        if(!spline.IsNull()) {
+            row["uDegree"]=spline->UDegree();row["vDegree"]=spline->VDegree();
+            row["uPoles"]=spline->NbUPoles();row["vPoles"]=spline->NbVPoles();
+            row["uClosed"]=spline->IsUClosed();row["vClosed"]=spline->IsVClosed();
+            VariantArray poles;std::vector<gp_Pnt> points;double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(int u=1;u<=spline->NbUPoles();++u)for(int v=1;v<=spline->NbVPoles();++v) {
+                const auto p=spline->Pole(u,v).Transformed(location.Transformation());points.push_back(p);
+                lo=std::min(lo,p.X());hi=std::max(hi,p.X());poles.emplace_back(ObjectMap{{"u",u},{"v",v},{"p",VariantArray{p.X(),p.Y(),p.Z()}},{"weight",spline->Weight(u,v)}});
+            }
+            row["worldPoleXRange"]=VariantArray{lo,hi};row["controlPoles"]=poles;
+            if(points.size()>=3) {
+                const auto origin=points.front();gp_Vec first;double farthestSquared=0.;
+                for(const auto& p:points){const gp_Vec delta(origin,p);if(delta.SquareMagnitude()>farthestSquared){farthestSquared=delta.SquareMagnitude();first=delta;}}
+                gp_Vec normal;double area=0.;
+                for(const auto& p:points){const auto cross=first.Crossed(gp_Vec(origin,p));if(cross.SquareMagnitude()>area){area=cross.SquareMagnitude();normal=cross;}}
+                if(area>0.) {
+                    normal.Normalize();double maximum=0.;std::size_t witness=0;
+                    for(std::size_t i=0;i<points.size();++i){const auto distance=std::abs(gp_Vec(origin,points[i]).Dot(normal));if(distance>maximum){maximum=distance;witness=i;}}
+                    row["controlPlaneOrigin"]=VariantArray{origin.X(),origin.Y(),origin.Z()};row["controlPlaneNormal"]=VariantArray{normal.X(),normal.Y(),normal.Z()};
+                    row["maxControlPlaneDistanceMm"]=maximum;row["maxDistancePoleIndex"]=static_cast<int>(witness);
+                }
+            }
+            try {
+                const auto trimmed=Handle(Geom_BSplineSurface)::DownCast(spline->Copy());trimmed->Segment(u0,u1,v0,v1,0.,0.);
+                std::vector<gp_Pnt> finite;VariantArray finitePoles;
+                for(int u=1;u<=trimmed->NbUPoles();++u)for(int v=1;v<=trimmed->NbVPoles();++v) {
+                    const auto p=trimmed->Pole(u,v).Transformed(location.Transformation());finite.push_back(p);
+                    finitePoles.emplace_back(ObjectMap{{"u",u},{"v",v},{"p",VariantArray{p.X(),p.Y(),p.Z()}},{"weight",trimmed->Weight(u,v)}});
+                }
+                row["trimmedControlPoles"]=finitePoles;
+                const auto anchor=finite.front();gp_Vec first;double longest=0.;
+                for(const auto& p:finite){const gp_Vec delta(anchor,p);if(delta.SquareMagnitude()>longest){longest=delta.SquareMagnitude();first=delta;}}
+                gp_Vec normal;double largestArea=0.;
+                for(const auto& p:finite){const auto cross=first.Crossed(gp_Vec(anchor,p));if(cross.SquareMagnitude()>largestArea){largestArea=cross.SquareMagnitude();normal=cross;}}
+                if(largestArea>0.) {
+                    normal.Normalize();double maximum=0.;
+                    for(const auto& p:finite)maximum=std::max(maximum,std::abs(gp_Vec(anchor,p).Dot(normal)));
+                    row["trimmedMaxControlPlaneDistanceMm"]=maximum;
+                    row["trimmedControlPlaneOrigin"]=VariantArray{anchor.X(),anchor.Y(),anchor.Z()};
+                    row["trimmedControlPlaneNormal"]=VariantArray{normal.X(),normal.Y(),normal.Z()};
+                }
+            } catch(const Standard_Failure& error){row["trimmedControlAuditError"]=std::string(error.GetMessageString());}
+        }
+        rows.emplace_back(std::move(row));
+    }
+    Save(output,{{"readOnly",true},{"source",Utf8(source)},{"sourceUnchanged",bytes==G::Persistence::Serialize(geometry)},{"faces",rows}});return 0;
+}
+
+int RunMachiningPathCheckpoint(const fs::path& checkpoint,const fs::path& root,
+    const std::string& group,const std::string& id) {
+    return RunMachiningEdgeCheckpoint(checkpoint,root,group,id,[&](const auto& classification,
+        const auto& section,const auto& edgeAnalysis,const auto& built) {
+        const auto began=Clock::now();
+        const auto paths=R::MachiningPathAnalysisWork{}.Run(classification,section,edgeAnalysis);
+        const double seconds=std::chrono::duration<double>(Clock::now()-began).count();
+        const auto artifacts=machining_path_export::Export(classification,edgeAnalysis,paths,built,
+            root/"PathAnalysis"/fs::u8path(group)/id,group);
+        const bool passed=paths.bSuccess&&paths.bComplete&&artifacts.at("passed").To<bool>();
+        const bool usable=paths.bSuccess&&artifacts.at("passed").To<bool>();
+        return ObjectMap{{"status",std::string(passed?"passed":usable?"partial":"failed")},{"serviceSuccess",paths.bSuccess},
+            {"analysisComplete",paths.bComplete},{"computeSeconds",seconds},{"artifactAudit",artifacts},
+            {"diagnostics",Strings(paths.Diagnostics)},{"upstreamStagesReused",true}};
+    });
+}
+
+int RunMachiningFaceCutCoverageCheckpoint(const fs::path& checkpoint,const fs::path& root,
+    const std::string& group,const std::string& id) {
+    return RunMachiningEdgeCheckpoint(checkpoint,root,group,id,[&](const auto& classification,
+        const auto& section,const auto& edgeAnalysis,const auto& built) {
+        const auto originalSplit=G::Persistence::Serialize(classification.SplitGeometry);
+        const auto originalMachining=G::Persistence::Serialize(classification.MachiningGeometry);
+        const auto began=Clock::now();
+        const auto paths=R::MachiningPathAnalysisWork{}.Run(classification,section,edgeAnalysis);
+        const auto coverage=R::MachiningFaceCutCoverageWork{}.Run(classification,edgeAnalysis,paths);
+        const double seconds=std::chrono::duration<double>(Clock::now()-began).count();
+        const auto artifacts=machining_face_cut_coverage_export::Export(classification,edgeAnalysis,paths,coverage,built,
+            root/"FaceCutCoverage"/fs::u8path(group)/id,group);
+        const bool unchanged=originalSplit==G::Persistence::Serialize(classification.SplitGeometry)
+            &&originalMachining==G::Persistence::Serialize(classification.MachiningGeometry);
+        const bool passed=paths.bSuccess&&coverage.bSuccess&&coverage.bComplete&&artifacts.at("passed").To<bool>()&&unchanged;
+        const bool usable=paths.bSuccess&&coverage.bSuccess&&artifacts.at("passed").To<bool>()&&unchanged;
+        return ObjectMap{{"status",std::string(passed?"passed":usable?"partial":"failed")},{"serviceSuccess",coverage.bSuccess},
+            {"analysisComplete",coverage.bComplete},{"computeSeconds",seconds},{"artifactAudit",artifacts},
+            {"diagnostics",Strings(coverage.Diagnostics)},{"upstreamStagesReused",true},{"checkpointCadUnchanged",unchanged},
+            {"freshNativePathAnalysis",true},{"pathAnalysisSuccess",paths.bSuccess},{"pathAnalysisComplete",paths.bComplete}};
+    },"faceCutCoverage");
+}
+
+int RunMachiningPenetrationCheckpoint(const fs::path& checkpoint,const fs::path& root,
+    const std::string& group,const std::string& id)
+{
+    return RunMachiningEdgeCheckpoint(checkpoint,root,group,id,[&](const auto& classification,
+        const auto& section,const auto& edgeAnalysis,const auto& built) {
+        const auto originalSplit=G::Persistence::Serialize(classification.SplitGeometry);
+        const auto originalMachining=G::Persistence::Serialize(classification.MachiningGeometry);
+        const auto originalStock=G::Persistence::Serialize(classification.NonMachiningGeometry);
+        const auto began=Clock::now();
+        const auto paths=R::MachiningPathAnalysisWork{}.Run(classification,section,edgeAnalysis);
+        const auto penetration=R::MachiningPenetrationWork{}.Run(classification,section,edgeAnalysis,paths);
+        const double seconds=std::chrono::duration<double>(Clock::now()-began).count();
+        const auto artifacts=machining_penetration_export::Export(penetration,built,
+            root/"Penetration"/fs::u8path(group)/(id+".json"),group);
+        const bool unchanged=originalSplit==G::Persistence::Serialize(classification.SplitGeometry)
+            &&originalMachining==G::Persistence::Serialize(classification.MachiningGeometry)
+            &&originalStock==G::Persistence::Serialize(classification.NonMachiningGeometry);
+        const bool usable=paths.bSuccess&&penetration.bSuccess&&unchanged&&artifacts.at("passed").To<bool>();
+        const bool complete=usable&&penetration.bComplete;
+        return ObjectMap{{"status",std::string(complete?"passed":usable?"partial":"failed")},
+            {"serviceSuccess",penetration.bSuccess},{"analysisComplete",penetration.bComplete},
+            {"computeSeconds",seconds},{"artifactAudit",artifacts},{"checkpointCadUnchanged",unchanged},
+            {"diagnostics",Strings(penetration.Diagnostics)},{"upstreamStagesReused",true},
+            {"freshNativePathAnalysis",true},{"pathAnalysisSuccess",paths.bSuccess},{"pathAnalysisComplete",paths.bComplete}};
+    },"penetration",false,2);
+}
+
+#include "SectionRegionPartitionExport.inc"
+
+int RunSectionRegionCheckpoint(const fs::path& checkpoint,const fs::path& root,
+    const std::string& group,const std::string& id) {
+    const auto reportPath=root/"Reports"/fs::u8path(group)/(id+".json");
+    const auto contourPath=root/"Coutour"/fs::u8path(group)/(id+".json");
+    ObjectMap stages;
+    ObjectMap report{{"stage",std::string("regionPartition")},{"status",std::string("running")},
+        {"upstreamCheckpoint",Utf8(checkpoint)},{"upstreamStagesReused",true}};
+    Save(reportPath,report);
+    try {
+        const auto [classification,section,source]=LoadClassifyCheckpoint(checkpoint);
+        const auto split=O::ReconstructOpenCascadeShape(classification.SplitGeometry);
+        if(!split.bOK||split.Shape.IsNull()||!BRepCheck_Analyzer(split.Shape,true,true).IsValid())
+            throw std::runtime_error("Invalid exact checkpoint split geometry");
+        for(const auto name:{"heal","align","contour","classify"})
+            stages[name]=ObjectMap{{"status",std::string("passed")},{"reusedCheckpoint",true}};
+        report["upstreamSource"]=source;
+        report["stages"]=stages;
+        Save(reportPath,report);
+
+        const auto splitBefore=G::Persistence::Serialize(classification.SplitGeometry);
+        const auto machiningBefore=G::Persistence::Serialize(classification.MachiningGeometry);
+        const auto stockBefore=G::Persistence::Serialize(classification.NonMachiningGeometry);
+        const double tolerance=R::SSectionWireOptions{}.dConnectionTolerance;
+        const auto began=Clock::now();
+        const auto result=R::SectionRegionPartitionWork::Run(section,classification,tolerance);
+        const auto seconds=std::chrono::duration<double>(Clock::now()-began).count();
+        const bool unchanged=splitBefore==G::Persistence::Serialize(classification.SplitGeometry)
+            &&machiningBefore==G::Persistence::Serialize(classification.MachiningGeometry)
+            &&stockBefore==G::Persistence::Serialize(classification.NonMachiningGeometry);
+        if(!unchanged)throw std::runtime_error("Region Work changed Classify checkpoint geometry");
+        auto stage=section_region_export::Export(result,root/"RegionPartition"/fs::u8path(group)/id,
+            fs::u8path(source),group,id,contourPath,reportPath,section,classification,tolerance,unchanged);
+        try {
+            section_region_export::WriteCheckpointContourPreview(section,contourPath);
+            stage["contourPreviewPath"]=Utf8(contourPath);
+        } catch(const Standard_Failure& error) {
+            stage["contourPreviewError"]=std::string(error.GetMessageString());
+        } catch(const std::exception& error) {
+            stage["contourPreviewError"]=std::string(error.what());
+        }
+        stage["computeSeconds"]=seconds;
+        stage["checkpointCadUnchanged"]=unchanged;
+        const auto status=stage.at("status").To<std::string>();
+        stages["regionPartition"]=std::move(stage);
+        report["status"]=status;
+        report["stages"]=stages;
+        Save(reportPath,report);
+        return status=="passed"?0:status=="partial"||status=="unsupported"?2:1;
+    } catch(const Standard_Failure& error) {
+        report["error"]=std::string(error.GetMessageString());
+    } catch(const std::exception& error) {
+        report["error"]=std::string(error.what());
+    }
+    report["status"]=std::string("failed");
+    report["stages"]=stages;
+    Save(reportPath,report);
+    return 1;
+}
+
+ObjectMap ContourFitEvidence(const R::SSectionWiresResult& section)
+{
+    if (!section.ContourFit)
+        return {{"status", std::string("not-run")}, {"curveCount", 0}};
+    const auto& fit = *section.ContourFit;
+    VariantArray wires;
+    std::size_t count = 0;
+    double maximum = 0;
+    for (std::size_t i = 0; i < fit.Wires.size(); ++i)
+    {
+        const auto& original = section.Wires.at(i);
+        VariantArray curves;
+        for (const auto& curve : fit.Wires[i].Curves)
+        {
+            VariantArray sources;
+            for (const auto& source : curve.Sources)
+            {
+                const auto& edge = original.Edges.at(source.EdgeIndex);
+                sources.emplace_back(ObjectMap{{"edgeIndex", static_cast<int>(source.EdgeIndex)},
+                    {"sourceEdgeId", std::to_string(edge.SourceEdgeId)}, {"sourceFaceId", std::to_string(edge.SourceFaceId)},
+                    {"first", source.First}, {"last", source.Last}, {"reversed", source.Reversed}});
+            }
+            curves.emplace_back(ObjectMap{{"kind", curve.Kind}, {"deviationUpperBoundMm", curve.DeviationUpperBound},
+                {"first", curve.First}, {"last", curve.Last}, {"reversed", curve.Reversed}, {"sources", sources}});
+            maximum = std::max(maximum, curve.DeviationUpperBound);
+            ++count;
+        }
+        wires.emplace_back(ObjectMap{{"inner", original.bInner}, {"curves", curves}});
+    }
+    return {{"status", std::string(fit.bSuccess ? "passed" : "failed")}, {"reason", fit.Reason},
+        {"toleranceMm", R::SectionContourFitToleranceMm}, {"maxDeviationUpperBoundMm", maximum},
+        {"curveCount", static_cast<int>(count)}, {"wires", wires}};
+}
 
 int RunPart(const fs::path& source,const fs::path& root,const std::string& group,const std::string& id,
     bool contourOnly=false,bool healMerge=false,bool alignOnly=false,std::size_t maximumConcurrency=0,
-    bool classifyOnly=false) {
+    bool classifyOnly=false,bool regionPartitionOnly=false) {
     const auto reportPath=root/"Reports"/fs::u8path(group)/(id+".json");
     ObjectMap report{{"inputBRep",Utf8(source)},{"id",id},{"groundTruth",std::string("unlabelled")},{"stage",std::string("import")},{"status",std::string("running")}};
     report["maximumGeometryConcurrency"]=static_cast<int>(maximumConcurrency);
     ObjectMap stages;const auto began=Clock::now();auto stageBegan=began;std::string stage="import";
     std::ofstream timing;
-    if(!DetailedExportAuditDirectory.empty()){
+    if(regionPartitionOnly||!DetailedExportAuditDirectory.empty()){
         fs::create_directories(reportPath.parent_path());
         timing.open(fs::path(reportPath.wstring()+L".timings.log"),std::ios::app);
     }
@@ -1440,6 +1709,7 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
         const bool originalValid=BRepCheck_Analyzer(original,true,true).IsValid();
         stages["import"]=ObjectMap{{"status",std::string("passed")},{"sourceValid",originalValid},{"faces",Count(original,TopAbs_FACE)},
             {"seconds",std::chrono::duration<double>(Clock::now()-began).count()}};
+        if(regionPartitionOnly&&!originalValid)report["neutralValidity"]=ShapeValidity(original);
         R::CExtrudeRecognizesService service;
         iCAX::CAD::SCadBRepHealOptions healOptions;healOptions.MergeSameDomain=healMerge;healOptions.MaximumConcurrency=maximumConcurrency;
         auto time=start("heal");const auto healed=R::HealWork{}.Run(geometry,healOptions);
@@ -1463,18 +1733,23 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
         if(!healed.Success){Save(output("Heal",".json"),healReport);finish(healReport,time);
             throw std::runtime_error("HealWork failed geometry validation");}
         const auto healedShape=Build(healed.Geometry);
-        const auto healOverlay=ContourOverlay(healedShape,{},0,output("Heal",".step"),"Healed faces");
-        healReport["roundTrip"]=healOverlay;
-        const bool healOK=healOverlay.at("passed").To<bool>();
+        bool healOK=BRepCheck_Analyzer(healedShape,true,true).IsValid();
+        if(!regionPartitionOnly) {
+            const auto healOverlay=ContourOverlay(healedShape,{},0,output("Heal",".step"),"Healed faces");
+            healReport["roundTrip"]=healOverlay;
+            healOK=healOK&&healOverlay.at("passed").To<bool>();
+        }
         healReport["status"]=std::string(healOK?"passed":"failed");
         Save(output("Heal",".json"),healReport);finish(healReport,time);
-        if(!healOK)throw std::runtime_error("HealWork artifact round trip failed");
-        const auto healedPath=output("Reports","-healed.icaxbrep");fs::create_directories(healedPath.parent_path());
-        const auto healedBytes=G::Persistence::Serialize(healed.Geometry);
-        {std::ofstream cache(healedPath,std::ios::binary|std::ios::trunc);
+        if(!healOK)throw std::runtime_error(regionPartitionOnly?"HealWork output BRep is invalid":"HealWork artifact round trip failed");
+        if(!regionPartitionOnly) {
+            const auto healedPath=output("Reports","-healed.icaxbrep");fs::create_directories(healedPath.parent_path());
+            const auto healedBytes=G::Persistence::Serialize(healed.Geometry);
+            std::ofstream cache(healedPath,std::ios::binary|std::ios::trunc);
             cache.write(reinterpret_cast<const char*>(healedBytes.data()),healedBytes.size());
-            if(!cache)throw std::runtime_error("Cannot save HealWork neutral output");}
-        report["healedBRep"]=Utf8(healedPath);save();
+            if(!cache)throw std::runtime_error("Cannot save HealWork neutral output");
+            report["healedBRep"]=Utf8(healedPath);save();
+        }
         time=start("align");const auto direction=service.Recognize(healed.Geometry);
         const double alignComputeSeconds=std::chrono::duration<double>(Clock::now()-time).count();
         computed(alignComputeSeconds);
@@ -1489,6 +1764,7 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
         // Compare geometric extrema, not independently inflated conservative
         // boxes. BRepBndLib::Add can overestimate spline bounds differently
         // after a rigid transform even when the curves are unchanged.
+        trace("align verify exact bounds");
         Bnd_Box actualBox,expectedBox;BRepBndLib::AddOptimal(aligned,actualBox,false,false);
         BRepBndLib::AddOptimal(expected,expectedBox,false,false);
         double a[6],b[6];actualBox.Get(a[0],a[1],a[2],a[3],a[4],a[5]);expectedBox.Get(b[0],b[1],b[2],b[3],b[4],b[5]);
@@ -1501,9 +1777,12 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
             double volume=0;TopTools_IndexedMapOfShape solids;TopExp::MapShapes(shape,TopAbs_SOLID,solids);
             for(int i=1;i<=solids.Extent();++i)volume+=Volume(solids(i));return volume;
         };
+        trace("align verify transformed area and volume");
         const double areaError=Relative(Area(healedShape),Area(aligned));
         const double volumeError=volumeApplicable?Relative(solidVolume(healedShape),solidVolume(aligned)):0;
-        const auto alignArtifact=ContourOverlay(aligned,{},0,output("Align",".step"),"Aligned faces");
+        const auto alignArtifact=regionPartitionOnly?ObjectMap{{"passed",true},{"presentationSkipped",true}}
+            : ContourOverlay(aligned,{},0,output("Align",".step"),"Aligned faces");
+        trace("align verify transformed topology");
         const bool alignOK=originalValid&&BRepCheck_Analyzer(aligned,true,true).IsValid()&&axis.IsEqual(gp_Vec(1,0,0),1e-8,1e-8)
             &&areaError<1e-6&&volumeError<1e-6&&boundsError<0.01&&alignArtifact.at("passed").To<bool>();
         VariantArray matrix;for(const auto& row:m)for(double v:row)matrix.emplace_back(v);
@@ -1517,8 +1796,9 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
             {"diagnostics",Strings(direction.Diagnostics)}},time);
         if(!alignOK)throw std::runtime_error("Align geometry or STEP artifact validation failed");
         if(alignOnly){report["status"]=std::string("passed");save();return 0;}
-        RawProjectionSvg(alignedBuilt,output("Coutour",".raw.svg"));
+        if(!regionPartitionOnly)RawProjectionSvg(alignedBuilt,output("Coutour",".raw.svg"));
         R::SSectionWireOptions sectionOptions;sectionOptions.nMaximumConcurrency=maximumConcurrency;if(timing)sectionOptions.Progress=trace;
+        sectionOptions.bFitContourForPartition = true;
         time=start("contour");const auto section=service.ExtractSectionWires(direction.AlignedGeometry,sectionOptions);
         const double contourComputeSeconds=std::chrono::duration<double>(Clock::now()-time).count();
         computed(contourComputeSeconds);
@@ -1561,14 +1841,19 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
         contourOK=contourOK&&outer==1;
         if(!contourOK)throw std::runtime_error("Refusing to export an open or inconsistent contour");
         ContourSvg(section,output("Coutour",".svg"));
-        const double endX=ContourEndX(aligned);const auto overlayCheck=ContourOverlay(aligned,contours,endX,output("Coutour",".step"));
+        const double endX=ContourEndX(aligned);
+        const auto overlayCheck=regionPartitionOnly?ObjectMap{{"passed",true},{"presentationSkipped",true}}
+            : ContourOverlay(aligned,contours,endX,output("Coutour",".step"));
         contourOK=contourOK&&overlayCheck.at("passed").To<bool>();
+        const auto fitting = ContourFitEvidence(section);
         Save(output("Coutour",".json"),{{"coordinatePlane",std::string("X=endX, YZ; minimum-X end of aligned body")},
-            {"endX",endX},{"includesAlignedBody",true},{"outerColor",std::string("#00FF00")},{"innerColor",std::string("#FF0000")},
-            {"overlayRoundTrip",overlayCheck},{"previewOnlySamples",true},{"wires",wires}});
+            {"endX",endX},{"includesAlignedBody",!regionPartitionOnly},{"outerColor",std::string("#00FF00")},{"innerColor",std::string("#FF0000")},
+            {"overlayRoundTrip",overlayCheck},{"previewOnlySamples",true},{"wires",wires},{"fitting",fitting}});
         finish({{"status",contourOK?std::string("passed"):std::string("failed")},{"serviceSuccess",true},{"wireCount",static_cast<int>(section.Wires.size())},
+            {"fittingStatus",fitting.at("status")},{"fittedCurveCount",fitting.at("curveCount")},
             {"outerCount",outer},{"overlayRoundTrip",overlayCheck},{"computeSeconds",contourComputeSeconds},{"sideFaceCount",static_cast<int>(section.SideFaceIds.size())},{"diagnostics",Strings(section.Diagnostics)}},time);
         if(contourOnly){report["status"]=contourOK?std::string("passed"):std::string("failed");save();return contourOK?0:1;}
+        if(regionPartitionOnly&&!contourOK)throw std::runtime_error("Contour validation failed before Classify");
         R::SFeatureToolpathOptions classificationOptions;classificationOptions.bSingleExtrudedStock=true;classificationOptions.nMaximumConcurrency=maximumConcurrency;
         if(timing)classificationOptions.Progress=trace;
         time=start("classify");const auto classification=service.ClassifySectionFaces(direction.AlignedGeometry,section,classificationOptions);
@@ -1601,8 +1886,9 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
         const bool faceMapVerified=assigned.size()==classification.SplitGeometry.Faces.size()
             &&classification.MachiningFaceIds.size()==classification.MachiningGeometry.Faces.size()
             &&classification.NonMachiningFaceIds.size()==classification.NonMachiningGeometry.Faces.size();
-        ObjectMap machiningOverlay{{"passed",true},{"skippedNoMachiningFaces",machining.IsNull()}};
-        if(!machining.IsNull())machiningOverlay=ContourOverlay(machining,contours,endX,
+        ObjectMap machiningOverlay{{"passed",true},{"skippedNoMachiningFaces",machining.IsNull()},
+            {"presentationSkipped",regionPartitionOnly}};
+        if(!regionPartitionOnly&&!machining.IsNull())machiningOverlay=ContourOverlay(machining,contours,endX,
             output("Classify","-machining.step"),"Machining faces");
         trace("classify STEP export ready");
         const double splitArea=Area(split),faceArea=Area(machining)+Area(skin);
@@ -1624,7 +1910,25 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
             {"splitAreaRelativeError",splitError},{"partitionAreaRelativeError",partitionError},{"splitWarnings",splitWarning},
             {"machiningContourOverlay",machiningOverlay},
             {"diagnostics",Strings(classification.Diagnostics)}},time);
-        if(!classifyOK)throw std::runtime_error("Classify validation failed before edge analysis");
+        if(!classifyOK)throw std::runtime_error(regionPartitionOnly
+            ? "Classify validation failed before region partition" : "Classify validation failed before edge analysis");
+        if(regionPartitionOnly) {
+            time=start("regionPartition");
+            const auto regions=R::SectionRegionPartitionWork::Run(section,classification,sectionOptions.dConnectionTolerance);
+            computed(std::chrono::duration<double>(Clock::now()-time).count());
+            auto audit=section_region_export::Export(regions,output("RegionPartition",""),source,group,id,
+                output("Coutour",".json"),reportPath,section,classification,sectionOptions.dConnectionTolerance,
+                G::Persistence::Serialize(geometry)==bytes);
+            const auto status=audit.at("status").To<std::string>();
+            finish(std::move(audit),time);
+            report["status"]=status;
+            if(status!="passed")report["error"]=regions.Reason;
+            save();return status=="passed"?0:1;
+        }
+        const auto checkpoint=root/"Checkpoints"/fs::u8path(group)/id;
+        PersistPathAnalysisCheckpoint(classification,section,checkpoint,source,stages,
+            G::Persistence::Serialize(geometry)==bytes);
+        report["pathAnalysisCheckpoint"]=Utf8(checkpoint);save();
         if(classifyOnly){report["status"]=std::string("passed");save();return 0;}
         time=start("edgeAnalysis");
         R::SMachiningEdgeAnalysisOptions edgeOptions;if(timing)edgeOptions.Progress=trace;
@@ -1643,7 +1947,23 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
             {"analysisComplete",edgeAnalysis.bComplete},{"adjacencyScope",std::string("machining-faces-only")},
             {"computeSeconds",edgeComputeSeconds},{"artifactAudit",edgeArtifacts},
             {"diagnostics",Strings(edgeAnalysis.Diagnostics)}},time);
-        report["status"]=edgeOK?std::string("passed"):std::string("failed");save();return edgeOK?0:1;
+        if(!edgeOK)throw std::runtime_error("Machining edge artifact validation failed before path analysis");
+        time=start("pathAnalysis");
+        R::SMachiningPathAnalysisOptions pathOptions;if(timing)pathOptions.Progress=trace;
+        const auto pathAnalysis=R::MachiningPathAnalysisWork{}.Run(classification,section,edgeAnalysis,pathOptions);
+        const double pathComputeSeconds=std::chrono::duration<double>(Clock::now()-time).count();
+        computed(pathComputeSeconds);
+        const auto pathArtifacts=machining_path_export::Export(classification,edgeAnalysis,pathAnalysis,
+            splitBuilt,output("PathAnalysis",""),group);
+        const bool pathOK=pathAnalysis.bSuccess&&pathAnalysis.bComplete&&pathArtifacts.at("passed").To<bool>();
+        const bool pathUsable=pathAnalysis.bSuccess&&pathArtifacts.at("passed").To<bool>();
+        const std::string pathStatus=pathOK?"passed":pathUsable?"partial":"failed";
+        finish({{"status",pathStatus},{"serviceSuccess",pathAnalysis.bSuccess},
+            {"analysisComplete",pathAnalysis.bComplete},{"computeSeconds",pathComputeSeconds},
+            {"artifactAudit",pathArtifacts},{"diagnostics",Strings(pathAnalysis.Diagnostics)}},time);
+        report["status"]=pathStatus;
+        if(!pathUsable)report["error"]=std::string("Machining path analysis or its complete-model artifacts failed; see per-edge endpoint reasons");
+        save();return pathOK?0:1;
     } catch(const Standard_Failure& e) {report["error"]=std::string(e.GetMessageString());if(e.GetStackString())report["exceptionStack"]=std::string(e.GetStackString());}
       catch(const std::exception& e) {report["error"]=std::string(e.what());}
     auto failed=stages.contains(stage)?stages.at(stage).To<ObjectMap>():ObjectMap{};
@@ -1652,7 +1972,41 @@ int RunPart(const fs::path& source,const fs::path& root,const std::string& group
     failed["seconds"]=failedSeconds;failed["startedSeconds"]=std::chrono::duration<double>(stageBegan-began).count();
     if(failed.contains("computeSeconds"))failed["reviewSeconds"]=std::max(0.0,failedSeconds-failed.at("computeSeconds").To<double>());
     stages[stage]=failed;
+    if(regionPartitionOnly&&stage!="regionPartition")
+        stages["regionPartition"]=ObjectMap{{"status",std::string("not-run")},
+            {"blockedStage",stage},{"reason",report["error"]}};
     report["status"]=std::string("failed");save();return 1;
+}
+
+// Freeze a fresh source import before running the native Work sequence.
+int RunMachiningPathSource(const fs::path& source,const fs::path& root,
+    const std::string& group,const std::string& id,bool regionPartitionOnly=false) {
+    const auto directory=root/"Imported"/fs::u8path(group);
+    const auto neutralPath=directory/(id+".icaxbrep");
+    const auto importReport=directory/"import.json";
+    ObjectMap report{{"status",std::string("running")},{"source",Utf8(source)},
+        {"inputBRep",Utf8(neutralPath)},{"includeDisplayMesh",false}};
+    Save(importReport,report);
+    try {
+        iCAX::Services::CServiceProvider services;
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(services);
+        const auto importer=services.Resolve<iCAX::CAD::ICadBRepImportService>();
+        if(!importer)throw std::runtime_error("CAD import service missing");
+        iCAX::CAD::SCadBRepImportRequest request;request.SourcePath=source;request.IncludeDisplayMesh=false;
+        const auto imported=importer->Load(request);
+        const auto bytes=G::Persistence::Serialize(imported.Geometry);
+        {std::ofstream stream(neutralPath,std::ios::binary);
+            stream.write(reinterpret_cast<const char*>(bytes.data()),bytes.size());
+            if(!stream)throw std::runtime_error("Cannot freeze current source neutral BRep");}
+        report["sourceSha256"]=imported.SourceSha256;report["format"]=imported.FormatId;
+        report["sourceNativeValid"]=imported.SourceIsValidBRep;report["importedNativeValid"]=imported.IsValidBRep;
+        report["sourceUnit"]=Strings(imported.SourceLengthUnits);report["geometryUnit"]=imported.GeometryLengthUnit;
+        report["assemblyPolicy"]=std::string("complete imported model; no decomposition");
+        report["status"]=std::string("passed");report["diagnostics"]=Strings(imported.Diagnostics);Save(importReport,report);
+        return RunPart(neutralPath,root,group,id,false,false,false,0,false,regionPartitionOnly);
+    } catch(const Standard_Failure& error) {report["error"]=std::string(error.GetMessageString());}
+      catch(const std::exception& error) {report["error"]=std::string(error.what());}
+    report["status"]=std::string("failed");Save(importReport,report);return 1;
 }
 
 int NativeStepSections(const fs::path& source,const fs::path& cached,const fs::path& directory,
@@ -3769,7 +4123,11 @@ ObjectMap ShapeValidity(const TopoDS_Shape& shape) {
 TopoDS_Shape ReadNativeSource(const fs::path& source) {
     TopoDS_Shape shape;auto extension=source.extension().wstring();
     std::transform(extension.begin(),extension.end(),extension.begin(),::towlower);
-    if(extension==L".brep") {
+    if(extension==L".icaxbrep") {
+        std::ifstream input(source,std::ios::binary);
+        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+        return Build(G::Persistence::Deserialize(bytes));
+    } else if(extension==L".brep") {
         BRep_Builder builder;BRepTools::Read(shape,Utf8(source).c_str(),builder);
     } else if(extension==L".igs"||extension==L".iges") {
         IGESControl_Reader reader;
@@ -4011,14 +4369,31 @@ int ProjectionDiagnostic(const fs::path& source,const fs::path& output) {
 
 
 #include "MachiningEdgeAnalysisAudit.inc"
+#include "MachiningPathAnalysisAudit.inc"
+#include "MachiningFaceCutCoverageAudit.inc"
+#include "MachiningPenetrationAudit.inc"
+#include "SectionRegionPartitionAudit.inc"
 #include "PartialInternalInterfaceRegression.inc"
 #include "ZeroTrimRegression.inc"
 #include "GeometricMachiningBoundaryRegression.inc"
+#include "SourceSkinSupportDiagnostic.inc"
+#include "WorkInspectionMeshExport.inc"
 
 int wmain(int argc,wchar_t** argv) {
+    SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0, _CALL_REPORTFAULT);
+#ifdef _DEBUG
+    for (const auto report : {_CRT_ASSERT, _CRT_ERROR}) {
+        _CrtSetReportMode(report, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(report, _CRTDBG_FILE_STDERR);
+    }
+#endif
     if(GetEnvironmentVariableW(L"ICAX_TUBE_CRASH_TRACE",nullptr,0))Standard_Failure::SetDefaultStackTraceLength(24);
     if(GetEnvironmentVariableW(L"ICAX_TUBE_CRASH_TRACE",nullptr,0))SetUnhandledExceptionFilter(ProbeCrash);
     try {
+        if(argc==4&&std::wstring(argv[1])==L"--work-inspection-mesh")return work_inspection_mesh::Export(argv[2],argv[3]);
+        if(argc==4&&std::wstring(argv[1])==L"--source-skin-support-diagnostic")return source_skin_support_diagnostic::Export(argv[2],argv[3]);
         if(argc==5&&std::wstring(argv[1])==L"--skin-boundary-evidence")return skin_boundary_evidence::Export(argv[2],argv[3],argv[4],false,true);
         if(argc==5&&std::wstring(argv[1])==L"--skin-boundary-candidates")return skin_boundary_evidence::Export(argv[2],argv[3],argv[4],true);
         if(argc==5&&std::wstring(argv[1])==L"--skin-sewing-audit")return skin_boundary_evidence::Export(argv[2],argv[3],argv[4],false,true);
@@ -4055,10 +4430,22 @@ int wmain(int argc,wchar_t** argv) {
         if(argc==4&&std::wstring(argv[1])==L"--stock-wall-006-regression")return StockWall006Regression(argv[2],argv[3]);
         if(argc==6&&std::wstring(argv[1])==L"--part-serial")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,false,false,1);
         if(argc==6&&std::wstring(argv[1])==L"--part")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
+        if(argc==5&&std::wstring(argv[1])==L"--native-curve-interval-audit")return NativeCurveIntervalAudit(argv[2],Utf8(argv[3]),argv[4]);
+        if(argc==5&&std::wstring(argv[1])==L"--native-line-boundary-audit")return NativeLineBoundaryAudit(argv[2],Utf8(argv[3]),argv[4]);
+        if(argc==5&&std::wstring(argv[1])==L"--native-shared-vertex-audit")return NativeSharedVertexAudit(argv[2],Utf8(argv[3]),argv[4]);
+        if(argc==4&&std::wstring(argv[1])==L"--native-surface-control-audit")return NativeSurfaceControlAudit(argv[2],argv[3]);
+        if(argc==6&&std::wstring(argv[1])==L"--path-analysis-source")return RunMachiningPathSource(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
+        if(argc==6&&std::wstring(argv[1])==L"--path-analysis-checkpoint")return RunMachiningPathCheckpoint(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
+        if(argc==6&&std::wstring(argv[1])==L"--face-cut-coverage-checkpoint")return RunMachiningFaceCutCoverageCheckpoint(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
+        if(argc==6&&std::wstring(argv[1])==L"--penetration-checkpoint")return RunMachiningPenetrationCheckpoint(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
         if(argc==6&&std::wstring(argv[1])==L"--edge-analysis-checkpoint")return RunMachiningEdgeCheckpoint(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
         if(argc==6&&std::wstring(argv[1])==L"--part-merge")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,true);
         if(argc==6&&std::wstring(argv[1])==L"--classify-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,false,false,0,true);
         if(argc==6&&std::wstring(argv[1])==L"--classify-merge-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,true,false,0,true);
+        if(argc==6&&std::wstring(argv[1])==L"--region-partition-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,false,false,0,false,true);
+        if(argc==6&&std::wstring(argv[1])==L"--region-partition-source")return RunMachiningPathSource(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),true);
+        if(argc==6&&std::wstring(argv[1])==L"--region-partition-checkpoint")return RunSectionRegionCheckpoint(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]));
+        if(argc==6&&std::wstring(argv[1])==L"--region-partition-merge-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,true,false,0,false,true);
         if(argc==6&&std::wstring(argv[1])==L"--align-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,false,true);
         if(argc==6&&std::wstring(argv[1])==L"--align-merge-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),false,true,true);
         if(argc==6&&std::wstring(argv[1])==L"--contour-only")return RunPart(argv[2],argv[3],Utf8(argv[4]),Utf8(argv[5]),true);
@@ -4067,6 +4454,10 @@ int wmain(int argc,wchar_t** argv) {
         if(argc==3&&std::wstring(argv[1])==L"--flat-artifact-test")return FlatArtifactTest(argv[2]);
         if(argc==3&&std::wstring(argv[1])==L"--heal-work-test")return HealWorkTest(argv[2]);
         if(argc==3&&std::wstring(argv[1])==L"--edge-analysis-test")return MachiningEdgeAnalysisAudit(argv[2]);
+        if(argc==3&&std::wstring(argv[1])==L"--path-analysis-test")return MachiningPathAnalysisAudit(argv[2]);
+        if(argc==3&&std::wstring(argv[1])==L"--face-cut-coverage-test")return MachiningFaceCutCoverageAudit(argv[2]);
+        if(argc==3&&std::wstring(argv[1])==L"--penetration-test")return MachiningPenetrationAudit(argv[2]);
+        if(argc==3&&std::wstring(argv[1])==L"--region-partition-test")return section_partition_audit::Run(argv[2]);
         if(argc==3&&std::wstring(argv[1])==L"--geometric-boundary-test")return GeometricMachiningBoundaryRegression(argv[2]);
         if((argc==3||argc==4)&&std::wstring(argv[1])==L"--partial-internal-interface-test")return PartialInternalInterfaceRegression(argv[2],argc==4?fs::path(argv[3]):fs::path{});
         if(argc==4&&std::wstring(argv[1])==L"--zero-trim-test")return ZeroTrimRegression(argv[2],argv[3]);
@@ -4101,7 +4492,10 @@ int wmain(int argc,wchar_t** argv) {
         if(argc==5&&std::wstring(argv[1])==L"--prepare-solid-batch")return PrepareSolid(argv[2],argv[3],false,std::stod(argv[4]),false);
         if(argc==4&&std::wstring(argv[1])==L"--prepare-iges-solid")return PrepareSolid(argv[2],argv[3],true);
         if(argc==4&&std::wstring(argv[1])==L"--audit-contacts")return AuditContacts(argv[2],argv[3]);
-        std::cerr<<"--split source directory | --part brep output-root source-group part-id\n";return 2;
+        std::cerr<<"--split source directory | --part brep output-root source-group part-id\n"
+            <<"--region-partition-checkpoint: checkpoint output-root source-group part-id\n"
+            <<"--region-partition-only | --region-partition-merge-only: brep output-root source-group part-id\n"
+            <<"--region-partition-source: CAD source output-root source-group part-id\n";return 2;
     } catch(const Standard_Failure& e) {std::cerr<<e.GetMessageString()<<'\n';return 3;}
       catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 3;}
 }

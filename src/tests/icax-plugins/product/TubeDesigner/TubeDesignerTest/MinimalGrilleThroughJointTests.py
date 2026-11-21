@@ -24,6 +24,7 @@ class MinimalGrilleThroughJointTests(unittest.TestCase):
 
     def values(self, **changes):
         return {**self.defaults, "jointMode": THROUGH, "frameWidth": 40, "frameDepth": 30,
+                "layoutStyle": "planar", "frameProfileType": "rect", "innerProfileType": "rect",
                 "frameCornerRadius": 2, "frameWallThickness": 1.5,
                 "innerWidth": 20, "innerDepth": 10, "innerCornerRadius": 1,
                 "innerWallThickness": 1, "maleHeadLength": 3, "maleHeadWidth": 6,

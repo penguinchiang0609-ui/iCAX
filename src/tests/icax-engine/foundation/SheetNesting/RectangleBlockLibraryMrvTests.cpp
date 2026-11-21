@@ -18,7 +18,12 @@ namespace
         p.Geometry.Outer={{0,0},{double(width),0},{double(width),double(height)},{0,double(height)}};return p;
     }
     Options Budget(std::size_t attempts,double seconds=30)
-    {Options o;o.MaxPlacementAttempts=attempts;o.TimeLimitSeconds=seconds;return o;}
+    {
+        Options o;o.MaxPlacementAttempts=attempts;o.TimeLimitSeconds=seconds;
+        // These pulse-count controls measure the raw constructor's lifecycle.
+        o.EnableBasicCompaction=false;
+        return o;
+    }
     JobResult Solve(const Problem& p,Options o)
     {return RunJob({"mrv-test","rect.block-library-mrv",p,std::move(o)},DefaultStrategies());}
     void Valid(const Problem& p,const JobResult& r,std::size_t cap)

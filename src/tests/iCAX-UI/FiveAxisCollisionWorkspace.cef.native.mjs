@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import {copyFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {chromium} from 'playwright';
+
+const port=Number(process.env.ICAX_COLLISION_TEST_PORT);if(!(port>=9690))throw Error('Use a dedicated acceptance runtime.');
+const output=resolve('output/acceptance/collision-workspace-20261102');mkdirSync(output,{recursive:true});
+const browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`),page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('/SDK/AppShell/index.html'));
+page.setDefaultTimeout(60000);const report={passed:false,standaloneCef:true,nativeBusinessMocked:false,cases:[]},errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.setViewportSize({width:1500,height:1000});
+ await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');
+ if(!process.env.ICAX_COLLISION_WORKSPACE_OPEN){
+  const project=resolve(output,`workspace-${Date.now()}.i5cam`);copyFileSync(resolve('output/acceptance/selected-collision-20261102/full-head/yoke-contact.i5cam'),project);
+  await page.evaluate(path=>__icaxAppShell.openProject(path,'icax.five-axis-cam'),project);
+ }
+ await page.waitForFunction(async()=>{const a=__icaxAppShell.getState();if(a.pendingCount||!a.activeProjectId)return false;const {getProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.audit=getProjectView(a.activeProjectId);return !!audit.scene?.domain;});
+ assert.match(await page.evaluate(()=>__icaxAppShell.getState().activeProjectPath),/collision-workspace-20261102/);
+ const idle=()=>page.waitForFunction(()=>!audit.pending&&!audit.fiveToolAxisRequest&&!audit.fiveAxisPointEdit?.loading&&!audit.fiveAxisPointEdit?.request&&!audit.fiveRapid?.running&&!audit.fiveRapid?.editClosing&&!audit.fiveRapid?.savingPath&&!audit.fiveRapid?.fileSaving&&!audit.fiveSimulation?.checking&&!audit.fiveSimulation?.repairing);
+ const command=async id=>{await page.evaluate(id=>__icaxAppShell.executeRibbonCommand(id),id);await idle();};
+ const ribbon=id=>page.locator(`.product-ribbon [data-command-id="${id}"]`).first();
+ await page.evaluate(()=>__icaxAppShell.selectRibbonTab('toolpath'));await idle();
+ // Prepare actual rapid geometry in the isolated fixture before auditing navigation.
+ await page.evaluate(async()=>{
+  const proxy=audit.viewportSceneProxy,setup=audit.scene.domain.setups.find(s=>s.id===audit.scene.domain.activeSetupId);
+  if(setup.generatedGeometry.transitions?.length&&setup.generatedGeometry.transitions.every(t=>['Generated','Draft'].includes(t.geometryStatus)))return;
+  const {waitForTaskResult}=await import('../../../apps/five-axis-cam/webpage/taskProgressStream.mjs');
+  const {readMachiningState,mergeDomainState}=await import('../../../apps/five-axis-cam/webpage/domainActions.mjs');
+  const task=await proxy.invoke('CamRapid.Generate',{commandId:crypto.randomUUID(),expected:audit.scene.domain.expected,setupId:setup.id,geometryRevision:setup.generatedGeometry.revision,safe:false});
+  const result=await waitForTaskResult({sceneProxy:proxy},task,{queryMethod:'CamRapid.QueryStatus',cancelMethod:'CamRapid.CancelTask'});if(result.status!=='Completed')throw Error(result.error||result.status);
+  mergeDomainState(audit.scene,await readMachiningState({sceneProxy:proxy}));
+ });
+ const baseline=await page.evaluate(()=>{window.auditCalls=[];const proxy=audit.viewportSceneProxy;window.auditOriginal=proxy.invoke;proxy.invoke=async function(method,payload,...rest){auditCalls.push({method,intentId:payload?.intentId,from:payload?.from,to:payload?.to,pathKind:payload?.pathKind});const result=await auditOriginal.call(this,method,payload,...rest);if(method==='CamSimulation.CheckCollision'&&window.auditHold){window.auditHold=false;window.auditHeld=true;await new Promise(resolve=>window.releaseRefresh=resolve);window.auditHeld=false;}return result;};const d=audit.scene.domain;return {cuts:audit.scene.intentToolpaths.map(c=>c.id),cad:JSON.stringify([d.workpieces,d.placements,d.fixtures]),geometry:JSON.stringify(d.setups[0].generatedGeometry)};});
+ await ribbon('five.cam-page.collision').click();await idle();
+ const pages=await page.evaluate(async()=>{const {CAM_PAGES}=await import('../../../apps/five-axis-cam/webpage/camWorkspace.mjs');return CAM_PAGES.map(p=>p[0]);});assert.deepEqual(pages.slice(-3),['order','collision','simulation']);
+ await ribbon('five.collision-details.cutting').click();await idle();assert.equal(await page.locator('.cam-context-pane [data-five-intent]').count(),baseline.cuts.length);assert.equal(await page.locator('.cam-context-pane [data-five-rapid-id]').count(),0);
+ await page.locator('.cam-context-pane [data-five-intent]').first().click();await idle();assert.match(await page.locator('.five-collision-inspector-heading').innerText(),/切割/);
+ await ribbon('five.collision-details.rapid').click();await idle();const rapidCount=await page.locator('.cam-context-pane [data-five-rapid-id]').count();assert(rapidCount>0);assert.equal(await page.locator('.cam-context-pane [data-five-intent]').count(),0);
+ await page.locator('.cam-context-pane [data-five-rapid-id]').first().click();await idle();assert.match(await page.locator('.five-collision-inspector-heading').innerText(),/空移/);
+ await ribbon('five.collision-details.all').click();await idle();assert.equal(await page.locator('.cam-context-pane [data-five-intent]').count(),baseline.cuts.length);assert.equal(await page.locator('.cam-context-pane [data-five-rapid-id]').count(),rapidCount);
+ await page.locator('.cam-context-pane [data-five-intent]').first().click();await idle();
+ await page.locator('[data-five-command="five.points.edit"]').click();await idle();assert.equal(await page.evaluate(()=>audit.fiveCamPage),'collision');
+ await page.locator('[data-five-command="five.points.add"]').click();await idle();assert.equal(await page.evaluate(()=>audit.fiveAxisPointInsert),true);await page.keyboard.press('Escape');await idle();assert.equal(await page.evaluate(()=>audit.fiveCamPage),'collision');
+ await page.locator('.cam-context-pane [data-five-rapid-id]').first().click();await idle();
+ await page.locator('[data-five-command="five.rapid.path-edit"]').click();await page.locator('.cam-info-pane [data-five-rapid-field="pathX"]').waitFor();await idle();assert.equal(await page.evaluate(()=>audit.fiveCamPage),'collision');
+ await command('five.rapid.path-cancel');
+ await ribbon('five.simulation.collision-auto-scope:Cutting').click();await idle();assert.match(await page.locator('.five-collision-repair h4').innerText(),/全部切割/);
+ await ribbon('five.simulation.collision-auto-scope:Rapid').click();await idle();assert.match(await page.locator('.five-collision-repair h4').innerText(),/全部空移/);
+ assert.equal(await page.evaluate(()=>auditCalls.filter(c=>/CheckCollision|AutoRepair|\.Generate$|\.EditPath$|\.EditToolAxisPoint$/.test(c.method)).length),0);
+ report.cases.push('Details filters, combined selection, cutting insert/edit modes, rapid editor and repair tolerances stay on the new page and do not calculate or modify paths.');
+ await ribbon('five.simulation.collision-check:Cutting').click();await idle();
+ const cutting=await page.evaluate(()=>structuredClone(audit.fiveSimulation.collisionReport.keyposeChecks.filter(r=>r.location.role!=='Rapid')));assert(cutting.length);
+ await ribbon('five.simulation.collision-check:Rapid').click();await idle();
+ assert.deepEqual(await page.evaluate(()=>auditCalls.filter(c=>c.method==='CamSimulation.CheckCollision').map(c=>c.pathKind)),['Cutting','Rapid']);
+ assert.deepEqual(await page.evaluate(()=>audit.fiveSimulation.collisionReport.keyposeChecks.filter(r=>r.location.role!=='Rapid')),cutting);
+ await ribbon('five.collision-details.all').click();await idle();
+ report.badges=await page.evaluate(()=>({pass:document.querySelectorAll('.cam-context-pane [data-five-collision-pass]').length,warning:document.querySelectorAll('.cam-context-pane [data-five-collision-warning]').length,unchecked:document.querySelectorAll('.cam-context-pane .five-path-unchecked').length}));assert(report.badges.pass+report.badges.warning>0);
+ report.cases.push('Real native checks target Cutting and Rapid separately, preserve the other type, and display their report badges.');
+ await page.locator('.cam-context-pane [data-five-intent]').first().click();await idle();
+ const scrollStyle=await page.addStyleTag({content:'.cam-context-pane,.cam-info-pane{height:450px!important;overflow:auto!important}.cam-context-pane::after,.cam-info-pane::after,.five-collision-inspector-content::after{content:"";display:block;min-height:1400px;flex:0 0 1400px}.five-collision-inspector-content{max-height:240px;overflow:auto}'});
+ await page.evaluate(()=>{window.auditHold=true;window.refreshDone=__icaxAppShell.executeRibbonCommand('five.simulation.collision-check-path');});await page.waitForFunction(()=>window.auditHeld);
+ await page.locator('[data-five-search]').fill('圆');
+ const selectors=['.cam-context-pane','.cam-info-pane','.five-collision-inspector-content'];
+ const before=await page.evaluate(selectors=>{window.kept={canvas:audit.viewport.renderer.domElement,input:document.querySelector('[data-five-search]'),threshold:document.querySelector('[aria-label="碰撞阈值"]'),events:0};kept.input.addEventListener('audit-probe',()=>kept.events++);kept.input.focus({preventScroll:true});kept.input.setSelectionRange(0,1);return selectors.length;},selectors);assert.equal(before,3);
+ const latest=await page.evaluate(selectors=>selectors.map((s,i)=>{const n=document.querySelector(s);n.scrollTop=100+i*60;return n.scrollTop;}),selectors);
+ await page.evaluate(()=>releaseRefresh());await page.evaluate(()=>refreshDone);await idle();
+ const interaction=await page.evaluate(selectors=>{kept.input.dispatchEvent(new Event('audit-probe'));return {canvas:kept.canvas===audit.viewport.renderer.domElement,input:kept.input===document.querySelector('[data-five-search]'),threshold:kept.threshold===document.querySelector('[aria-label="碰撞阈值"]'),focus:document.activeElement===kept.input,selection:[kept.input.selectionStart,kept.input.selectionEnd],scroll:selectors.map(s=>document.querySelector(s).scrollTop),events:kept.events};},selectors);
+ assert(interaction.canvas&&interaction.input&&interaction.threshold&&interaction.focus);assert.deepEqual(interaction.scroll,latest);assert.deepEqual(interaction.selection,[0,1]);assert.equal(interaction.events,1);report.interaction=interaction;
+ await scrollStyle.evaluate(n=>n.remove());await page.locator('[data-five-search]').fill('');await command('five.display.numbers');
+ await page.screenshot({path:resolve(output,'collision-page.png')});
+ const calculationCount=await page.evaluate(()=>auditCalls.filter(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)).length);
+ await ribbon('five.cam-page.simulation').click();await idle();assert.equal(await page.locator('[aria-label="轨迹仿真控制"]').count(),1);assert.equal(await page.evaluate(()=>audit.fiveSimulation.playing),false);
+ assert.equal(await page.evaluate(()=>auditCalls.filter(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)).length),calculationCount);
+ await ribbon('five.cam-page.collision').click();await idle();assert.equal(await page.evaluate(()=>audit.fiveCamInspector),'collision');
+ const after=await page.evaluate(()=>{const d=audit.scene.domain;return {cad:JSON.stringify([d.workpieces,d.placements,d.fixtures]),geometry:JSON.stringify(d.setups[0].generatedGeometry),error:audit.error};});assert.equal(after.cad,baseline.cad);assert.equal(after.geometry,baseline.geometry);assert.equal(after.error||'','');assert.deepEqual(errors,[]);
+ report.cases.push('A held real native check reply preserves canvas, inputs, listeners, focus, selection and three scroll positions; simulation navigation is passive; CAD and paths stay unchanged.');
+ // Commit one cut endpoint edit through the same right panel, then native undo/redo.
+ await page.locator('.cam-context-pane [data-five-intent]').first().click();await idle();
+ await command('five.points.edit');await page.locator('[data-five-point-field="position-2"]').waitFor();await idle();
+ const point=await page.evaluate(()=>({id:audit.fiveAxisPointEdit.id,position:audit.fiveAxisPointEdit.positionValues.map(Number),operations:structuredClone(audit.scene.domain.setups[0].generatedGeometry.operations),begin:auditCalls.length}));
+ await page.locator('[data-five-point-field="position-2"]').fill(String(point.position[2]+.25));
+ await command('five.collision-details.rapid');
+ const cutEdit=await page.evaluate(begin=>({calls:auditCalls.slice(begin),operations:audit.scene.domain.setups[0].generatedGeometry.operations,page:audit.fiveCamPage}),point.begin);
+ assert.equal(cutEdit.page,'collision');assert.equal(cutEdit.calls.filter(c=>c.method==='CamCut.EditToolAxisPoint').length,1);assert(!cutEdit.calls.some(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)));
+ for(const op of point.operations.filter(o=>o.intentId!==point.id))assert.deepEqual(cutEdit.operations.find(o=>o.intentId===op.intentId),op);
+ await command('five.collision-details.cutting');await command('five.points.edit');await page.locator('[data-five-point-field="position-2"]').waitFor();await idle();
+ await command('edit.undo');assert.equal(Number(await page.locator('[data-five-point-field="position-2"]').inputValue()),point.position[2]);
+ await command('edit.redo');assert.equal(Number(await page.locator('[data-five-point-field="position-2"]').inputValue()),point.position[2]+.25);
+ await command('edit.undo');await command('five.collision-details.rapid');await command('five.rapid.path-edit');await page.locator('.cam-info-pane [data-five-rapid-field="pathX"]').waitFor();await idle();
+ const rapid=await page.evaluate(()=>({id:audit.fiveRapid.id,x:audit.fiveRapid.pathEdit.points[0][0],begin:auditCalls.length,operations:JSON.stringify(audit.scene.domain.setups[0].generatedGeometry.operations)}));
+ await page.locator('.cam-info-pane [data-five-rapid-field="pathPoint"]').selectOption('0');await page.locator('.cam-info-pane [data-five-rapid-field="pathX"]').fill(String(rapid.x+.25));
+ await command('five.collision-details.cutting');
+ const rapidEdit=await page.evaluate(begin=>({calls:auditCalls.slice(begin),operations:JSON.stringify(audit.scene.domain.setups[0].generatedGeometry.operations)}),rapid.begin);
+ assert.equal(rapidEdit.calls.filter(c=>c.method==='CamRapid.EditPath').length,1);assert(!rapidEdit.calls.some(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)));assert.equal(rapidEdit.operations,rapid.operations);
+ await command('five.collision-details.rapid');await command('five.rapid.path-edit');await idle();
+ await command('edit.undo');await command('five.rapid.path-edit');await idle();assert.equal(await page.evaluate(()=>audit.fiveRapid.pathEdit.points[0][0]),rapid.x);
+ await command('edit.redo');await command('five.rapid.path-edit');await idle();assert.equal(await page.evaluate(()=>audit.fiveRapid.pathEdit.points[0][0]),rapid.x+.25);
+ await command('edit.undo');
+ assert.equal(await page.evaluate(()=>JSON.stringify([audit.scene.domain.workpieces,audit.scene.domain.placements,audit.scene.domain.fixtures])),baseline.cad);
+ report.cases.push('Cut and rapid endpoint XYZ edits save from the new page, leave unrelated paths and CAD unchanged, do not trigger checking, and support native undo/redo.');report.passed=true;
+}catch(error){report.error=error.stack;report.ui=await page.evaluate(()=>({page:audit?.fiveCamPage,error:audit?.error,message:audit?.fiveSimulation?.message,text:document.body.innerText.slice(-1800)})).catch(()=>null);process.exitCode=1;await page.screenshot({path:resolve(output,'failure.png')}).catch(()=>{});}
+finally{await page.evaluate(()=>{if(window.auditOriginal)audit.viewportSceneProxy.invoke=auditOriginal;}).catch(()=>{});writeFileSync(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));await browser.close();}

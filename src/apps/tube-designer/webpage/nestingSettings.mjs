@@ -3,6 +3,7 @@ import { renderFloatingEditorResizeHandles } from "./floatingEditorDom.mjs";
 
 const VERSION = 2;
 const ACTION_PREFIX = "tube-designer-nesting-";
+const RECOMMENDED_SEARCH_SECONDS = { time: 5, utilization: 60 };
 let rowSequence = 0;
 
 function sectionGroups(view) {
@@ -23,6 +24,19 @@ function numeric(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function normalizedParameters(parameters) {
+  const partGap = numeric(parameters?.partGap);
+  const optimizationMode = Object.hasOwn(RECOMMENDED_SEARCH_SECONDS, parameters?.optimizationMode)
+    ? parameters.optimizationMode : "time";
+  const searchTimeSeconds = numeric(parameters?.searchTimeSeconds);
+  return {
+    partGap: partGap !== null && partGap >= 0 ? partGap : 0,
+    optimizationMode,
+    searchTimeSeconds: Number.isSafeInteger(searchTimeSeconds) && searchTimeSeconds >= 1 && searchTimeSeconds <= 3600
+      ? searchTimeSeconds : RECOMMENDED_SEARCH_SECONDS[optimizationMode],
+  };
+}
+
 function validRow(row) {
   const quantity = numeric(row?.quantity);
   const length = numeric(row?.length);
@@ -36,7 +50,6 @@ function ensureSettings(view, _context = null) {
   const saved = view.scene?.tubeDesigner?.nestingSettings ?? {};
   const sourceSignature = JSON.stringify(saved);
   if (!view.tubeDesignerNestingSettings || view.tubeDesignerNestingSettingsSourceSignature !== sourceSignature) {
-    const partGap = numeric(saved?.parameters?.partGap);
     view.tubeDesignerNestingSettings = {
       version: VERSION,
       stocks: saved?.version === VERSION && Array.isArray(saved.stocks)
@@ -44,7 +57,7 @@ function ensureSettings(view, _context = null) {
           profileKey: group.profileKey,
           rows: (Array.isArray(group.rows) ? group.rows : []).map(validRow).filter(Boolean),
         })) : [],
-      parameters: { partGap: partGap !== null && partGap >= 0 ? partGap : 0 },
+      parameters: normalizedParameters(saved?.parameters),
     };
     view.tubeDesignerNestingSettingsSourceSignature = sourceSignature;
   }
@@ -90,8 +103,7 @@ export function getNestingStockInputs(view, context = null) {
 }
 
 export function getNestingParameters(view, context = null) {
-  const value = numeric(ensureSettings(view, context).parameters.partGap);
-  return { partGap: value !== null && value >= 0 ? value : 0 };
+  return normalizedParameters(ensureSettings(view, context).parameters);
 }
 
 export function handleNestingSettingsRibbonCommand(context, view, commandId, ops) {
@@ -101,7 +113,11 @@ export function handleNestingSettingsRibbonCommand(context, view, commandId, ops
   view.tubeDesignerNestingSettingsDialog = commandId === "nesting.stock-settings" ? "stock" : "parameters";
   const currentKeys = new Set(sectionGroups(view).map((group) => group.key));
   view.tubeDesignerNestingStockDraft = copy(settings.stocks.filter((group) => currentKeys.has(group.profileKey)));
-  view.tubeDesignerNestingParameterDraft = { partGap: String(settings.parameters.partGap) };
+  view.tubeDesignerNestingParameterDraft = {
+    partGap: String(settings.parameters.partGap),
+    optimizationMode: settings.parameters.optimizationMode,
+    searchTimeSeconds: String(settings.parameters.searchTimeSeconds),
+  };
   view.tubeDesignerNestingSettingsError = "";
   ops.renderProject(context, view);
   return true;
@@ -121,10 +137,24 @@ function collectFields(context, view, target) {
   for (const input of dialog?.querySelectorAll?.("[data-tube-nesting-stock-field]") ?? []) {
     updateStockField(view, input);
   }
-  const gap = dialog?.querySelector?.("[data-tube-nesting-parameter='partGap']");
-  if (gap && view.tubeDesignerNestingParameterDraft) {
-    view.tubeDesignerNestingParameterDraft.partGap = String(gap.value ?? "");
+  for (const input of dialog?.querySelectorAll?.("[data-tube-nesting-parameter]") ?? [])
+    updateParameterField(view, input, false);
+}
+
+function updateParameterField(view, target, applyRecommendation = true) {
+  const field = target?.dataset?.field;
+  const draft = view.tubeDesignerNestingParameterDraft;
+  if (!draft || !["partGap", "optimizationMode", "searchTimeSeconds"].includes(field)) return;
+  const value = String(target?.value ?? "");
+  if (field === "optimizationMode" && applyRecommendation
+    && Object.hasOwn(RECOMMENDED_SEARCH_SECONDS, value)
+    && numeric(draft.searchTimeSeconds) === RECOMMENDED_SEARCH_SECONDS[draft.optimizationMode]) {
+    draft.searchTimeSeconds = String(RECOMMENDED_SEARCH_SECONDS[value]);
+    const time = target?.closest?.("[data-tube-nesting-dialog]")
+      ?.querySelector?.("[data-tube-nesting-parameter='searchTimeSeconds']");
+    if (time) time.value = draft.searchTimeSeconds;
   }
+  draft[field] = value;
 }
 
 function closeDialog(context, view, ops) {
@@ -148,9 +178,7 @@ export async function handleNestingSettingsAction(context, view, action, target,
     return { handled: true };
   }
   if (action === ACTION_PREFIX + "parameters-change") {
-    if (target?.dataset?.field === "partGap" && view.tubeDesignerNestingParameterDraft) {
-      view.tubeDesignerNestingParameterDraft.partGap = String(target?.value ?? "");
-    }
+    updateParameterField(view, target);
     return { handled: true };
   }
   collectFields(context, view, target);
@@ -191,7 +219,19 @@ export async function handleNestingSettingsAction(context, view, action, target,
       ops.renderProject(context, view);
       return { handled: true, result: false };
     }
-    settings.parameters = { ...settings.parameters, partGap: gap };
+    const optimizationMode = view.tubeDesignerNestingParameterDraft?.optimizationMode;
+    const searchTimeSeconds = numeric(view.tubeDesignerNestingParameterDraft?.searchTimeSeconds);
+    if (!Object.hasOwn(RECOMMENDED_SEARCH_SECONDS, optimizationMode)) {
+      view.tubeDesignerNestingSettingsError = "请选择时间优先或利用率优先。";
+      ops.renderProject(context, view);
+      return { handled: true, result: false };
+    }
+    if (!Number.isSafeInteger(searchTimeSeconds) || searchTimeSeconds < 1 || searchTimeSeconds > 3600) {
+      view.tubeDesignerNestingSettingsError = "最长搜索时间须为 1 至 3600 秒的整数。";
+      ops.renderProject(context, view);
+      return { handled: true, result: false };
+    }
+    settings.parameters = { ...settings.parameters, partGap: gap, optimizationMode, searchTimeSeconds };
   }
   view.tubeDesignerNestingSettingsSaving = true;
   view.tubeDesignerNestingSettingsError = "";
@@ -260,13 +300,18 @@ export function renderNestingSettingsDialogs(context, view) {
   return `<div class="tube-nesting-settings-backdrop tube-floating-editor-layer" data-floating-editor-layer="nesting-settings">
     <section class="tube-nesting-settings-dialog ${stock ? "is-stock" : "is-parameters"}" data-floating-editor-window="nesting-settings-${kind}" data-tube-nesting-dialog="${kind}" role="dialog" aria-modal="false" aria-labelledby="tube-nesting-settings-title"
       data-window-state-controls="[data-tube-nesting-stock-field],[data-tube-nesting-parameter]">
-      <header class="tube-nesting-settings-header"><div><strong id="tube-nesting-settings-title">${title}</strong><span>${stock ? "按零件截面生成，默认 6000 mm；可添加不同长度。设置保存在当前项目中。" : "设置排样时相邻零件之间预留的距离，保存在当前项目中。"}</span></div>
+      <header class="tube-nesting-settings-header"><div><strong id="tube-nesting-settings-title">${title}</strong><span>${stock ? "按零件截面生成，默认 6000 mm；可添加不同长度。设置保存在当前项目中。" : "设置零件间距、优化偏好和搜索时间，保存在当前项目中。"}</span></div>
         <button type="button" data-cam-action="${ACTION_PREFIX}settings-cancel" class="tube-nesting-settings-close" aria-label="关闭${title}" ${saving ? "disabled" : ""}>×</button></header>
       <div class="tube-nesting-settings-body">
-        ${stock ? (groups.length ? groups.map((group) => renderStockGroup(group, draft, saving)).join("") : '<div class="tube-nesting-settings-empty"><strong>还没有零件</strong><span>请先在产品页点击“导入下料”。</span></div>') : `<label class="tube-nesting-parameter-field"><span>零件间距（mm）</span><input type="number" min="0" step="any" value="${escape(view.tubeDesignerNestingParameterDraft?.partGap ?? settings.parameters.partGap)}" data-tube-nesting-parameter="partGap" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="partGap" ${saving ? "disabled" : ""} /><small>设为 0 表示不额外预留零件间距。</small></label>`}
+        ${stock ? (groups.length ? groups.map((group) => renderStockGroup(group, draft, saving)).join("") : '<div class="tube-nesting-settings-empty"><strong>还没有零件</strong><span>请先在产品页点击“导入下料”。</span></div>') : `<label class="tube-nesting-parameter-field"><span>零件间距（mm）</span><input type="number" min="0" step="any" value="${escape(view.tubeDesignerNestingParameterDraft?.partGap ?? settings.parameters.partGap)}" data-tube-nesting-parameter="partGap" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="partGap" ${saving ? "disabled" : ""} /><small>设为 0 表示不额外预留零件间距。</small></label>
+        <label class="tube-nesting-parameter-field"><span>优化偏好</span><select aria-label="优化偏好" style="width:100%;box-sizing:border-box;font:inherit;border:1px solid #b8cbd3;border-radius:4px;background:#fff;padding:8px 10px;color:#254651" data-tube-nesting-parameter="optimizationMode" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="optimizationMode" ${saving ? "disabled" : ""}>
+          <option value="time" ${(view.tubeDesignerNestingParameterDraft?.optimizationMode ?? settings.parameters.optimizationMode) === "time" ? "selected" : ""}>时间优先</option>
+          <option value="utilization" ${(view.tubeDesignerNestingParameterDraft?.optimizationMode ?? settings.parameters.optimizationMode) === "utilization" ? "selected" : ""}>利用率优先</option>
+        </select><small>时间优先：尽快完成；利用率优先：继续搜索更省料的方案。</small></label>
+        <label class="tube-nesting-parameter-field"><span>最长搜索时间（秒）</span><input type="text" inputmode="numeric" aria-label="最长搜索时间（秒）" value="${escape(view.tubeDesignerNestingParameterDraft?.searchTimeSeconds ?? settings.parameters.searchTimeSeconds)}" data-tube-nesting-parameter="searchTimeSeconds" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="searchTimeSeconds" ${saving ? "disabled" : ""} /><small>可填 1–3600 秒。推荐时间优先 5 秒、利用率优先 60 秒；搜索始终保留更好的方案，到时返回当前最好结果，已证明最优时提前结束。</small></label>`}
       </div>
       <footer class="tube-nesting-settings-footer">
-        <div>${error ? `<p class="tube-nesting-settings-error" role="alert">${escape(error)}</p>` : `<span class="tube-nesting-settings-hint">${stock ? "数量 -1：不限；0：不用；正整数：有限库存，排样时优先使用。" : "单位：毫米（mm）"}</span>`}</div>
+        <div>${error ? `<p class="tube-nesting-settings-error" role="alert">${escape(error)}</p>` : `<span class="tube-nesting-settings-hint">${stock ? "数量 -1：不限；0：不用；正整数：有限库存，排样时优先使用。" : "优化偏好和搜索时间用于下一次排样。"}</span>`}</div>
         <button type="button" data-cam-action="${ACTION_PREFIX}settings-cancel" ${saving ? "disabled" : ""}>取消</button>
         <button type="button" class="tube-nesting-settings-save" data-cam-action="${ACTION_PREFIX}${stock ? "stock-save" : "parameters-save"}" ${saving || stock && !groups.length ? "disabled" : ""}>${saving ? "保存中…" : "确定"}</button>
       </footer>

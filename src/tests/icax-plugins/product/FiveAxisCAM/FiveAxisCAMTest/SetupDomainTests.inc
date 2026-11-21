@@ -16,7 +16,7 @@ TEST(FiveAxisSetups, SequenceIsExactAtomicUndoableAndDoesNotMutateLocalPaths)
 {
     Scene scene;PrepareOrderPart(scene);const auto before=Read(scene),first=before.at("placements").To<Array>().front().To<Map>();
     Map placement{{"placementId",first.at("id")}};
-    auto create=ActivateRequest(scene,placement);create["action"]=Text("create");create["name"]=Text("第二装夹");
+    auto create=ActivateRequest(scene,placement);create["action"]=Text("create");create["name"]=Text("第二装夹");create["machineType"]=Text("HeadHead");
     const auto second=Invoke(&scene,"CamSetup","Manage",create);
     const auto state=Read(scene);const auto cuts=state.at("intentToolpaths"),geometry=state.at("setups").To<Array>().front().To<Map>().at("generatedGeometry");
     auto request=GenerateRequest(scene);request.erase("setupId");request["setupIds"]=Array{second.at("setupId"),first.at("setupId")};
@@ -51,7 +51,7 @@ TEST(FiveAxisSetups, ProgramRequiresCurrentContinuousRapidsAndMarksNeutralOutput
     EXPECT_FALSE(result.at("machineReady").To<bool>());EXPECT_EQ("ICAX-CL",result.at("format").To<Text>());
     const auto text=result.at("content").To<Text>();
     // A disabled setup is independently skipped, even when its shared workpiece is enabled.
-    auto extra=ActivateRequest(scene,Map{{"placementId",placement.at("id")}});extra["action"]=Text("create");extra["name"]=Text("跳过工序");
+    auto extra=ActivateRequest(scene,Map{{"placementId",placement.at("id")}});extra["action"]=Text("create");extra["name"]=Text("跳过工序");extra["machineType"]=Text("HeadHead");
     const auto second=Invoke(&scene,"CamSetup","Manage",extra);
     auto toggle=ActivateRequest(scene,second);toggle["action"]=Text("disable");
     const auto receipt=Invoke(&scene,"CamSetup","Manage",toggle);EXPECT_EQ(receipt,Invoke(&scene,"CamSetup","Manage",toggle));
@@ -161,10 +161,10 @@ TEST(FiveAxisSetups, CutPointProgramUsesSetupFrameWithoutRegistrationOrRapids)
 TEST(FiveAxisSetups, SharedGeometryIndependentPoseLockAndDeletion)
 {
     Scene scene;File source;const auto first=Imported(scene,source);
-    auto create=ActivateRequest(scene,first);create["action"]=Text("create");create["name"]=Text("背面装夹");
+    auto create=ActivateRequest(scene,first);create["action"]=Text("create");create["name"]=Text("背面装夹");create["machineType"]=Text("HeadHead");
     const auto second=Invoke(&scene,"CamSetup","Manage",create);
     EXPECT_EQ(second,Invoke(&scene,"CamSetup","Manage",create));
-    EXPECT_EQ(1u,Read(scene).at("workpieces").To<Array>().size());EXPECT_EQ(2u,Read(scene).at("placements").To<Array>().size());
+    EXPECT_EQ(1u,Read(scene).at("workpieces").To<Array>().size());EXPECT_EQ(3u,Read(scene).at("placements").To<Array>().size());
     EXPECT_EQ(first.at("workpieceId"),second.at("workpieceId"));
     auto lock=ActivateRequest(scene,first);lock["locked"]=true;Invoke(&scene,"CamSetup","SetLocked",lock);
     EXPECT_THROW(Invoke(&scene,"CamPlacement","SetTransform",PlacementRequest(scene,first)),std::exception);
@@ -183,7 +183,7 @@ TEST(FiveAxisSetups, SharedGeometryIndependentPoseLockAndDeletion)
     }
     auto remove=ActivateRequest(scene,first);remove["setupId"]=first.at("setupId");Invoke(&scene,"CamWorkpiece","Remove",remove);
     EXPECT_TRUE(Read(scene).at("workpieces").To<Array>().empty());EXPECT_TRUE(Read(scene).at("placements").To<Array>().empty());
-    ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(state.at("workpieces"),Read(scene).at("workpieces"));EXPECT_EQ(2u,Read(scene).at("placements").To<Array>().size());
+    ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(state.at("workpieces"),Read(scene).at("workpieces"));EXPECT_EQ(3u,Read(scene).at("placements").To<Array>().size());
 }
 TEST(FiveAxisSetups, LocatingPointsAreExactSetupCoordinatesAndPersistWithoutMachineMeasurement)
 {
@@ -220,7 +220,7 @@ TEST(FiveAxisSetups, LocatingPointsAreExactSetupCoordinatesAndPersistWithoutMach
 TEST(FiveAxisSetups, ResetObjectFrameKeepsSharedGeometryAndOtherSetupWorldPose)
 {
     Scene scene;File source(BRepPrimAPI_MakeBox(40.,60.,20.).Shape());const auto first=Imported(scene,source);
-    auto create=ActivateRequest(scene,first);create["action"]=Text("create");create["name"]=Text("第二次装夹");const auto second=Invoke(&scene,"CamSetup","Manage",create);
+    auto create=ActivateRequest(scene,first);create["action"]=Text("create");create["name"]=Text("第二次装夹");create["machineType"]=Text("HeadHead");const auto second=Invoke(&scene,"CamSetup","Manage",create);
     Invoke(&scene,"CamPlacement","SetTransform",PlacementRequest(scene,second));
     auto state=Read(scene);auto ref=state.at("workpieces").To<Array>().front().To<Map>().at("geometryRef").To<Map>();
     const auto old=scene.Resources().Get<iCAX::GeometryData::BRepModel>(ref.at("url").To<Text>(),std::stoull(ref.at("version").To<Text>()));ASSERT_TRUE(old);const auto vertex=old->Vertices.front().Position;

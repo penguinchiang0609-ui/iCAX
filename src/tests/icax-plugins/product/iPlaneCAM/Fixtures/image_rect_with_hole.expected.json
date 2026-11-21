@@ -1,0 +1,18 @@
+{
+  "widthPixels": 16,
+  "heightPixels": 12,
+  "blackPixelCount": 88,
+  "outerPixelBounds": [
+    2,
+    2,
+    14,
+    10
+  ],
+  "holePixelBounds": [
+    6,
+    5,
+    10,
+    7
+  ],
+  "coordinateConvention": "Half-open pixel-cell bounds in top-down source image coordinates."
+}

@@ -4,6 +4,7 @@ import {addColliderHighlight} from './machineColliderVisuals.mjs';
 import {attachColliderBounds} from './machineColliderBounds.mjs';
 import {positionWorldTransformHud} from './transformHud.mjs';
 import {headColliderState,activeHeadCollider,markHeadColliders,scheduleHeadColliderSave} from './cuttingHeadColliders.mjs';
+import {hasHeadWorkspacePreview} from './headWorkspaceSelection.mjs';
 
 const valid=b=>[...b.position,...b.rotation,...b.size].every(v=>String(v).trim()&&Number.isFinite(Number(v)))&&b.size.every(v=>Number(v)>0);
 function dispose(root){root?.removeFromParent();root?.traverse(o=>{o.geometry?.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m?.dispose();});}
@@ -13,7 +14,7 @@ function repaintFields(preview,box){
  for(const key of ['position','rotation','size'])box[key].forEach((v,i)=>{const input=[...(mount?.querySelectorAll('[data-five-head-collider-field]')||[])].find(n=>n.dataset.fiveHeadColliderField===`box:${box.id}:${key}:${i}`);if(input&&input!==document.activeElement)input.value=String(Number(Number(v).toFixed(4)));});
 }
 export function syncHeadColliderPreview(preview){
- const s=headColliderState(preview.view);if(!preview.model||!s.show){if(preview.colliderRoot)preview.colliderRoot.visible=false;preview.colliderManipulator?.dispose();preview.colliderManipulator=null;return;}
+ const s=headColliderState(preview.view);if(hasHeadWorkspacePreview(preview.view)||!preview.model||!s.show){if(preview.colliderRoot)preview.colliderRoot.visible=false;preview.colliderManipulator?.dispose();preview.colliderManipulator=null;return;}
  const signature=JSON.stringify([s.instanceId,s.parts.map(p=>[p.index,p.boxes.map(b=>b.id)])]);
  if(preview.colliderKey!==signature){
   dispose(preview.colliderRoot);preview.colliderRoot=new THREE.Group();preview.colliderRoot.name='Cutting head collision boxes';preview.scene.add(preview.colliderRoot);preview.colliderObjects=new Map();preview.colliderKey=signature;
@@ -71,6 +72,7 @@ function syncManipulator(preview){
  });preview.colliderManipulator.update();
 }
 export function pickHeadCollider(preview,event){
+ if(hasHeadWorkspacePreview(preview.view))return false;
  if(preview.colliderSuppressClick>Date.now())return true;
  const s=headColliderState(preview.view);if(!s.show||!preview.colliderRoot?.visible)return false;
  const rect=preview.canvas.getBoundingClientRect(),caster=new THREE.Raycaster();caster.params.Line.threshold=preview.radius*.007;caster.setFromCamera({x:2*(event.clientX-rect.left)/rect.width-1,y:1-2*(event.clientY-rect.top)/rect.height},preview.camera);
@@ -80,7 +82,7 @@ export function pickHeadCollider(preview,event){
 }
 export function attachHeadColliderPreview(preview){
  const signal=(preview.colliderAbort=new AbortController()).signal,binding={context:preview.context,view:preview.view};
- attachColliderBounds(preview.host,binding,{signal,blocked:view=>view.pending,state:()=>headColliderState(preview.view),viewport:()=>({camera:preview.camera,renderer:preview.renderer}),get:()=>current(preview),
+ attachColliderBounds(preview.host,binding,{signal,blocked:view=>view.pending||hasHeadWorkspacePreview(preview.view),state:()=>headColliderState(preview.view),viewport:()=>({camera:preview.camera,renderer:preview.renderer}),get:()=>current(preview),
   begin:()=>begin(preview,current(preview)),change:()=>{const {part,box}=current(preview);markHeadColliders(preview.view,part);repaintFields(preview,box);preview.renderPreview();},end:(_,cancel)=>finish(preview,cancel),
  });
  const route=(type,method)=>preview.host.addEventListener(type,event=>{if(event.target!==preview.canvas)return;const manipulator=preview.colliderManipulator;if(manipulator?.[method]?.(event)){event.preventDefault();event.stopImmediatePropagation();}}, {capture:true,signal});

@@ -39,13 +39,14 @@ TEST(FiveAxisFixtureAutomaticFaces, NativeSuggestionIsReadOnlyCancelableAndFeeds
     Scene scene;File file(BRepPrimAPI_MakeBox(gp_Pnt(-60,-60,0),120,120,20).Shape());Imported(scene,file);const auto before=Read(scene);
     const auto request=AutoFaceRequest(scene);const auto task=Invoke(&scene,"CamFixture","FindSupportFaces",request);EXPECT_EQ(task.at("taskId"),Invoke(&scene,"CamFixture","FindSupportFaces",request).at("taskId"));
     const auto completed=Wait(scene,task);ASSERT_EQ(completed.at("status").To<Text>(),"Completed");EXPECT_FALSE(completed.at("result").To<Map>().contains("supportFaces"));EXPECT_FALSE(completed.at("result").To<Map>().contains("faces"));const auto result=Invoke(&scene,"CamFixture","ReadSupportSelection",{{"epoch",task.at("epoch")},{"taskId",task.at("taskId")}});ASSERT_EQ(result.at("supportFaces").To<Array>().size(),1u);EXPECT_FALSE(Invoke(&scene,"CamPlacement","ReadReferenceFaces",request).at("faces").To<Array>().empty());
+    EXPECT_EQ(result.at("basis").To<Text>(),"TrimmedBRepLowerEnvelope");EXPECT_FALSE(result.contains("meshDeflectionMm"));
     const auto after=Read(scene);for(const auto* key:{"expected","workpieces","placements","setups","fixtures","intentToolpaths"})EXPECT_EQ(before.at(key),after.at(key))<<key;
     auto wrong=AutoFaceRequest(scene);wrong["setupId"]=iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());EXPECT_THROW(Invoke(&scene,"CamFixture","FindSupportFaces",wrong),std::exception);
     const auto cancelled=Invoke(&scene,"CamFixture","FindSupportFaces",AutoFaceRequest(scene));Invoke(&scene,"CamFixture","CancelTask",{{"epoch",cancelled.at("epoch")},{"taskId",cancelled.at("taskId")}});EXPECT_EQ(Wait(scene,cancelled).at("status").To<Text>(),"Cancelled");
     auto recipe=PlateRecipe(scene);recipe["supportFaces"]=result.at("supportFaces");recipe["layout"]=Text("Automatic");recipe["stations"]=Array{};SetPlateRecipe(scene,recipe);
     const auto candidate=GeneratePlates(scene);EXPECT_EQ(candidate.at("supportCheck").To<Map>().at("status").To<Text>(),"Supported");EXPECT_TRUE(Read(scene).at("fixtures").To<Array>().empty());
 }
-TEST(FiveAxisFixtureAutomaticFaces, RealHatRailRecognitionFinishesWithinInteractiveBudget){
+void CheckRealHatRailRecognition(bool interactiveBudget){
     auto root=std::filesystem::current_path();const auto relative=std::filesystem::path("TestData/FA/Video_HatRail_1200x220x70_t1p2.step");
     while(!root.empty()&&!std::filesystem::exists(root/relative)){const auto parent=root.parent_path();if(parent==root)break;root=parent;}
     ASSERT_TRUE(std::filesystem::exists(root/relative));Scene scene;auto request=FixtureRequest(scene);const auto path=(root/relative).u8string();request["sourcePath"]=Text(reinterpret_cast<const char*>(path.data()),path.size());
@@ -55,7 +56,9 @@ TEST(FiveAxisFixtureAutomaticFaces, RealHatRailRecognitionFinishesWithinInteract
     const auto transform=state.at("placements").To<Array>().front().To<Map>().at("transform").To<Array>();for(size_t i=0;i<16;++i)input.Transform[i]=transform[i].To<double>();
     const auto original=iCAX::GeometryData::Persistence::Serialize(*input.Geometry);const auto started=std::chrono::steady_clock::now();
     const auto service=scene.Services().Resolve<iCAX::Geometry::ISectionPlateService>();std::vector<std::uint64_t> faces;
-    ASSERT_NO_THROW(faces=service->FindLowerEnvelopeFaces(input,[&]{return std::chrono::steady_clock::now()-started>std::chrono::seconds(10);}));
+    ASSERT_NO_THROW(faces=service->FindLowerEnvelopeFaces(input,[&]{return interactiveBudget&&std::chrono::steady_clock::now()-started>std::chrono::seconds(10);}));
     EXPECT_FALSE(faces.empty());EXPECT_EQ(original,iCAX::GeometryData::Persistence::Serialize(*input.Geometry));
-    RecordProperty("recognitionMs",static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count()));RecordProperty("selectedFaces",static_cast<int>(faces.size()));
+    ::testing::Test::RecordProperty("recognitionMs",static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count()));::testing::Test::RecordProperty("selectedFaces",static_cast<int>(faces.size()));
 }
+TEST(FiveAxisFixtureAutomaticFaces, RealHatRailRecognitionFinishesWithinInteractiveBudget){CheckRealHatRailRecognition(true);}
+TEST(FiveAxisFixtureAutomaticFaces, DISABLED_RealHatRailExactSelectionPreservesCad){CheckRealHatRailRecognition(false);}

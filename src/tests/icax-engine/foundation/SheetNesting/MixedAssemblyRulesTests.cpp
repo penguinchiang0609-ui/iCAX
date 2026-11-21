@@ -18,6 +18,18 @@ int main()
 {
  try
  {
+    {
+        Problem p;p.Tolerance=1e-7;p.Stocks={{"stock",4,3,1,1,"m"}};
+        p.Parts={Poly("fixed-triangle",1,{{0,0},{4,0},{0,3}}),
+            Poly("reflected-complement",1,{{0,0},{4,0},{4,3}})};
+        for(auto& part:p.Parts){part.FreeRotation=false;part.AllowedAnglesDegrees={0};}
+        p.Parts[1].AllowMirror=true;
+        auto o=Budget();o.MaxPatternMembers=2;o.MaxPatterns=16;
+        const auto result=Detail::RunMixedAssemblyRules(p,o);Complete(p,result);
+        Require(std::any_of(result.Layouts[0].Placements.begin(),result.Layouts[0].Placements.end(),[](const auto& placed)
+            {return placed.PartID=="reflected-complement"&&placed.Transform.Mirrored;}),
+            "mixed assembly composition dropped an original member's reflected orientation");
+    }
     {const auto p=Pair();const auto registered=RunJob({"mixed-entry","rules.composite-units",p,Budget()},DefaultStrategies());Require(registered.Checked.Valid&&registered.Checked.Complete,"registered mixed assembly entry must validate original demand");}
     {Problem p;p.Parts={Poly("tall",11,{{0,0},{1,0},{1,2},{0,2}}),Poly("small",11,{{0,0},{1,0},{1,1},{0,1}})};for(auto& part:p.Parts){part.FreeRotation=false;part.AllowedAnglesDegrees={0};}p.Stocks={{"stock",2,17,2,1,"m"}};const auto r=Detail::RunMixedAssemblyRules(p,Budget());Complete(p,r);Require(r.Layouts.size()==1,"a complete two-board row plan must not block a one-board column plan");}
     {
@@ -26,7 +38,7 @@ int main()
         Part circle;circle.ID="circle";circle.Quantity=8;circle.Material="m";circle.Geometry.Radius=5;q.Parts.push_back(circle);
         for(auto& part:q.Parts){part.FreeRotation=false;part.AllowedAnglesDegrees={0};}
         q.Stocks={{"stock",180,140,1,1,"m"}};
-        auto o=Budget();o.EnableCombinations=false;o.MaxPatterns=32;
+        auto o=Budget();o.EnableCombinations=false;o.MaxPatterns=32;o.Ranking=RankingPolicy::RegularRemnant;
         auto cells=q;cells.Parts.back().Geometry={};cells.Parts.back().Geometry.Outer={{-5,-5},{5,-5},{5,5},{-5,5}};
         const auto row=Detail::RunRectanglePatternShelves(cells,o,false);
         const auto column=Detail::RunRectanglePatternShelves(cells,o,true);
@@ -37,6 +49,29 @@ int main()
         const auto regular=RunJob({"regular-mixed","rules.composite-units",q,o},DefaultStrategies());Complete(q,regular.Output);
         Require(regular.Output.Layouts.size()==1&&regular.Remnants.LastSheetRegularArea>=columnArea-.001,
             "the first complete single-sheet row must not block a larger safe column remnant");
+        auto defaultOptions=Budget();defaultOptions.EnableCombinations=false;defaultOptions.MaxPatterns=32;
+        Require(defaultOptions.Ranking==RankingPolicy::Utilization,"mixed default must retain the common utilization objective");
+        const auto utilization=RunJob({"utilization-mixed","rules.composite-units",q,defaultOptions},DefaultStrategies());
+        Complete(q,utilization.Output);
+        const auto usedSectionUtilization=[&](const Result& candidate)
+        {
+            const auto checked=Validate(q,candidate);double sectionArea=0;
+            for(const auto& layout:candidate.Layouts)
+            {
+                double highest=0;
+                for(const auto& placed:layout.Placements)
+                {
+                    const auto part=std::find_if(q.Parts.begin(),q.Parts.end(),[&](const Part& value){return value.ID==placed.PartID;});
+                    if(part==q.Parts.end())return 0.;
+                    const auto box=Detail::Bounds(part->Geometry,placed.Transform);highest=std::max(highest,box.Y+box.Height);
+                }
+                sectionArea+=layout.Width*std::clamp(highest+q.EdgeMargin,0.,layout.Height);
+            }
+            return sectionArea>0?checked.MaterialArea/sectionArea:0.;
+        };
+        Require(utilization.Output.Layouts.size()==1&&usedSectionUtilization(utilization.Output)+1e-12>=
+            std::max(usedSectionUtilization(row),usedSectionUtilization(column)),
+            "default mixed selection must retain the complete original candidate with no worse actual whole-width used-section utilization");
         o.Ranking=RankingPolicy::LowThenLeft;
         const auto low=RunJob({"low-mixed","rules.composite-units",q,o},DefaultStrategies());Complete(q,low.Output);
         const auto top=[&](const Result& r){double value=0;for(const auto& l:r.Layouts)for(const auto& a:l.Placements){const auto part=std::find_if(q.Parts.begin(),q.Parts.end(),[&](const auto& b){return b.ID==a.PartID;});const auto bounds=Detail::Bounds(part->Geometry,a.Transform);value=std::max(value,bounds.Y+bounds.Height);}return value;};

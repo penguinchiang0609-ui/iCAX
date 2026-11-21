@@ -130,8 +130,10 @@ inline EnrollmentRepairResult RepairEnrollmentEnvironment(const std::function<By
         try { AppendIntelNvChain(ctx, certificates); } catch (const std::exception&) {}
         const auto cache = EnrollmentCacheDirectory(); AppendCachedEnrollmentCertificate(certificates, ek.publicArea, cache);
         return RepairEnrollmentMaterial(ek.publicArea, certificates, manufacturer, cache, fetch);
+    } catch (const tpm::TransportError& error) {
+        return {false, "tpm_check_failed", error.what()};
     } catch (const std::exception& error) {
-        return {false, "tpm_check_failed", std::string("TPM 检查未完成，请在 Windows 安全中心检查安全处理器；若系统提示需要重启，请重启后重试。详情：") + error.what()};
+        return {false, "tpm_check_failed", std::string("授权申请环境检查未完成。详情：") + error.what()};
     }
 }
 }

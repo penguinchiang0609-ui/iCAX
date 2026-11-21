@@ -17,20 +17,20 @@ test('keypoint precheck reports static controls before continuous intervals with
   acceptCollisionProgress(s,task({stage:'Keypoints',completedKeypointCount:'2',totalKeypointCount:'5',completedSegmentCount:'0',totalSegmentCount:'10',fullSegmentCount:'10'}));
   assert.equal(s.cursor,8);assert.equal(s.checkExactProgress.current,null);assert.match(collisionActivity(s).stage,/关键点/);assert.match(collisionActivity(s).count,/2 \/ 5 个关键点/);
   acceptCollisionProgress(s,task({stage:'Intervals',completedKeypointCount:'5',totalKeypointCount:'5',completedSegmentCount:'1',totalSegmentCount:'10',fullSegmentCount:'10',currentSegmentIndex:'1'}));
-  assert.equal(s.checkExactProgress.keypoints,undefined);assert.equal(s.cursor,1);assert.match(collisionActivity(s).count,/1 \/ 10 段/);
+  assert.equal(s.checkExactProgress.keypoints,undefined);assert.equal(s.cursor,1);assert.match(collisionActivity(s).count,/1 \/ 10 个关键点区间/);
 });
 
 test('retry progress uses native original indices and truthful query-local counts',()=>{
   const s={frames:frames(),cursor:0,checkStage:'checking'};acceptCollisionProgress(s,task({completedSegmentCount:'1',totalSegmentCount:'3',fullSegmentCount:'10',currentSegmentIndex:'7',lastCompletedSegmentIndex:'2'}));
-  assert.equal(s.cursor,7);assert.deepEqual(s.checkExactProgress,{completed:1,total:3,full:10,current:7,last:2});
-  assert.match(collisionActivity(s).detail,/空移.*第 8 段/);assert.match(collisionActivity(s).count,/1 \/ 3.*沿用 7/);
+  assert.equal(s.cursor,7);assert.deepEqual(s.checkExactProgress,{completed:1,total:3,full:10,current:7,last:2,location:undefined});
+  assert.match(collisionActivity(s).detail,/刀路 1 → 2 · 空移/);assert.match(collisionActivity(s).count,/1 \/ 3 个关键点区间/);
 });
 
 test('parallel completions count work independently of trajectory order and display only an active segment',()=>{
   const s={frames:frames(),cursor:0,checkStage:'checking'};
   acceptCollisionProgress(s,task({stage:'Intervals',completedSegmentCount:'4',totalSegmentCount:'10',fullSegmentCount:'10',currentSegmentIndex:'1',lastCompletedSegmentIndex:'8',workerCount:'4',activeTaskCount:'3'}));
   assert.equal(s.cursor,1);assert.equal(s.checkExactProgress.completed,4);assert.equal(s.checkExactProgress.last,8);
-  assert.match(collisionActivity(s).count,/4 \/ 10 段.*同时检测 3 处/);assert.match(collisionActivity(s).pose,/并行检测的一段/);
+  assert.match(collisionActivity(s).count,/4 \/ 10 个关键点区间.*同时检测 3 处/);assert.match(collisionActivity(s).pose,/并行检测的一段/);
   acceptCollisionProgress(s,task({stage:'Keypoints',completedSegmentCount:'0',totalSegmentCount:'10',fullSegmentCount:'10',completedKeypointCount:'4',totalKeypointCount:'5',workerCount:'4',activeTaskCount:'1'}));
   assert.equal(s.checkExactProgress.current,null);assert.match(collisionActivity(s).count,/4 \/ 5 个关键点.*同时检测 1 处/);
 });

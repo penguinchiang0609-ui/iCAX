@@ -10,6 +10,7 @@ import {isConstructionEdit,createRapidPathEdit,constructionHandleMoved,construct
 import {hasRapidGeometry} from './rapidGeometry.mjs';
 import {rapidDependencyKey} from './rapidDependencies.mjs';
 import {isRapidEndpoint,updateRapidEndpoints} from './rapidEndpointEditing.mjs';
+import {activeSetupWorldFrame,applySetupDisplayFrame,placementWorldMatrix} from './setupWorldFrame.mjs';
 
 const setup=view=>view.scene?.domain?.setups?.find(s=>s.id===view.scene.domain.activeSetupId);
 const transition=view=>setup(view)?.generatedGeometry?.transitions?.find(t=>`${t.from}/${t.to}`===view.fiveRapid?.id);
@@ -155,15 +156,15 @@ export async function rapidPathCommand(context,view,action,ops,check){
   ops.renderProject(context,view);return true;
 }
 function nearPoint(view,event){
-  const e=view.fiveRapid.pathEdit,vp=view.viewport,r=vp.renderer.domElement.getBoundingClientRect();let best=11,index=-1;
-  e.points.forEach((point,i)=>{const p=new THREE.Vector3(...point).project(vp.camera);if(Math.abs(p.z)>1)return;const d=Math.hypot(r.x+(p.x+1)*r.width/2-event.clientX,r.y+(1-p.y)*r.height/2-event.clientY);if(d<best){best=d;index=i;}});return index;
+  const e=view.fiveRapid.pathEdit,vp=view.viewport,r=vp.renderer.domElement.getBoundingClientRect(),frame=activeSetupWorldFrame(view);let best=11,index=-1;
+  e.points.forEach((point,i)=>{const p=new THREE.Vector3(...point).applyMatrix4(frame).project(vp.camera);if(Math.abs(p.z)>1)return;const d=Math.hypot(r.x+(p.x+1)*r.width/2-event.clientX,r.y+(1-p.y)*r.height/2-event.clientY);if(d<best){best=d;index=i;}});return index;
 }
 function nearSegment(view,event){
-  const e=view.fiveRapid.pathEdit,vp=view.viewport,r=vp.renderer.domElement.getBoundingClientRect();let best=10,hit=null;
-  for(let i=1;i<e.points.length;i++){const a=new THREE.Vector3(...e.points[i-1]).project(vp.camera),b=new THREE.Vector3(...e.points[i]).project(vp.camera);if(Math.abs(a.z)>1||Math.abs(b.z)>1)continue;
+  const e=view.fiveRapid.pathEdit,vp=view.viewport,r=vp.renderer.domElement.getBoundingClientRect(),frame=activeSetupWorldFrame(view);let best=10,hit=null;
+  for(let i=1;i<e.points.length;i++){const a=new THREE.Vector3(...e.points[i-1]).applyMatrix4(frame).project(vp.camera),b=new THREE.Vector3(...e.points[i]).applyMatrix4(frame).project(vp.camera);if(Math.abs(a.z)>1||Math.abs(b.z)>1)continue;
     const x=r.x+(a.x+1)*r.width/2,y=r.y+(1-a.y)*r.height/2,dx=(b.x-a.x)*r.width/2,dy=(a.y-b.y)*r.height/2,u=Math.max(0,Math.min(1,((event.clientX-x)*dx+(event.clientY-y)*dy)/(dx*dx+dy*dy||1))),distance=Math.hypot(event.clientX-x-u*dx,event.clientY-y-u*dy);
     if(distance<best){best=distance;hit={i,u};}}
-  if(hit){const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((event.clientX-r.x)/r.width*2-1,1-(event.clientY-r.y)/r.height*2),vp.camera);const p=new THREE.Vector3(),a=new THREE.Vector3(...e.points[hit.i-1]),b=new THREE.Vector3(...e.points[hit.i]);ray.ray.distanceSqToSegment(a,b,undefined,p);hit.point=p.toArray();hit.u=a.distanceTo(b)>1e-9?a.distanceTo(p)/a.distanceTo(b):.5;}return hit;
+  if(hit){const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((event.clientX-r.x)/r.width*2-1,1-(event.clientY-r.y)/r.height*2),vp.camera);const p=new THREE.Vector3(),a=new THREE.Vector3(...e.points[hit.i-1]).applyMatrix4(frame),b=new THREE.Vector3(...e.points[hit.i]).applyMatrix4(frame);ray.ray.distanceSqToSegment(a,b,undefined,p);hit.u=a.distanceTo(b)>1e-9?a.distanceTo(p)/a.distanceTo(b):.5;hit.point=p.applyMatrix4(frame.clone().invert()).toArray();}return hit;
 }
 export function rapidPathPointAtPointer(view,event){
   const e=view.fiveRapid?.pathEdit;if(!e)return null;
@@ -179,7 +180,7 @@ function insert(view,hit){
 function removePoint(view,index){const e=view.fiveRapid.pathEdit;if(index<=0||index>=e.points.length-1)return;e.points.splice(index,1);e.directions.splice(index,1);e.selected=Math.min(index,e.points.length-2);e.selectedPoints=e.selected>0?[e.selected]:[];coords(e);changed(view,true);}
 function removeSelectedPoints(view){const e=view.fiveRapid.pathEdit,selection=selectedPoints(e).filter(i=>!isRapidEndpoint(e,i)).sort((a,b)=>b-a);if(!selection.length)return;for(const index of selection){e.points.splice(index,1);e.directions.splice(index,1);}e.selected=Math.min(selection.at(-1),e.points.length-2);e.selectedPoints=[e.selected];coords(e);changed(view,true);}
 export function handleRapidPathPick(context,view,_data,_hit,event,_hits,ops){
-  const s=view.fiveRapid,e=s?.pathEdit;if(view.fiveCamInspector==='collision'||activeTool(view)!=='rapid'||view.fiveAxisArea!=='toolpath'||!e||!event||event.button!==0||!current(context,view,s)||s.key!==rapidDependencyKey(view))return false;if(view.pending||s.request||s.running||s.topologySaving)return true;
+  const s=view.fiveRapid,e=s?.pathEdit;if(view.fiveCamInspector==='collision'&&view.fiveCamPage!=='collision'||activeTool(view)!=='rapid'||view.fiveAxisArea!=='toolpath'||!e||!event||event.button!==0||!current(context,view,s)||s.key!==rapidDependencyKey(view))return false;if(view.pending||s.request||s.running||s.topologySaving)return true;
   const index=nearPoint(view,event),toggle=!!(event.shiftKey||event.ctrlKey||event.metaKey);
   if(e.inserting){if(index<0){const hit=nearSegment(view,event);if(hit)insert(view,hit);}}else if(e.deleting){if(index>0&&index<e.points.length-1&&canChangePoint(view))removePoint(view,index);}
   else if(index>=0){if(e.selectionDown?.index===index&&Date.now()-e.selectionDown.time<1000)delete e.selectionDown;else select(view,index,toggle);}
@@ -198,7 +199,7 @@ function updateRapidGesture(context,view,e){
  if(!current(context,view,s)||!e.gesture||s?.pathEdit!==e||overlay?.edit!==e||overlay.viewport!==vp)return false;
  const line=preview?.group.children.find(o=>o.userData.rapidTransitionId===s.id);
  if(!line)return false;
- const points=isConstructionEdit(e)?e.samplePoints:e.points;if(!points?.length)return false;
+ const localPoints=isConstructionEdit(e)?e.samplePoints:e.points;if(!localPoints?.length)return false;const points=localPoints.map(p=>new THREE.Vector3(...p).applyMatrix4(activeSetupWorldFrame(view)).toArray());
  let positions=line.geometry.getAttribute('position');
  if(positions?.count!==points.length){const old=line.geometry;line.geometry=new THREE.BufferGeometry();positions=new THREE.Float32BufferAttribute(new Float32Array(points.length*3),3);line.geometry.setAttribute('position',positions);old.dispose();}
  points.forEach((p,i)=>positions.setXYZ(i,...p));positions.needsUpdate=true;line.geometry.computeBoundingSphere();
@@ -219,6 +220,7 @@ function updateRapidGesture(context,view,e){
  preview.key=null;
  overlay.group.children.forEach((mesh,i)=>mesh.position.fromArray(e.points[i]));
  overlay.axis.position.fromArray(e.points[e.selected]);overlay.axis.setDirection(new THREE.Vector3(...e.directions[e.selected]).normalize());
+ applySetupDisplayFrame(view,overlay.group);applySetupDisplayFrame(view,overlay.axis);
  const values={pathX:e.values[0],pathY:e.values[1],pathZ:e.values[2]};
  if(isConstructionEdit(e))values.pathLiftHeight=format(e.construction.liftHeightMm);
  else{const d=rapidPointPose(e),angles=directionToEuler(d.values.map(Number));for(let i=0;i<3;i++){values[String(i)]=d.values[i];values['angle-'+i]=format(angles[i]);}}
@@ -243,18 +245,20 @@ export function syncRapidPathEditing(context,view,ops,check){
     canvas.addEventListener('dblclick',overlay.double,true);canvas.addEventListener('pointerdown',overlay.down,true);
   }
   while(overlay.group.children.length>e.points.length)overlay.group.children.at(-1).removeFromParent();
-  e.points.forEach((p,i)=>{let mesh=overlay.group.children[i];if(!mesh){mesh=new THREE.Mesh(overlay.geometry,overlay.materials[1]);mesh.renderOrder=80;mesh.frustumCulled=false;mesh.raycast=()=>{};mesh.onBeforeRender=(_renderer,_scene,camera)=>{const height=Math.max(1,vp.renderer.domElement.clientHeight),world=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*mesh.position.distanceTo(camera.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));mesh.scale.setScalar(world/height*(mesh.userData.selected?7:5));mesh.updateMatrixWorld();if(mesh.userData.active){overlay.axis.setLength(world/height*45,world/height*10,world/height*5);overlay.axis.updateMatrixWorld(true);}};overlay.group.add(mesh);}mesh.position.fromArray(p);mesh.userData.rapidEditPoint=i;mesh.userData.selected=selectedPoints(e).includes(i);mesh.userData.active=i===e.selected;mesh.material=overlay.materials[mesh.userData.selected?2:i===0||i===e.points.length-1?0:1];});
+  e.points.forEach((p,i)=>{let mesh=overlay.group.children[i];if(!mesh){mesh=new THREE.Mesh(overlay.geometry,overlay.materials[1]);mesh.renderOrder=80;mesh.frustumCulled=false;mesh.raycast=()=>{};mesh.onBeforeRender=(_renderer,_scene,camera)=>{const height=Math.max(1,vp.renderer.domElement.clientHeight),world=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*mesh.getWorldPosition(new THREE.Vector3()).distanceTo(camera.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));mesh.scale.setScalar(world/height*(mesh.userData.selected?7:5));mesh.updateMatrixWorld();if(mesh.userData.active){overlay.axis.setLength(world/height*45,world/height*10,world/height*5);overlay.axis.updateMatrixWorld(true);}};overlay.group.add(mesh);}mesh.position.fromArray(p);mesh.userData.rapidEditPoint=i;mesh.userData.selected=selectedPoints(e).includes(i);mesh.userData.active=i===e.selected;mesh.material=overlay.materials[mesh.userData.selected?2:i===0||i===e.points.length-1?0:1];});
   overlay.axis.position.fromArray(e.points[e.selected]);overlay.axis.setDirection(new THREE.Vector3(...e.directions[e.selected]).normalize());
+  applySetupDisplayFrame(view,overlay.group);applySetupDisplayFrame(view,overlay.axis);
   vp.setCameraNavigationEnabled(true);
-  if(locked(e)||e.inserting||e.deleting){positionWorldTransformHud(context,vp,e.points[e.selected],'rapid');if(vp.transformManipulator===overlay.manipulator)vp.clearTransformManipulator();overlay.manipulator=null;return;}
-  const placement=view.scene.domain.placements.find(p=>p.id===transition(view)?.fromPlacementId),quaternion=placement?new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(...placement.transform)).toArray():[0,0,0,1];
+  const frame=activeSetupWorldFrame(view),frameRotation=new THREE.Quaternion().setFromRotationMatrix(frame),worldPosition=new THREE.Vector3(...e.points[e.selected]).applyMatrix4(frame).toArray();
+  if(locked(e)||e.inserting||e.deleting){positionWorldTransformHud(context,vp,worldPosition,'rapid');if(vp.transformManipulator===overlay.manipulator)vp.clearTransformManipulator();overlay.manipulator=null;return;}
+  const placement=view.scene.domain.placements.find(p=>p.id===transition(view)?.fromPlacementId),quaternion=placement?new THREE.Quaternion().setFromRotationMatrix(placementWorldMatrix(view,placement)).toArray():frameRotation.toArray();
   const shape=isConstructionEdit(e)&&!isRapidEndpoint(e),follow=shape&&e.construction.kind==='Follow',pose=!shape&&e.poseEditing;
-  const handleQuaternion=follow?new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(...e.directions[1])).toArray():quaternion;
+  const handleQuaternion=follow?frameRotation.clone().multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(...e.directions[1]))).toArray():quaternion;
   let inputValid=validCoordinates(e);try{if(shape)constructionManualPath(e);else validateRapidPointPose(e);}catch{inputValid=false;}
-  vp.setTransformManipulator({mode:pose?'rotate':'translate',space:follow?'local':vp.transformSpace||'world',axes:follow?['X','Y']:undefined,quaternion:handleQuaternion,freeTranslate:!pose&&!follow,planeTranslate:!pose&&!follow,screenRotate:!shape,sizePixels:80,position:e.points[e.selected],enabled:inputValid&&!view.pending&&!s.request&&!s.topologySaving&&!s.topologyError,
+  vp.setTransformManipulator({mode:pose?'rotate':'translate',space:follow?'local':vp.transformSpace||'world',axes:follow?['X','Y']:undefined,quaternion:handleQuaternion,freeTranslate:!pose&&!follow,planeTranslate:!pose&&!follow,screenRotate:!shape,sizePixels:80,position:worldPosition,enabled:inputValid&&!view.pending&&!s.request&&!s.topologySaving&&!s.topologyError,
     onPosition:p=>positionTransformHud(context,p,'rapid'),
-    onStart:({axis,direction}={})=>{if(view.pending||view.fiveHistoryBusy||s.request||!canChangePoint(view))return false;let rotationAxis=direction;if(pose&&axis&&axis!=='E'){const basis={X:[1,0,0],Y:[0,1,0],Z:[0,0,1]}[axis],v=new THREE.Vector3(...basis);if(vp.transformSpace==='local')v.applyQuaternion(new THREE.Quaternion(...quaternion));rotationAxis=v.toArray();}e.gesture={before:snapshot(e),rapidDirty:s.dirty,preview:s.preview,base:[...e.points[e.selected]],direction:[...e.directions[e.selected]],axis:rotationAxis,index:e.selected};e.typing=false;invalidate(view);ops.renderProject(context,view);},
-    onChange:({translation,angle})=>{if(!current(context,view,s)||s.pathEdit!==e||!e.gesture)return;if(pose){if(!e.gesture.axis||!Number.isFinite(angle))return;const q=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...e.gesture.axis).normalize(),angle);for(const index of selectedPoints(e.gesture.before))e.directions[index]=new THREE.Vector3(...e.gesture.before.directions[index]).applyQuaternion(q).normalize().toArray();updateRapidEndpoints(e,selectedPoints(e.gesture.before));}else movePoints(e,e.gesture.base.map((v,i)=>v+translation[i]),e.gesture.before);coords(e);changed(view);if(!updateRapidGesture(context,view,e))ops.renderProject(context,view);},
+    onStart:({axis,direction}={})=>{if(view.pending||view.fiveHistoryBusy||s.request||!canChangePoint(view))return false;let rotationAxis=direction;if(pose&&axis&&axis!=='E'){const basis={X:[1,0,0],Y:[0,1,0],Z:[0,0,1]}[axis],v=new THREE.Vector3(...basis);if(vp.transformSpace==='local')v.applyQuaternion(new THREE.Quaternion(...quaternion));rotationAxis=v.toArray();}if(rotationAxis)rotationAxis=new THREE.Vector3(...rotationAxis).applyQuaternion(frameRotation.clone().invert()).toArray();e.gesture={before:snapshot(e),rapidDirty:s.dirty,preview:s.preview,base:[...e.points[e.selected]],direction:[...e.directions[e.selected]],axis:rotationAxis,index:e.selected};e.typing=false;invalidate(view);ops.renderProject(context,view);},
+    onChange:({translation,angle})=>{if(!current(context,view,s)||s.pathEdit!==e||!e.gesture)return;if(pose){if(!e.gesture.axis||!Number.isFinite(angle))return;const q=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...e.gesture.axis).normalize(),angle);for(const index of selectedPoints(e.gesture.before))e.directions[index]=new THREE.Vector3(...e.gesture.before.directions[index]).applyQuaternion(q).normalize().toArray();updateRapidEndpoints(e,selectedPoints(e.gesture.before));}else{const delta=new THREE.Vector3(...translation).applyQuaternion(frameRotation.clone().invert()).toArray();movePoints(e,e.gesture.base.map((v,i)=>v+delta[i]),e.gesture.before);}coords(e);changed(view);if(!updateRapidGesture(context,view,e))ops.renderProject(context,view);},
     onEnd:({moved})=>{if(!e.gesture)return;delete e.gesture;if(!moved)settleAcknowledgedEdit(s,e);ops.renderProject(context,view);if(moved)void check();},
     onCancel:()=>{if(e.gesture){const gesture=e.gesture;Object.assign(e,gesture.before);delete e.gesture;s.dirty=gesture.rapidDirty;s.preview=gesture.preview;settleAcknowledgedEdit(s,e);coords(e);if(e.changed)s.savePath?.();ops.renderProject(context,view);}}
   });overlay.manipulator=vp.transformManipulator;

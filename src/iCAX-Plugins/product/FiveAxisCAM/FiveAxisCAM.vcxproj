@@ -58,12 +58,13 @@
   <ItemGroup>
     <ClInclude Include="FiveAxisCAM.h" />
     <ClInclude Include="FiveAxisBuiltinHeads.inc" />
+    <ClInclude Include="FiveAxisHeadAssignments.inc" />
+    <ClInclude Include="FiveAxisOperations.inc" />
     <ClInclude Include="FiveAxisJobProgram.inc" />
     <ClInclude Include="FiveAxisProgramCurves.inc" />
     <ClInclude Include="FiveAxisPreparation.inc" />
     <ClInclude Include="FiveAxisEngineeringData.inc" />
     <ClInclude Include="FiveAxisFixtureDesign.inc" />
-    <ClInclude Include="FiveAxisFixtureCylinder.inc" />
     <ClInclude Include="FiveAxisFixtureDrawing.inc" />
     <ClInclude Include="FiveAxisComponents.h" />
     <ClInclude Include="FiveAxisFilePreview.inc" />
@@ -161,6 +162,39 @@
       <Optimization>MaxSpeed</Optimization><InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks><FloatingPointModel>Precise</FloatingPointModel>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FiveAxisBoxRapids.inc" />
+    <ClInclude Include="FiveAxisCollisionMeshDiskCache.inc" />
+    <ClInclude Include="FiveAxisCollisionModels.inc" />
+    <ClInclude Include="FiveAxisCollisionRepair.inc" />
+    <ClInclude Include="FiveAxisFilePreviewCache.inc" />
+    <ClInclude Include="FiveAxisFixtureCutClearance.inc" />
+    <ClInclude Include="FiveAxisFixtureParts.inc" />
+    <ClInclude Include="FiveAxisFixtureQueries.inc" />
+    <ClInclude Include="FiveAxisHeadColliders.inc" />
+    <ClInclude Include="FiveAxisHeadCollisionCheck.inc" />
+    <ClInclude Include="FiveAxisHeadConfigurationLibrary.inc" />
+    <ClInclude Include="FiveAxisHeadImport.inc" />
+    <ClInclude Include="FiveAxisHeadInstanceData.inc" />
+    <ClInclude Include="FiveAxisHeadInstances.inc" />
+    <ClInclude Include="FiveAxisHeadLimitCheck.inc" />
+    <ClInclude Include="FiveAxisHeadMotion.inc" />
+    <ClInclude Include="FiveAxisIntentCorrection.h" />
+    <ClInclude Include="FiveAxisIntentCorrection.inc" />
+    <ClInclude Include="FiveAxisIntentPrismaticHole.inc" />
+    <ClInclude Include="FiveAxisKeyposeRepair.inc" />
+    <ClInclude Include="FiveAxisKeyposeSchedule.h" />
+    <ClInclude Include="FiveAxisMachinePlanPolicy.h" />
+    <ClInclude Include="FiveAxisManualStandardHole.inc" />
+    <ClInclude Include="FiveAxisPathEditing.inc" />
+    <ClInclude Include="FiveAxisPositionOffsets.inc" />
+    <ClInclude Include="FiveAxisRapidKeyposeRepair.inc" />
+    <ClInclude Include="FiveAxisRapidOrientationRepair.inc" />
+    <ClInclude Include="FiveAxisRapidParallel.h" />
+    <ClInclude Include="FiveAxisSetups.inc" />
+    <ClInclude Include="FiveAxisTaskProgressPDO.inc" />
+    <ClInclude Include="FiveAxisWorkpieceRemoval.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

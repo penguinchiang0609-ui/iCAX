@@ -38,6 +38,20 @@ TEST(FiveAxisFixtureSurface, JoineryCannotRaiseCheckedSupportProfilesOrReplaceAn
     EXPECT_EQ(Read(scene).at("fixtures"),accepted);
 }
 
+TEST(FiveAxisFixtureSurface, InteriorSheetCannotBeHiddenByZeroVolumeOrBoundaryDistance) {
+    const auto ceiling=BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(0,0,0),gp_Dir(0,0,1)),-40,40,-40,40).Face();
+    // Keep a very shallow, but resolvable, penetration in the regression:
+    // inherited boundary tolerances must not become a global clearance.
+    for(double depth:{20.,.00004}){SCOPED_TRACE(depth);
+    BRepBuilderAPI_MakePolygon wire;for(const auto& p:std::array<gp_Pnt,4>{gp_Pnt(-1,0,-depth),gp_Pnt(1,0,-depth),gp_Pnt(1,0,-depth/2),gp_Pnt(-1,0,-depth/2)})wire.Add(p);wire.Close();
+    BRep_Builder builder;TopoDS_Compound work;builder.MakeCompound(work);builder.Add(work,ceiling);builder.Add(work,BRepBuilderAPI_MakeFace(wire.Wire()).Face());
+    Scene scene;iCAX::Geometry::SectionPlateInput input;input.Geometry=std::make_shared<iCAX::GeometryData::BRepModel>(iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(work,"Interior sheet","generated",.05));
+    input.Transform={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};input.FaceIDs={input.Geometry->Faces.front().Id};input.Stations={{0.,-1e100,1e100,true}};input.Thickness=4;input.AvoidOpeningBoundaries=false;
+    const auto service=scene.Services().Resolve<iCAX::Geometry::ISectionPlateService>();
+    try{service->Build(input,{});FAIL()<<"An interior sheet must be rejected even though its volume is zero";}
+    catch(const std::exception& e){EXPECT_NE(Text(e.what()).find("PLATE_BREP_INTERSECTION"),Text::npos)<<e.what();}}
+}
+
 TEST(FiveAxisFixtureSurface, OriginalCoverGridPassesTheFinalJoineryEnvelopeGuard) {
     auto root=std::filesystem::current_path();const auto relative=std::filesystem::path(L"TestData/FA/刀路/刀路/整理测试刀路/多槽圆盖-3-7b202.igs");
     while(!root.empty()&&!std::filesystem::exists(root/relative)){auto parent=root.parent_path();if(parent==root)break;root=parent;}ASSERT_TRUE(std::filesystem::exists(root/relative));
@@ -59,11 +73,12 @@ TEST(FiveAxisFixtureSurface, OriginalPerforatedCoverStaysBelowItsSurfacesWhenFli
     auto root=std::filesystem::current_path();const auto relative=std::filesystem::path(L"TestData/FA/刀路/刀路/整理测试刀路/多槽圆盖-3-7b202.igs");
     while(!root.empty()&&!std::filesystem::exists(root/relative)){auto parent=root.parent_path();if(parent==root)break;root=parent;}ASSERT_TRUE(std::filesystem::exists(root/relative));
     Scene scene;auto request=FixtureRequest(scene);const auto path=(root/relative).u8string();request["sourcePath"]=Text(reinterpret_cast<const char*>(path.data()),path.size());
-    auto imported=Wait(scene,Invoke(&scene,"CamWorkpiece","Import",request));ASSERT_EQ(imported.at("status").To<Text>(),"Completed");const auto ids=imported.at("result").To<Map>();
+    auto imported=Wait(scene,Invoke(&scene,"CamWorkpiece","Import",request));ASSERT_EQ(imported.at("status").To<Text>(),"Completed");const auto ids=AddSetup(scene,imported.at("result").To<Map>());
     const auto state=Read(scene),ref=state.at("workpieces").To<Array>()[0].To<Map>().at("geometryRef").To<Map>();const auto initial=state.at("placements").To<Array>()[0].To<Map>().at("transform").To<Array>();
     auto geometry=scene.Resources().Get<iCAX::GeometryData::BRepModel>(ref.at("url").To<Text>(),std::stoull(ref.at("version").To<Text>()));auto built=iCAX::OpenCascade::BuildOpenCascadeShape(*geometry);ASSERT_TRUE(built.bOK);
     gp_Trsf centered;centered.SetValues(initial[0].To<double>(),initial[1].To<double>(),initial[2].To<double>(),initial[3].To<double>(),initial[4].To<double>(),initial[5].To<double>(),initial[6].To<double>(),initial[7].To<double>(),initial[8].To<double>(),initial[9].To<double>(),initial[10].To<double>(),initial[11].To<double>());
-    for(int orientation=0;orientation<3;++orientation){gp_Trsf transform;if(orientation)transform.SetRotation(gp_Ax1(gp_Pnt(0,0,0),gp_Dir(1,0,0)),std::acos(-1.)+(orientation==2?.23:0));transform.Multiply(centered);
+    char* selectedOrientation=nullptr;size_t environmentLength=0;_dupenv_s(&selectedOrientation,&environmentLength,"ICAX_FIXTURE_COVER_ORIENTATION");const int onlyOrientation=selectedOrientation?std::atoi(selectedOrientation):-1;std::free(selectedOrientation);
+    for(int orientation=0;orientation<3;++orientation){if(onlyOrientation>=0&&orientation!=onlyOrientation)continue;std::cout<<"Surface orientation "<<orientation<<" begin"<<std::endl;gp_Trsf transform;if(orientation)transform.SetRotation(gp_Ax1(gp_Pnt(0,0,0),gp_Dir(1,0,0)),std::acos(-1.)+(orientation==2?.23:0));transform.Multiply(centered);
         Array matrix;for(int r=1;r<=3;++r)for(int c=1;c<=4;++c)matrix.emplace_back(transform.Value(r,c));for(double n:{0.,0.,0.,1.})matrix.emplace_back(n);
         auto move=PlacementRequest(scene,ids);move["transform"]=matrix;Invoke(&scene,"CamPlacement","SetTransform",move);
         // Independent OCCT ray/surface intersections, without using the
@@ -72,17 +87,21 @@ TEST(FiveAxisFixtureSurface, OriginalPerforatedCoverStaysBelowItsSurfacesWhenFli
         for(const auto& [id,source]:built.Faces){auto local=source;local.Location(TopLoc_Location());const auto wire=BRepTools::OuterWire(local);BRepBuilderAPI_MakeFace ceiling(BRep_Tool::Surface(local),wire,true);ASSERT_TRUE(ceiling.IsDone());builder.Add(ceilings,ceiling.Face().Moved(source.Location()).Moved(TopLoc_Location(transform)));int count=0;for(TopExp_Explorer w(source,TopAbs_WIRE);w.More();w.Next())++count;holes+=count-1;}
         ASSERT_GT(holes,20u);IntCurvesFace_ShapeIntersector rays;rays.Load(ceilings,1e-7);
         auto recipe=JointRecipe(scene);recipe["areaWidth"]=240.;recipe["areaDepth"]=240.;recipe["spacing"]=40.;recipe=SetPlateRecipe(scene,recipe);
-        const auto result=GeneratePlates(scene);ASSERT_EQ(result.at("supportCheck").To<Map>().at("status").To<Text>(),"Supported");size_t samples=0;double maximum=-1e100;
-        for(auto value:result.at("parts").To<Array>()){auto p=value.To<Map>();if(p.at("role").To<Text>()=="Base")continue;const auto f=p.at("frame").To<Array>(),outline=p.at("outline").To<Array>();EXPECT_FALSE(p.at("contactPoints").To<Array>().empty());
-            for(size_t i=0;i<outline.size();++i){const auto a=outline[i].To<Array>(),b=outline[(i+1)%outline.size()].To<Array>();if(std::min(a[1].To<double>(),b[1].To<double>())<=5.0001)continue;
-                const int count=std::max(2,static_cast<int>(std::ceil(std::abs(b[0].To<double>()-a[0].To<double>())/1.5)));
-                for(int j=0;j<=count;++j)for(double depth:{0.,p.at("thickness").To<double>()/4,p.at("thickness").To<double>()/2,p.at("thickness").To<double>()*3/4,p.at("thickness").To<double>()}){const double r=static_cast<double>(j)/count,u=a[0].To<double>()+(b[0].To<double>()-a[0].To<double>())*r,z=f[11].To<double>()+a[1].To<double>()+(b[1].To<double>()-a[1].To<double>())*r;
+        const auto result=GeneratePlates(scene);ASSERT_EQ(result.at("supportCheck").To<Map>().at("status").To<Text>(),"Supported");size_t samples=0;double maximum=-1e100;gp_Pnt worstPoint;Text worstPlate;TopoDS_Shape worstShape;
+        for(auto value:result.at("parts").To<Array>()){auto p=value.To<Map>();if(p.at("role").To<Text>()=="Base")continue;const auto f=p.at("frame").To<Array>();EXPECT_FALSE(p.at("contactPoints").To<Array>().empty());
+            const auto shape=JointPartShape(scene,p);ASSERT_TRUE(BRepCheck_Analyzer(shape).IsValid());
+            for(TopExp_Explorer edge(shape,TopAbs_EDGE);edge.More();edge.Next()){if(BRep_Tool::Degenerated(TopoDS::Edge(edge.Current())))continue;BRepAdaptor_Curve curve(TopoDS::Edge(edge.Current()));GProp_GProps length;BRepGProp::LinearProperties(edge.Current(),length);const int count=std::max(2,static_cast<int>(std::ceil(length.Mass()/1.5)));
+                // Evaluate the retained BRep curves. Display preview chords
+                // are intentionally approximate and are not the plate edge.
+                for(int j=0;j<=count;++j){const auto q=curve.Value(curve.FirstParameter()+(curve.LastParameter()-curve.FirstParameter())*j/count);const std::array<double,3> delta{q.X()-f[3].To<double>(),q.Y()-f[7].To<double>(),q.Z()-f[11].To<double>()};double u=0,v=0,w=0;for(int k=0;k<3;++k){u+=delta[k]*f[4*k].To<double>();v+=delta[k]*f[4*k+1].To<double>();w+=delta[k]*f[4*k+2].To<double>();}if(std::abs(w)>1e-7||v<=5.0001)continue;
+                for(double depth:{0.,p.at("thickness").To<double>()/4,p.at("thickness").To<double>()/2,p.at("thickness").To<double>()*3/4,p.at("thickness").To<double>()}){const double z=f[11].To<double>()+v;
                     const double x=f[0].To<double>()*u+f[2].To<double>()*depth+f[3].To<double>(),y=f[4].To<double>()*u+f[6].To<double>()*depth+f[7].To<double>();
-                    rays.Perform(gp_Lin(gp_Pnt(x,y,-10000),gp_Dir(0,0,1)),0,20000);ASSERT_TRUE(rays.IsDone());if(!rays.NbPnt())continue;double ceiling=1e100;for(int k=1;k<=rays.NbPnt();++k)ceiling=std::min(ceiling,rays.Pnt(k).Z());maximum=std::max(maximum,z-ceiling);++samples;
-                }
+                    rays.Perform(gp_Lin(gp_Pnt(x,y,-10000),gp_Dir(0,0,1)),0,20000);ASSERT_TRUE(rays.IsDone());if(!rays.NbPnt())continue;double ceiling=1e100;for(int k=1;k<=rays.NbPnt();++k)ceiling=std::min(ceiling,rays.Pnt(k).Z());if(z-ceiling>maximum){maximum=z-ceiling;worstPoint=gp_Pnt(x,y,z);worstPlate=p.at("number").To<Text>();worstShape=shape;}++samples;
+                }}
             }
         }
-        std::cout<<"Surface orientation "<<orientation<<": "<<samples<<" ray checks, maximum above surface "<<maximum<<" mm"<<std::endl;
+        std::cout<<"Surface orientation "<<orientation<<": "<<samples<<" ray checks, maximum above surface "<<maximum<<" mm; plate="<<worstPlate<<" point="<<std::setprecision(17)<<worstPoint.X()<<","<<worstPoint.Y()<<","<<worstPoint.Z()<<std::endl;
+        if(maximum>.00002){char* directory=nullptr;size_t length=0;_dupenv_s(&directory,&length,"ICAX_FIXTURE_BREP_DEBUG_DIR");if(directory){const auto stem=std::string(directory)+"/surface-worst-"+std::to_string(orientation);BRepTools::Write(worstShape,(stem+"-plate.brep").c_str());BRepTools::Write(ceilings,(stem+"-work.brep").c_str());}std::free(directory);}
         EXPECT_GT(samples,500u);EXPECT_LE(maximum,.00002)<<"orientation "<<orientation;RecordProperty("orientation_"+std::to_string(orientation)+"_samples",static_cast<int>(samples));RecordProperty("orientation_"+std::to_string(orientation)+"_maximum_mm",std::to_string(maximum));
         AdoptPlates(scene,result);Invoke(&scene,"CamFixture","Breakdown",FixtureRequest(scene));
     }

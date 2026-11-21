@@ -1,4 +1,12 @@
 export { connectApplication } from "./runtime.mjs";
+export { PlanarEditorSession } from "./Cad/planarEditorSession.mjs";
+export { PlanarPrimitiveSession, standalonePrimitiveDefinitions } from "./Cad/planarDrawingPrimitives.mjs";
+export { PlanarNodeEditor } from "./Cad/planarNodeEditor.mjs";
+export { createPlanarDynamicInput } from "./Cad/planarDynamicInput.mjs";
+export { createPlanarDrawingPreview } from "./Cad/planarDrawingPreview.mjs";
+export { createPlanarRibbonGroups, planarDrawingToolGroups } from "./Cad/planarRibbon.mjs";
+export { synchronizePlanarToolPalette, closePlanarToolPaletteMenu, disposePlanarToolPalette } from "./Cad/planarToolPalette.mjs";
+export { createDomPatcher } from "./Forms/domPatch.mjs";
 export { createBridge, validateBridge } from "./Bridge/createBridge.mjs";
 export { MockHostBridge } from "./Bridge/mockHostBridge.mjs";
 export { ResourceClient } from "./Resources/resourceClient.mjs";

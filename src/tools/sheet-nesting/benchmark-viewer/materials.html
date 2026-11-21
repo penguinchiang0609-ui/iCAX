@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>素材库 · 柏楚排样对比</title><link rel="stylesheet" href="/materials.css"><script defer src="/layoutGeometry.js"></script><script defer src="/materials.js"></script></head>
+<body>
+<header><a class="brand" href="/materials.html">iCAX <small>排样素材库</small></a><nav><a href="/">排样报告</a><a href="/construction.html">构造过程</a></nav><span id="connection" role="status">正在读取素材…</span><label class="auto"><input id="auto-refresh" type="checkbox" checked>自动更新</label><button id="refresh">刷新</button></header>
+<main>
+<section class="intro"><div><p class="eyebrow">原始 DXF · 同一份需求 · 同一套排样条件</p><h1>素材与柏楚排样对比</h1><p>先核对零件、数量和板材，再比较板数、利用率与耗时。任务和原始 DXF 分别列出，来源不明的字段保留标记。</p></div><div class="downloads"><a href="/api/materials/csv/pk_results.csv" download>PK 对比总表 CSV</a><a href="/api/materials/csv/dxf_inventory.csv" download>DXF 总目录 CSV</a><a href="/api/materials/csv/task_parts.csv" download>任务零件数量 CSV</a><a href="/api/materials/csv/tasks.csv" download>任务与板材 CSV</a></div></section>
+<div id="error" class="notice" hidden></div>
+<section class="overview" aria-label="素材汇总">
+<article><span>来源压缩包</span><strong id="archive-count">—</strong></article><article><span>集中 DXF</span><strong id="asset-count">—</strong></article><article><span>排样任务</span><strong id="task-count">—</strong></article><article><span>可运行任务</span><strong id="ready-count">—</strong></article><article><span>缺素材任务</span><strong id="missing-count">—</strong></article><article><span>已返回本轮结果</span><strong id="executed-count">—</strong></article>
+</section>
+<section class="conditions-bar"><span id="default-conditions">等待读取统一条件</span><span id="units-caption"></span><span id="generated-at"></span></section>
+<p id="run-progress" class="run-progress" role="status">尚无本轮运行进度</p>
+<div class="workspace">
+<section class="list-panel panel">
+<div class="tabs" role="group" aria-label="目录类型"><button id="tasks-tab" aria-pressed="true">排样任务</button><button id="assets-tab" aria-pressed="false">全部 DXF</button></div>
+<div class="filters"><input id="search" type="search" aria-label="搜索素材和任务" placeholder="搜索任务、文件或来源"><div class="filter-row"><label>来源包<select id="collection"><option value="">全部来源</option></select></label><label>范围<select id="scope"><option value="">全部</option><option value="ready">可运行</option><option value="missing">缺素材</option><option value="import-blocked">导入受阻</option><option value="reference">参考布局 / 图纸</option><option value="assumed-units">使用默认单位</option><option value="pending">等待排样</option><option value="executed">已有本轮结果</option></select></label></div></div>
+<div id="list-scroll" class="table-scroll" tabindex="0" aria-label="素材目录"><table><thead id="list-head"></thead><tbody id="list-body"></tbody></table><p id="empty-list" class="empty" hidden>没有符合筛选的记录。</p></div>
+<div class="pagination"><span id="list-caption">—</span><label>每页<select id="page-size"><option>50</option><option>100</option><option>200</option></select></label><button id="previous">上一页</button><span id="page-caption">—</span><button id="next">下一页</button></div>
+</section>
+<section class="detail-panel panel" aria-label="选中任务或素材详情"><div class="detail-heading"><div><span id="detail-kind" class="eyebrow">任务详情</span><h2 id="detail-title">选择一个任务或 DXF</h2><p id="detail-id"></p></div><span id="detail-status" class="badge">尚未选择</span></div>
+<div id="detail-scroll" class="detail-scroll"><p id="detail-placeholder" class="empty">点击左侧记录查看数量、板材、来源和本轮排样结果。</p><div id="task-detail" hidden>
+<section class="detail-section"><h3>本次用于对比的条件</h3><dl class="facts"><dt>来源集合</dt><dd id="task-collection"></dd><dt>板材与数量</dt><dd id="task-stocks"></dd><dt>边距 / 间距 / 共边 / 角度</dt><dd id="task-rules"></dd><dt>原始板材条件</dt><dd id="task-source-stock"></dd></dl><div id="task-issues" class="issues"></div><details><summary>统一条件与来源原始字段</summary><pre id="task-conditions-json"></pre></details></section>
+<section class="detail-section"><h3>零件需求 <small id="bom-caption"></small></h3><div class="bom-scroll"><table><thead><tr><th>原始 DXF / 规格</th><th>数量</th><th>数量来源</th><th>文件</th></tr></thead><tbody id="bom-body"></tbody></table></div><div id="missing-assets"></div></section>
+<section class="detail-section"><h3>iCAX 本轮排样结果</h3><p id="result-caption" class="result-caption"></p>
+<div class="result-metrics"><div><span>已排 / 需求</span><b id="result-quantity">—</b></div><div><span>剩余未排</span><b id="result-remaining">—</b></div><div><span>使用板数</span><b id="result-boards">—</b></div><div><span>整板利用率</span><b id="result-utilization">—</b></div><div><span>原生耗时</span><b id="result-time">—</b></div></div>
+<div id="roll-metrics" class="roll-metrics" hidden><div><span>占用长度合计</span><b id="result-roll-length">—</b><small id="result-roll-lengths"></small></div><div><span>占用段利用率</span><b id="result-roll-utilization">—</b></div></div><p id="result-roll-note" class="hint" hidden></p>
+<p id="result-check" class="hint"></p><p id="result-milestones" class="hint" hidden></p>
+<div id="result-remnants" class="remnant-result" hidden><h4>原生规则余料评估</h4><p id="result-remnant-status"></p><div id="result-remnant-rectangles"></div></div>
+<div id="layout-controls" class="layout-controls" hidden><label>显示范围<select id="layout-view-mode"><option value="used">已用区域 + 空白</option><option value="full">整板</option></select></label><label>缩放<input id="layout-zoom" type="range" min="25" max="800" step="25" value="100"><output id="layout-zoom-value">100%</output></label><p>所有板按同一物理比例显示。已用区域模式仅隐藏空板范围，原板尺寸和零件坐标不变。</p></div><div id="result-layouts"></div><details><summary>本轮原始结果字段</summary><pre id="result-json"></pre></details></section>
+</div><div id="asset-detail" hidden><section class="detail-section"><h3>原始文件与几何检查</h3><a id="asset-download" class="download-button">下载原始 DXF</a><dl class="facts"><dt>集中路径</dt><dd id="asset-path"></dd><dt>文件单位</dt><dd id="asset-units"></dd><dt>几何状态</dt><dd id="asset-geometry"></dd><dt>SHA-256</dt><dd id="asset-hash" class="mono"></dd></dl><h3>全部来源路径</h3><pre id="asset-sources"></pre></section><section class="detail-section"><h3>使用此文件的任务</h3><div id="asset-tasks" class="related-tasks"></div></section><details class="detail-section"><summary>素材原始字段</summary><pre id="asset-json"></pre></details></div></div>
+</section></div>
+<details class="archive-summary panel"><summary>来源压缩包与整理信息</summary><pre id="archive-json">等待读取</pre></details>
+</main></body></html>

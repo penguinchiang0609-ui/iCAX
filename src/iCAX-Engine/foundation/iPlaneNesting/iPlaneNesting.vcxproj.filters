@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Source display for the independent iPlaneNesting SDK. -->
+  <ItemGroup>
+    <Filter Include="include"><UniqueIdentifier>{CE687F89-4AAA-49D0-B224-D98BBA3375CD}</UniqueIdentifier></Filter>
+    <Filter Include="src"><UniqueIdentifier>{CBEA6EF4-ED59-41B9-A406-2DD52C527027}</UniqueIdentifier></Filter>
+    <Filter Include="cmake"><UniqueIdentifier>{55FBD27F-9A4D-4706-AB40-A9FD23BCFC44}</UniqueIdentifier></Filter>
+    <Filter Include="tests"><UniqueIdentifier>{C889CCAD-7011-453E-A98B-7A03A4E4B91D}</UniqueIdentifier></Filter>
+    <Filter Include="examples"><UniqueIdentifier>{BEB947C8-D615-4607-BF34-EFDC656E6C61}</UniqueIdentifier></Filter>
+    <Filter Include="third_party"><UniqueIdentifier>{8EC1EB30-801C-4138-9DFD-A79DD1179D7F}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\**\*.h;include\**\*.hpp"><Filter>include</Filter></ClInclude>
+    <ClCompile Include="src\**\*.cpp"><Filter>src</Filter></ClCompile>
+    <ClInclude Include="src\**\*.h;src\**\*.hpp;src\**\*.inl;src\**\*.inc"><Filter>src</Filter></ClInclude>
+    <ClCompile Include="cmake\**\*.cpp"><Filter>cmake</Filter></ClCompile>
+    <ClInclude Include="cmake\**\*.h;cmake\**\*.hpp"><Filter>cmake</Filter></ClInclude>
+    <None Include="cmake\**\*.cmake;cmake\**\*.cmake.in;cmake\**\CMakeLists.txt"><Filter>cmake</Filter></None>
+    <ClCompile Include="tests\**\*.cpp;tests\**\*.c"><Filter>tests</Filter></ClCompile>
+    <ClInclude Include="tests\**\*.h;tests\**\*.hpp;tests\**\*.inl;tests\**\*.inc"><Filter>tests</Filter></ClInclude>
+    <None Include="tests\**\*.mjs;tests\**\*.json;tests\**\*.ps1;tests\**\*.cmake;tests\**\CMakeLists.txt"><Filter>tests</Filter></None>
+    <ClCompile Include="examples\**\*.cpp;examples\**\*.c"><Filter>examples</Filter></ClCompile>
+    <ClInclude Include="examples\**\*.h;examples\**\*.hpp"><Filter>examples</Filter></ClInclude>
+    <None Include="examples\**\*.pn2;examples\**\*.json;examples\**\*.md"><Filter>examples</Filter></None>
+    <None Include="third_party\**\LICENSE*;third_party\**\LICENCE*;third_party\**\COPYING*;third_party\**\NOTICE*"><Filter>third_party</Filter></None>
+  </ItemGroup>
+</Project>

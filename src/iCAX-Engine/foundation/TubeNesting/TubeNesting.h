@@ -482,6 +482,20 @@ namespace iCAX::TubeNesting
         double GrossUtilization = 0.0;
         double NetMaterialYield = 0.0;
         std::uint64_t SearchNodes = 0;
+        /** Additional bounded improvement rounds, excluding initial construction. */
+        std::uint64_t RefinementRounds = 0;
+        /** Process-local verified-pattern reuse observations, not persisted identity. */
+        std::uint64_t PatternCacheHits = 0;
+        std::uint64_t PatternCacheImported = 0;
+        std::uint64_t PatternCacheStored = 0;
+        std::uint64_t PatternCacheEvictions = 0;
+        std::uint64_t PatternCacheConstructedPlans = 0;
+        std::uint64_t PatternCacheRecipeHits = 0;
+        std::uint64_t PatternCacheRecipesRestored = 0;
+        /** Milliseconds from PairTableSolver entry to its first accepted complete
+         *  core plan; excludes upstream geometry/table and product policy stages.
+         *  -1 means no complete core plan was accepted. */
+        double FirstFeasibleMilliseconds = -1.0;
         /** 仅当全部兼容组都能化为顺序无关切割模式时有效。 */
         bool QualityLowerBoundAvailable = false;
         std::int64_t StockCostLowerBound = 0;
@@ -566,6 +580,22 @@ namespace iCAX::TubeNesting
         std::size_t ConstraintNeighborhoodPartLimit = 9;
         /** Independent wall-clock budget for one released neighborhood. */
         std::uint64_t ConstraintNeighborhoodTimeBudgetMilliseconds = 100;
+        /** Adaptive cross-stock release keeps every CP model explicitly bounded. */
+        bool AdaptiveConstraintNeighborhoods = true;
+        std::size_t ConstraintNeighborhoodMaximumPartLimit = 24;
+        std::uint64_t ConstraintNeighborhoodMaximumTimeBudgetMilliseconds = 300;
+        /** Zero disables the type-count / complete-stock-pattern optimizer. */
+        std::uint64_t PatternMasterTimeBudgetMilliseconds = 1000;
+        std::size_t PatternMasterMaximumPatterns = 2048;
+        std::size_t PatternMasterConstructionRuns = 6;
+        /** Reuse independently revalidated whole-stock routes across solves. */
+        bool ReuseVerifiedPatterns = true;
+        /** Diversifies repeated pattern generation; zero retains the initial portfolio. */
+        std::uint32_t PatternMasterSearchRound = 0;
+        /** Continue improving a verified incumbent until the finite shared budget
+         *  expires or a complete proof is obtained. False returns after the
+         *  configured initial portfolio. */
+        bool ContinueImprovementUntilTimeLimit = false;
         std::uint64_t TimeBudgetMilliseconds = 0;
         std::uint32_t RandomSeed = 0x1CA7U;
     };

@@ -1,4 +1,5 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import { sceneColors } from './scenePalette.mjs';
 import { workspaceState } from './workspaceModel.mjs';
 import { addCutDirectionMarkers } from './cutDirectionMarker.mjs';
@@ -56,13 +57,13 @@ export function syncCompensation(context,view,ops){
   }
   const items=currentCompensation(view),v=view.viewport,placements=view.scene?.domain?.placements||[];
   const selected=workspaceState(view).selectedIntentIds||[workspaceState(view).selectedIntentId];
-  const overlayKey=JSON.stringify([key,view.fiveAxisArea,items,selected,placements.map(p=>[p.id,p.transform])]);
+  const overlayKey=JSON.stringify([key,view.fiveAxisArea,items,selected,placements.map(p=>[p.id,placementWorldMatrix(view,p).elements])]);
   if(view.fiveCompensationOverlay?.key===overlayKey&&view.fiveCompensationOverlay?.viewport===v){syncToolpathLayerMaterials(view,view.fiveCompensationOverlay.group);return;}
   disposeCompensationOverlay(view);if(!v||!items.length)return;
   const root=new THREE.Group();root.name='five-compensated-paths';
   for(const item of items){
     const placement=placements.find(p=>p.id===item.placementId);if(!placement)continue;
-    const group=new THREE.Group(),source=v.sceneObjects?.get(placement.id);if(source){source.updateWorldMatrix(true,false);group.matrix.copy(source.matrixWorld);}else group.matrix.set(...placement.transform);group.matrixAutoUpdate=false;root.add(group);
+    const group=new THREE.Group(),source=v.sceneObjects?.get(placement.id);if(source){source.updateWorldMatrix(true,false);group.matrix.copy(source.matrixWorld);}else group.matrix.copy(placementWorldMatrix(view,placement));group.matrixAutoUpdate=false;root.add(group);
     for(const part of item.parts||[]){
       if(!part.points?.length)continue;
       const color=toolpathLayerColor(view,item.intentId);

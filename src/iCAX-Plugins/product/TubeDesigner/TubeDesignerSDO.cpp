@@ -2436,7 +2436,8 @@ namespace
         throw std::invalid_argument("manufacturing start-to-end direction is zero");
     }
 
-    TopoDS_Shape NormalizeManufacturingShape(const TopoDS_Shape& Shape_, const ObjectMap& Properties_)
+    TopoDS_Shape NormalizeManufacturingShape(const TopoDS_Shape& Shape_, const ObjectMap& Properties_,
+        gp_Trsf* SourceToPart_ = nullptr)
     {
         if (ManufacturingPartKind(Properties_) != "accessory")
         {
@@ -2452,9 +2453,11 @@ namespace
                 const auto _Z = _Components[2].To<double>();
                 if (!std::isfinite(_X) || !std::isfinite(_Y) || !std::isfinite(_Z))
                     throw std::invalid_argument("manufacturing axis is not finite");
-                return NormalizeLinearPartForManufacturing(Shape_, gp_Dir(_X, _Y, _Z));
+                return SourceToPart_ ? NormalizeLinearPartForManufacturing(Shape_, gp_Dir(_X, _Y, _Z), *SourceToPart_)
+                    : NormalizeLinearPartForManufacturing(Shape_, gp_Dir(_X, _Y, _Z));
             }
-            return NormalizeLinearPartForManufacturing(Shape_);
+            return SourceToPart_ ? NormalizeLinearPartForManufacturing(Shape_, *SourceToPart_)
+                : NormalizeLinearPartForManufacturing(Shape_);
         }
         const auto _Bounds = ShapeBounds(Shape_);
         const auto _Min = _Bounds.at("min").To<VariantArray>();
@@ -2462,6 +2465,7 @@ namespace
         gp_Trsf _Placement;
         _Placement.SetTranslation(gp_Vec(-(_Min[0].To<double>() + _Max[0].To<double>()) / 2,
             -(_Min[1].To<double>() + _Max[1].To<double>()) / 2, -_Min[2].To<double>()));
+        if (SourceToPart_) *SourceToPart_ = _Placement;
         return Shape_.Moved(TopLoc_Location(_Placement));
     }
 
@@ -7696,6 +7700,7 @@ namespace
 #include "ProductAssemblyPairGeometry.inc"
 #include "ProductAssemblyWholeGeometry.inc"
 #include "ProductAssemblyWholeResourceAudit.inc"
+#include "ProductManufacturingNonInterference.inc"
 #include "ProductAssemblyFinalNodeGeometry.inc"
 #include "ProductAssemblyFinalNodeResourceAudit.inc"
 
@@ -8909,6 +8914,27 @@ namespace
                         _ExecutedJointProcesses[GetString(_Record, "instanceId")].insert(_Key);
                 }
         }
+        std::map<std::string, std::set<std::string>> _ExecutedStockPreparations;
+        if (const auto _Preparations = _Model.Extensions.find("tubeDesigner.workpiecePreparations");
+            _Preparations != _Model.Extensions.end() && _Preparations->second.Is<VariantArray>())
+            for (const auto& _Value : _Preparations->second.To<VariantArray>()) {
+                const auto _Preparation = _Value.To<ObjectMap>();
+                const auto _ProcessKey = GetString(_Preparation, "processKey");
+                const auto _ItemKey = GetString(_Preparation, "itemKey");
+                const auto _Declared = _DeclaredJointProcesses.find(_ProcessKey);
+                if (_Declared == _DeclaredJointProcesses.end()
+                    || GetString(_Declared->second, "templateId") != "profile-stock-preparation"
+                    || GetString(_Preparation, "status") != "prepared"
+                    || std::find(_Output.ItemKeys.begin(), _Output.ItemKeys.end(), _ItemKey) == _Output.ItemKeys.end())
+                    continue;
+                const auto _Targets = GetRequiredObject(_Declared->second, "targets");
+                if (GetString(_Targets, "stock") != _ItemKey) continue;
+                const auto& _Item = FindModelItem(_Model, _ItemKey);
+                const auto _Representation = _Item.Representations.find(_Output.Purpose);
+                if (_Representation != _Item.Representations.end()
+                    && _MaterialDescendsFrom(_Representation->second, GetString(_Preparation, "resultGeometry")))
+                    _ExecutedStockPreparations[_ProcessKey].insert(_ItemKey);
+            }
         bool _HasPendingPreparation = false;
         // An unresolved assembly node is not the same as a declared welded
         // contact with finished cut geometry. Valid raw solids alone cannot
@@ -8948,6 +8974,22 @@ namespace
                     continue;
                 }
                 const auto& _ParticipantProcesses = std::get<ObjectMap>(_ProcessBindings->second.m_Value);
+                std::set<std::string> _Preserved;
+                if (const auto _Uncut = _ConnectionProperties.find("preservedParticipants");
+                    _Uncut != _ConnectionProperties.end()) {
+                    if (!_Uncut->second.Is<VariantArray>()) {
+                        _HasPendingPreparation = true;
+                        continue;
+                    }
+                    for (const auto& _Key : _Uncut->second.To<VariantArray>()) {
+                        if (!_Key.Is<std::string>() || !_ParticipantProcesses.contains(_Key.To<std::string>())
+                            || !_Preserved.insert(_Key.To<std::string>()).second)
+                            _HasPendingPreparation = true;
+                    }
+                    // At least one participant must carry this node's real
+                    // machining. An all-uncut assembly is still unresolved.
+                    if (_Preserved.size() >= _Items.size()) _HasPendingPreparation = true;
+                }
                 if (_Items.empty() || _ParticipantProcesses.size() != _Items.size()
                     || std::any_of(_Items.begin(), _Items.end(), [&](const auto& _Item) {
                         if (!_Item.template Is<std::string>()) return true;
@@ -8957,8 +8999,10 @@ namespace
                         const auto& _Required = std::get<VariantArray>(_Bound->second.m_Value);
                         return _Required.empty() || std::any_of(_Required.begin(), _Required.end(), [&](const auto& _Process) {
                             if (!_Process.template Is<std::string>()) return true;
-                            const auto _Executed = _ExecutedJointProcesses.find(_Process.template To<std::string>());
-                            return _Executed == _ExecutedJointProcesses.end() || !_Executed->second.contains(_Key);
+                            const auto& _Evidence = _Preserved.contains(_Key)
+                                ? _ExecutedStockPreparations : _ExecutedJointProcesses;
+                            const auto _Executed = _Evidence.find(_Process.template To<std::string>());
+                            return _Executed == _Evidence.end() || !_Executed->second.contains(_Key);
                         });
                     })) _HasPendingPreparation = true;
             }
@@ -8980,6 +9024,13 @@ namespace
             _Prepared.UpdatesProductParameters = true;
         }
         _Prepared.Parts.reserve(_Output.ItemKeys.size());
+        const auto _NonInterference = ReadManufacturingNonInterference(_Prepared.ManufacturingDefinition);
+        std::set<std::string> _NonInterferenceKeys;
+        for (const auto& _Pair : _NonInterference) {
+            _NonInterferenceKeys.insert(_Pair.First);
+            _NonInterferenceKeys.insert(_Pair.Second);
+        }
+        std::map<std::string, TopoDS_Shape> _FinalProductShapes;
         std::set<std::string> _ValidatedManufacturingKeys;
         std::map<std::string, TopoDS_Shape> _FinalManufacturingShapes;
         std::vector<iCAX::OpenCascade::SBRepConversionInput> _Conversions;
@@ -9121,6 +9172,8 @@ namespace
                 ? _ProcessGeometry.Shapes.at(_Item.Key) : _Geometry.At(_Representation->second);
             if (_ItemProperties.contains("tubeDesigner.manufacturingAxis")) ++_KnownAxisCount;
             const bool _HasSideSketch = _ItemProperties.contains("tubeDesigner.sideSketch");
+            const bool _NeedsNonInterference = _NonInterferenceKeys.contains(_Item.Key);
+            gp_Trsf _SourceToPart;
             const auto _SameRotation = [](const TopoDS_Shape& Left_, const TopoDS_Shape& Right_) {
                 if (!Left_.IsPartner(Right_) || Left_.Orientation() != Right_.Orientation())
                     return false;
@@ -9132,7 +9185,7 @@ namespace
                             return false;
                 return true;
             };
-            const auto _Prototype = !_HasSideSketch
+            const auto _Prototype = !_HasSideSketch && !_NeedsNonInterference
                 ? std::find_if(_NormalizedPrototypes.begin(), _NormalizedPrototypes.end(),
                     [&](const SNormalizedPrototype& Candidate_) {
                         return Candidate_.Accessory == (_PartKind == "accessory")
@@ -9146,17 +9199,30 @@ namespace
                         const auto _Values = _Sources->second.To<VariantArray>();
                         if (_Values.size() == 1) {
                             const auto _Spans = _Values.front().To<ObjectMap>().at("spans").To<VariantArray>();
-                            if (_Spans.size() == 1)
-                                return _SourceShape.Moved(TopLoc_Location(
-                                    ProductProcessSpanPlacement(_Spans.front().To<ObjectMap>())));
+                            if (_Spans.size() == 1) {
+                                _SourceToPart = ProductProcessSpanPlacement(_Spans.front().To<ObjectMap>());
+                                return _SourceShape.Moved(TopLoc_Location(_SourceToPart));
+                            }
                         }
                     }
-                return NormalizeManufacturingShape(_SourceShape, _ItemProperties);
+                return NormalizeManufacturingShape(_SourceShape, _ItemProperties,
+                    _NeedsNonInterference ? &_SourceToPart : nullptr);
             };
             auto _ManufacturingShape = _ProcessGeometry.Shapes.contains(_Item.Key) ? _SourceShape
                 : _Prototype != _NormalizedPrototypes.end()
                 ? _Prototype->Normalized
                 : _NormalizeStock();
+            if (_NeedsNonInterference && _ProcessGeometry.Shapes.contains(_Item.Key)) {
+                const auto _Sources = _ItemProperties.find("manufacturing.sourceMembers");
+                if (_Sources == _ItemProperties.end() || !_Sources->second.Is<VariantArray>()
+                    || _Sources->second.To<VariantArray>().size() != 1)
+                    throw std::runtime_error("装配无干涉校验需要实际加工件的单段成品坐标映射");
+                const auto _Spans = _Sources->second.To<VariantArray>().front().To<ObjectMap>()
+                    .at("spans").To<VariantArray>();
+                if (_Spans.size() != 1)
+                    throw std::runtime_error("装配无干涉校验尚不支持多段展开件的成品坐标映射");
+                _SourceToPart = ProductProcessSpanPlacement(_Spans.front().To<ObjectMap>());
+            }
             _ItemProperties.erase("tubeDesigner.manufacturingAxis");
             if (_Prototype != _NormalizedPrototypes.end()) ++_NormalizedReuseCount;
             else if (!_HasSideSketch)
@@ -9248,6 +9314,9 @@ namespace
                     Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing") });
             }
             _FinalManufacturingShapes.emplace(_Item.Key, _ManufacturingShape);
+            if (_NeedsNonInterference)
+                _FinalProductShapes.emplace(_Item.Key, BRepBuilderAPI_Transform(
+                    _ManufacturingShape, _SourceToPart.Inverted(), true).Shape());
             _Prepared.Parts.push_back({
                 _Index,
                 _Item.Key,
@@ -9266,6 +9335,11 @@ namespace
         }
         if (_Prepared.Parts.size() != static_cast<std::size_t>(_ExpectedPartCount))
             throw std::runtime_error("stored neutral model export count does not match its generation run");
+        if (!_NonInterference.empty())
+            std::get<ObjectMap>(_Prepared.ManufacturingModel.at("extensions").m_Value)
+                ["tubeDesigner.nativeNonInterference"] = ObjectMap{
+                    {"schemaVersion", 1ull},
+                    {"checks", ValidateManufacturingNonInterference(_NonInterference, _FinalProductShapes)}};
         if (!_HasPendingPreparation && _Bindings.empty()
             && _ValidatedManufacturingKeys.size() == _Prepared.Parts.size()
             && GetUInt64(_Model.Extensions, "tubeDesigner.manufacturingInputVersion", 0)
@@ -13755,6 +13829,7 @@ namespace
         iCAX::TubeNesting::CutLineFeatureCode RightCutLineFeature;
         std::optional<iCAX::TubeNesting::PairTypeGeometry> PairGeometry;
         iCAX::TubeNesting::Length PairGeometryMaximumLength = 0;
+        std::optional<std::array<double, 3>> PairGeometryLocalCenter;
     };
 
     bool HasNestingPairGeometry(const SNestingGeometrySummary& Summary_)
@@ -13768,8 +13843,23 @@ namespace
     void AlignNestingPairGeometry(SNestingGeometrySummary& Summary_)
     {
         if (!HasNestingPairGeometry(Summary_)) return;
-        const auto _Target = static_cast<iCAX::TubeNesting::Length>(
+        auto _Target = static_cast<iCAX::TubeNesting::Length>(
             std::ceil(Summary_.EnvelopeLength * 100.0 - 1.0e-6));
+        if (Summary_.PairGeometryLocalCenter)
+        {
+            // A native certificate is expressed about this exact source centre.
+            // Never shrink its conservative envelope to an older displayed
+            // length, or stretch only one end of a centre-based rigid pose.
+            _Target = std::max(_Target, Summary_.PairGeometryMaximumLength);
+            Summary_.EnvelopeLength = std::max(Summary_.EnvelopeLength,
+                static_cast<double>(_Target) / 100.0);
+            Summary_.LocalCenter = *Summary_.PairGeometryLocalCenter;
+            if (!RebaseTubeNestingGeometry(*Summary_.PairGeometry,
+                Summary_.PairGeometryMaximumLength, _Target))
+                throw std::logic_error("原生端口谱与排样包络坐标不一致");
+            Summary_.PairGeometryMaximumLength = _Target;
+            return;
+        }
         const auto _Delta = static_cast<double>(_Target - Summary_.PairGeometryMaximumLength);
         if (_Delta != 0.0)
             for (auto& _Level : Summary_.PairGeometry->Right.Levels)
@@ -13853,6 +13943,7 @@ namespace
                     {
                         _Found->second.PairGeometry = std::move(_Profiles.Geometry);
                         _Found->second.PairGeometryMaximumLength = _Profiles.MaximumLength;
+                        _Found->second.PairGeometryLocalCenter = _Profiles.CertifiedLocalCenter;
                     }
                 }
                 _Cache.PendingFeatureJobs.erase(Key_);
@@ -14072,9 +14163,9 @@ namespace
 
     ObjectMap SolveManufacturingNestingWithLocks(
         const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
-        const double Gap_, const VariantArray& LockedValues_)
+        const double Gap_, const VariantArray& LockedValues_, const SNestingSearchOptions& SearchOptions_)
     {
-        if (LockedValues_.empty()) return SolveManufacturingNesting(Parts_, Stocks_, Gap_);
+        if (LockedValues_.empty()) return SolveManufacturingNesting(Parts_, Stocks_, Gap_, SearchOptions_);
         constexpr double _Tolerance = 0.011;
         const auto _LengthUnits = [](const double Value_)
         {
@@ -14350,7 +14441,7 @@ namespace
                 { "status", std::string("feasible") }, { "plans", VariantArray{} },
                 { "unplaced", VariantArray{} }, { "diagnostics", VariantArray{} },
                 { "metrics", ObjectMap{} } }
-            : SolveManufacturingNesting(_RemainingParts, _RemainingStocks, Gap_);
+            : SolveManufacturingNesting(_RemainingParts, _RemainingStocks, Gap_, SearchOptions_);
         auto _FreshPlans = _Solved.at("plans").To<VariantArray>();
         std::map<std::string, std::size_t> _FreshPlanOrdinals, _FreshPartOrdinals;
         std::map<std::string, std::size_t> _LockedPlanIndices;
@@ -14454,6 +14545,13 @@ namespace
         return {
             { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
             { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },
+            { "search", _HasRemainingDemand ? _Solved.at("search") : Variant(ObjectMap{
+                { "optimizationMode", std::string(SearchOptions_.Mode == ENestingOptimizationMode::Utilization
+                    ? "utilization" : "time") },
+                { "searchTimeSeconds", static_cast<unsigned long long>(SearchOptions_.SearchTimeSeconds) },
+                { "allocatedSearchMilliseconds", 0ull }, { "stageCount", 0ull },
+                { "budgetScope", std::string("shared-request") }
+            }) },
             { "metrics", ObjectMap{
                 { "requestedPartCount", static_cast<unsigned long long>(_RequestedCount) },
                 { "placedPartCount", static_cast<unsigned long long>(_PlacedCount) },
@@ -14464,7 +14562,8 @@ namespace
                 { "usedLength", _UsedLength }, { "remainingLength", _TotalStock - _UsedLength },
                 { "gapLength", _UsedLength - _PartLength },
                 { "utilization", _TotalStock > 0.0 ? _PartLength / _TotalStock : 0.0 },
-                { "searchNodes", GetUInt64(_SolvedMetrics, "searchNodes", 0) }, { "partGap", Gap_ }
+                { "searchNodes", GetUInt64(_SolvedMetrics, "searchNodes", 0) },
+                { "refinementRounds", GetUInt64(_SolvedMetrics, "refinementRounds", 0) }, { "partGap", Gap_ }
             } }
         };
     }
@@ -14526,6 +14625,7 @@ namespace
         if (_PartItems.empty() || _PartItems.size() > 2000 || _StockItems.size() > 1000)
             throw std::invalid_argument("单次排样需为 1 至 2000 种零件、至多 1000 行母材");
         const auto _Parameters = GetRequiredObject(_Payload, "parameters");
+        const auto _SearchOptions = ReadNestingSearchOptions(_Parameters);
         const auto _Gap = GetDouble(_Parameters, "partGap", 0.0);
         if (!std::isfinite(_Gap) || _Gap < 0.0 || _Gap > 1000000.0)
             throw std::invalid_argument("零件间距必须为 0 至 1000000 mm 的有限数值");
@@ -14655,7 +14755,8 @@ namespace
             _Stocks.push_back({ _ID, GetRequiredText(_Data, "profileKey", 65536),
                 GetDouble(_Data, "length", 0.0), static_cast<std::int64_t>(_Quantity) });
         }
-        const auto _Result = SolveManufacturingNestingWithLocks(_Parts, _Stocks, _Gap, _LockedPlans);
+        const auto _Result = SolveManufacturingNestingWithLocks(
+            _Parts, _Stocks, _Gap, _LockedPlans, _SearchOptions);
         {
             SaveNestingTask(*Scene_, _PartItems, _Payload, _Result, _SourceState);
             std::vector<SNestingExportPlan> _BackgroundPlans;

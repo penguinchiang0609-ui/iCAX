@@ -16,7 +16,7 @@ page.setDefaultTimeout(120000);const report={passed:false,standaloneCef:true,rea
 page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.setViewportSize({width:1440,height:1000});
- await page.waitForFunction(()=>__icaxAppShell.getState().startupPhase==='ready');
+ await page.waitForFunction(()=>window.__icaxAppShell?.getState().startupPhase==='ready');
  if(!alreadyOpen)await page.evaluate(path=>__icaxAppShell.openProject(path,'icax.five-axis-cam'),project);
  await page.waitForFunction(async()=>{
   const a=__icaxAppShell.getState();if(a.pendingCount||!a.activeProjectId)return false;
@@ -47,15 +47,15 @@ try{
  await command('five.cam-inspector.properties');
  const begin=await page.evaluate(()=>entryAuditCalls.length);
  await page.evaluate(()=>window.entryAuditHold=true);
- await page.locator('[data-command-id="five.simulation.collision-check"]').click();
+ await page.locator('.ribbon-command[data-command-id="five.simulation.collision-check"]').click();
  await page.waitForFunction(()=>window.entryAuditHeld);
  assert.equal(await page.locator('[data-five-collision-inspector]').count(),1);
  assert.equal(await page.locator('[data-five-floating="collision-check"]').count(),0);
  assert.equal(await page.locator('dialog[open]').count(),0);
- assert.match(await page.locator('.five-collision-inspector-heading').innerText(),/当前装夹全部刀路/);
+ assert.match(await page.locator('.five-collision-inspector-heading').innerText(),/全部切割刀路/);
  assert.equal(await page.locator('[data-five-command="five.simulation.collision-cancel"]').isEnabled(),true);
  const globalRequest=await page.evaluate(begin=>entryAuditCalls.slice(begin).find(c=>c.method==='CamSimulation.CheckCollision')?.payload,begin);
- assert(globalRequest);for(const field of ['intentId','from','to'])assert(!Object.hasOwn(globalRequest,field));
+ assert(globalRequest);assert.equal(globalRequest.pathKind,'Cutting');for(const field of ['intentId','from','to'])assert(!Object.hasOwn(globalRequest,field));
  // Hold only the real native reply, then continue scrolling while it is pending.
  const scrollStyle=await page.addStyleTag({content:'.cam-context-pane,.cam-info-pane{height:400px!important;overflow:auto!important}.cam-context-pane::after,.cam-info-pane::after,.five-collision-issue-list::after{content:"";display:block;min-height:1400px;flex:0 0 1400px}.five-collision-issue-list{max-height:150px!important;overflow:auto!important}'});
  await page.locator('[data-five-search]').fill('圆');
@@ -76,9 +76,9 @@ try{
  });
  report.interaction=interaction;assert(interaction.inputSame&&interaction.thresholdSame&&interaction.canvasSame&&interaction.focused);assert.deepEqual(interaction.selection,interactionBefore.selection);assert.deepEqual(interaction.scroll,interactionBefore.scroll);assert.equal(interaction.events,1);
  const global=await page.evaluate(()=>structuredClone(entryAudit.fiveSimulation.collisionReport));
- assert.equal(global.validity,'Current');assert.notEqual(global.checkMode,'SelectedPath');assert(!global.checkedIntentId);
+ assert.equal(global.validity,'Current');assert.equal(global.checkMode,'Cutting');assert(!global.checkedIntentId);
  assert(new Set(global.frames.filter(f=>f.role!=='Rapid').map(f=>f.intentId)).size>1);
- report.cases.push('The actual top ribbon button starts an unscoped native check and shows inline global progress; asynchronous publication preserves nodes, focus, selection and latest left/right/nested scroll');
+ report.cases.push('The actual top ribbon button checks all cutting paths and shows inline global progress; asynchronous publication preserves nodes, focus, selection and latest left/right/nested scroll');
 
  await scrollStyle.evaluate(node=>node.remove());
  await page.evaluate(()=>{for(const selector of ['.cam-context-pane','.cam-info-pane','.five-collision-issue-list'])document.querySelector(selector).scrollTop=0;});

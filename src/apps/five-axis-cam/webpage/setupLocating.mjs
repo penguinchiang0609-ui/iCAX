@@ -7,6 +7,7 @@ import {syncSceneSnapping,sceneSnapCandidate,presentSceneSnaps,clearSceneSnapPre
 import {button,section,hint,facts} from './workspaceControls.mjs';
 import {escapeText as esc,escapeAttr as attr} from '../../_shared/workbench/utils/format.mjs';
 import {registrationError} from './registrationDraft.mjs';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 
 const modes=['endpoint','midpoint','center','sphere-center','datum-point','point'];
 const key=view=>JSON.stringify([view.scene.domain.expected.epoch,selectedPlacement(view)?.id,view.scene.model?.geometryRef]);
@@ -53,7 +54,7 @@ function feedback(view,d){
     const marker=new THREE.Points(geometry,material);marker.userData.locatingPoint=i===3?'hover':`P${i+1}`;marker.raycast=()=>{};marker.renderOrder=100;group.add(marker);
   }
   object.add(group);d.layer=group;
-  const matrix=new THREE.Matrix4().set(...selectedPlacement(view).transform);
+  const matrix=placementWorldMatrix(view,selectedPlacement(view));
   view.viewport.setSpecificationAnnotations(d.points.flatMap((p,i)=>{if(!p)return [];const point=new THREE.Vector3(...p.point).applyMatrix4(matrix).toArray();return [{id:`locating-P${i+1}`,kind:'label',start:point,end:point,label:`P${i+1}`,color:0xffce64,pickThrough:true}];}));
   view.sceneSnapping?.presentation?.layer?.highlight(d.hover);
 }

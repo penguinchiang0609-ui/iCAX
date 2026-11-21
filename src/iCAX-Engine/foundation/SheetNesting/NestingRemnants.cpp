@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <tuple>
 #include <set>
 #include <unordered_map>
@@ -12,6 +13,81 @@ namespace iCAX::SheetNesting
 {
 namespace
 {
+    struct SpatialBounds
+    {
+        double Left=0,Bottom=0,Right=0,Top=0;
+        bool Supported() const
+        {return std::isfinite(Left)&&std::isfinite(Bottom)&&std::isfinite(Right)&&std::isfinite(Top)&&
+            Left<=Right&&Bottom<=Top&&std::max({std::abs(Left),std::abs(Bottom),std::abs(Right),std::abs(Top)})<=2e7;}
+        bool Intersects(const SpatialBounds& b) const
+        {return Left<=b.Right&&b.Left<=Right&&Bottom<=b.Top&&b.Bottom<=Top;}
+    };
+    SpatialBounds EnclosingBounds(const Rect& r)
+    {
+        return {std::nextafter(r.X,-std::numeric_limits<double>::infinity()),
+            std::nextafter(r.Y,-std::numeric_limits<double>::infinity()),
+            std::nextafter(r.X+r.Width,std::numeric_limits<double>::infinity()),
+            std::nextafter(r.Y+r.Height,std::numeric_limits<double>::infinity())};
+    }
+    SpatialBounds PointWindow(Point p,double distance)
+    {
+        return {std::nextafter(p.X-distance,-std::numeric_limits<double>::infinity()),
+            std::nextafter(p.Y-distance,-std::numeric_limits<double>::infinity()),
+            std::nextafter(p.X+distance,std::numeric_limits<double>::infinity()),
+            std::nextafter(p.Y+distance,std::numeric_limits<double>::infinity())};
+    }
+    SpatialBounds Merge(SpatialBounds a,const SpatialBounds& b)
+    {return {std::min(a.Left,b.Left),std::min(a.Bottom,b.Bottom),std::max(a.Right,b.Right),std::max(a.Top,b.Top)};}
+    // This tree filters only immutable original world bounds. It never replaces
+    // the original point/ring, line/rectangle or clearance predicate.
+    class RemnantSpatialIndex
+    {
+        struct Node{SpatialBounds Bounds;std::size_t Begin=0,End=0,Left=0,Right=0;};
+        std::vector<SpatialBounds> Boxes;
+        std::vector<std::size_t> Order;
+        std::vector<Node> Nodes;
+        bool Supported=false;
+        std::size_t BuildNode(std::size_t begin,std::size_t end)
+        {
+            SpatialBounds bounds=Boxes[Order[begin]];
+            for(auto i=begin+1;i<end;++i)bounds=Merge(bounds,Boxes[Order[i]]);
+            const auto index=Nodes.size();Nodes.push_back({bounds,begin,end,0,0});
+            if(end-begin<=8)return index;
+            const bool x=bounds.Right-bounds.Left>=bounds.Top-bounds.Bottom;
+            const auto middle=begin+(end-begin)/2;
+            std::nth_element(Order.begin()+begin,Order.begin()+middle,Order.begin()+end,[&](auto a,auto b)
+            {
+                const auto& first=Boxes[a];const auto& second=Boxes[b];
+                const auto av=x?first.Left+(first.Right-first.Left)/2:first.Bottom+(first.Top-first.Bottom)/2;
+                const auto bv=x?second.Left+(second.Right-second.Left)/2:second.Bottom+(second.Top-second.Bottom)/2;
+                return av==bv?a<b:av<bv;
+            });
+            const auto left=BuildNode(begin,middle),right=BuildNode(middle,end);
+            Nodes[index].Left=left;Nodes[index].Right=right;return index;
+        }
+        void QueryNode(std::size_t index,const SpatialBounds& window,std::vector<std::size_t>& result)const
+        {
+            const auto& node=Nodes[index];if(!node.Bounds.Intersects(window))return;
+            if(node.Left||node.Right){QueryNode(node.Left,window,result);QueryNode(node.Right,window,result);return;}
+            for(auto i=node.Begin;i<node.End;++i)if(Boxes[Order[i]].Intersects(window))result.push_back(Order[i]);
+        }
+    public:
+        void Build(std::vector<SpatialBounds> boxes)
+        {
+            Boxes=std::move(boxes);Order.resize(Boxes.size());std::iota(Order.begin(),Order.end(),0);
+            Supported=std::all_of(Boxes.begin(),Boxes.end(),[](const auto& box){return box.Supported();});
+            Nodes.clear();if(Supported&&!Boxes.empty()){Nodes.reserve(2*Boxes.size());BuildNode(0,Boxes.size());}
+        }
+        std::vector<std::size_t> Query(const SpatialBounds& window)const
+        {
+            std::vector<std::size_t> result;
+            if(!Supported||!window.Supported()){result.resize(Boxes.size());std::iota(result.begin(),result.end(),0);return result;}
+            if(!Nodes.empty())QueryNode(0,window,result);
+            // Preserve the original predicate traversal order and its boundary
+            // short-circuits; tree order has no role in evaluation tie-breaks.
+            std::sort(result.begin(),result.end());return result;
+        }
+    };
     struct RemnantSegment { Point A, B; Rect Bounds; };
     struct RemnantObstacle
     {
@@ -22,6 +98,10 @@ namespace
         double Radius = 0;
         std::vector<std::vector<Point>> Rings;
         std::vector<RemnantSegment> Segments;
+        std::vector<SpatialBounds> RingBounds;
+        std::vector<RemnantSpatialIndex> RingEdges;
+        RemnantSpatialIndex RingIndex,SegmentIndex;
+        bool Filtered=false;
     };
     double Right(const Rect& r) { return r.X + r.Width; }
     double Top(const Rect& r) { return r.Y + r.Height; }
@@ -72,10 +152,38 @@ namespace
         }
         return inside ? 1 : -1;
     }
+    int InPreparedRing(Point p,const RemnantObstacle& o,std::size_t ringIndex,double epsilon)
+    {
+        const auto& ring=o.Rings[ringIndex];
+        if(!o.Filtered)return InRing(p,ring,epsilon);
+        const auto around=PointWindow(p,2*epsilon);
+        if(!around.Supported()||!o.RingBounds[ringIndex].Supported())return InRing(p,ring,epsilon);
+        if(!around.Intersects(o.RingBounds[ringIndex]))return -1;
+        for(const auto i:o.RingEdges[ringIndex].Query(around))
+            if(PointSegmentDistance(p,ring[i],ring[(i+1)%ring.size()])<=epsilon)return 0;
+        const SpatialBounds ray{std::nextafter(p.X-2*epsilon,-std::numeric_limits<double>::infinity()),
+            around.Bottom,o.RingBounds[ringIndex].Right,around.Top};
+        bool inside=false;
+        for(const auto i:o.RingEdges[ringIndex].Query(ray))
+        {
+            const auto a=ring[i],b=ring[(i+1)%ring.size()];
+            if((a.Y>p.Y)!=(b.Y>p.Y))
+            {
+                const long double x=a.X+(static_cast<long double>(p.Y)-a.Y)*(b.X-a.X)/(b.Y-a.Y);
+                if(x>p.X)inside=!inside;
+            }
+        }
+        return inside?1:-1;
+    }
     bool InMaterial(Point p, const RemnantObstacle& o, double epsilon)
     {
-        if (InRing(p, o.Rings.front(), epsilon) != 1) return false;
-        for (std::size_t i = 1; i < o.Rings.size(); ++i) if (InRing(p, o.Rings[i], epsilon) >= 0) return false;
+        if(InPreparedRing(p,o,0,epsilon)!=1)return false;
+        if(o.Filtered)
+        {
+            for(const auto i:o.RingIndex.Query(PointWindow(p,2*epsilon)))
+                if(i&&InPreparedRing(p,o,i,epsilon)>=0)return false;
+        }
+        else for(std::size_t i=1;i<o.Rings.size();++i)if(InRing(p,o.Rings[i],epsilon)>=0)return false;
         return true;
     }
     double Perimeter(const Shape& shape)
@@ -86,9 +194,10 @@ namespace
         { for (std::size_t i = 0; i < ring.size(); ++i) result += std::hypot(ring[i].X - ring[(i + 1) % ring.size()].X, ring[i].Y - ring[(i + 1) % ring.size()].Y); };
         add(shape.Outer); for (const auto& h : shape.Holes) add(h); return result;
     }
-    RemnantObstacle Prepare(const Shape& shape, Pose pose)
+    RemnantObstacle Prepare(const Shape& shape, Pose pose,bool filtered)
     {
         RemnantObstacle o; o.Original = &shape; o.Transform = pose; o.Bounds = Detail::Bounds(shape, pose);
+        o.Filtered=filtered;
         o.Radius = shape.Radius;
         if (shape.Radius > 0) { o.Center = Detail::Transform(shape.Center, pose); return o; }
         const auto append = [&](const std::vector<Point>& source)
@@ -96,14 +205,77 @@ namespace
             auto& ring = o.Rings.emplace_back();
             for (auto p : source) ring.push_back(Detail::Transform(p, pose));
             if (ring.size() > 1 && ring.front().X == ring.back().X && ring.front().Y == ring.back().Y) ring.pop_back();
+            std::vector<SpatialBounds> edgeBoxes;
+            SpatialBounds bounds{ring[0].X,ring[0].Y,ring[0].X,ring[0].Y};
+            for(const auto p:ring)bounds=Merge(bounds,{p.X,p.Y,p.X,p.Y});
+            bounds.Left=std::nextafter(bounds.Left,-std::numeric_limits<double>::infinity());
+            bounds.Bottom=std::nextafter(bounds.Bottom,-std::numeric_limits<double>::infinity());
+            bounds.Right=std::nextafter(bounds.Right,std::numeric_limits<double>::infinity());
+            bounds.Top=std::nextafter(bounds.Top,std::numeric_limits<double>::infinity());
+            o.RingBounds.push_back(bounds);
             for (std::size_t i = 0; i < ring.size(); ++i)
             {
                 const auto a = ring[i], b = ring[(i + 1) % ring.size()];
                 o.Segments.push_back({ a, b, { std::min(a.X, b.X), std::min(a.Y, b.Y), std::abs(a.X - b.X), std::abs(a.Y - b.Y) } });
+                edgeBoxes.push_back(Merge(EnclosingBounds(o.Segments.back().Bounds),
+                    {std::min(a.X,b.X),std::min(a.Y,b.Y),std::max(a.X,b.X),std::max(a.Y,b.Y)}));
             }
+            o.RingEdges.emplace_back();if(filtered)o.RingEdges.back().Build(std::move(edgeBoxes));
         };
         append(shape.Outer); for (const auto& h : shape.Holes) append(h);
+        if(filtered)
+        {
+            o.RingIndex.Build(o.RingBounds);
+            std::vector<SpatialBounds> boxes;boxes.reserve(o.Segments.size());
+            for(const auto& edge:o.Segments)boxes.push_back(Merge(EnclosingBounds(edge.Bounds),
+                {std::min(edge.A.X,edge.B.X),std::min(edge.A.Y,edge.B.Y),std::max(edge.A.X,edge.B.X),std::max(edge.A.Y,edge.B.Y)}));
+            o.SegmentIndex.Build(std::move(boxes));
+        }
         return o;
+    }
+    std::vector<std::size_t> SegmentCandidates(const RemnantObstacle& obstacle,const Rect& window)
+    {
+        if(obstacle.Filtered)return obstacle.SegmentIndex.Query(EnclosingBounds(window));
+        std::vector<std::size_t> indices(obstacle.Segments.size());std::iota(indices.begin(),indices.end(),0);return indices;
+    }
+    bool PreparedConflict(const Shape& rectangle,Pose pose,const RemnantObstacle& obstacle,double gap,double tolerance,double epsilon)
+    {
+        const auto original=[&]{return Detail::ShapesConflict(rectangle,pose,*obstacle.Original,obstacle.Transform,gap,tolerance);};
+        if(!obstacle.Filtered||obstacle.Radius>0)return original();
+        const auto box=Detail::Bounds(rectangle,pose);const auto& other=obstacle.Bounds;
+        // Preserve the original ShapesConflict broad phase verbatim.
+        if(box.X+box.Width+gap<=other.X+tolerance||other.X+other.Width+gap<=box.X+tolerance||
+            box.Y+box.Height+gap<=other.Y+tolerance||other.Y+other.Height+gap<=box.Y+tolerance)return false;
+        const auto window=EnclosingBounds(Expanded(box,gap+epsilon));
+        if(!window.Supported())return original();
+        // A connected rectangle with an outside-material witness and no source
+        // boundary anywhere in its full clearance window cannot contain or
+        // reach original material. The tree includes edges wholly enclosed by
+        // the window as well as crossings. Unknown/near cases retain the exact
+        // same original material and ShapesConflict predicate below.
+        if(obstacle.SegmentIndex.Query(window).empty()&&
+            !InMaterial({box.X+box.Width/2,box.Y+box.Height/2},obstacle,epsilon))return false;
+        if(obstacle.Rings.size()<3)return original();
+        const auto nearby=obstacle.RingIndex.Query(window);
+        std::vector<std::size_t> holes;
+        for(const auto ring:nearby)if(ring)holes.push_back(ring);
+        if(holes.size()+1==obstacle.Rings.size())return original();
+        // A hole wholly outside this conservatively expanded rectangle cannot
+        // alter its material intersection or reach the original distance gate.
+        // Keep the complete original outer ring and every possibly near hole.
+        Shape local;local.Outer=obstacle.Rings.front();
+        const auto& mask=obstacle.Original->CommonEdgeRings;
+        if(!mask.empty())
+        {
+            if(mask.size()!=obstacle.Rings.size())return original();
+            local.CommonEdgeRings.push_back(mask[0]);
+        }
+        for(const auto ring:holes)
+        {
+            local.Holes.push_back(obstacle.Rings[ring]);
+            if(!mask.empty())local.CommonEdgeRings.push_back(mask[ring]);
+        }
+        return Detail::ShapesConflict(rectangle,pose,local,{},gap,tolerance);
     }
     std::vector<Rect> GridRectangles(const std::vector<unsigned char>& free, std::size_t n, const Rect& usable, std::size_t keep)
     {
@@ -183,7 +355,7 @@ namespace
     }
 }
 
-RegularRemnant FindRegularRemnant(const Problem& problem, const Layout& layout, std::size_t resolution)
+static RegularRemnant FindRegularRemnantImpl(const Problem& problem, const Layout& layout, std::size_t resolution,bool filtered)
 {
     RegularRemnant result;
     const std::size_t n = std::clamp<std::size_t>(resolution, 1, 256); result.Resolution = n;
@@ -225,7 +397,7 @@ RegularRemnant FindRegularRemnant(const Problem& problem, const Layout& layout, 
         { result.Verified = false; return result; }
         std::string error;
         if (!Detail::ShapeValid(part->second->Geometry, problem.Tolerance, error)) { result.Verified = false; return result; }
-        auto o = Prepare(part->second->Geometry, placed.Transform);
+        auto o = Prepare(part->second->Geometry, placed.Transform,filtered);
         for (const auto& other : obstacles)
             if (Intersects(o.Bounds, other.Bounds) && Detail::ShapesConflict(*o.Original, o.Transform,
                 *other.Original, other.Transform, 0, problem.Tolerance)) { result.Verified = false; return result; }
@@ -262,8 +434,9 @@ RegularRemnant FindRegularRemnant(const Problem& problem, const Layout& layout, 
             const bool inside = InMaterial({ cell.X + dx / 2, cell.Y + dy / 2 }, o, epsilon);
             bool nearBoundary = false, rawBoundary = false;
             const auto inflatedCell = Expanded(cell, problem.PartGap + epsilon), rawCell = Expanded(cell, epsilon);
-            for (const auto& edge : o.Segments)
+            for (const auto edgeIndex : SegmentCandidates(o,inflatedCell))
             {
+                const auto& edge=o.Segments[edgeIndex];
                 if (!nearBoundary && Intersects(edge.Bounds, inflatedCell) && SegmentHitsRect(edge.A, edge.B, inflatedCell)) nearBoundary = true;
                 if (!rawBoundary && Intersects(edge.Bounds, rawCell) && SegmentHitsRect(edge.A, edge.B, rawCell)) rawBoundary = true;
                 if (nearBoundary && rawBoundary) break;
@@ -302,11 +475,13 @@ RegularRemnant FindRegularRemnant(const Problem& problem, const Layout& layout, 
                 else
                 {
                     if (InMaterial({ r.X + r.Width / 2, r.Y + r.Height / 2 }, o, epsilon)) return false;
-                    for (const auto& edge : o.Segments)
+                    for (const auto edgeIndex : SegmentCandidates(o,broad))
+                    {
+                        const auto& edge=o.Segments[edgeIndex];
                         if (Intersects(edge.Bounds, broad) && SegmentRectDistance(edge, r) < problem.PartGap + problem.Tolerance) return false;
+                    }
                 }
-                if (Detail::ShapesConflict(rectangle, pose, *o.Original, o.Transform,
-                    problem.PartGap + 2 * problem.Tolerance, problem.Tolerance)) return false;
+                if (PreparedConflict(rectangle,pose,o,problem.PartGap+2*problem.Tolerance,problem.Tolerance,epsilon))return false;
             }
         return true;
     };
@@ -494,34 +669,56 @@ RegularRemnant FindRegularRemnant(const Problem& problem, const Layout& layout, 
     return result;
 }
 
-RemnantEvaluation EvaluateRemnants(const Problem& problem, const Result& result, std::size_t resolution)
+static RemnantEvaluation EvaluateRemnantsImpl(const Problem& problem, const Result& result, std::size_t resolution,bool filtered)
 {
     RemnantEvaluation measured; measured.PerLayout.resize(result.Layouts.size());
-    struct Group { std::size_t BestIndex = 0; double Area = -1, Upper = 0; };
+    struct Group { std::size_t BestIndex = 0; double Free = -1, Area = -1, Upper = 0; };
     std::map<std::string, Group> groups;
+    std::unordered_map<std::string,double> partAreas;
+    for(const auto& part:problem.Parts)partAreas.emplace(part.ID,Detail::Area(part.Geometry));
+    double extent=1;for(const auto& stock:problem.Stocks)extent=std::max(extent,stock.Width+stock.Height);
+    const double quantum=problem.Tolerance*extent;
     bool valid = true;
     for (std::size_t i = 0; i < result.Layouts.size(); ++i)
     {
         const auto& layout = result.Layouts[i];
         if (layout.Placements.empty()) continue; // An unused/empty sheet cannot manufacture a final-sheet score.
-        auto remnant = FindRegularRemnant(problem, layout, resolution);
+        auto remnant = FindRegularRemnantImpl(problem,layout,resolution,filtered);
         measured.PerLayout[i] = remnant;
         if (!remnant.Verified) { valid = false; continue; }
         const auto stock = std::find_if(problem.Stocks.begin(), problem.Stocks.end(), [&](const Stock& s) { return s.ID == layout.StockID; });
         if (stock == problem.Stocks.end()) { valid = false; continue; }
         auto& group = groups[stock->Material];
-        group.Upper = std::max(group.Upper, remnant.AreaUpperBound);
-        if (remnant.Area > group.Area) { group.Area = remnant.Area; group.BestIndex = i; }
+        double materialArea=0;
+        for(const auto& placement:layout.Placements)materialArea+=partAreas.at(placement.PartID);
+        const double free=std::max(0.,layout.Width*layout.Height-materialArea);
+        const auto key=[&](double value){return std::round(value/quantum);};
+        if(group.Free<0||key(free)>key(group.Free)||(key(free)==key(group.Free)&&remnant.Area>group.Area))
+        { group.Free=free;group.Area=remnant.Area;group.Upper=remnant.AreaUpperBound;group.BestIndex=i; }
     }
     if (!valid) return measured; // Publish an aggregate score only after every actually used sheet is measured.
     for (const auto& [material, group] : groups)
     {
         (void)material;
         measured.FinalLayoutIndices.push_back(group.BestIndex);
+        measured.LastSheetFreeArea += std::max(0.,group.Free);
         measured.LastSheetRegularArea += std::max(0.0, group.Area);
         measured.LastSheetAreaUpperBound += group.Upper;
     }
     measured.Measured = true;
     return measured;
+}
+RegularRemnant FindRegularRemnant(const Problem& problem,const Layout& layout,std::size_t resolution)
+{return FindRegularRemnantImpl(problem,layout,resolution,true);}
+RemnantEvaluation EvaluateRemnants(const Problem& problem,const Result& result,std::size_t resolution)
+{return EvaluateRemnantsImpl(problem,result,resolution,true);}
+namespace Detail
+{
+    // Deliberately unfiltered reference for differential native regressions.
+    // It runs the original grid, predicates and seed/refinement selection.
+    RegularRemnant FindRegularRemnantUnfiltered(const Problem& problem,const Layout& layout,std::size_t resolution)
+    {return FindRegularRemnantImpl(problem,layout,resolution,false);}
+    RemnantEvaluation EvaluateRemnantsUnfiltered(const Problem& problem,const Result& result,std::size_t resolution)
+    {return EvaluateRemnantsImpl(problem,result,resolution,false);}
 }
 }

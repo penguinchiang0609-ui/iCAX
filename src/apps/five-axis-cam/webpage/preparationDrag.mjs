@@ -11,7 +11,7 @@ export function attachPreparationDrag(mount,binding){
  });
  const target=event=>{
   const {view,context}=binding,row=event.target.closest?.('[data-five-setup-drag]');
-  if(!drag||drag.view!==view||context.isCurrentProject?.()===false||workpieceSelectionBusy(view)||JSON.stringify(drag.expected)!==JSON.stringify(view.scene.domain.expected)||!row||row.dataset.fiveSetupWorkpiece!==drag.workpieceId||row.dataset.fiveSetupDrag===drag.id)return null;
+  if(!drag||drag.view!==view||context.isCurrentProject?.()===false||workpieceSelectionBusy(view)||JSON.stringify(drag.expected)!==JSON.stringify(view.scene.domain.expected)||!row||view.fiveAxisArea!=='operation'&&row.dataset.fiveSetupWorkpiece!==drag.workpieceId||row.dataset.fiveSetupDrag===drag.id)return null;
   return {row,id:row.dataset.fiveSetupDrag,after:event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2};
  };
  mount.addEventListener('dragover',event=>{clear();const hit=target(event);if(!hit)return;event.preventDefault();event.dataTransfer.dropEffect='move';cue=hit.row;cue.dataset.fiveSetupDrop=hit.after?'after':'before';const pane=cue.closest('.cam-context-pane'),r=pane?.getBoundingClientRect();if(r){if(event.clientY<r.top+40)pane.scrollTop-=12;else if(event.clientY>r.bottom-40)pane.scrollTop+=12;}});

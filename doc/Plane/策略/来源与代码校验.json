@@ -1,0 +1,2280 @@
+{
+  "date": "2026-11-07",
+  "icax_head": "752106d204c58f72edefe3bb1253d1648e90603f",
+  "baseline": "实际工作区，含既有未提交修改",
+  "source_library": "WiseCAM-Restricted",
+  "source_baseline": "05ffc57d",
+  "source_directories": 42,
+  "source_photos": 176,
+  "strategy_topics": 41,
+  "index_documents": 1,
+  "roll_scope": "暂不实现；仅保留方案文档",
+  "entries": [
+    {
+      "number": 0,
+      "title": "业务分流与独立策略调度",
+      "kind": "调度契约",
+      "status": "已有基础，业务分流待扩展",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/00-业务分流与独立策略调度.md",
+      "source_document_id": "00",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/0/微信图片_20261107113117_27_285.jpg",
+          "sha256": "1de42d1e76816508ce8e7b00b566833104eb62edb65e4160887a1e25eaab47e7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/0/微信图片_20261107113119_28_285.jpg",
+          "sha256": "90c8c13140449139c7117cf7546eef42fa255c4f32570b39077d016b30501d40"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/0/微信图片_20261107113122_29_285.jpg",
+          "sha256": "a292f1d69b44194d96879ea05e0ca0beb7796df960319ee39ef17b49616b62d6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/0/微信图片_20261107113124_30_285.jpg",
+          "sha256": "5771d79e6404ced5340207b35c4ffd899b59989e778bcb24bd93464d6f6d70cf"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "class IStrategy",
+          "line": 167,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "JobResult RunJob",
+          "line": 203,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "PortfolioResult RunPortfolio",
+          "line": 209,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "StrategyRegistry DefaultStrategies",
+          "line": 264,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "MakeConstructionPortfolioFactory",
+          "line": 62,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "title": "原始几何与搜索表示准备",
+      "kind": "共享几何服务",
+      "status": "已有核心，工艺轮廓待扩展",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/01-原始几何与搜索表示准备.md",
+      "source_document_id": "01",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/1/微信图片_20261107113126_31_285.jpg",
+          "sha256": "4f749e14b8cf3c01214fc9674ee363915036895360b1a24006f31ab80965d8d1"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/1/微信图片_20261107113127_32_285.jpg",
+          "sha256": "552ca27058e97cf99d01bf4f6c10cb91144044dd2e842d225ae24d2572032e65"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/1/微信图片_20261107113131_33_285.jpg",
+          "sha256": "0e3622ee43254aa7c6d1386e84e8df56651bcc71bc3da3430a7fa3b8bb15507e"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Shape",
+          "line": 21,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapeValid",
+          "line": 356,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool AngleAllowed",
+          "line": 301,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "std::vector<double> CandidateAngles",
+          "line": 310,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "double Area",
+          "line": 349,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingNfp.h",
+          "symbol": "class NfpCache",
+          "line": 80,
+          "sha256": "9e8b5be4cdc0c6c0542c39bde22a635746a85daec6deb1fe0eb9ce06e1e7aa11"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "title": "历史矩形阵列首项构造",
+      "kind": "历史构造参考",
+      "status": "不作为现成策略启用",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/02-历史矩形阵列首项构造.md",
+      "source_document_id": "1a",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/2/微信图片_20261107113132_34_285.jpg",
+          "sha256": "61ed594a2171eb22308f880617d26d1312307dfea361953f99e4911973f09533"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/2/微信图片_20261107113133_35_285.jpg",
+          "sha256": "8fdf4e2cce679259f1d08e4cc051a1308fe47a9d6e8f5f35a54ef5c16bb24d1c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/2/微信图片_20261107113134_36_285.jpg",
+          "sha256": "171030687d878fcda5db840af1d9dd29dc5d5f5c5fc70d8e4597c5dc2be4fd15"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/2/微信图片_20261107113136_37_285.jpg",
+          "sha256": "6badfb4d37082895dd6cc27e8ca8fcfd7cc4a8449db34af8c67ecd2be181af6d"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "MakeBatchRuleFactory",
+          "line": 14,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "title": "阵列减行减列的有限回溯",
+      "kind": "离散构造改进策略",
+      "status": "可复用组合数据，回溯策略待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/03-阵列减行减列的有限回溯.md",
+      "source_document_id": "1b",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/3/微信图片_20261107113141_38_285.jpg",
+          "sha256": "9f55e42eb7b1a1cb97a4a24699cb21473fe32ad65ffb757c495d02437553b15e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/3/微信图片_20261107113142_39_285.jpg",
+          "sha256": "fe3ecf2fdf918cd669d044b92edbd78a67da4196e4542c9f32a0741500994b2c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/3/微信图片_20261107113143_40_285.jpg",
+          "sha256": "c3686fab055b040f8b3c3e42d4be6ed9abbd4bb9fd545fd4a894d0492fd71530"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/3/微信图片_20261107113145_41_285.jpg",
+          "sha256": "c1a645047b08aba1ba1e2a9c76526870de83fa32411455807bd505681aa64ae2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/3/微信图片_20261107113146_42_285.jpg",
+          "sha256": "9716da04051c74ad2c4b5128c5009818c2ec07816b6ca89823e8d94db6f3be4e"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleLookahead.cpp",
+          "symbol": "RunRectangleLookahead",
+          "line": 22,
+          "sha256": "44b08df5357abfa2a0b7d1cdb0f57d5c2ac81a617b109778927a5b31a8c9961b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "title": "统一质量比较与包络紧凑指标",
+      "kind": "公共验评策略",
+      "status": "已有统一排名，纯紧凑目标需显式扩展",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/04-统一质量比较与包络紧凑指标.md",
+      "source_document_id": "02",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/4/微信图片_20261107113147_43_285.jpg",
+          "sha256": "8bb6bbed31bc13985c84f8007c6feb98360d937bd88de4405287ee99638d2f4b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/4/微信图片_20261107113148_44_285.jpg",
+          "sha256": "6c8f044a259db401d23363a5b15be924c7aed8a518c0e3cb5066b7bf37b307e2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/4/微信图片_20261107113149_45_285.jpg",
+          "sha256": "aafbddc34492bcaabef8701f91147f792ab83e8107bf70d3f98fbaf4a17c52b5"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "bool Eligible",
+          "line": 87,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRemnants.cpp",
+          "symbol": "EvaluateRemnants",
+          "line": 497,
+          "sha256": "e2b49489b92d8d5e1e6f471c92f1c9595093edab3500366f77db95f30b54043f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "enum class RankingPolicy",
+          "line": 111,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingAssessment.cpp",
+          "symbol": "AssessCandidate",
+          "line": 50,
+          "sha256": "1a224cc0cfc922f515e37a472a95eb770c9e43d2a186ebb41fa26ba2c9047b21"
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "title": "剩余多边形内域的全规格候选构造",
+      "kind": "独立构造策略",
+      "status": "候选几何可复用，通用内域待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/05-剩余多边形内域的全规格候选构造.md",
+      "source_document_id": "2a",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/5/微信图片_20261107113151_46_285.jpg",
+          "sha256": "a792b4bfa3a8e3e74265fb0a86353646d2aa476f8f043ef6dd2ebf3490c9dda2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/5/微信图片_20261107113152_47_285.jpg",
+          "sha256": "54807ae36924bc783b073e94b228a46d195e223f389bf3ab08cfb2357ff34429"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/5/微信图片_20261107113153_48_285.jpg",
+          "sha256": "3bfac83bf04b6f6d65a6ad16e1977a4beaf862e5960faad65c040acbdc1ccf7e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/5/微信图片_20261107113154_49_285.jpg",
+          "sha256": "cd0b7313e78503a37e5a01583a7f05c6cd2ed2f6692c826b3491e4c603a35b53"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingBeam.h",
+          "symbol": "PlacementsPerPart",
+          "line": 17,
+          "sha256": "f3a004a24da847d0389845478651662b6bf27489c210763a37ad1fa535619007"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfp.cpp",
+          "symbol": "NfpCache::Get",
+          "line": 382,
+          "sha256": "4453d57e837b4209d4463be87185b0bef96eb5d403001176ecfb844144ef73fb"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesConflict",
+          "line": 395,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "title": "主阵列与尾部余件联合构造",
+      "kind": "独立构造策略",
+      "status": "批量展开已有，尾部联合候选待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/06-主阵列与尾部余件联合构造.md",
+      "source_document_id": "2b",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/6/微信图片_20261107113155_50_285.jpg",
+          "sha256": "6c9d39d9ba7f3913a263e674a3989f856f5503c346e59bdc32585dfea809fd78"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/6/微信图片_20261107113156_51_285.jpg",
+          "sha256": "75b1cef3a9a383cbce3ca5b5457594bc0435c90c921558fbeeec4013a0654eb3"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/6/微信图片_20261107113157_52_285.jpg",
+          "sha256": "92d781b14f6d5f988fdaebcaecce4b08e683b65abd061ede970fc2393e4f0699"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/6/微信图片_20261107113158_53_285.jpg",
+          "sha256": "4c145d6544cd01ad3087d6ec51b5b52251fef3845197170b9b8953d29a14457a"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpCombinations.cpp",
+          "symbol": "BuildNfpCombinationPatterns",
+          "line": 133,
+          "sha256": "c322d17159db0d26b5e9c10ee608b0b966e7de55c6390392fadd8777632b39fa"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "MakeBatchRuleFactory",
+          "line": 14,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "title": "多排序独立构造竞赛",
+      "kind": "搜索组合策略",
+      "status": "接口与确定性排序已有，受限随机排序待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/07-多排序独立构造竞赛.md",
+      "source_document_id": "03",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/7/微信图片_20261107113159_54_285.jpg",
+          "sha256": "3aa75d9ddd768f21474a3d828253da35c2ba6c8389a7687513c6f3d2d9446526"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/7/微信图片_20261107113200_55_285.jpg",
+          "sha256": "b699887e6af1870b24cc1564e78b85443bec20d6e4e47d72e149ef97afe52a5b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/7/微信图片_20261107113202_56_285.jpg",
+          "sha256": "0475c381c782273bc45af0011e5c33b0ca04d7490a39d10ecee486c12f56a8b0"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "class IPartOrder",
+          "line": 8,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class RectanglePartOrder",
+          "line": 42,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "class ConstructionPortfolio",
+          "line": 78,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "std::uint64_t Seed",
+          "line": 121,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "title": "离散扫描线左底构造",
+      "kind": "独立构造策略",
+      "status": "有限栅格基线已有，源式扫描线待扩展",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/08-离散扫描线左底构造.md",
+      "source_document_id": "10",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/8/微信图片_20261107113203_57_285.jpg",
+          "sha256": "94d6d75d5f9137f84ffd12dcfcb5d68077b2c1793fb74b58cbe9e0ec25b4b641"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/8/微信图片_20261107113204_58_285.jpg",
+          "sha256": "2040c99ce5c6a0ce519f61eaaefb0cdf169a88ba58571f1cf9f0068b773af30d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/8/微信图片_20261107113205_59_285.jpg",
+          "sha256": "f839a53ac84ef667130ecd50bdac822c5e2f7aed5e891aa642e83c00f502e42a"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/8/微信图片_20261107113206_60_285.jpg",
+          "sha256": "b1c8865c933636ed0416e3f1ac510c40eb14a5a2f63ed5c39030d02d95c8943c"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRaster.h",
+          "symbol": "struct RasterStrategySettings",
+          "line": 7,
+          "sha256": "0b5e162bcb55b0cc3b9cd44be29b30fb4a4495174d49fb2132dd81485c932c19"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingConservativeRaster.cpp",
+          "symbol": "class ConservativeRaster",
+          "line": 81,
+          "sha256": "6d1feeb1ad7dbb31b1a011a54c2e97f4b4511dacc272a80b29a849d6e62ab6db"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingConservativeRaster.cpp",
+          "symbol": "bool CellOccupied",
+          "line": 50,
+          "sha256": "6d1feeb1ad7dbb31b1a011a54c2e97f4b4511dacc272a80b29a849d6e62ab6db"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingConservativeRaster.cpp",
+          "symbol": "bool FitsMask",
+          "line": 56,
+          "sha256": "6d1feeb1ad7dbb31b1a011a54c2e97f4b4511dacc272a80b29a849d6e62ab6db"
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "title": "数量优先阵列与延后整板补隙",
+      "kind": "独立构造策略",
+      "status": "批量基础已有，源式评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/09-数量优先阵列与延后整板补隙.md",
+      "source_document_id": "11",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/9/微信图片_20261107113207_61_285.jpg",
+          "sha256": "8be85525f531532e82a6d75fe2bd68bebd89056486209d969c188bbcbad8b13b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/9/微信图片_20261107113208_62_285.jpg",
+          "sha256": "3c22da557ea5fb8e23326bebc9cdab92f19ce1a6afae1045c08dce690134975f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/9/微信图片_20261107113209_63_285.jpg",
+          "sha256": "a3902dd1b9714c57fee0448a6684768f30c36006a01b55099840dc4cdf9c7f2f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/9/微信图片_20261107113211_64_285.jpg",
+          "sha256": "3e95a2855390453a9ad901d44685701d37822ab580501f9f8fcbab863cd51586"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class BatchRuleStrategy",
+          "line": 124,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "BatchFillTiming::OnStall",
+          "line": 14,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "title": "几何评分阵列与延后整板补隙",
+      "kind": "独立构造策略",
+      "status": "批量基础已有，独立评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/10-几何评分阵列与延后整板补隙.md",
+      "source_document_id": "12",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/10/微信图片_20261107113212_65_285.jpg",
+          "sha256": "ce521800b7ee809d6807f5f31603a559e7750dddde5e652cf16ed82d48b26319"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/10/微信图片_20261107113213_66_285.jpg",
+          "sha256": "a4c7adccc1527e9ec5d1ae8c1a04bfd946df1102f6cfe7bee72381a237085e63"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/10/微信图片_20261107113215_67_285.jpg",
+          "sha256": "8c0746643406034603979a4888483b0af3a4b605c9dc1c9812915c7ba23c0a9d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/10/微信图片_20261107113216_68_285.jpg",
+          "sha256": "7392d3ea889785506be0b1e0e697871bfa6d02bb5e8a41945e2f4dc684b343e5"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingInternal.h",
+          "symbol": "enum class PatternOrder",
+          "line": 55,
+          "sha256": "4ce68c7106faac65768901767c8bd8ece72b11d2576f8cd1fc318e1169780fa7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "std::optional<RectFit> MaxRects::Find",
+          "line": 48,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "title": "阵列与左底构造逐板竞争",
+      "kind": "复合构造策略",
+      "status": "竞赛框架已有，逐板包装待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/11-阵列与左底构造逐板竞争.md",
+      "source_document_id": "13",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/11/微信图片_20261107113217_69_285.jpg",
+          "sha256": "c4b5f0dcecc99d945d38896408d17a1b55812ebbcd2a46bb5db899d1568be486"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/11/微信图片_20261107113218_70_285.jpg",
+          "sha256": "c24bb817204f6d00c7b761432328bba84d8f84cff77606193a50f86e7e627cde"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/11/微信图片_20261107113219_71_285.jpg",
+          "sha256": "8072fd7c898f9a4fef092c316a74266d9990dd19d79da5bec03229a0f39b527e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/11/微信图片_20261107113220_72_285.jpg",
+          "sha256": "29c2cf2f37f61085f54a93f7697cb5ed39eeca317788f5a1fe1d2129c2cbf026"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "MakeConstructionPortfolioFactory",
+          "line": 62,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "class ConstructionPortfolio",
+          "line": 78,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRaster.h",
+          "symbol": "MakeConservativeRasterFactory",
+          "line": 25,
+          "sha256": "0b5e162bcb55b0cc3b9cd44be29b30fb4a4495174d49fb2132dd81485c932c19"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "MakeBatchRuleFactory",
+          "line": 14,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "title": "数量优先阵列与即时局部补隙",
+      "kind": "独立构造策略",
+      "status": "即时补隙已有，源式数量评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/12-数量优先阵列与即时局部补隙.md",
+      "source_document_id": "14",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/12/微信图片_20261107113222_73_285.jpg",
+          "sha256": "2884cab6a49fba8872f650b4a8df030eed82127bbb1c5c20df163e6a805ca6c5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/12/微信图片_20261107113223_74_285.jpg",
+          "sha256": "ae3a4dc7083446646a6abfbe024de4c9b95922e3762a577794c5e9257924f142"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/12/微信图片_20261107113224_75_285.jpg",
+          "sha256": "7fc840105bdcd02e9b05f062099792ecbdc1b2c086a4f4132e62346faa201c40"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/12/微信图片_20261107113226_76_285.jpg",
+          "sha256": "f9b91b16d7df1e318065f3c7ed07bc23fc8f160a5c54b058f024fa89e028b93e"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "enum class BatchFillTiming",
+          "line": 9,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "StrategyFactory MakeBatchRuleFactory",
+          "line": 257,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "PatternBatchMode::AfterBatch",
+          "line": 661,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "title": "几何评分阵列与即时局部补隙",
+      "kind": "独立构造策略",
+      "status": "即时补隙已有，源式几何评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/13-几何评分阵列与即时局部补隙.md",
+      "source_document_id": "15",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/13/微信图片_20261107113227_77_285.jpg",
+          "sha256": "02ccb0cf3ed7c04e99765d07366c0d5d9f7d4c9aa172f82ae9819a596267eed6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/13/微信图片_20261107113228_78_285.jpg",
+          "sha256": "67dfe02fda7d626c1d82a317425105f37d754fbc8df46abf29aff25658ad6837"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/13/微信图片_20261107113229_79_285.jpg",
+          "sha256": "c16c7e071ca12d9eeaf10a9f4e7ddb0f35dd83658bdbc932562932cc1f58a9dd"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/13/微信图片_20261107113230_80_285.jpg",
+          "sha256": "df8de04e65a5aecf016892134b0899102cf062ddfbf17d6275294d8873ef7549"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class BatchRuleStrategy",
+          "line": 124,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRuleStrategies.h",
+          "symbol": "MakeBatchRuleFactory",
+          "line": 14,
+          "sha256": "ff4ee0097ac981fd69c2d271f68bc95ccfa54cb1ab9fa93e83dc2c97e7a2941b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "title": "单规格递归阵列组合",
+      "kind": "有界组合构造策略",
+      "status": "组合基础可复用，完整候选提交待设计",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/14-单规格递归阵列组合.md",
+      "source_document_id": "16",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/14/微信图片_20261107113231_81_285.jpg",
+          "sha256": "1013f11b7d56247cc443670e259ced598cbd13f12e5ff09ba721f8112478758a"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/14/微信图片_20261107113233_82_285.jpg",
+          "sha256": "13b6a9c2155cddb9879378129846f282837e071574d5fee7963b770943c066b1"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/14/微信图片_20261107113234_83_285.jpg",
+          "sha256": "d7054b1c4b13f611c232b939ecd7e7d99add3b9b32cf0786341b06f97e2b1503"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/14/微信图片_20261107113235_84_285.jpg",
+          "sha256": "fa73e1cef4cc15090470b97a35f2b4e5be8622bd4936331129df9093e57108ea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/14/微信图片_20261107113236_85_285.jpg",
+          "sha256": "cb1068f4f24d4e321efa191250094218427b82e968e9e4499f3a692ccb5ff110"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleLookahead.cpp",
+          "symbol": "RunRectangleLookahead",
+          "line": 22,
+          "sha256": "44b08df5357abfa2a0b7d1cdb0f57d5c2ac81a617b109778927a5b31a8c9961b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingMixedAssemblyRules.cpp",
+          "symbol": "RunMixedAssemblyRules",
+          "line": 82,
+          "sha256": "cc666f7fe5358812dc51c02a7ef14d8944feebcc01c4e8f96813e7099e815ae4"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "title": "多规格递归阵列与孔内联合构造",
+      "kind": "有界组合构造策略",
+      "status": "组合基础可复用，完整候选提交待设计",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/15-多规格递归阵列与孔内联合构造.md",
+      "source_document_id": "17",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/15/微信图片_20261107113237_86_285.jpg",
+          "sha256": "8ed95469b7ab7eb9393ec69bf13e7dee8304573a7c147062adb4900e458e640c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/15/微信图片_20261107113239_87_285.jpg",
+          "sha256": "1bbc89c44618bdb078a092de9454b90a818299ff38f3b3cc4e73fb01f73a0026"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/15/微信图片_20261107113240_88_285.jpg",
+          "sha256": "9212f2d1dd522668e8091695c3b6fa2c2a3eb002bdfd04f5f7336985b0dc6510"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/15/微信图片_20261107113241_89_285.jpg",
+          "sha256": "393b42f5a208a10b54e7fafba0734f540ebd57bc631f833c6e62da11449476b0"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/15/微信图片_20261107113242_90_285.jpg",
+          "sha256": "e3fa55131a972f88a2d94495f633713e05ea14a390c89d43bf3f6775071549dd"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleLookahead.cpp",
+          "symbol": "RunRectangleLookahead",
+          "line": 22,
+          "sha256": "44b08df5357abfa2a0b7d1cdb0f57d5c2ac81a617b109778927a5b31a8c9961b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingMixedAssemblyRules.cpp",
+          "symbol": "RunMixedAssemblyRules",
+          "line": 82,
+          "sha256": "cc666f7fe5358812dc51c02a7ef14d8944feebcc01c4e8f96813e7099e815ae4"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "title": "带选择序列去重的随机多次构造",
+      "kind": "随机初解策略",
+      "status": "种子接口已有，随机阵列解码器待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/16-带选择序列去重的随机多次构造.md",
+      "source_document_id": "18",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/16/微信图片_20261107113244_91_285.jpg",
+          "sha256": "f6ee935edac8eef49dc9a75df4934dd4b60283f0f07a6e1bae075b867d41d813"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/16/微信图片_20261107113245_92_285.jpg",
+          "sha256": "560f49dd0cc0a7f398d6f1371d8d16544b31cb8cfe11b3dcf4a7bdd5a60e34e1"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/16/微信图片_20261107113246_93_285.jpg",
+          "sha256": "45511676f54e55f1bfced49c6c09a497d4ead91c3eeb6be40e60612e30f919df"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/16/微信图片_20261107113248_94_285.jpg",
+          "sha256": "eacb1f597862e2ad0316b2d28296733eabc4c0bbc0c64fae584897f18150f697"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/16/微信图片_20261107113249_95_285.jpg",
+          "sha256": "af9e700821e1509cd07f2b7dddc7eb0c76fb5e8d27a9aedad0a86d23ccf0f727"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "std::uint64_t Seed",
+          "line": 121,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "class ConstructionPortfolio",
+          "line": 78,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "title": "四块正交绕圈阵列",
+      "kind": "特化构造策略",
+      "status": "风车组合相邻能力已有，源式绕圈待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/17-四块正交绕圈阵列.md",
+      "source_document_id": "19",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/17/微信图片_20261107113250_96_285.jpg",
+          "sha256": "d33c0b19610c9ed40c5e27cd7e95cc85aef6aaee4a73e6b7958dc1372d7c26ce"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/17/微信图片_20261107113252_97_285.jpg",
+          "sha256": "ffeafa782dca075d329ff4ece9be595b9e23727220f36810bffa0e8cc71f01f6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/17/微信图片_20261107113254_98_285.jpg",
+          "sha256": "64a8afb9ed31215bf53f6eb7ba5e955e8482d2dfdfb1ca7791bfd2dcf98abbb7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/17/微信图片_20261107113257_99_285.jpg",
+          "sha256": "b56e219be57d5d0a981b7c93f7058a55fcf2ed243f838ddcb02c00f3a4d9dde4"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectanglePinwheel.cpp",
+          "symbol": "RunRectanglePinwheel",
+          "line": 59,
+          "sha256": "2c1efbf49eff4971b6a7785b1127afe76fbf350193f562be6e244c26c532be3e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRepeatCell.h",
+          "symbol": "MakeRectangleRepeatCellFactory",
+          "line": 17,
+          "sha256": "d731ebe17b78ad5124cf19c07f326051b8540bd4893088df3540427674f13e00"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "title": "NFP 参考点域与共享几何缓存",
+      "kind": "共享几何服务",
+      "status": "已有正式内核，支持范围明确",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/18-NFP 参考点域与共享几何缓存.md",
+      "source_document_id": "20",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/18/微信图片_20261107113301_100_285.jpg",
+          "sha256": "73b5fde97c3ae43d57e0ac807576ddb709d2a62fd632d42f64e7b70fcf0e52a3"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/18/微信图片_20261107113305_101_285.jpg",
+          "sha256": "ba4a774939f2d5fc6c22b3111026e93a98f89804382210c670fd322d3f164962"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/18/微信图片_20261107113307_102_285.jpg",
+          "sha256": "533c54360745732f2ff33d6cf5f7124091323cf4ae361f334f209991306ecde1"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/18/微信图片_20261107113311_103_285.jpg",
+          "sha256": "1a2c7a2626fafe3c8575b9daa362d3e6c0a6fdb10fade3802f1eed95c34571b6"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingNfp.h",
+          "symbol": "class NfpCache",
+          "line": 80,
+          "sha256": "9e8b5be4cdc0c6c0542c39bde22a635746a85daec6deb1fe0eb9ce06e1e7aa11"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfp.cpp",
+          "symbol": "NfpCache::Prepare",
+          "line": 498,
+          "sha256": "4453d57e837b4209d4463be87185b0bef96eb5d403001176ecfb844144ef73fb"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfp.cpp",
+          "symbol": "NfpCache::Get",
+          "line": 382,
+          "sha256": "4453d57e837b4209d4463be87185b0bef96eb5d403001176ecfb844144ef73fb"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.h",
+          "symbol": "class NfpPlacementGenerator",
+          "line": 49,
+          "sha256": "0a3063472254e9fbf0902a138ff68af45de306bf25fb79d0e781a8d06faa3905"
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "title": "NFP 节距驱动的分区阵列",
+      "kind": "独立构造策略",
+      "status": "件对组合已有，周期节距与收尾调度待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/19-NFP 节距驱动的分区阵列.md",
+      "source_document_id": "21",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/19/微信图片_20261107113324_104_285.jpg",
+          "sha256": "50983fb52baeeead6bb58d47f1ac69659b6eb23fce3489afab08011d35af5a92"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/19/微信图片_20261107113325_105_285.jpg",
+          "sha256": "8368fd56dd7148f5b6405ba8b231d597a46e6d67b3f33fad1bc031d27b2c5fe1"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/19/微信图片_20261107113326_106_285.jpg",
+          "sha256": "c9d117476fb3b46b1435c3bbe73c92c375cc8ab26771a2e45f983515b2ecd94b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/19/微信图片_20261107113327_107_285.jpg",
+          "sha256": "8e34cdd8c93c137dd0585f668cc905a1d6024b43cdfc20d92f6d58b4c7c27cd0"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfp.cpp",
+          "symbol": "NfpCache::Get",
+          "line": 382,
+          "sha256": "4453d57e837b4209d4463be87185b0bef96eb5d403001176ecfb844144ef73fb"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpCombinations.cpp",
+          "symbol": "BuildNfpCombinationPatterns",
+          "line": 133,
+          "sha256": "c322d17159db0d26b5e9c10ee608b0b966e7de55c6390392fadd8777632b39fa"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        }
+      ]
+    },
+    {
+      "number": 20,
+      "title": "NFP 纯靠接逐件构造",
+      "kind": "独立构造策略",
+      "status": "落点几何已有，独立靠接评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/20-NFP 纯靠接逐件构造.md",
+      "source_document_id": "22",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/20/微信图片_20261107113328_108_285.jpg",
+          "sha256": "142aa7e85d2e3c61aecce92a17887732bd05ebddeb932362d46f85148da318b4"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/20/微信图片_20261107113330_109_285.jpg",
+          "sha256": "72fe0e0c0943585fe8be675da627da45b28ad275e4fdd03b93a4d645d396ed49"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/20/微信图片_20261107113331_110_285.jpg",
+          "sha256": "0d190d4f1722d57fd99ce08eeaf5a9bf7d8ad4f1050c6ef39591097d33ecf88d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/20/微信图片_20261107113332_111_285.jpg",
+          "sha256": "953beee3fb9fcb5b25b44babd4a40d6988b6c300ee42ab0c0c2eb9626ffe1e26"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingContactRules.cpp",
+          "symbol": "Result RunContactRules(",
+          "line": 1045,
+          "sha256": "3b98ddd8d73c095c78d763753e6785a4e9f5a1218a0f19f784148c6d3b83d243"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesConflict",
+          "line": 395,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "StrategyRegistry DefaultStrategies",
+          "line": 264,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 21,
+      "title": "NFP 主方向与靠接混合构造",
+      "kind": "独立构造策略",
+      "status": "候选生成已有，方向靠接评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/21-NFP 主方向与靠接混合构造.md",
+      "source_document_id": "23",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/21/微信图片_20261107113333_112_285.jpg",
+          "sha256": "5c2c4d7a1d4694367ef2aaed79dd022de49e7915972b31f94813955855a691e6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/21/微信图片_20261107113334_113_285.jpg",
+          "sha256": "2a2e048ca5113d89f1e421a09c01adfa786f1d01aea6da52a4dab6b05961ddbe"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/21/微信图片_20261107113335_114_285.jpg",
+          "sha256": "1a6f0a54bfdf2ae59f56c0a37459faa0b5833cae8ea5231cb41303b30348444e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/21/微信图片_20261107113337_115_285.jpg",
+          "sha256": "3ec7e04115b965073805b3c06aac270824f88a978618d75339f01302bd30b237"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesHaveCommonEdge",
+          "line": 388,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "enum class RankingPolicy",
+          "line": 111,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        }
+      ]
+    },
+    {
+      "number": 22,
+      "title": "首件定宽的长条 NFP 排样",
+      "kind": "独立构造策略",
+      "status": "NFP 基础已有，定带宽构造待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/22-首件定宽的长条 NFP 排样.md",
+      "source_document_id": "24",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/22/微信图片_20261107113338_116_285.jpg",
+          "sha256": "f111c08a566e9abe4c44cfa6580fd268abe00ffaae623fdf2dec0e68f31b44e6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/22/微信图片_20261107113339_117_285.jpg",
+          "sha256": "cbd4f8f44ebaccf8a619ab5b9dedc09771c8feab52178e8d3a2ccb65e0323e81"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/22/微信图片_20261107113341_118_285.jpg",
+          "sha256": "2825390e148cc723b137caf85e6fb6adb8803caa28a97609fb4bdde51cbb998f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/22/微信图片_20261107113342_119_285.jpg",
+          "sha256": "b212893bbfe8c8282147844ee0a94c15143bc73c66e662c02a9123ed8e73ec90"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingBeam.h",
+          "symbol": "FirstPartIndex",
+          "line": 15,
+          "sha256": "f3a004a24da847d0389845478651662b6bf27489c210763a37ad1fa535619007"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRemnantSearch.cpp",
+          "symbol": "Result RunStripRules",
+          "line": 13,
+          "sha256": "98a4df3e3f8cce45be2f0fd9cff698ddb63f4f75976e89593cb22ae81af6f9b7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool InsideSheet",
+          "line": 425,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        }
+      ]
+    },
+    {
+      "number": 23,
+      "title": "数量分组与同边共边阵列",
+      "kind": "工艺约束构造策略",
+      "status": "基础共边判定已有，分组规则待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/23-数量分组与同边共边阵列.md",
+      "source_document_id": "25",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/23/微信图片_20261107113343_120_285.jpg",
+          "sha256": "b748b6df5b246a1a2765d9f11aee936b9ac0a6cba9d5131aadc7a4bf85be0f12"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/23/微信图片_20261107113345_121_285.jpg",
+          "sha256": "cc08c40b3d7ec750010e94e86b33011ad302b1a4089359b8d8487db7d5693576"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/23/微信图片_20261107113346_122_285.jpg",
+          "sha256": "9bffca10c2766eb20d6f75ac7f554865e2893e7eb420990a1c2b723f68e3c50a"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/23/微信图片_20261107113348_123_285.jpg",
+          "sha256": "cc06517ad0f8322ce3ccec6dc4d8dd29bc2f06ffbdd549812a28413c1203789f"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "bool AllowCommonEdges",
+          "line": 54,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesHaveCommonEdge",
+          "line": 388,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesConflict",
+          "line": 395,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSeamAssembly.cpp",
+          "symbol": "RunSeamAssembly",
+          "line": 54,
+          "sha256": "20e5d2290a8b41dbbf826f90b343a563e8eacfdd4f5ac48e0b9dd9652b3d8fc0"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingAxisCompaction.h",
+          "symbol": "CommonEdgeGroupMoves",
+          "line": 29,
+          "sha256": "8611361f07ea10fe7e8c006f93ec90a00a657f9c75e0181b3fde265916abc747"
+        }
+      ]
+    },
+    {
+      "number": 24,
+      "title": "双可行域的共边与安全间距构造",
+      "kind": "工艺约束 NFP 构造策略",
+      "status": "基础几何可复用，双域与组匹配待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/24-双可行域的共边与安全间距构造.md",
+      "source_document_id": "26",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/24/微信图片_20261107113350_124_285.jpg",
+          "sha256": "d164c3d5ee2f304319559f016f0e7bd61d731bcb79289e4218356d866d6ac65f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/24/微信图片_20261107113352_125_285.jpg",
+          "sha256": "39b38b66ffaaec188ba05a452b475c17e6e5a38838a8dd5067435875efa1ae60"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/24/微信图片_20261107113353_126_285.jpg",
+          "sha256": "04570055cea8cd718ddd72b48fbab66808a8eae1812c15904fe35d20a8c11ba7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/24/微信图片_20261107113355_127_285.jpg",
+          "sha256": "4b6528369ab7fa22dddd2860479715baa39c0e53186bda67641b105f9b7c4e4a"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingNfp.h",
+          "symbol": "NfpLookup Get",
+          "line": 87,
+          "sha256": "9e8b5be4cdc0c6c0542c39bde22a635746a85daec6deb1fe0eb9ce06e1e7aa11"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.cpp",
+          "symbol": "NfpPlacementQuery Find",
+          "line": 242,
+          "sha256": "5bd61729d1ecbe19f47b3e7c0f184aa0edd07a675ff13c8cf05c09022fb9c2b5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShareStraightBoundary",
+          "line": 165,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 25,
+      "title": "异形库存外部障碍化构造",
+      "kind": "独立构造策略",
+      "status": "须先扩展异形库存与固定障碍模型",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/25-异形库存外部障碍化构造.md",
+      "source_document_id": "27",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/25/微信图片_20261107113400_128_285.jpg",
+          "sha256": "7323cbb7690b7155406b02cd2e48d6f4ac8e839ec39de3f60112c6cccaa50f55"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/25/微信图片_20261107113402_129_285.jpg",
+          "sha256": "e58f14bd34f13e6a4c92821fcbc3683ff9d05d58720aaf3f59087767124441cd"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/25/微信图片_20261107113405_130_285.jpg",
+          "sha256": "c5dc56b1d87bd62469165f3833c8330d4809b9d363ff01c8ebbee7fee1609257"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/25/微信图片_20261107113407_131_285.jpg",
+          "sha256": "de30ce4914b9dcba3b1073249428b61c9123023103e374929e0127d2d13e6a2b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/25/微信图片_20261107113409_132_285.jpg",
+          "sha256": "138ab4bd8621bbc673562347d0682ca3bdbf3a187064c80ea3c3fbe0910ff9b5"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Stock",
+          "line": 37,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool InsideSheet",
+          "line": 425,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.h",
+          "symbol": "class NfpPlacementGenerator",
+          "line": 49,
+          "sha256": "0a3063472254e9fbf0902a138ff68af45de306bf25fb79d0e781a8d06faa3905"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 26,
+      "title": "异形板内接矩形与外围补排",
+      "kind": "复合构造策略",
+      "status": "矩形子策略可复用，异形板契约待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/26-异形板内接矩形与外围补排.md",
+      "source_document_id": "28",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/26/微信图片_20261107113412_133_285.jpg",
+          "sha256": "0d0392aabc4b4f0f9067f8f6238de8a5e95fa64e7d1aa55bba086363b38cde6e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/26/微信图片_20261107113414_134_285.jpg",
+          "sha256": "c421398c33d6ef87d0213583b544a726b54ba0ab711a0a8acc4aed60a615e392"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/26/微信图片_20261107113415_135_285.jpg",
+          "sha256": "81bdf11434b12dca5802d0d84276d3023d5fa0fc7c6729cdf9f7aff1906a7d68"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/26/微信图片_20261107113416_136_285.jpg",
+          "sha256": "5e697638244a6f786f532ce303176cc4ec3d88ae9d28b424637e1fa619fad7ee"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Stock",
+          "line": 37,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingAxisCompaction.h",
+          "symbol": "MakeAxisCompactionStage",
+          "line": 50,
+          "sha256": "8611361f07ea10fe7e8c006f93ec90a00a657f9c75e0181b3fde265916abc747"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool InsideSheet",
+          "line": 425,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        }
+      ]
+    },
+    {
+      "number": 27,
+      "title": "固定布局上的 NFP 增量补隙",
+      "kind": "共享补隙服务",
+      "status": "落点服务已有，统一增补接口待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/27-固定布局上的 NFP 增量补隙.md",
+      "source_document_id": "29",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/27/微信图片_20261107113418_137_285.jpg",
+          "sha256": "8f43433da968a9b014c74d494f4a68761525ac7eab0a0df403382d927b582d89"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/27/微信图片_20261107114737_138_285.jpg",
+          "sha256": "af0ce20d192daebe3b25049b0c95837468bc25da8e65ec362e42c18c89ce8207"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/27/微信图片_20261107114742_139_285.jpg",
+          "sha256": "ac7addd1c2bc6315a8e64e3f6602cc9dea90e68834057e2fabfed8e51ed01944"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/27/微信图片_20261107114745_140_285.jpg",
+          "sha256": "fcbd9be05a457af4b2e70f864b456c84e8732d08c3f52a9e18775c157c06161f"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingNfpPlacement.h",
+          "symbol": "class NfpPlacementGenerator",
+          "line": 49,
+          "sha256": "0a3063472254e9fbf0902a138ff68af45de306bf25fb79d0e781a8d06faa3905"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "MakeNfpRefillStage",
+          "line": 83,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingDomainRepair.h",
+          "symbol": "MakeDomainRepairStage",
+          "line": 6,
+          "sha256": "c0d99d296729dddf0d8dc04bcf50e88de435432e35a9104dee1f57ae25439e3c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingReassembly.h",
+          "symbol": "MakeNfpReassemblyStage",
+          "line": 21,
+          "sha256": "3e3204719ba60a1e8222ce20def3cbb7b3310838f6532cc1942e6c1d8b86320c"
+        }
+      ]
+    },
+    {
+      "number": 28,
+      "title": "剩余矩形上的接触评分构造",
+      "kind": "独立构造策略",
+      "status": "MaxRects 空域已有，源式接触评分待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/28-剩余矩形上的接触评分构造.md",
+      "source_document_id": "30",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/28/微信图片_20261107114753_141_285.jpg",
+          "sha256": "089445885d21cda0a5921838c6dde31e57f124827a001ebce1c5b48aba4b2005"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/28/微信图片_20261107114754_142_285.jpg",
+          "sha256": "22d272aff271c2db34fe1b4edcf6a3808245ca8e9001f189ef3856cf4c263725"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/28/微信图片_20261107114755_143_285.jpg",
+          "sha256": "ad3f5e860958baa4300b4af68a9383af439b944cc4a1f610c817210c81d2d97e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/28/微信图片_20261107114756_144_285.jpg",
+          "sha256": "93190edca8f6aab422c8d2b4565943f861e07c61c425f53936d866ce86f54800"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/28/微信图片_20261107114800_145_285.jpg",
+          "sha256": "0c50d9646558c1f8e1fb7823cd0e6677ce2eeda91381ac758dee4ecdb8c92623"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "std::optional<RectFit> MaxRects::Find",
+          "line": 48,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingInternal.h",
+          "symbol": "enum class RectScore",
+          "line": 39,
+          "sha256": "4ce68c7106faac65768901767c8bd8ece72b11d2576f8cd1fc318e1169780fa7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class OrderedRectangleStrategy",
+          "line": 32,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        }
+      ]
+    },
+    {
+      "number": 29,
+      "title": "业务配对件的矩形邻近联合构造",
+      "kind": "工艺约束构造策略",
+      "status": "须增加显式配对与全流程邻近约束",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/29-业务配对件的矩形邻近联合构造.md",
+      "source_document_id": "31",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/29/微信图片_20261107114801_146_285.jpg",
+          "sha256": "53117c332c043ec0c16a76791f4e3c72f504d45c8ff9ef00f206da34ab8d803f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/29/微信图片_20261107114802_147_285.jpg",
+          "sha256": "3bb2efac0c4a2d674097a3db2e001ed320caa69c3f672032b0d29df53375edd9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/29/微信图片_20261107114803_148_285.jpg",
+          "sha256": "5bbc680b56bdfe67b7ee56b61b7e5737cd2bf45e3c46c94f223b8baf11bd9fdf"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Part",
+          "line": 28,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Placement",
+          "line": 64,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingAxisCompaction.h",
+          "symbol": "CommonEdgeGroupMoves",
+          "line": 29,
+          "sha256": "8611361f07ea10fe7e8c006f93ec90a00a657f9c75e0181b3fde265916abc747"
+        }
+      ]
+    },
+    {
+      "number": 30,
+      "title": "固定末板实例的缩域重构",
+      "kind": "布局改进策略",
+      "status": "已有有限比例缩域，二分控制与实例契约需独立设计",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/30-固定末板实例的缩域重构.md",
+      "source_document_id": "32",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/30/微信图片_20261107114804_149_285.jpg",
+          "sha256": "71a1701df4fa12517573a11ce04b90c6d8058769d2a972c63ea65e4ff9b7897c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/30/微信图片_20261107114805_150_285.jpg",
+          "sha256": "4edf0e3381d3bf108bdaa92167787e426f6c1b205d9267b77411cd286c456ffa"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/30/微信图片_20261107114806_151_285.jpg",
+          "sha256": "3d687a118576823d60a1abe80ba6caa3981684b9a35bb72b728dc033cb432414"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/30/微信图片_20261107114807_152_285.jpg",
+          "sha256": "52de5ebc405ec084a7381312b55bfd15bece7c1f6bfb41e425d2b87fb0afae3c"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRemnantSearch.cpp",
+          "symbol": "Result RunStripRules",
+          "line": 13,
+          "sha256": "98a4df3e3f8cce45be2f0fd9cff698ddb63f4f75976e89593cb22ae81af6f9b7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "class IPostProcessor",
+          "line": 16,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        }
+      ]
+    },
+    {
+      "number": 31,
+      "title": "每板单品矩形阵列",
+      "kind": "工艺约束构造策略",
+      "status": "阵列展开可复用，单品与生产数量规则待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/31-每板单品矩形阵列.md",
+      "source_document_id": "40",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/31/微信图片_20261107114808_153_285.jpg",
+          "sha256": "f905715bc570fe699e7c2526e1651744dc0a7ff2316d16efd4d2c90d9a5fbec6"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/31/微信图片_20261107114809_154_285.jpg",
+          "sha256": "fed03d515c7fe5da0f2bba17cd9afcde85d778f845a358f7ba091179178f31ce"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/31/微信图片_20261107114810_155_285.jpg",
+          "sha256": "be6774244c69de277598f4c4d7d5016957b25c409487042c3a73101061c54794"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/31/微信图片_20261107114811_156_285.jpg",
+          "sha256": "0280b0ca2f6cdd5d3aa772632ad6b0a974bee9bd3afb68357a3f9155552ece5d"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingSolver.cpp",
+          "symbol": "Result RunRules",
+          "line": 53,
+          "sha256": "08c42155cb11edf991e04697f6fd78cfbe9bcd3529212debbd51e03517e89c88"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleSearch.cpp",
+          "symbol": "RunRectangleShelves",
+          "line": 42,
+          "sha256": "1f581cc8b6efa4bb2cb54913f024979407b8a57c71a918840e5736eb57ec6e2d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Stock",
+          "line": 37,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 32,
+      "title": "同宽单列续排",
+      "kind": "工艺约束构造策略",
+      "status": "行列基础已有，单列契约待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/32-同宽单列续排.md",
+      "source_document_id": "41",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/32/微信图片_20261107114812_157_285.jpg",
+          "sha256": "4908b20618f18949659a2263b0317353cd9878664b89f26d282dddc6026fb6a4"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/32/微信图片_20261107114813_158_285.jpg",
+          "sha256": "1457070b751d60eedc23d001c75a817c4709a1a98e6601af5af6173c751cc50d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/32/微信图片_20261107114814_159_285.jpg",
+          "sha256": "1538d9978675cf94048bf5b097abf85ed68e031c8816eaad12c514a1fb7cee6d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/32/微信图片_20261107114815_160_285.jpg",
+          "sha256": "b56bf7e39b8c937582497b86154f02578bb2634051ce9ddf44c682325708b62d"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class RectangleShelfStrategy",
+          "line": 193,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleSearch.cpp",
+          "symbol": "RunRectangleShelves",
+          "line": 42,
+          "sha256": "1f581cc8b6efa4bb2cb54913f024979407b8a57c71a918840e5736eb57ec6e2d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "std::vector<double> CandidateAngles",
+          "line": 310,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingValidation.cpp",
+          "symbol": "Validation Validate",
+          "line": 46,
+          "sha256": "71a624d92cfb804d600e0c4921d64bfa008c983183b27caf49f0b3aae8a9b446"
+        }
+      ]
+    },
+    {
+      "number": 33,
+      "title": "锯切分组与铣削余区混排",
+      "kind": "业务复合策略",
+      "status": "几何子构造可复用，工艺模型待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/33-锯切分组与铣削余区混排.md",
+      "source_document_id": "42",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/33/微信图片_20261107114816_161_285.jpg",
+          "sha256": "30aeec0dd2ed8028357c6c259fcc9035046f8abf6d6fb162a27a68e6927b9b90"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/33/微信图片_20261107114817_162_285.jpg",
+          "sha256": "30cf30eaccee84e74879ab96872450cbc49b589fd619bfc00f2bb1031a114fde"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/33/微信图片_20261107114818_163_285.jpg",
+          "sha256": "c932677009973c5d7206c4ed305ad1161ad84227753d2e8110ff03cedc6b774b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/33/微信图片_20261107114819_164_285.jpg",
+          "sha256": "3f624be638c822b27ceacc2b45ffcf2e8bdfc5b56fa7b28041abbed6ba5e608d"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Problem",
+          "line": 45,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleSearch.cpp",
+          "symbol": "RunRectanglePatternShelves",
+          "line": 321,
+          "sha256": "1f581cc8b6efa4bb2cb54913f024979407b8a57c71a918840e5736eb57ec6e2d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingMixedAssemblyRules.cpp",
+          "symbol": "RunMixedAssemblyRules",
+          "line": 82,
+          "sha256": "cc666f7fe5358812dc51c02a7ef14d8944feebcc01c4e8f96813e7099e815ae4"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "class IPostProcessor",
+          "line": 16,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 34,
+      "title": "同高同行与同宽同列的一刀切分组",
+      "kind": "切分约束构造策略",
+      "status": "行列组合已有，切割树待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/34-同高同行与同宽同列的一刀切分组.md",
+      "source_document_id": "43",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/34/微信图片_20261107114820_165_285.jpg",
+          "sha256": "c4f3b4136ef9c8d3c1463a9588faee4dcd9414cdb9e6b5409c05f2208841ed18"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/34/微信图片_20261107114821_166_285.jpg",
+          "sha256": "b5c2469f82f057b2900f28dace2416e787eac4009d0f492961a97ea234aad642"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/34/微信图片_20261107114823_167_285.jpg",
+          "sha256": "35431443eb5307c8a4263a286fe4d4a8b17930ec84586490eaf545757f363695"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/34/微信图片_20261107114824_168_285.jpg",
+          "sha256": "571f246bba33cfcfbe6dd428b1728a6b947e70d9e6029c7fb0403693592e87a7"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/34/微信图片_20261107114826_169_285.jpg",
+          "sha256": "d4aa71995f23b54276e927d40c304dbd8d85a32508c6392e1ce0d3cf6f3d1efd"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingStrategies.cpp",
+          "symbol": "class RectanglePatternShelfStrategy",
+          "line": 202,
+          "sha256": "f21260b861366eb3b27224fb53a4e64b113cc0c77a2d596a8e2d537b772b3cea"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleSearch.cpp",
+          "symbol": "RunRectanglePatternShelves",
+          "line": 321,
+          "sha256": "1f581cc8b6efa4bb2cb54913f024979407b8a57c71a918840e5736eb57ec6e2d"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleMerge.cpp",
+          "symbol": "RunRectangleMerge",
+          "line": 39,
+          "sha256": "b52865ca6884244fabfa0fc46e734a2bf56f7094207ba0a593541620bb13e3c0"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        }
+      ]
+    },
+    {
+      "number": 35,
+      "title": "宿主形状内的标签定位",
+      "kind": "独立定位策略",
+      "status": "需专用输入与评价，非排样工厂直接复用",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/35-宿主形状内的标签定位.md",
+      "source_document_id": "44",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/35/微信图片_20261107114829_170_285.jpg",
+          "sha256": "2216dcf99742802507908a279e0351a1bc719e9fd70b7111fe664d60d7db938a"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/35/微信图片_20261107114831_171_285.jpg",
+          "sha256": "28a46b95f5b484f7c17b6a5113218881589bbe907247a61ebfe9a63a68ccaeca"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/35/微信图片_20261107114834_172_285.jpg",
+          "sha256": "e8ceeca19ca01faf1aded65b52389370b9cdad60bb72e3746dc02304a9018482"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/35/微信图片_20261107114836_173_285.jpg",
+          "sha256": "dbd502a84385da7596a8b7eadacac65a5ed0e7859fa821db41ed3efe38d00fb6"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Shape",
+          "line": 21,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapeValid",
+          "line": 356,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesConflict",
+          "line": 395,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRaster.h",
+          "symbol": "MakeConservativeRasterFactory",
+          "line": 25,
+          "sha256": "0b5e162bcb55b0cc3b9cd44be29b30fb4a4495174d49fb2132dd81485c932c19"
+        }
+      ]
+    },
+    {
+      "number": 36,
+      "title": "卷料窗口接续与末窗收缩",
+      "kind": "连续材料调度策略",
+      "status": "暂不实现，保留方案与依赖",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/36-卷料窗口接续与末窗收缩.md",
+      "source_document_id": "45",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/36/微信图片_20261107114838_174_285.jpg",
+          "sha256": "52232269f7bfb508b42cf46cb9b2c3ccb3858aac725f35fcf2606b206953b212"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/36/微信图片_20261107114841_175_285.jpg",
+          "sha256": "025b6b4cef0ccd93fa10db0898ede084052c0c52146231afa59a632e446fc09f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/36/微信图片_20261107114843_176_285.jpg",
+          "sha256": "30d251c905460cb55227d5683362beea5c515ed6bde251867cf3d74214768424"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/36/微信图片_20261107114846_177_285.jpg",
+          "sha256": "2cddb3e60c83d5172dc850687f8b24e1c0c03e2e68d41768dbee2bcdd361c898"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/36/微信图片_20261107114848_178_285.jpg",
+          "sha256": "a71dbd15ad78bda9761bae49f913cadd6a5cb7780b026409058d8d290db0cc73"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Stock",
+          "line": 37,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Layout",
+          "line": 72,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "PortfolioResult RunPortfolio",
+          "line": 209,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "MakeConstructionPortfolioFactory",
+          "line": 62,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRemnantSearch.cpp",
+          "symbol": "Result RunStripRules",
+          "line": 13,
+          "sha256": "98a4df3e3f8cce45be2f0fd9cff698ddb63f4f75976e89593cb22ae81af6f9b7"
+        }
+      ]
+    },
+    {
+      "number": 37,
+      "title": "同一板上的多策略完整候选竞赛",
+      "kind": "复合构造策略",
+      "status": "任务级竞赛已有，逐板竞赛适配待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/37-同一板上的多策略完整候选竞赛.md",
+      "source_document_id": "46",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/37/微信图片_20261107114850_179_285.jpg",
+          "sha256": "0241b16dc6a7a771f2de9e1a9e5527510135fbe175d9d85bfb3a193d97ca9ee9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/37/微信图片_20261107114851_180_285.jpg",
+          "sha256": "1e38f50ffd97bf2e7285cb1ed936c08d5a4eddb2b55349fb00cb195570cb4d02"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/37/微信图片_20261107114852_181_285.jpg",
+          "sha256": "1471d6ecceb2517efdaab37305e2a8be5101d6dfea4e8f78a0ac3bd893e50cd8"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/37/微信图片_20261107114853_182_285.jpg",
+          "sha256": "0d6689f223e9929380b715f59a80f7943fa6a47dee6274ef878393ad269ea3ba"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "class ConstructionPortfolio",
+          "line": 78,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingJobs.cpp",
+          "symbol": "PortfolioResult RunPortfolio",
+          "line": 209,
+          "sha256": "7c96817e79d1fc01aaccafd0be22cbc240e65116c41297ec0557ee9aff1623d9"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "MakeConstructionPortfolioFactory",
+          "line": 62,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        }
+      ]
+    },
+    {
+      "number": 38,
+      "title": "多阵列块的有界递归组合",
+      "kind": "历史构造参考",
+      "status": "前瞻与块库可复用，源式递归应独立受控实现",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/38-多阵列块的有界递归组合.md",
+      "source_document_id": "47",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/38/微信图片_20261107114854_183_285.jpg",
+          "sha256": "9c8ad8e86c1e2147930c4cdb7f6366b31c9e3fcda3a3f9bde2486102d6f4e836"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/38/微信图片_20261107115332_184_285.jpg",
+          "sha256": "f9d43629d0cd6b3fb18b3f4ef61e65c615806aab9652ed05be2e438af3cba079"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/38/微信图片_20261107115335_185_285.jpg",
+          "sha256": "4e068774313a6e25200712ad6072496df91c1f4d02c4e1b3e72082fbaa6f3472"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/38/微信图片_20261107115338_186_285.jpg",
+          "sha256": "a75de95d841ae8c13a0b4d33699aaa52c9643ab7585837d43c5b648671aa9ac3"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleLookahead.cpp",
+          "symbol": "RunRectangleLookahead",
+          "line": 22,
+          "sha256": "44b08df5357abfa2a0b7d1cdb0f57d5c2ac81a617b109778927a5b31a8c9961b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangleBlockLibrary.cpp",
+          "symbol": "RunRectangleBlockLibrary",
+          "line": 1431,
+          "sha256": "6d1cc8ae1732f7b70faac26f455f1f43de702c041d4a35541b87865af5510e81"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingPatterns.cpp",
+          "symbol": "BuildPatterns",
+          "line": 236,
+          "sha256": "deb9905aec8d2a099bce9d0ce80ae8c8dd5e60cb0041ad051cd9f977be90b999"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRectangles.cpp",
+          "symbol": "void MaxRects::Occupy",
+          "line": 91,
+          "sha256": "dad7883b55b5193d8acdc8d1cd34cb635360cdf1ac1adf36302d3143434c1b9c"
+        }
+      ]
+    },
+    {
+      "number": 39,
+      "title": "既有卷料布局的包络与截断线生成",
+      "kind": "共享几何后处理",
+      "status": "暂不实现，保留方案与依赖",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/39-既有卷料布局的包络与截断线生成.md",
+      "source_document_id": "48",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/39/微信图片_20261107115339_187_285.jpg",
+          "sha256": "09af9205bf1fd7525c6e55896cecd2b594e83e012ba6c123c09394debf3047ac"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/39/微信图片_20261107115340_188_285.jpg",
+          "sha256": "de84011a78dc0eca9d7abf369140497a2d0ce312c8efd37203c0a6b734f46b4c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/39/微信图片_20261107115341_189_285.jpg",
+          "sha256": "a0e15eed662cac5211b357e215d676b017ab57892bac2dd1018c5a24c96c077f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/39/微信图片_20261107115342_190_285.jpg",
+          "sha256": "caa4dff6e374cbde2f9124eef83cae15ff43c61596b18430a10168c8f5a29349"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/39/微信图片_20261107115343_191_285.jpg",
+          "sha256": "909973d5d58599e44e3efcb35e8aec3c245e684617921ff2fa7a6609e0b73ddd"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Layout",
+          "line": 72,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Shape",
+          "line": 21,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapeValid",
+          "line": 356,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingGeometry.cpp",
+          "symbol": "bool ShapesConflict",
+          "line": 395,
+          "sha256": "cdcf241189f41acc83d74bfd1f43546afd2ed8315185b1c2e0b9d5d66261162f"
+        }
+      ]
+    },
+    {
+      "number": 40,
+      "title": "固定实例布局的持续迭代压紧",
+      "kind": "布局优化控制策略",
+      "status": "已有多个压紧算子，纯紧凑目标与三条件控制器待补",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/40-固定实例布局的持续迭代压紧.md",
+      "source_document_id": "90",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115344_192_285.jpg",
+          "sha256": "835133b1213aadeae322905aa207c235be8b099c8d29cc6310ed650ae7fee496"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115345_193_285.jpg",
+          "sha256": "7bfc550c8d22c74f0ba7ae7faed3ec9bea47595d9e03737cc5c2cfe67bdc8a76"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115346_194_285.jpg",
+          "sha256": "10f52afd2ea344f4c520efab3150483d4d58ea2ef5b8bd5841c415fbc088c7bf"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115347_195_285.jpg",
+          "sha256": "fbba5c6568c16b7029bb97f513604a4e2a99dd699d8b9e4315492de8278e4782"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115348_196_285.jpg",
+          "sha256": "3b320c0a708d0a050eb6080fa5c956d4ac2d3745c6b07930408a5ee8b23d7f37"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/40/微信图片_20261107115350_197_285.jpg",
+          "sha256": "52e8ae45e4ff12e83f2b91cfb21874b1277b0848fe30210f72c4cc3ffec6d1c4"
+        }
+      ],
+      "code": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingPipeline.h",
+          "symbol": "struct StrategyPipeline",
+          "line": 42,
+          "sha256": "d5bdb3c7c92653143e18fdd5ea28341655b2830eafa8d1af63e5e3336800071e"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingAxisCompaction.h",
+          "symbol": "MakeAxisCompactionStage",
+          "line": 50,
+          "sha256": "8611361f07ea10fe7e8c006f93ec90a00a657f9c75e0181b3fde265916abc747"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingRotationCompaction.h",
+          "symbol": "MakeRotationCompactionStage",
+          "line": 28,
+          "sha256": "5e12decf71df6a8a1c48c17810f20efa518a49d9f2364694bda65c84b1e4b1ae"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingCompaction.h",
+          "symbol": "MakeNfpCompactionStage",
+          "line": 22,
+          "sha256": "d7ee40f457c8e72fa2ef501efea69c480013fcd19c050aab1cfd102c95803c7b"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNestingReassembly.h",
+          "symbol": "MakeNfpReassemblyStage",
+          "line": 21,
+          "sha256": "3e3204719ba60a1e8222ce20def3cbb7b3310838f6532cc1942e6c1d8b86320c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/NestingRanking.cpp",
+          "symbol": "QualityKey Quality",
+          "line": 89,
+          "sha256": "f6a60a7c97f0aef54bbb132cd1b792e2f99d6c8790bc28089c7dea0af055fbe2"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/src/iCAX-Engine/foundation/SheetNesting/SheetNesting.h",
+          "symbol": "struct Options",
+          "line": 112,
+          "sha256": "f5157d0969672ea23f77a370b2c355562c232ba414cdd67bed68d2caefeda24e"
+        }
+      ]
+    },
+    {
+      "number": 41,
+      "title": "原总索引",
+      "document": "D:/penguinchinage0609/iCAX/doc/Plane/策略/README.md",
+      "photos": [
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/41/微信图片_20261107115351_198_285.jpg",
+          "sha256": "d709e7ab99b602a948c13605a46aeb63e69e05227c28f8de3f4264c08727458f"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/41/微信图片_20261107115352_199_285.jpg",
+          "sha256": "00195b2db2312145ed39ffdb0e2880c7640178f3fd6684465506558116a4c60c"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/41/微信图片_20261107115353_200_285.jpg",
+          "sha256": "000549b71c6edbffa4a018210083e2181d394e64800ac3cc66eaa7af6549b0f5"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/41/微信图片_20261107115354_201_285.jpg",
+          "sha256": "eadacbbedf4c56882b1c38d3484cf417ff070ef1d1752f8b855d988a81abd5b8"
+        },
+        {
+          "path": "D:/penguinchinage0609/iCAX/doc/Plane/41/微信图片_20261107115355_202_285.jpg",
+          "sha256": "eb1a9767b924b52bfeb16e995d739cb26ab2ffb573a1f0273d7c54c3413ea909"
+        }
+      ]
+    }
+  ],
+  "source_unchanged_during_render": true
+}

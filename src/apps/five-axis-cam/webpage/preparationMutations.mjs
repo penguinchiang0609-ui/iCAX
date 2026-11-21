@@ -18,12 +18,12 @@ export async function preparationMutation(context,view,action,ops){
   view.fivePreparationRequest=null;await saveCommittedProjectEdit(context,view,ops);
   if(view.disposed||context.isCurrentProject?.()===false)return;
   if(verb==='copy')resetWorkpieceTools(view);
-  if(result.placementId)view.fiveActivePlacementId=result.placementId;
+  if(result.placementId){view.fiveActivePlacementId=result.placementId;if(kind==='setup')view.fiveOperationPlacementId=result.placementId;}
   await ops.refreshSceneState(context,view);
   if(kind==='fixture'){
    view.fiveAxisFixtures??={selected:'',drafts:{},clearance:'2'};view.fiveAxisFixtures.selected=result.unitId;selectTool(view,'fixture');
   }else if(verb==='copy'){
-   selectTool(view,kind==='setup'?'translate':'select');
+   selectTool(view,kind==='setup'?'translate':'select');if(kind==='setup')view.fivePreparationKind='setup';
    view.fivePreparationCollapsed?.delete('workpiece:'+result.workpieceId);view.fivePreparationCollapsed?.delete('setup:'+result.placementId);
    await ops.fitViewAfterRenderPublish(context,view,{entityIds:[result.placementId]});
   }

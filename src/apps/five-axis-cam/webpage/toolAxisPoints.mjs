@@ -3,6 +3,7 @@ import {revealSceneCut} from './sceneListReveal.mjs';
 import {supportsToolAxis} from './toolAxisEligibility.mjs';
 import { saveCommittedCutEdit } from './cutEditPersistence.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix,activeSetupWorldFrame} from './setupWorldFrame.mjs';
 import { activeTool,selectTool,workspaceState } from './workspaceModel.mjs';
 import { nearestCutLine, selectCut } from './cutSelection.mjs';
 import { refreshMachiningState } from './domainActions.mjs';
@@ -195,7 +196,7 @@ export async function toolAxisPointCommand(context,view,action,ops,value){
     if(d?.dirty||d?.request){await toolAxisPointCommand(context,view,'apply',ops);if(d.dirty||d.request)return;}
     const whole=view.fiveToolAxes?.get(cut?.id);
     if(whole?.dirty||whole?.request){const {toolAxisCommand}=await import('./toolAxisParameters.mjs');await toolAxisCommand(context,view,'apply',ops);if(whole.dirty||whole.request)return;}
-    selectTool(view,'keypoint');view.fiveCamPage='cutting';view.fiveAxisExtractionOpen=false;view.fiveAxisSplitOpen=false;view.fiveAxisLeadsOpen=false;view.fiveAxisHoleOpen=false;
+    selectTool(view,'keypoint');if(view.fiveCamPage!=='collision')view.fiveCamPage='cutting';view.fiveAxisExtractionOpen=false;view.fiveAxisSplitOpen=false;view.fiveAxisLeadsOpen=false;view.fiveAxisHoleOpen=false;
     exitToolAxisPointModes(view);
     if(['add','pick','delete'].includes(action)){
       const owner={epoch:view.scene?.domain?.expected?.epoch,setupId:view.scene?.domain?.activeSetupId};
@@ -209,7 +210,7 @@ export async function toolAxisPointCommand(context,view,action,ops,value){
   }
   if(action==='whole'){
     if(d?.dirty||d?.request){await toolAxisPointCommand(context,view,'apply',ops);if(d.dirty||d.request)return;}
-    exitToolAxisPointModes(view);selectTool(view,'extract');view.fiveCamPage='cutting';view.fiveAxisExtractionOpen=false;ops.renderProject(context,view);return;
+    exitToolAxisPointModes(view);selectTool(view,'extract');if(view.fiveCamPage!=='collision')view.fiveCamPage='cutting';view.fiveAxisExtractionOpen=false;ops.renderProject(context,view);return;
   }
   if(!cut)return;
   if(!d||d.id!==cut.id||d.loading||view.fiveToolAxisRequest&&view.fiveToolAxisRequest!==d.request)return;
@@ -258,7 +259,7 @@ export async function toolAxisPointCommand(context,view,action,ops,value){
 export function toolAxisPointAtPointer(view,event){
   const d=view.fiveAxisPointEdit;if(!d?.axis||d.loading||d.stale)return null;
   const box=view.viewport.renderer.domElement.getBoundingClientRect();let best=11,chosen=null;
-  for(const p of points(d)){const q=new THREE.Vector3(...p.setupPoint).project(view.viewport.camera);if(q.z<-1||q.z>1)continue;
+  for(const p of points(d)){const q=new THREE.Vector3(...p.setupPoint).applyMatrix4(activeSetupWorldFrame(view)).project(view.viewport.camera);if(q.z<-1||q.z>1)continue;
     const distance=Math.hypot(event.clientX-box.left-(q.x+1)*box.width/2,event.clientY-box.top-(1-q.y)*box.height/2);
     if(distance<best){best=distance;chosen=p;}}
   return chosen;
@@ -356,8 +357,8 @@ export function syncToolAxisPoints(context,view,ops){
   }
   const vp=view.viewport,p=placement(view,cut);if(view.fivePoseSelection?.active||!vp||!p||!d?.axis||d.stale){disposeToolAxisPointPreview(view);return;}
   syncAxisInfluenceGraph(context,view,d,ops);
-  const signature=JSON.stringify([vp.id,d.key,d.pointId,d.values,d.positionValues,d.frame,points(d),d.influence?.stations,d.influence?.interpolation]);if(view.fiveAxisPointPreview?.key===signature)return;
-  disposeToolAxisPointPreview(view);const root=new THREE.Group();root.name='five-axis-pose-keypoints';root.matrixAutoUpdate=false;root.matrix.set(...p.transform);
+  const signature=JSON.stringify([vp.id,d.key,d.pointId,d.values,d.positionValues,d.frame,points(d),d.influence?.stations,d.influence?.interpolation,placementWorldMatrix(view,p).elements]);if(view.fiveAxisPointPreview?.key===signature)return;
+  disposeToolAxisPointPreview(view);const root=new THREE.Group();root.name='five-axis-pose-keypoints';root.matrixAutoUpdate=false;root.matrix.copy(placementWorldMatrix(view,p));
   const marker=(items,shape,color,size)=>{
     if(!items.length)return;const geometry=new THREE.BufferGeometry().setFromPoints(items.map(point=>new THREE.Vector3(...point.point)));
     const material=new THREE.PointsMaterial({color,size,sizeAttenuation:false,depthTest:false});

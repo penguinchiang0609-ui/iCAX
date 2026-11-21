@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>截面法向扫掠 Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f2f5f8;
+      --paper: #fff;
+      --ink: #172b3d;
+      --muted: #516578;
+      --line: #d2dce5;
+      --axis: #2456ad;
+      --ink-region: #226365;
+      --sweep: #c9e9e4;
+      --wall: #d4e4f6;
+      --corner: #ffe3ad;
+      --branch: #f6ccbe;
+      --stop: #a64127;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font: 14px/1.5 system-ui, "Microsoft YaHei", sans-serif;
+    }
+    button, select, input { font: inherit; }
+    button, select {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+      color: var(--ink);
+      padding: .45rem .72rem;
+      min-height: 36px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: #8aa4b7; }
+    button:disabled { color: var(--muted); opacity: .65; cursor: default; }
+    button[aria-pressed="true"] { background: #dce9fa; border-color: #7e9bc0; }
+    :focus-visible { outline: 2px solid var(--axis); outline-offset: 2px; }
+    header { background: var(--paper); border-bottom: 1px solid var(--line); }
+    .masthead, main { max-width: 1480px; margin-inline: auto; padding: 1rem clamp(12px, 2vw, 28px); }
+    .masthead { display: flex; flex-wrap: wrap; align-items: baseline; gap: .55rem 1.25rem; }
+    h1, h2, p, figure, dl { margin: 0; }
+    h1 { font-size: 1.3rem; font-weight: 650; }
+    h2 { font-size: .96rem; font-weight: 650; }
+    .quiet { color: var(--muted); font-size: .86rem; }
+    #cases, .controls, .legend, #partition-modes, #coverage-files {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .7rem;
+    }
+    #cases { margin-bottom: .8rem; }
+    #cases button { font-weight: 550; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 31%); gap: .8rem; }
+    .card { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+    .board { overflow: hidden; }
+    .board-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: .45rem 1rem;
+      padding: .75rem .85rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .board-head h2 { font-size: 1.02rem; }
+    .board-head label { display: inline-flex; align-items: center; gap: .3rem; }
+    input[type="checkbox"], input[type="range"] { accent-color: var(--axis); }
+    input[type="range"] { width: 100%; margin: 0; min-height: 24px; }
+    .stage { position: relative; background: #fbfdff; }
+    .stage svg { display: block; width: 100%; height: clamp(290px, 54vh, 690px); }
+    .material { fill: #eaf0f5; fill-rule: evenodd; }
+    .skin { fill: none; stroke: #435d70; stroke-width: 1.15; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .guide, .selected-guide, .exit-skin, .ray, .ray-direction, .seam {
+      fill: none;
+      vector-effect: non-scaling-stroke;
+    }
+    .guide { stroke: transparent; stroke-width: 13; cursor: pointer; }
+    .guide:hover { stroke: #77a6d688; }
+    .coverage-mode .guide { stroke-width: 4; }
+    .selected-guide { stroke: var(--axis); stroke-width: 2.8; pointer-events: none; }
+    .exit-skin { stroke: #22826d; stroke-width: 2.4; pointer-events: none; }
+    .ray { stroke: var(--axis); stroke-width: 2.9; }
+    .ray-direction { stroke: var(--axis); stroke-width: 1.5; }
+    .ray.stopped { stroke: var(--stop); stroke-dasharray: 5 3; }
+    .region { stroke: #77919d; stroke-width: .85; fill-rule: evenodd; vector-effect: non-scaling-stroke; }
+    .continuous { fill: var(--sweep); }
+    .wall { fill: var(--wall); }
+    .shared-corner { fill: var(--corner); }
+    .branch { fill: var(--branch); }
+    .coverage-exclusive { fill: var(--wall); }
+    .coverage-shared { fill: #f1c68f; }
+    .coverage-cell.coverage-shared { fill-opacity: .7; stroke: #a26425; }
+    .coverage-cell { cursor: pointer; }
+    .coverage-cell.is-muted { opacity: .32; }
+    .coverage-cell.is-selected, .coverage-cell:hover {
+      stroke: var(--axis); stroke-width: 2.25; fill-opacity: .9;
+    }
+    .coverage-cell.is-junction { stroke: var(--stop); }
+    .seam { stroke: var(--stop); stroke-width: 1.7; stroke-dasharray: 5 4; }
+    .entry-point { fill: var(--axis); stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+    .exit-point { fill: #fff; stroke: #22826d; stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .legend { padding: .56rem .85rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
+    .legend span { display: flex; align-items: center; gap: .32rem; }
+    .swatch { display: inline-block; width: .85rem; height: .66rem; border: 1px solid #77919d; border-radius: 2px; }
+    .swatch.axis { background: var(--axis); border-color: var(--axis); height: .22rem; }
+    .swatch.exit { border: 2px solid #22826d; background: #fff; border-radius: 50%; width: .62rem; height: .62rem; }
+    .motion { display: grid; gap: .4rem; padding: .72rem .85rem; border-top: 1px solid var(--line); }
+    .motion label { min-width: 0; display: flex; align-items: center; gap: .45rem; }
+    .motion select { min-width: 0; max-width: 62vw; }
+    .motion output { margin-left: auto; font-variant-numeric: tabular-nums; }
+    .aside { display: grid; align-content: start; gap: .8rem; min-width: 0; }
+    .pane { padding: .8rem .9rem; }
+    .pane > h2 { margin-bottom: .55rem; }
+    .status { display: flex; gap: .48rem; align-items: baseline; margin-bottom: .6rem; }
+    .status strong { color: var(--ink-region); }
+    .status[data-kind="stop"] strong, .status[data-kind="branch"] strong { color: var(--stop); }
+    .metrics { display: grid; grid-template-columns: minmax(5em, auto) minmax(0, 1fr); gap: .25rem .6rem; font-size: .86rem; }
+    dt { color: var(--muted); }
+    dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    #current-reason { margin-top: .55rem; }
+    .event-list { display: grid; gap: .32rem; max-height: 15rem; overflow-y: auto; }
+    .event {
+      display: flex;
+      text-align: left;
+      flex-wrap: wrap;
+      gap: .2rem .5rem;
+      align-items: baseline;
+      width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .event small { color: var(--muted); }
+    #regions { display: grid; gap: .38rem; max-height: 12rem; overflow-y: auto; }
+    .region-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .46rem; }
+    .coverage-group + .coverage-group { margin-top: .8rem; }
+    .coverage-group h3 { margin: 0 0 .3rem; font-size: .84rem; }
+    .coverage-options { display: grid; gap: .3rem; }
+    .coverage-option { text-align: left; overflow-wrap: anywhere; }
+    .coverage-option small { display: block; color: var(--muted); margin-top: .07rem; }
+    #coverage-detail { margin: .55rem 0 .7rem; overflow-wrap: anywhere; }
+    #coverage-detail p + p { margin-top: .2rem; }
+    #coverage-files { margin-top: .6rem; }
+    #coverage-files a { color: var(--axis); }
+    #summary, #problem { margin-bottom: .65rem; }
+    #problem { color: var(--stop); }
+    @media (max-width: 760px) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .stage svg { height: clamp(245px, 47vh, 440px); }
+      .aside { gap: .6rem; }
+      .event-list, #regions { max-height: 12rem; }
+    }
+    @media (max-width: 385px) {
+      .motion label { width: 100%; justify-content: space-between; }
+      .motion output { margin-left: 0; }
+      .board-head, .legend, .motion { padding-inline: .6rem; }
+      .legend { gap: .3rem .58rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="masthead">
+      <h1>截面法向扫掠 Demo</h1>
+      <p class="quiet">从皮面沿朝材料内的法向出发，求第一个出点。</p>
+    </div>
+  </header>
+  <main>
+    <nav id="cases" aria-label="截面样本"></nav>
+    <p id="problem" role="alert" hidden></p>
+    <div class="workspace" id="workspace" hidden>
+      <section class="card board" aria-labelledby="sample-title">
+        <div class="board-head">
+          <div>
+            <h2 id="sample-title"></h2>
+            <p id="sample-source" class="quiet"></p>
+          </div>
+          <div class="controls">
+            <div id="partition-modes" role="group" aria-label="分区视图" hidden>
+              <button id="mode-shared" type="button" aria-pressed="true">壁区共享覆盖</button>
+              <button id="mode-sweep" type="button" aria-pressed="false">扫掠分区</button>
+            </div>
+            <label><input id="show-regions" type="checkbox" checked>显示分区</label>
+          </div>
+        </div>
+        <figure class="stage">
+          <svg id="plot" viewBox="0 0 100 100" role="img" aria-label="截面、入刀点、法向射线及第一出点">
+            <defs>
+              <marker id="axis-arrow" markerUnits="strokeWidth" markerWidth="6" markerHeight="6" viewBox="0 0 6 6"
+                      refX="5.5" refY="3" orient="auto">
+                <path d="M0 0L6 3L0 6Z" fill="#2456ad"/>
+              </marker>
+            </defs>
+            <g id="skin"></g>
+            <g id="region-layer"></g>
+            <g id="guide-layer"></g>
+            <path id="active-guide" class="selected-guide"></path>
+            <path id="active-exit" class="exit-skin"></path>
+            <g id="ray-layer" pointer-events="none">
+              <line id="blade-direction" class="ray-direction" marker-end="url(#axis-arrow)"></line>
+              <line id="blade" class="ray"></line>
+              <circle id="entry" class="entry-point"></circle>
+              <circle id="exit" class="exit-point"></circle>
+            </g>
+          </svg>
+        </figure>
+        <div class="legend" aria-label="图例">
+          <span><i class="swatch axis"></i>朝内法向</span>
+          <span><i class="swatch exit"></i>第一个出点</span>
+          <span data-legend="continuous"><i class="swatch continuous"></i>连续区</span>
+          <span data-legend="wall"><i class="swatch wall"></i>独占壁区</span>
+          <span data-legend="shared-corner"><i class="swatch shared-corner"></i>角部重合区</span>
+          <span data-legend="branch"><i class="swatch branch"></i>分叉</span>
+          <span data-legend="coverage-exclusive" hidden><i class="swatch coverage-exclusive"></i>单壁覆盖</span>
+          <span data-legend="coverage-shared" hidden><i class="swatch coverage-shared"></i>共享材料</span>
+        </div>
+        <div class="motion">
+          <div class="controls">
+            <label for="guide-select">入刀皮边 <select id="guide-select"></select></label>
+            <label id="loop-control" hidden><input id="whole-loop" type="checkbox">沿整圈滑动</label>
+            <label for="position"><span id="position-label">边内位置</span><output id="position-readout" for="position">0%</output></label>
+          </div>
+          <input id="position" type="range" min="0" max="1000" value="0">
+        </div>
+      </section>
+      <aside class="aside" aria-label="求解明细">
+        <section class="card pane" aria-labelledby="ray-title">
+          <h2 id="ray-title">当前射线</h2>
+          <div class="status" id="current-status"><strong id="status-label"></strong></div>
+          <dl class="metrics">
+            <dt>当前皮边位置</dt><dd id="edge-position"></dd>
+            <dt>入点 Y / Z</dt><dd id="entry-value"></dd>
+            <dt>刀轴 Y / Z</dt><dd id="normal-value"></dd>
+            <dt>出点 Y / Z</dt><dd id="exit-value"></dd>
+            <dt>命中轮廓边</dt><dd id="target-value"></dd>
+            <dt>材料长度</dt><dd id="depth-value"></dd>
+          </dl>
+          <p class="quiet" id="current-reason"></p>
+        </section>
+        <section class="card pane" aria-labelledby="event-title">
+          <h2 id="event-title">当前皮边事件</h2>
+          <div id="events" class="event-list"></div>
+        </section>
+        <section class="card pane" aria-labelledby="region-title">
+          <h2 id="region-title">分区结果</h2>
+          <p id="summary" class="quiet"></p>
+          <div id="coverage-detail" aria-live="polite" hidden></div>
+          <div id="regions"></div>
+          <div id="coverage-files" class="quiet" hidden>
+            <a id="coverage-brep" hidden>下载材料块 BREP</a>
+            <a id="coverage-evidence" hidden>查看验收数据</a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+  <script type="module">
+    import { analyzeSection, castAt, curvePath } from './section-normal-sweep.mjs';
+
+    const byId = id => document.getElementById(id);
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const plot = byId('plot');
+    const slider = byId('position');
+    const selector = byId('guide-select');
+    const loopControl = byId('whole-loop');
+    const regionLayer = byId('region-layer');
+    const regionList = byId('regions');
+    const casesNav = byId('cases');
+    const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4, useGrouping: false });
+    const statusLabels = { continuous: '连续', transition: '可继续', stop: '在这里停', branch: '分叉', unknown: '无有效出点' };
+    const regionLabels = { continuous: '连续区', wall: '独占壁区', 'shared-corner': '角部重合区', branch: '分叉区' };
+    const detailLabels = {
+      continuous: '第一出点在对应的对侧皮上连续移动。',
+      transition: '法向和第一出点可以过渡到下一段。',
+      stop: '第一出点离开原壁的对侧。',
+      branch: '第一出点切换到另一条壁的边界。',
+      unknown: '当前方向没有有效的第一次出材料交点。',
+    };
+
+    let currentCase;
+    let analysis;
+    let guide;
+    let scale;
+    let curves;
+    let eventFocus;
+    let guideLengths = [];
+    let loopLength = 0;
+    let lastParameter = 0;
+    let preferredMode = 'shared';
+    let sharedCase;
+    let selection;
+    let sharedCases = new Map();
+
+    function makeSvg(tag, attributes) {
+      const node = document.createElementNS(svgNs, tag);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+      return node;
+    }
+
+    function titleOf(curve) {
+      return String(curve.label || curve.id);
+    }
+
+    function wirePath(ring) {
+      return ring.curves.map((curve, index) => {
+        const path = curvePath(curve);
+        return index === 0 ? path : path.slice(path.search(/[LA]/));
+      }).join(' ') + ' Z';
+    }
+
+    function formatPoint(point) {
+      return point ? point.map(value => number.format(Math.abs(value) < 0.00005 ? 0 : value)).join(' / ') : '—';
+    }
+
+    function formatArea(value) {
+      return value !== 0 && Math.abs(value) < 1e-4 ? value.toExponential(2) : number.format(value);
+    }
+
+    function curveLength(curve) {
+      return curve.kind === 'arc'
+        ? curve.radius * Math.abs(curve.sweep)
+        : Math.hypot(curve.b[0] - curve.a[0], curve.b[1] - curve.a[1]);
+    }
+
+    function setSliderAt(t) {
+      const part = guideLengths.find(item => item.guideId === guide.id);
+      const fraction = loopControl.checked ? (part.start + t * part.length) / loopLength : t;
+      slider.value = Math.round(fraction * 1000);
+    }
+
+    function locateOnLoop(fraction) {
+      const distance = fraction * loopLength;
+      const part = guideLengths.find(item => distance < item.start + item.length) || guideLengths.at(-1);
+      return { guideId: part.guideId, t: Math.min(1, Math.max(0, (distance - part.start) / part.length)) };
+    }
+
+    function setLine(id, a, b) {
+      const node = byId(id);
+      node.setAttribute('x1', a[0]);
+      node.setAttribute('y1', -a[1]);
+      node.setAttribute('x2', b[0]);
+      node.setAttribute('y2', -b[1]);
+    }
+
+    function setPoint(id, point) {
+      const node = byId(id);
+      node.style.display = point ? '' : 'none';
+      if (point) {
+        node.setAttribute('cx', point[0]);
+        node.setAttribute('cy', -point[1]);
+        node.setAttribute('r', scale * .008);
+      }
+    }
+
+    function offset(point, direction, distance) {
+      return point.map((value, i) => value + direction[i] * distance);
+    }
+
+    function drawPose() {
+      const fraction = slider.valueAsNumber / 1000;
+      const position = loopControl.checked && !eventFocus ? locateOnLoop(fraction) : { guideId: guide.id, t: eventFocus?.t ?? fraction };
+      if (position.guideId !== guide.id) activateGuide(position.guideId);
+      const t = position.t;
+      lastParameter = t;
+      byId('position-label').textContent = loopControl.checked ? '整圈位置' : '边内位置';
+      byId('position-readout').textContent = number.format((loopControl.checked ? fraction : t) * 100) + '%';
+      byId('edge-position').textContent = titleOf(guide.curve) + ' · ' + number.format(t * 100) + '%';
+      const cast = castAt(currentCase, guide.id, t);
+      const span = guide.spans.find((item, index) => t >= item.t0 && (t < item.t1 || index === guide.spans.length - 1));
+      const kind = eventFocus?.kind ?? (cast?.exit ? span?.kind ?? 'continuous' : 'unknown');
+      const reason = eventFocus?.reason || span?.reason || detailLabels[kind];
+      byId('current-status').dataset.kind = kind;
+      byId('status-label').textContent = statusLabels[kind] || kind;
+      byId('current-reason').textContent = reason;
+      byId('entry-value').textContent = formatPoint(cast?.point);
+      byId('normal-value').textContent = formatPoint(cast?.normal);
+      byId('exit-value').textContent = formatPoint(cast?.exit);
+      const exitCurve = curves.get(cast?.exitCurveId);
+      byId('target-value').textContent = exitCurve ? titleOf(exitCurve) : cast?.exitCurveId ?? '—';
+      byId('depth-value').textContent = Number.isFinite(cast?.distance) ? number.format(cast.distance) + ' mm' : '—';
+      byId('active-exit').setAttribute('d', exitCurve ? curvePath(exitCurve) : '');
+      const visible = !!(cast?.point && cast?.normal);
+      byId('ray-layer').style.display = visible ? '' : 'none';
+      if (!visible) return;
+      const arrowStart = offset(cast.point, cast.normal, -scale * .064);
+      const arrowEnd = offset(cast.point, cast.normal, -scale * .013);
+      setLine('blade-direction', arrowStart, arrowEnd);
+      setLine('blade', cast.point, cast.exit || offset(cast.point, cast.normal, scale * .08));
+      byId('blade').classList.toggle('stopped', kind === 'stop' || kind === 'branch' || !cast.exit);
+      setPoint('entry', cast.point);
+      setPoint('exit', cast.exit);
+    }
+
+    function showEvents() {
+      const list = byId('events');
+      list.replaceChildren();
+      if (!guide.events.length) {
+        const note = document.createElement('p');
+        note.className = 'quiet';
+        note.textContent = '当前皮边无过渡、停点或分叉。';
+        list.append(note);
+        return;
+      }
+      for (const event of guide.events) {
+        const button = document.createElement('button');
+        button.className = 'event';
+        button.type = 'button';
+        button.setAttribute('aria-pressed', 'false');
+        button.textContent = number.format(event.t * 100) + '% · ' + (statusLabels[event.kind] || event.kind);
+        if (event.reason) {
+          const detail = document.createElement('small');
+          detail.textContent = event.reason;
+          button.append(detail);
+        }
+        if (event.kind !== 'transition' && Number.isFinite(event.beforeDistance) && Number.isFinite(event.afterDistance)) {
+          const lengths = document.createElement('small');
+          lengths.textContent = number.format(event.beforeDistance) + ' → ' + number.format(event.afterDistance) + ' mm';
+          button.append(lengths);
+        }
+        button.addEventListener('click', () => {
+          for (const other of list.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+          eventFocus = event;
+          setSliderAt(event.t);
+          drawPose();
+        });
+        list.append(button);
+      }
+    }
+
+    function activateGuide(id) {
+      guide = analysis.guides.find(item => String(item.id) === String(id)) || analysis.guides[0];
+      if (!guide) return;
+      selector.value = String(guide.id);
+      eventFocus = null;
+      byId('active-guide').setAttribute('d', curvePath(guide.curve));
+      showEvents();
+    }
+
+    function chooseGuide(id, t = .35) {
+      activateGuide(id);
+      if (!guide) return;
+      setSliderAt(t);
+      drawPose();
+    }
+
+    function showSweepRegions() {
+      regionList.replaceChildren();
+      regionLayer.replaceChildren();
+      const kinds = new Set();
+      for (const region of analysis.regions) {
+        kinds.add(region.kind);
+        const path = makeSvg('path', { d: region.path, class: 'region ' + region.kind });
+        const title = makeSvg('title', {});
+        title.textContent = region.label || regionLabels[region.kind] || region.id;
+        path.append(title);
+        regionLayer.append(path);
+        const row = document.createElement('div');
+        row.className = 'region-row';
+        const swatch = document.createElement('i');
+        swatch.className = 'swatch ' + region.kind;
+        const label = document.createElement('span');
+        label.textContent = region.label || `${region.id} · ${regionLabels[region.kind] || region.kind}`;
+        row.append(swatch, label);
+        if (region.owners?.length) {
+          const owners = document.createElement('small');
+          owners.className = 'quiet';
+          owners.textContent = '关联 ' + region.owners.join('、');
+          row.append(owners);
+        }
+        regionList.append(row);
+      }
+      for (const branch of analysis.branches) {
+        if (!branch.a || !branch.b) continue;
+        const path = makeSvg('path', {
+          d: `M ${branch.a[0]} ${-branch.a[1]} L ${branch.b[0]} ${-branch.b[1]}`,
+          class: 'seam',
+        });
+        const title = makeSvg('title', {});
+        title.textContent = branch.reason || '分叉界面';
+        path.append(title);
+        regionLayer.append(path);
+        kinds.add('branch');
+      }
+      for (const item of document.querySelectorAll('[data-legend]')) item.hidden = !kinds.has(item.dataset.legend);
+      const { summary } = analysis;
+      const details = [summary.status === 'complete' ? `${summary.regionCount} 区` : '分区未完成'];
+      if (summary.cornerCount) details.push(`${summary.cornerCount} 个角部重合区`);
+      if (summary.branchCount) details.push(`${summary.branchCount} 处分叉`);
+      if (summary.status === 'complete' && Number.isFinite(summary.areaResidual))
+        details.push(`面积残差 ${formatArea(summary.areaResidual)} mm²`);
+      if (summary.reason) details.push(summary.reason);
+      byId('summary').textContent = details.join(' · ');
+    }
+
+    function legendFor(kinds) {
+      for (const item of document.querySelectorAll('[data-legend]'))
+        item.hidden = !kinds.has(item.dataset.legend);
+    }
+
+    function wallNames(ids) {
+      return ids.map(id => {
+        const wall = sharedCase.walls.find(item => item.id === id);
+        return wall ? `W${id} ${wall.label}` : `W${id}`;
+      }).join('、');
+    }
+
+    function cellKind(cell) {
+      return cell.ownerWallIds.length > 1 ? 'coverage-shared' : 'coverage-exclusive';
+    }
+
+    function cellRole(cell) {
+      return cell.ownerWallIds.length > 1 ? '共享材料' : '单壁材料';
+    }
+
+    function cellPath(cell) {
+      return cell.displayWires.filter(wire => wire.length > 2).map(wire =>
+        wire.map(([y, z], i) => `${i === 0 ? 'M' : 'L'} ${y} ${-z}`).join(' ') + ' Z'
+      ).join(' ');
+    }
+
+    function describeSelection(...lines) {
+      const detail = byId('coverage-detail');
+      detail.replaceChildren();
+      for (const [i, text] of lines.filter(Boolean).entries()) {
+        const row = document.createElement('p');
+        const node = document.createElement(i === 0 ? 'strong' : 'span');
+        node.textContent = text;
+        row.append(node);
+        detail.append(row);
+      }
+      detail.hidden = detail.childElementCount === 0;
+    }
+
+    function selectCoverage(kind, item) {
+      if (selection?.kind === kind && selection.item.id === item.id) {
+        selection = null;
+      } else {
+        selection = { kind, item };
+      }
+      const ids = !selection ? [] : selection.kind === 'cell' ? [item.id] : item.cellIds;
+      const idSet = new Set(ids.map(String));
+      for (const path of regionLayer.querySelectorAll('[data-cell-id]')) {
+        const highlighted = idSet.has(path.dataset.cellId);
+        path.classList.toggle('is-selected', highlighted);
+        path.classList.toggle('is-muted', !!selection && !highlighted);
+        path.classList.toggle('is-junction', selection?.kind === 'junction' && highlighted);
+      }
+      for (const button of regionList.querySelectorAll('.coverage-option')) {
+        const selected = !!selection && button.dataset.selectionKind === selection.kind &&
+          button.dataset.selectionId === String(selection.item.id);
+        button.setAttribute('aria-pressed', String(selected));
+      }
+      if (!selection) {
+        describeSelection();
+      } else if (kind === 'wall') {
+        describeSelection(`W${item.id} · ${item.label} · ${formatArea(item.area)} mm²`,
+          `完整覆盖 ${item.cellIds.length} 块材料（含共享块）`);
+      } else if (kind === 'cell') {
+        const junction = sharedCase.junctions.find(entry => entry.id === item.junctionId);
+        describeSelection(`C${item.id} · ${cellRole(item)} · ${formatArea(item.area)} mm²`,
+          `归属 ${wallNames(item.ownerWallIds)}`,
+          junction ? `交界 J${junction.id} ${junction.label}` : '');
+      } else {
+        describeSelection(`J${item.id} · ${item.label}`, `相接壁区 ${wallNames(item.wallIds)}`, item.reason);
+      }
+    }
+
+    function addCoverageGroup(title, kind, items, describe) {
+      if (!items.length) return;
+      const group = document.createElement('div');
+      group.className = 'coverage-group';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      const options = document.createElement('div');
+      options.className = 'coverage-options';
+      for (const item of items) {
+        const [label, details] = describe(item);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'coverage-option';
+        button.dataset.selectionKind = kind;
+        button.dataset.selectionId = String(item.id);
+        button.textContent = label;
+        button.setAttribute('aria-pressed', 'false');
+        if (details) {
+          const line = document.createElement('small');
+          line.textContent = details;
+          button.append(line);
+        }
+        button.addEventListener('click', () => selectCoverage(kind, item));
+        options.append(button);
+      }
+      group.append(heading, options);
+      regionList.append(group);
+    }
+
+    function showSharedRegions() {
+      regionList.replaceChildren();
+      regionLayer.replaceChildren();
+      const kinds = new Set();
+      for (const cell of sharedCase.cells || []) {
+        const kind = cellKind(cell);
+        const path = makeSvg('path', { d: cellPath(cell), class: 'region coverage-cell ' + kind });
+        path.dataset.cellId = String(cell.id);
+        const title = makeSvg('title', {});
+        title.textContent = `C${cell.id} · ${cellRole(cell)} · ${wallNames(cell.ownerWallIds)}`;
+        path.append(title);
+        path.addEventListener('click', () => selectCoverage('cell', cell));
+        regionLayer.append(path);
+        kinds.add(kind);
+      }
+      legendFor(kinds);
+      if (sharedCase.status !== 'complete') {
+        byId('summary').textContent = sharedCase.reason || '共享覆盖待解析';
+        return;
+      }
+      const { walls, junctions, cells, materialArea, sharedArea } = sharedCase;
+      byId('summary').textContent = [
+        `${walls.length} 条壁区 · ${junctions.length} 处交界 · ${cells.length} 块材料`,
+        `材料 ${formatArea(materialArea)} mm²（共享 ${formatArea(sharedArea)} mm²）`,
+      ].join(' · ');
+      addCoverageGroup('完整壁区', 'wall', walls, wall => [
+        `W${wall.id} · ${wall.label}`, `${formatArea(wall.area)} mm² · ${wall.cellIds.length} 块材料`,
+      ]);
+      addCoverageGroup('交界', 'junction', junctions, junction => [
+        `J${junction.id} · ${junction.label}`, wallNames(junction.wallIds),
+      ]);
+      addCoverageGroup('材料块', 'cell', cells, cell => [
+        `C${cell.id} · ${cellRole(cell)} · ${formatArea(cell.area)} mm²`, wallNames(cell.ownerWallIds),
+      ]);
+    }
+
+    function setCoverageFile(id, url) {
+      const link = byId(id);
+      link.hidden = !url;
+      if (url) link.href = url;
+      else link.removeAttribute('href');
+    }
+
+    function showRegions() {
+      const showingShared = !!sharedCase && preferredMode === 'shared';
+      selection = null;
+      describeSelection();
+      plot.classList.toggle('coverage-mode', showingShared);
+      byId('partition-modes').hidden = !sharedCase;
+      byId('mode-shared').setAttribute('aria-pressed', String(showingShared));
+      byId('mode-sweep').setAttribute('aria-pressed', String(!showingShared));
+      byId('region-title').textContent = showingShared ? '壁区共享覆盖' : '分区结果';
+      const brep = showingShared ? sharedCase.brepUrl : null;
+      const evidence = showingShared ? sharedCase.evidenceUrl : null;
+      byId('coverage-files').hidden = !brep && !evidence;
+      setCoverageFile('coverage-brep', brep);
+      setCoverageFile('coverage-evidence', evidence);
+      if (showingShared) showSharedRegions();
+      else showSweepRegions();
+    }
+
+    function openCase(sample) {
+      currentCase = sample;
+      sharedCase = sharedCases.get(String(sample.id));
+      analysis = analyzeSection(sample);
+      loopLength = 0;
+      guideLengths = analysis.guides.map(item => {
+        const length = curveLength(item.curve);
+        const start = loopLength;
+        loopLength += length;
+        return { guideId: item.id, start, length };
+      });
+      const canLoop = loopLength > 0 && analysis.summary.status === 'complete' &&
+        analysis.regions.length === 1 && analysis.regions[0].kind === 'continuous' &&
+        sample.rings.length === 2 && sample.rings.some(ring => ring.role === 'inner');
+      byId('loop-control').hidden = !canLoop;
+      loopControl.checked = canLoop;
+      curves = new Map(sample.rings.flatMap(ring => ring.curves.map(curve => [curve.id, curve])));
+      byId('sample-title').textContent = sample.title;
+      byId('sample-source').textContent = sample.source || '';
+      byId('workspace').hidden = false;
+      for (const button of casesNav.querySelectorAll('button'))
+        button.setAttribute('aria-pressed', String(button.dataset.case === String(sample.id)));
+
+      const sectionPath = sample.rings.map(wirePath).join(' ');
+      const base = makeSvg('path', { d: sectionPath, class: 'material' });
+      const skin = makeSvg('path', { d: sectionPath, class: 'skin' });
+      byId('skin').replaceChildren(base);
+      const box = base.getBBox();
+      scale = Math.max(box.width, box.height, 1e-9);
+      const padding = scale * .105;
+      plot.setAttribute('viewBox', [box.x - padding, box.y - padding, box.width + 2 * padding, box.height + 2 * padding].join(' '));
+      showRegions();
+      const guides = byId('guide-layer');
+      guides.replaceChildren(skin);
+      selector.replaceChildren();
+      for (const item of analysis.guides) {
+        const path = makeSvg('path', { d: curvePath(item.curve), class: 'guide' });
+        const title = makeSvg('title', {});
+        title.textContent = '选择皮边 ' + titleOf(item.curve);
+        path.append(title);
+        path.addEventListener('click', () => chooseGuide(item.id));
+        guides.append(path);
+        const option = document.createElement('option');
+        option.value = String(item.id);
+        option.textContent = titleOf(item.curve) + (item.curve.kind === 'arc' ? ' · 圆弧' : ' · 直线');
+        selector.append(option);
+      }
+      const branchGuide = analysis.guides.find(item =>
+        item.events.some(event => event.kind === 'branch' && event.t > 0 && event.t < 1));
+      const firstBranch = branchGuide?.events.find(event => event.kind === 'branch' && event.t > 0 && event.t < 1);
+      chooseGuide((branchGuide || analysis.guides[0])?.id, firstBranch ? firstBranch.t * .85 : .35);
+    }
+
+    selector.addEventListener('change', () => chooseGuide(selector.value));
+    loopControl.addEventListener('change', () => {
+      setSliderAt(lastParameter);
+      drawPose();
+    });
+    slider.addEventListener('input', () => {
+      eventFocus = null;
+      for (const button of byId('events').querySelectorAll('button')) button.setAttribute('aria-pressed', 'false');
+      drawPose();
+    });
+    byId('show-regions').addEventListener('change', event => {
+      regionLayer.style.display = event.target.checked ? '' : 'none';
+    });
+    for (const mode of ['shared', 'sweep']) {
+      byId(`mode-${mode}`).addEventListener('click', () => {
+        preferredMode = mode;
+        showRegions();
+      });
+    }
+
+    async function loadCases() {
+      const response = await fetch('./cases.json');
+      if (!response.ok) throw new Error(`截面数据加载失败（${response.status}）`);
+      const payload = await response.json();
+      return Array.isArray(payload) ? payload : payload.cases;
+    }
+
+    async function loadSharedCases() {
+      try {
+        const response = await fetch('./shared-cases.json');
+        if (!response.ok) return [];
+        const payload = await response.json();
+        return payload.cases || [];
+      } catch {
+        return [];
+      }
+    }
+
+    try {
+      const [cases, coverage] = await Promise.all([loadCases(), loadSharedCases()]);
+      if (!cases?.length) throw new Error('截面数据为空');
+      sharedCases = new Map(coverage.map(item => [String(item.id), item]));
+      for (const sample of cases) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.case = String(sample.id);
+        button.textContent = sample.title;
+        button.addEventListener('click', () => {
+          history.replaceState(null, '', '#' + encodeURIComponent(sample.id));
+          openCase(sample);
+        });
+        casesNav.append(button);
+      }
+      const requested = location.hash.slice(1);
+      openCase(cases.find(sample => encodeURIComponent(sample.id) === requested) || cases[0]);
+    } catch (error) {
+      const problem = byId('problem');
+      problem.textContent = error.message || String(error);
+      problem.hidden = false;
+    }
+  </script>
+</body>
+</html>

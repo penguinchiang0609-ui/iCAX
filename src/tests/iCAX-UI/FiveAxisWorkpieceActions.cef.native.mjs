@@ -19,7 +19,7 @@ try{
  for(const name of ['remove','lock','enable'])assert.equal(await action(name).isDisabled(),true);
  const source=resolve('TestData/FA/刀路/刀路/整理测试刀路/现场刀路-复杂组合零件124个零件-WM04T0124A-100-200.STEP');
  await page.evaluate(p=>__icaxWorkbench.importWorkpiece(p),source);await idle();await page.locator('.five-placement-tools').waitFor();
- assert.deepEqual((await page.locator('[data-tab-id]').allTextContents()).map(s=>s.trim()),['工件','装夹','CAM','孪生','帮助']);
+ assert.deepEqual((await page.locator('[data-tab-id]').allTextContents()).map(s=>s.trim()),['工件','工序','刀路','孪生','帮助']);
  for(const id of ['inspection','cad-repair','cad-edit','measure']){
    await page.locator(`[data-command-id="five.tool.${id}"]`).click();await idle();
    assert.equal(await page.evaluate(()=>fixture.view.fiveAxisArea),'workpiece');assert.equal(await page.locator(`[data-five-tool="${id}"]`).count(),1);

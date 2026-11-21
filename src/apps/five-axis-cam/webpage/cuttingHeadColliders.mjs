@@ -3,6 +3,7 @@ import {button} from './workspaceControls.mjs';
 import {saveCommittedProjectEdit} from './projectEditPersistence.mjs';
 import {refreshMachiningState} from './domainActions.mjs';
 import {renderTransformTools} from './transformHud.mjs';
+import {hasHeadWorkspacePreview} from './headWorkspaceSelection.mjs';
 
 const headOf=view=>view.scene?.domain?.setups?.find(s=>s.id===view.scene.domain.activeSetupId)?.headModel;
 const cmd=(action,label,extra='')=>button('five.head-collider.'+action,label,extra);
@@ -63,6 +64,7 @@ export async function flushHeadColliderSaves(context,view,ops){
  })();return s.saving;
 }
 export function renderHeadColliderTools(view){
+ if(hasHeadWorkspacePreview(view))return '';
  const {s,box}=activeHeadCollider(view);if(!s.show||!s.mode||!box)return '';
  const modes=[['translate','平移'],['rotate','旋转'],['scale','缩放'],['bounds','边界']].map(([mode,label])=>[mode,label,'five.head-collider.mode:'+mode]);modes.push(['focus','聚焦','five.head-collider.focus']);
  return renderTransformTools({owner:'head-collider',title:'碰撞盒变换',mode:s.mode,busy:view.pending||s.dragging,modes});
@@ -76,6 +78,7 @@ export function renderHeadColliders(view){
  return `<section class="five-head-colliders" data-five-key="head-colliders"><h3>碰撞盒</h3><div class="five-collider-toolbar"><label><input type="checkbox" data-five-head-collider-field="show" ${s.show?'checked':''}>显示线框</label>${cmd('add','＋ 添加',busy)}</div><label class="five-head-collider-part">所属刀头部件<select aria-label="碰撞盒所属刀头部件" data-five-head-collider-field="part">${s.parts.map(p=>`<option value="${p.index}" ${p.index===s.partIndex?'selected':''}>${esc(p.name)}（${p.boxes.length}）</option>`).join('')}</select></label>${s.mode?`<small>在三维预览中切换平移、旋转、缩放或边界。拖动面的方块调整边界 · Ctrl 按 1 mm 吸附 · Esc 取消拖动。</small>`:''}${cards}${!part?.boxes.length?'<p>当前部件没有碰撞盒。</p>':''}<small data-head-box-status role="status">${esc(s.error||((s.saving||s.parts.some(p=>p.dirty))?'正在保存碰撞盒…':''))}</small>${s.error?cmd('retry','重试保存'):''}</section>`;
 }
 export function headColliderField(context,view,key,value,ops){
+ if(hasHeadWorkspacePreview(view))return;
  const {s,part}=activeHeadCollider(view);s.binding={context,view,ops};if(view.pending&&!s.saving)return;
  if(key==='show'){s.show=!!value;if(!s.show){s.boundsFinish?.(true);s.mode=null;}}
  else if(key==='part'){s.boundsFinish?.(true);s.partIndex=Number(value);s.active='';s.mode=null;}
@@ -85,6 +88,7 @@ export function headColliderField(context,view,key,value,ops){
  }ops.renderProject(context,view);
 }
 export async function headColliderCommand(context,view,action,ops){
+ if(hasHeadWorkspacePreview(view))return;
  const {s,part}=activeHeadCollider(view);s.binding={context,view,ops};if(view.pending&&!s.saving)return;
  if(action==='retry'){await flushHeadColliderSaves(context,view,ops);return;}
  if(action==='edit-end'){s.boundsFinish?.(true);s.mode=null;}

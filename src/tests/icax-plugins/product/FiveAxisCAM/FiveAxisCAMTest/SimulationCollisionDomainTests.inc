@@ -246,7 +246,7 @@ TEST(FiveAxisCollision, CoversCutAndRapidAndPersistsWithoutAddingUndoEntries)
     const auto task=Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",request));ASSERT_EQ("Completed",task.at("status").To<Text>())<<iCAX::Data::VariantSerializer::Serialize(task);
     EXPECT_EQ(task,Invoke(&scene,"CamSimulation","CheckCollision",request));const auto report=SimulationReport(scene);ASSERT_EQ("Current",report.at("validity").To<Text>());
     EXPECT_EQ("5000",report.at("maxSegmentTimeMs").To<Text>());
-    EXPECT_EQ("KeypointsThenIntervals",report.at("checkOrder").To<Text>());EXPECT_GT(std::stoull(report.at("keypointCheckCount").To<Text>()),0u);
+    EXPECT_EQ("LimitsThenCollision",report.at("checkOrder").To<Text>());EXPECT_EQ("KeypointsThenIntervals",report.at("collisionOrder").To<Text>());EXPECT_GT(std::stoull(report.at("keypointCheckCount").To<Text>()),0u);
     EXPECT_TRUE(report.at("keypointResultsCurrent").To<bool>());EXPECT_GE(std::stoul(report.at("parallelWorkers").To<Text>()),1u);
     const auto keypoints=report.at("keypoints").To<Array>();ASSERT_EQ(std::stoull(report.at("keypointCheckCount").To<Text>()),keypoints.size());
     std::size_t staticCollisions=0,staticUnchecked=0;

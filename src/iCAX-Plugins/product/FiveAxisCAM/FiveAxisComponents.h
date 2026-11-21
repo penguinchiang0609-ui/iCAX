@@ -13,6 +13,7 @@ namespace iCAX::FiveAxisCAM
     using Map = iCAX::Data::ObjectMap;
     using Array = iCAX::Data::VariantArray;
     inline Map IdentityCoordinateFrame(){return {{"origin",Array{0.,0.,0.}},{"x",Array{1.,0.,0.}},{"y",Array{0.,1.,0.}},{"z",Array{0.,0.,1.}}};}
+    inline Array IdentityRigidFrame(){return {1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.};}
 
 #define FIVE_AXIS_FIELD(C, T, N, D) DECLARED_ICAX_FIELD(C, T, N, D, Equal<T>, ToValue<T>, FromValue<T>)
     struct SceneRuntime;
@@ -37,6 +38,11 @@ namespace iCAX::FiveAxisCAM
         // Project-owned head instances. Setups reference these immutable model
         // snapshots plus editable calibration; they do not duplicate a head.
         FIVE_AXIS_FIELD(CFiveAxisJobComponent, Map, HeadInstances, Map())
+        FIVE_AXIS_FIELD(CFiveAxisJobComponent, Map, HeadAssignment, Map())
+        // Frozen at project creation; never follows later user-library edits.
+        FIVE_AXIS_FIELD(CFiveAxisJobComponent, Map, ProductHeadDefault, Map())
+        FIVE_AXIS_FIELD(CFiveAxisJobComponent, Map, MachineTypeAssignment, Map())
+        FIVE_AXIS_FIELD(CFiveAxisJobComponent, Map, ProductMachineTypeDefault, Map())
     private:
         ID m_ActiveSetupID;
         ID m_ActivePlacementID;
@@ -76,6 +82,12 @@ namespace iCAX::FiveAxisCAM
         FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Map, RapidSettings, Map())
         FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Map, RapidOverrides, Map())
         FIVE_AXIS_FIELD(CFiveAxisSetupComponent, ID, HeadInstanceID, ID())
+        // HeadInstanceID is the resolved cache; this is the explicit override.
+        FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Map, HeadAssignment, Map())
+        // Abstract machining structure is independent of a physical machine.
+        FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Map, MachineTypeAssignment, Map())
+        // Shared assembly -> operation reference; part/fixture transforms stay local.
+        FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Array, AssemblyTransform, IdentityRigidFrame())
         FIVE_AXIS_FIELD(CFiveAxisSetupComponent, Map, MachineSetup, Map())
         // Rebuildable output is saved with the project but is not a user input
         // edit. Observable publication preserves existing Undo/Redo history.
@@ -134,6 +146,8 @@ namespace iCAX::FiveAxisCAM
         DECLARE_ICAX_COMPONENT_CREATOR(CFiveAxisWorkpieceComponent)
         FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, Text, Name, Text())
         FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, UInt, ListOrder, 0ull)
+        FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, Map, HeadAssignment, Map())
+        FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, Map, MachineTypeAssignment, Map())
         FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, bool, Locked, false)
         
         FIVE_AXIS_FIELD(CFiveAxisWorkpieceComponent, bool, Enabled, true)

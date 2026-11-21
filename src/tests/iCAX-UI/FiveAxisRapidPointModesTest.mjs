@@ -106,6 +106,14 @@ test('Add/Delete modes remove the drag gizmo, and leaving the mode restores norm
   syncRapidPathEditing(f.context,f.view,f.ops);assert.equal(added,1);await f.command('insert');syncRapidPathEditing(f.context,f.view,f.ops);assert.equal(vp.transformManipulator,null);assert.equal(cleared,1);
   await f.command('delete');syncRapidPathEditing(f.context,f.view,f.ops);assert.equal(vp.transformManipulator,null);cancelRapidPathMode(f.view);syncRapidPathEditing(f.context,f.view,f.ops);assert.equal(added,2);disposeRapidPathEditing(f.view);
 });
+test('a world-space rapid drag through a rotated assembly persists only its converted Setup-local coordinates',async()=>{
+ const f=await fixture(),vp=f.view.viewport,frame=new THREE.Matrix4().makeTranslation(50,0,0).multiply(new THREE.Matrix4().makeRotationZ(Math.PI/2));
+ f.view.scene.domain.setups[0].assemblyTransform=frame.clone().transpose().toArray();vp.scene=new THREE.Scene();vp.renderer.domElement.addEventListener=()=>{};vp.renderer.domElement.removeEventListener=()=>{};vp.setCameraNavigationEnabled=()=>{};
+ let options;vp.setTransformManipulator=value=>{options=value;vp.transformManipulator={};};vp.clearTransformManipulator=()=>{vp.transformManipulator=null;};
+ syncRapidPathEditing(f.context,f.view,f.ops,()=>flushRapidPathSave(f.context,f.view,f.ops));assert.ok(new THREE.Vector3(...options.position).distanceTo(new THREE.Vector3(50,-10,0))<1e-8);
+ options.onStart({axis:'X',direction:[1,0,0]});options.onChange({translation:[10,0,0]});f.edit.points[1].forEach((value,i)=>assert.ok(Math.abs(value-[-10,-10,0][i])<1e-8));assert.deepEqual(f.edit.points[0],f.ends[0]);assert.deepEqual(f.edit.points.at(-1),f.ends[1]);
+ options.onEnd({moved:true});await f.idle();assert.equal(f.calls.length,1);f.calls[0].manualPath.points[0].forEach((value,i)=>assert.ok(Math.abs(value-[-10,-10,0][i])<1e-8));disposeRapidPathEditing(f.view);
+});
 
 test('rapid Euler and IJK editing persists normalized intermediate directions through the shared native saver',async()=>{
   const f=await fixture();rapidPathFieldChanged(f.view,'angle-0','30');await flushRapidPathSave(f.context,f.view,f.ops);

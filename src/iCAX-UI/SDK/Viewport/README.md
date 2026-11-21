@@ -45,6 +45,10 @@ Three.js 视口在前端本地维护相机。取景、标准视图、鼠标旋�
 
 几何资源不携带运行时 bounds。Viewport 从 position buffer 和对象 transform 计算包围盒/包围球，用于取景、裁剪和显示缓存。
 
+显示图片与文字位图使用通用 `ICRT` FlatBuffer 纹理资源（[schema](../../../iCAX-Plugins/render/RenderData/Schema/RenderTextureResource.fbs)），保存 MIME、像素尺寸与编码图片。`ICRM.base_color_texture_url` 引用该显示资源，`renderTexture.mjs` 通过原有 ResourceClient 的 FlatBuffer GET 读取并解码，不暴露后台 `resource.binary`。几何使用已有 ICRG UV 网格，照明关闭位读取 `material_flags` 的 bit0。
+
+纹理与几何一起等待后再提交 View，并重验请求代际、项目归属和视口销毁状态。过期贴图及时释放；撤销重新访问旧 URL 可重新加载。未使用的 GPU 纹理和 ImageBitmap 在快路径、完整刷新及场景断开时释放，图片变化不重建画布或侧栏。
+
 Viewport 中的对象 ID 直接来自 View 行的 Entity ID。前端可以把它原样回传用于拾取或交互反馈。
 
 Three.js 是 H5 前端内置选择，不进入 Engine/Framework，也不进入具体产品业务插件。以后如果需要 WebGPU、Babylon、Qt 或 WPF，只要提供同样的 viewport 实现即可。

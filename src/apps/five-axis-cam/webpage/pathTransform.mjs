@@ -3,6 +3,7 @@ import {activeTool,workspaceState} from './workspaceModel.mjs';
 import {pathEditCommand} from './pathEditing.mjs';
 import {toolpathLayerVisible} from './toolpathLayers.mjs';
 import {renderTransformTools,positionTransformHud} from './transformHud.mjs';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 
 const modes=['translate','rotate'];
 const rowMajor=m=>m.clone().transpose().toArray();
@@ -64,7 +65,7 @@ function preview(view,g,delta){
 function frame(view,placement){
   const source=view.viewport.sceneObjects.get(placement.id);
   if(source){source.updateWorldMatrix(true,false);return source.matrixWorld.clone();}
-  return new THREE.Matrix4().set(...placement.transform);
+  return placementWorldMatrix(view,placement);
 }
 function boundsCenter(cuts){
   const box=new THREE.Box3();for(const c of cuts)for(const p of c.previewPoints||[])box.expandByPoint(new THREE.Vector3(...p));

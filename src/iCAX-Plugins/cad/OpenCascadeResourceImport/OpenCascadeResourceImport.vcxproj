@@ -45,7 +45,7 @@
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>TKHLR.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
@@ -82,6 +82,17 @@
     <ClInclude Include="OpenCascadeBooleanPreparation.h" />
     <ClInclude Include="OpenCascadeNeutralModelEvaluator.h" />
     <ClInclude Include="OpenCascadeTaskExecution.h" />
+    <ClInclude Include="SectionPlateExact.inc" />
+    <ClInclude Include="SectionPlateFacePartition.inc" />
+    <ClInclude Include="SectionPlateContour.inc" />
+    <ClInclude Include="SectionPlateContourPolynomial.inc" />
+    <ClInclude Include="SectionPlateContourRational.inc" />
+    <ClInclude Include="SectionPlateContourPatch.inc" />
+    <ClInclude Include="SectionPlateRegularContour.inc" />
+    <ClInclude Include="SectionPlatePlaneSection.inc" />
+    <ClInclude Include="SectionPlateExactFabrication.inc" />
+    <ClInclude Include="SectionPlateExactBuild.inc" />
+    <ClInclude Include="SectionPlateValidation.inc" />
     <ClInclude Include="OpenCascadeShapeBounds.h" />
     <ClInclude Include="OpenCascadeResourceImportExport.h" />
     <ClInclude Include="OpenCascadeTubeCSGConverter.h" />

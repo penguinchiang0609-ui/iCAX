@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildPlayback} from '../../apps/five-axis-cam/webpage/trajectoryPlayback.mjs';
-import {collisionPathResults,collisionPathWarning,collisionPathStatus,collisionPathKey,selectedCollisionPath} from '../../apps/five-axis-cam/webpage/collisionPathResults.mjs';
+import {collisionPathResults,collisionPathWarning,collisionPathStatus,collisionPathKey,selectedCollisionPath,collisionPathBadge} from '../../apps/five-axis-cam/webpage/collisionPathResults.mjs';
 import {workspaceState} from '../../apps/five-axis-cam/webpage/workspaceModel.mjs';
 import {renderCollisionCheck} from '../../apps/five-axis-cam/webpage/trajectorySimulation.mjs';
 globalThis.cancelAnimationFrame??=()=>{};
@@ -28,13 +28,24 @@ test('cut including lead-in and rapid results belong to separate paths, even at 
 test('rapid status follows its own current collision and limit report and requires complete evidence for clear',()=>{
  const {view,setup}=fixture();assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'检测到碰撞');
  setup.simulationCheck.segments[2]={index:'4',status:'Unchecked',reason:'CAM_HEAD_LIMIT_NO_SOLUTION'};assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'超出切割头限位');
- setup.simulationCheck.segments[2]={index:'4',status:'Clear'};assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'');
+ setup.simulationCheck.segments[2]={index:'4',status:'Clear'};assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'碰撞与限位检测通过');
+ // Index 5 connects this rapid endpoint to the next cut; it is not rapid geometry.
  setup.simulationCheck.segments.push({index:'5',status:'Clear'});assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'碰撞与限位检测通过');
  setup.simulationCheck.validity='Stale';assert.equal(collisionPathStatus(collisionPathResults(view),'rapid:a/b'),'');
 });
 test('stale reports and reports from different trajectories never mark either list',()=>{
  const {view,setup}=fixture();setup.simulationCheck.validity='Stale';assert.equal(collisionPathResults(view).paths.size,0);
  setup.simulationCheck.validity='Current';setup.simulationCheck.frames[4].position[0]+=1;assert.equal(collisionPathResults(view).paths.size,0);
+});
+test('green clearance requires a complete current path report; failures stay yellow and stale paths are untested',()=>{
+ const {view,setup}=fixture();
+ assert.match(collisionPathBadge(collisionPathResults(view),'rapid:a/b'),/data-five-collision-warning/);
+ setup.simulationCheck.segments[2]={index:'4',status:'Clear'};
+ assert.match(collisionPathBadge(collisionPathResults(view),'rapid:a/b'),/data-five-collision-pass/);
+ assert.doesNotMatch(collisionPathBadge(collisionPathResults(view),'cut:a'),/data-five-collision-pass/);
+ setup.simulationCheck.validity='Stale';
+ assert.match(collisionPathBadge(collisionPathResults(view),'rapid:a/b'),/未检测/);
+ assert.doesNotMatch(collisionPathBadge(collisionPathResults(view),'rapid:a/b'),/data-five-collision-pass/);
 });
 test('the inspector filters cut and rapid records and moves to the newly selected path without a dialog',()=>{
  const {view}=fixture();let html=renderCollisionCheck(view);

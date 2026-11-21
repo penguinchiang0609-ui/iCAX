@@ -1,0 +1,13 @@
+# PlaneNestingServices
+
+`IPlaneNestingService` is a neutral, stateless iCAX `IService` adapter over the existing `iPlaneNesting` C ABI. The interface is in `framework/GeometryServices/PlaneNestingService.h`; the DLL registers through `AUTO_REGIST_SERVICE` and the normal module-scoped service catalog. It does not reference a product, Scene, Repository, resource library or SDO, and does not publish business data.
+
+The caller supplies polygon material snapshots, part quantities, discrete/continuous rotations, mirror permission, gaps and one unique ID per physical stock board. Stock outlines and holes retain their input coordinate frame; the adapter temporarily normalizes each stock origin for the C ABI and restores it in returned placements. Placement coordinates identify the transformed part pivot, as specified by the interface formula. A stock entry always has quantity one; inventory expansion belongs to the product.
+
+The adapter uses the existing material engine for actual geometry, stock holes, part holes, containment and clearance checks. Returned validation identifies the `PolygonMaterial` scope and engine validation source; it does not certify original CAD curves that were not supplied. The adapter additionally checks concrete part conservation, physical stock identity and source orientation constraints. Area utilization uses the net area of used stock before margin erosion. Incomplete demand is explicit and does not establish geometric infeasibility or global optimality.
+
+Each call owns and releases a C ABI session. A module-wide mutex serializes the full session transaction; waiting consumes the requested search budget. Cancellation is checked while waiting, before the solve and after return. The current C ABI cannot interrupt an executing solve; cancelled output is discarded. Validation, conversion and cleanup are not a hard real-time deadline. The service owns no worker or asynchronous submission lifecycle.
+
+The project depends only on `Services` and the C ABI import library. `PlaneNestingSdkRoot` defaults to `foundation/iPlaneNesting/dist/Release/`, which is also usable from a Debug adapter across the C ABI. Runtime DLL deployment belongs to the product package; the project does not copy runtime DLLs into another build output.
+
+Focused native tests: `tests/icax-plugins/geometry/PlaneNestingServices/PlaneNestingServicesTest.vcxproj`. They discover the real DLL through the service registration catalog. Put `PlaneNestingServices.dll`, `Services.dll` and the existing `iPlaneNesting.dll` beside the test executable in the selected runtime package. The production product owns ECS entities, version checks, cancellation of publication and transactional result submission.

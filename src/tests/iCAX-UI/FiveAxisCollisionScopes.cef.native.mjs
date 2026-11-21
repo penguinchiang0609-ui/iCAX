@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {chromium} from 'playwright';
+const port=Number(process.env.ICAX_COLLISION_TEST_PORT);if(!(port>=9690))throw Error('Use a dedicated acceptance runtime.');
+const output=resolve(process.env.ICAX_COLLISION_TEST_OUTPUT||'output/acceptance/limits-first-20261102');mkdirSync(output,{recursive:true});
+const browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`),page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('/SDK/AppShell/index.html'));
+page.setDefaultTimeout(120000);const report={passed:false,nativeBusinessMocked:false,cases:[]};
+try{
+ await page.evaluate(async()=>{const {getProjectView}=await import('../../../apps/_shared/workbench/state/projectViewStore.mjs');window.scopeAudit=getProjectView(__icaxAppShell.getState().activeProjectId);});
+ const idle=()=>page.waitForFunction(()=>!__icaxAppShell.getState().pendingCount&&!scopeAudit.pending&&!scopeAudit.fiveToolAxisRequest&&!scopeAudit.fiveSimulation?.checking&&!scopeAudit.fiveSimulation?.repairing&&!scopeAudit.fiveSimulation?.repairSequence);
+ await page.keyboard.press('Escape');
+ const command=async id=>{await page.evaluate(id=>__icaxAppShell.executeRibbonCommand(id),id);await idle();};
+ await page.evaluate(async()=>{
+  const v=scopeAudit,sceneProxy=v.viewportSceneProxy,setup=v.scene.domain.setups.find(s=>s.id===v.scene.domain.activeSetupId);
+  const {waitForTaskResult}=await import('../../../apps/five-axis-cam/webpage/taskProgressStream.mjs');
+  const {readMachiningState,mergeDomainState}=await import('../../../apps/five-axis-cam/webpage/domainActions.mjs');
+  const task=await sceneProxy.invoke('CamRapid.Generate',{commandId:crypto.randomUUID(),expected:structuredClone(v.scene.domain.expected),setupId:setup.id,geometryRevision:setup.generatedGeometry.revision,safe:false});
+  const finished=await waitForTaskResult({sceneProxy},task,{queryMethod:'CamRapid.QueryStatus',cancelMethod:'CamRapid.CancelTask'});if(finished.status!=='Completed')throw Error(finished.error||finished.status);
+  mergeDomainState(v.scene,await readMachiningState({sceneProxy}));
+  const original=sceneProxy.invoke;window.scopeAuditOriginal=original;window.scopeAuditCalls=[];
+  sceneProxy.invoke=async function(method,payload,...args){scopeAuditCalls.push({method,payload:structuredClone(payload)});return original.call(this,method,payload,...args);};
+ });
+ await command('five.cam-page.cutting');
+ const workspace=await page.evaluate(async()=>{const {camRibbonWorkspace}=await import('../../../apps/five-axis-cam/webpage/camWorkspace.mjs');return camRibbonWorkspace(scopeAudit,'toolpath');});
+ assert(!workspace.checks.some(c=>c.id.includes('collision')));
+ await page.locator('.ribbon-command[data-command-id="five.simulation.collision-check"]').click();await idle();
+ const cutting=await page.evaluate(()=>structuredClone(scopeAudit.fiveSimulation.collisionReport));assert.equal(cutting.checkMode,'Cutting');
+ const cuts=cutting.keyposeChecks.filter(r=>r.location.role!=='Rapid');assert(cuts.length);
+ await command('five.cam-page.rapid');
+ await page.locator('.ribbon-command[data-command-id="five.simulation.collision-check"]').click();await idle();
+ const rapid=await page.evaluate(()=>structuredClone(scopeAudit.fiveSimulation.collisionReport));assert.equal(rapid.checkMode,'Rapid');
+ assert(rapid.keyposeChecks.some(r=>r.location.role==='Rapid'));assert.deepEqual(rapid.keyposeChecks.filter(r=>r.location.role!=='Rapid'),cuts);
+ const payloads=await page.evaluate(()=>scopeAuditCalls.filter(c=>c.method==='CamSimulation.CheckCollision').map(c=>c.payload));assert.deepEqual(payloads.map(p=>p.pathKind),['Cutting','Rapid']);
+ report.cases.push('Separate page buttons send Cutting or Rapid; rapid checking retains cutting results; the common workspace has no mixed check button.');
+ await command('five.cam-page.cutting');
+ const manualBegin=await page.evaluate(()=>scopeAuditCalls.length);
+ await command('five.simulation.collision-manual-scope');
+ const manual=await page.evaluate(begin=>({calls:scopeAuditCalls.slice(begin),selected:scopeAudit.fiveAxisUI.selectedIntentId,location:scopeAudit.fiveSimulation.collisionReport.keyposeChecks.find(r=>r.status==='Collision'&&r.location.role!=='Rapid')?.location}),manualBegin);
+ assert.equal(manual.selected,manual.location.intentId);assert(!manual.calls.some(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)));
+ assert(await page.locator('[data-five-command^="five.simulation.collision-edit-"]').count());
+ report.cases.push('Manual repair selects a cutting issue and exposes its keypoint editor without starting a calculation.');
+ const before=await page.evaluate(()=>({calls:scopeAuditCalls.length,geometry:JSON.stringify(scopeAudit.scene.domain.setups[0].generatedGeometry),cad:JSON.stringify(scopeAudit.scene.domain.workpieces)}));
+ const toggle=page.locator('.ribbon-command-menu-toggle[data-command-id="five.simulation.collision-check"]');await toggle.scrollIntoViewIfNeeded();
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await toggle.click();
+ await page.locator('.ribbon-command-menu-item[data-command-id="five.simulation.collision-auto-scope"]').click();await idle();
+ assert.equal(await page.evaluate(begin=>scopeAuditCalls.slice(begin).filter(c=>/CheckCollision|AutoRepair|\.Generate$/.test(c.method)).length,before.calls),0);
+ assert.match(await page.locator('.five-collision-repair h4').innerText(),/全部切割/);
+ await page.locator('[data-five-simulation-field="repair-deviation"]').fill('0');await page.locator('[data-five-simulation-field="repair-position"]').fill('0');
+ await page.locator('[data-five-command="five.simulation.collision-repair-scope"]').click();await idle();
+ const after=await page.evaluate(begin=>({calls:scopeAuditCalls.slice(begin),geometry:JSON.stringify(scopeAudit.scene.domain.setups[0].generatedGeometry),cad:JSON.stringify(scopeAudit.scene.domain.workpieces),message:scopeAudit.fiveSimulation.message}),before.calls);
+ const repairs=after.calls.filter(c=>c.method==='CamSimulation.AutoRepairCollision');assert(repairs.length);assert(repairs.every(c=>c.payload.repairPhase==='Collision'&&c.payload.maxDeviationDeg===0&&c.payload.maxTranslationMm===0));
+ assert(after.calls.filter(c=>c.method==='CamSimulation.CheckCollision').every(c=>c.payload.pathKind==='Cutting'||c.payload.intentId));
+ assert(!after.calls.some(c=>c.method==='CamRapid.Generate'));assert.equal(after.geometry,before.geometry);assert.equal(after.cad,before.cad);assert.match(after.message,/仍需调整/);
+ assert.equal(await page.locator('dialog[open]').count(),0);report.cases.push('The menu opens tolerance fields without calculating; explicit batch repair uses the selected type, preserves unrelated geometry and reports unresolved zero-tolerance cases.');
+ report.repairs=repairs.length;await page.screenshot({path:resolve(output,'scopes.png')});report.passed=true;
+}catch(error){report.error=error.stack;report.ui=await page.evaluate(()=>({error:scopeAudit.error,message:scopeAudit.fiveSimulation?.message,text:document.body.innerText.slice(-2000)})).catch(()=>null);process.exitCode=1;}
+finally{await page.evaluate(()=>{if(window.scopeAuditOriginal)scopeAudit.viewportSceneProxy.invoke=scopeAuditOriginal;}).catch(()=>{});writeFileSync(resolve(output,'scopes.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));await browser.close();}

@@ -1,5 +1,6 @@
 #include "SheetNestingContactPrecision.h"
 #include "NestingInternal.h"
+#include "NestingAxisSafety.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -21,5 +22,11 @@ int main() try {
  auto bad=opts;bad.Clearance=0;require(RefineContactPrecision(p,in,bad).State==ContactPrecisionStatus::InvalidInput,"invalid clearance accepted");
  auto concave=p;concave.Parts[0].Geometry.Outer={{0,0},{5,0},{5,2},{2,2},{2,5},{0,5}};auto concaveResult=in;concaveResult.Layouts[0].MaterialArea=41;auto cr=RefineContactPrecision(concave,concaveResult,opts);
  require(cr.State==ContactPrecisionStatus::Applied&&Validate(concave,cr.Output).Valid,"concave part failed");
+ auto spaced=p;spaced.PartGap=.2;spaced.EdgeMargin=.5;spaced.Stocks[0].Quantity=2;for(auto& part:spaced.Parts)part.Quantity=2;
+ auto nearGap=in;nearGap.Layouts[0].Placements[0].Transform={.5,.5,0};nearGap.Layouts[0].Placements[1].Transform={5.699999999999999,.5,0};
+ nearGap.Layouts.push_back(nearGap.Layouts[0]);nearGap.Layouts[1].StockInstance=1;for(auto& q:nearGap.Layouts[1].Placements)q.Instance=1;
+ auto precise=RefineContactPrecision(spaced,nearGap,opts);
+ require(precise.State==ContactPrecisionStatus::Applied&&Validate(spaced,precise.Output).Complete,"multi-sheet positive-gap roundoff was not repaired");
+ for(const auto& board:precise.Output.Layouts){const auto& a=board.Placements[0];const auto& b=board.Placements[1];require(AxisSafety::Pair(AxisSafety::Make(spaced.Parts[0].Geometry,a.Transform),AxisSafety::Make(spaced.Parts[1].Geometry,b.Transform),.2,false,spaced.Tolerance)==AxisSafety::Verdict::Safe,"micro-translation repair spent nominal gap tolerance");}
  std::cout<<"contact precision controls passed\n";return 0;
 } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

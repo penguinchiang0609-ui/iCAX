@@ -30,7 +30,9 @@ namespace
     bool HasRapidEditingGeometry(const Map&);
     Map RapidSettings(const CFiveAxisSetupComponent& setup){
         auto settings=setup.GetRapidSettings();
-        if(settings.empty())settings={{"strategy",Text("Quick")},{"followHeightMm",1.},{"liftHeightMm",10.},{"collisionThresholdMm",.1},{"marginMm",.2},
+        // The calibrated TCP is the virtual cutting point, not the nozzle face.
+        // Normal cutting therefore needs no additional offset from its path.
+        if(settings.empty())settings={{"strategy",Text("Quick")},{"followHeightMm",0.},{"liftHeightMm",10.},{"collisionThresholdMm",.1},{"marginMm",.2},
             {"envelopeRadiusMm",0.},{"envelopeLengthMm",0.},{"linearSpeedMmS",100.},{"linearAccelerationMmS2",1000.},{"angularSpeedRadS",1.},{"angularAccelerationRadS2",2.}};
         return settings;
     }
@@ -63,7 +65,8 @@ namespace
         CutFields(value,{"kind","followHeightMm","liftHeightMm","lateralOffset","turnPoint"});
         iCAX::GeometryServices::RapidPathConstruction construction;construction.Kind=RapidConstructionKind(String(value,"kind"));
         construction.FollowHeight=RegistrationNumber(value.at("followHeightMm"));construction.LiftHeight=RegistrationNumber(value.at("liftHeightMm"));construction.LateralOffset=RegistrationPoint(value.at("lateralOffset"));
-        for(double x:{construction.FollowHeight,construction.LiftHeight})if(!std::isfinite(x)||x<=0||x>1e6)throw std::invalid_argument("CAM_RAPID_CONSTRUCTION_INVALID");
+        if(!std::isfinite(construction.FollowHeight)||construction.FollowHeight<0||construction.FollowHeight>1e6)throw std::invalid_argument("CAM_RAPID_CONSTRUCTION_INVALID");
+        if(!std::isfinite(construction.LiftHeight)||construction.LiftHeight<=0||construction.LiftHeight>1e6)throw std::invalid_argument("CAM_RAPID_CONSTRUCTION_INVALID");
         for(double x:construction.LateralOffset)if(!std::isfinite(x)||std::abs(x)>1e6)throw std::invalid_argument("CAM_RAPID_CONSTRUCTION_INVALID");
         if(value.contains("turnPoint")){construction.TurnPoint=RegistrationPoint(value.at("turnPoint"));
             if(construction.Kind!=iCAX::GeometryServices::RapidPathKind::Retract||std::any_of(construction.LateralOffset.begin(),construction.LateralOffset.end(),[](double x){return x!=0;}))throw std::invalid_argument("CAM_RAPID_TURN_POINT_CONSTRUCTION_INVALID");
@@ -698,7 +701,7 @@ Map ConfigureRapids(Scene& scene,const Map& request){
         auto settings=request.at("settings").To<Map>();const auto defaults=RapidSettings(scene,id);if(settings.size()!=defaults.size())throw std::invalid_argument("CAM_RAPID_SETTINGS_REQUIRED");
         for(const auto& [key,value]:settings){if(!defaults.contains(key))throw std::invalid_argument("CAM_RAPID_UNKNOWN_SETTING");if(key=="strategy"){CheckRapidStrategy(value.To<Text>());continue;}
             const auto n=RegistrationNumber(value);if(IsRapidSafeCoordinate(key)){if(std::abs(n)>1e8)throw std::invalid_argument("CAM_RAPID_SAFE_COORDINATE_RANGE");}
-            else if(n<0||n>100000||(!key.starts_with("envelope")&&key!="marginMm"&&key!="collisionThresholdMm"&&n==0))throw std::invalid_argument("CAM_RAPID_PARAMETER_RANGE");}
+            else if(n<0||n>100000||(!key.starts_with("envelope")&&key!="marginMm"&&key!="collisionThresholdMm"&&key!="followHeightMm"&&n==0))throw std::invalid_argument("CAM_RAPID_PARAMETER_RANGE");}
         if((RegistrationNumber(settings.at("envelopeRadiusMm"))==0)!=(RegistrationNumber(settings.at("envelopeLengthMm"))==0))throw std::invalid_argument("CAM_RAPID_ENVELOPE_REQUIRED");
         for(auto& [key,value]:settings)if(key!="strategy")value=RegistrationNumber(value);
         ValidateRapidPolicy(DefaultRapidPolicy(settings));const bool changed=settings!=setup->GetRapidSettings();if(changed)RapidChange(scene,id,{{"RapidSettings",settings}},"修改空移设置");return Map{{"changed",changed}};

@@ -26,12 +26,52 @@ int main()
         const auto stage=MakeTriangleSeparationRepairStage();auto processor=stage.Factory();const auto result=processor->Run(p,initial,o);
         Require(Validate(p,result).Valid&&Validate(p,result).Complete&&result.State==Status::Complete,"separation repair did not complete");
         Require(initial.Layouts[0].Placements.size()==2&&initial.Remaining[0].Quantity==1,"original input mutated");
+        TriangleSeparationRepairSettings eventSettings;eventSettings.UseNfpSeeds=true;
+        const auto eventResult=MakeTriangleSeparationRepairStage(eventSettings).Factory()->Run(p,initial,o);
+        Require(Validate(p,eventResult).Complete,"original-material NFP seed repair did not complete");
+        // These two diamonds fit in the 18-square only at diagonal contact.
+        // An artificial 4*tolerance clearance makes the projection rows
+        // inconsistent: the old stage exhausts this 1M budget still partial.
+        Problem diamonds;diamonds.Tolerance=1e-7;Part diamond;diamond.ID="diamond";diamond.Material="m";diamond.FreeRotation=false;
+        diamond.AllowedAnglesDegrees={0};diamond.Quantity=2;diamond.Geometry.Outer={{0,6},{6,0},{12,6},{6,12}};
+        diamonds.Parts={diamond};diamonds.Stocks={{"sheet",18,18,1,1,"m"}};
+        Result diamondInitial;diamondInitial.State=Status::Partial;diamondInitial.Layouts={{"sheet",0,18,18,{{"diamond",0,{3,3,0},0,false}},72}};
+        diamondInitial.Remaining={{"diamond",1}};Require(Validate(diamonds,diamondInitial).Valid,"invalid exact-contact diamond fixture");
+        auto diamondBudget=o;diamondBudget.MaxPlacementAttempts=1000000;
+        const auto diamondResult=stage.Factory()->Run(diamonds,diamondInitial,diamondBudget);const auto diamondCheck=Validate(diamonds,diamondResult);
+        Require(diamondCheck.Valid&&diamondCheck.Complete&&diamondCheck.PlacedCount==2,"zero-gap diagonal contact exhausted projection budget");
+        Require(diamondResult.Stats.PlacementAttempts<=diamondBudget.MaxPlacementAttempts,"exact-contact repair exceeded caller budget");
+        Require(diamondInitial.Layouts[0].Placements.size()==1&&diamondInitial.Layouts[0].Placements[0].Transform.X==3&&
+            diamondInitial.Remaining[0].Quantity==1,"exact-contact repair mutated original inventory or pose");
+        auto tinyProbe=eventSettings;tinyProbe.MaxProbeAttempts=1;
+        const auto tinyProbeResult=MakeTriangleSeparationRepairStage(tinyProbe).Factory()->Run(p,initial,o);
+        Require(tinyProbeResult.State!=Status::Cancelled&&Validate(p,tinyProbeResult).Valid,
+            "local seed preparation limit was misreported as user cancellation");
         auto cancel=o;cancel.Cancel=[]{return true;};const auto stopped=stage.Factory()->Run(p,initial,cancel);
         Require(stopped.State==Status::Cancelled&&Validate(p,stopped).Valid&&stopped.Remaining[0].Quantity==1,"cancel lost original demand");
         std::size_t polls=0;auto mid=o;mid.Cancel=[&]{return ++polls==40;};const auto stoppedMid=stage.Factory()->Run(p,initial,mid);
         Require(stoppedMid.State==Status::Cancelled&&Validate(p,stoppedMid).Valid,"mid-search cancellation invalidated originals");
         auto limited=o;limited.MaxPlacementAttempts=1;const auto cut=stage.Factory()->Run(p,initial,limited);
         Require(Validate(p,cut).Valid&&cut.Remaining[0].Quantity==1&&cut.Stats.PlacementAttempts<=1,"attempt limit lost originals");
+        // Every height-4 piece overlaps in Y on this height-4.5 board, so their
+        // total width 11.5 cannot fit. A difficult first seed must not consume
+        // the entire search budget or leak its overlapping scratch placement.
+        auto crowded=p;crowded.Parts[2].Geometry=Box(5.5,4);
+        const auto crowdedInitial=Initial(crowded);auto fair=o;fair.MaxPlacementAttempts=20000;
+        const auto explored=stage.Factory()->Run(crowded,crowdedInitial,fair);
+        Require(explored.State==Status::Partial&&Validate(crowded,explored).Valid&&
+            !Validate(crowded,explored).Complete&&explored.Layouts[0].Placements.size()==2&&
+            explored.Remaining.size()==1&&explored.Remaining[0].PartID=="c"&&explored.Remaining[0].Quantity==1,
+            "seed exhaustion must preserve the valid original partial layout");
+        Require(explored.Stats.PlacementAttempts<=fair.MaxPlacementAttempts,
+            "per-seed budgets exceeded the shared attempt limit");
+        std::size_t triedSeeds=0;
+        for(const auto& note:explored.Diagnostics)
+        {
+            const auto field=note.find("; seeds=");
+            if(field!=std::string::npos)triedSeeds=std::stoull(note.substr(field+8));
+        }
+        Require(triedSeeds>1,"a difficult first seed monopolized the search budget");
         auto no=p;no.PartGap=1;const auto skipped=stage.Factory()->Run(no,initial,o);
         Require(skipped.Layouts[0].Placements.size()==2&&skipped.Remaining[0].Quantity==1,"unsupported gap changed input");
         auto invalid=initial;invalid.Layouts[0].Placements[1].Transform.X=4;

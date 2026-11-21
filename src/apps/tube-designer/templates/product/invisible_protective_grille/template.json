@@ -1,0 +1,643 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "invisible-protective-grille",
+  "version": "1.0.0",
+  "displayName": {
+    "zh-CN": "隐形防护网"
+  },
+  "description": "竖向实心圆线保持通长，上下及中间采用正反两片矩形压条夹固；无左右框，不以焊接代替夹固。压条为普通矩形截面，供应商专用槽型和端部连接件另行确认。",
+  "extensions": {
+    "parameterDependencies": {
+      "creationOnly": [],
+      "manufacturingOnly": []
+    },
+    "catalog": {
+      "categoryPath": [
+        "窗"
+      ],
+      "groupOrder": 10,
+      "templateOrder": 16,
+      "listed": true,
+      "icon": "resource/icon.svg",
+      "schematic": "resource/schematic.svg"
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "width",
+      "heightParameter": "height"
+    },
+    "addDialog": {
+      "structureParameters": [],
+      "parameterGroups": []
+    },
+    "resourceRoles": {
+      "profiles": {
+        "wire": {
+          "parameter": "wireProfileType",
+          "defaultResourcesBySectionKind": {
+            "round-bar": "system:round-bar"
+          },
+          "defaultParametersByResource": {
+            "system:round-bar": {
+              "width": 2
+            }
+          },
+          "parameterBindingsBySectionKind": {
+            "round-bar": {
+              "width": "wireWidth"
+            }
+          },
+          "managedParameters": [
+            "wireWidth"
+          ],
+          "parameterLabelsBySectionKind": {
+            "round-bar": {
+              "width": {
+                "zh-CN": "线径"
+              }
+            }
+          }
+        },
+        "clamp": {
+          "parameter": "clampProfileType",
+          "defaultResourcesBySectionKind": {
+            "rect-bar": "system:rect-bar"
+          },
+          "defaultParametersByResource": {
+            "system:rect-bar": {
+              "width": 20,
+              "depth": 3
+            }
+          },
+          "parameterBindingsBySectionKind": {
+            "rect-bar": {
+              "width": "clampWidth",
+              "depth": "clampDepth"
+            }
+          },
+          "managedParameters": [
+            "clampWidth",
+            "clampDepth"
+          ],
+          "parameterLabelsBySectionKind": {
+            "rect-bar": {
+              "width": {
+                "zh-CN": "宽"
+              },
+              "depth": {
+                "zh-CN": "厚"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        {
+          "parameter": "width",
+          "axis": "x",
+          "kind": "linear",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "group": "overall",
+          "order": 10,
+          "editable": true,
+          "offset": [
+            0,
+            0,
+            -100
+          ]
+        },
+        {
+          "parameter": "height",
+          "axis": "z",
+          "kind": "linear",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "group": "overall",
+          "order": 20,
+          "editable": true,
+          "offset": [
+            -100,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "wireWidth",
+          "axis": "x",
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "线径"
+          },
+          "group": "wire_layout",
+          "order": 30,
+          "editable": true,
+          "offset": [
+            100,
+            0,
+            0
+          ],
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.7
+            }
+          ]
+        },
+        {
+          "parameter": "wireCenterSpacing",
+          "axis": "x",
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "竖线中心距"
+          },
+          "group": "wire_layout",
+          "order": 40,
+          "editable": true,
+          "offset": [
+            100,
+            0,
+            0
+          ],
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.6
+            }
+          ]
+        },
+        {
+          "parameter": "clampCount",
+          "axis": "x",
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "中间夹条组数"
+          },
+          "group": "clamp_layout",
+          "order": 50,
+          "editable": true,
+          "offset": [
+            100,
+            0,
+            0
+          ],
+          "origin": [
+            {
+              "parameter": "width",
+              "scale": 1.05
+            },
+            0,
+            {
+              "parameter": "height",
+              "scale": 0.5
+            }
+          ]
+        },
+        {
+          "parameter": "clampBottomOffset",
+          "axis": "z",
+          "kind": "linear",
+          "label": {
+            "zh-CN": "首组夹条中心离底"
+          },
+          "group": "clamp_layout",
+          "order": 60,
+          "editable": true,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "clampCount",
+            "value": 0
+          },
+          "offset": [
+            100,
+            0,
+            0
+          ]
+        },
+        {
+          "parameter": "clampTopOffset",
+          "axis": "z",
+          "kind": "linear",
+          "label": {
+            "zh-CN": "末组夹条中心离顶"
+          },
+          "group": "clamp_layout",
+          "order": 70,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "clampCount",
+                "value": 0
+              },
+              {
+                "op": "ne",
+                "parameter": "clampCount",
+                "value": 1
+              }
+            ]
+          },
+          "offset": [
+            100,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "overall": "all",
+        "wire_layout": {
+          "memberStableKeyPrefixes": [
+            "wire."
+          ]
+        },
+        "clamp_layout": {
+          "memberStableKeyPrefixes": [
+            "clamp.middle."
+          ]
+        },
+        "wire_profile": {
+          "memberStableKeyPrefixes": [
+            "wire."
+          ]
+        },
+        "clamp_profile": {
+          "memberStableKeyPrefixes": [
+            "clamp."
+          ]
+        }
+      },
+      "profileRoles": {
+        "wire": {
+          "parameters": [
+            "wireProfileType",
+            "wireWidth"
+          ],
+          "memberStableKeyPrefixes": [
+            "wire."
+          ]
+        },
+        "clamp": {
+          "parameters": [
+            "clampProfileType",
+            "clampWidth",
+            "clampDepth"
+          ],
+          "memberStableKeyPrefixes": [
+            "clamp."
+          ]
+        }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        {
+          "key": "product",
+          "displayName": {
+            "zh-CN": "产品规格"
+          },
+          "order": 10,
+          "defaultOpen": true,
+          "groups": [
+            "overall",
+            "wire_layout",
+            "clamp_layout"
+          ]
+        },
+        {
+          "key": "materials",
+          "displayName": {
+            "zh-CN": "用料"
+          },
+          "order": 20,
+          "defaultOpen": true,
+          "allowPresets": true,
+          "groups": [
+            "wire_profile",
+            "clamp_profile"
+          ]
+        }
+      ]
+    },
+    "productDiagram": {
+      "schemaVersion": 1,
+      "kind": "invisible-protective-grille",
+      "bindings": {
+        "width": "width",
+        "height": "height",
+        "wireProfileType": "wireProfileType",
+        "wireWidth": "wireWidth",
+        "wireCenterSpacing": "wireCenterSpacing",
+        "clampProfileType": "clampProfileType",
+        "clampWidth": "clampWidth",
+        "clampDepth": "clampDepth",
+        "clampCount": "clampCount",
+        "clampBottomOffset": "clampBottomOffset",
+        "clampTopOffset": "clampTopOffset"
+      }
+    }
+  },
+  "groups": [
+    {
+      "key": "overall",
+      "displayName": {
+        "zh-CN": "成品尺寸"
+      }
+    },
+    {
+      "key": "wire_layout",
+      "displayName": {
+        "zh-CN": "竖线排布"
+      }
+    },
+    {
+      "key": "clamp_layout",
+      "displayName": {
+        "zh-CN": "横夹条排布"
+      }
+    },
+    {
+      "key": "wire_profile",
+      "displayName": {
+        "zh-CN": "竖向线材"
+      }
+    },
+    {
+      "key": "clamp_profile",
+      "displayName": {
+        "zh-CN": "横向压条"
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "隐形防护网",
+      "group": "overall",
+      "order": 0
+    },
+    {
+      "key": "width",
+      "displayName": {
+        "zh-CN": "成品宽"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "overall",
+      "order": 10,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "height",
+      "displayName": {
+        "zh-CN": "成品高"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "overall",
+      "order": 20,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "wireProfileType",
+      "displayName": {
+        "zh-CN": "线材"
+      },
+      "valueType": "enum",
+      "defaultValue": "round-bar",
+      "group": "wire_profile",
+      "order": 100,
+      "choices": [
+        {
+          "value": "round-bar",
+          "displayName": {
+            "zh-CN": "实心圆线"
+          }
+        }
+      ],
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "wire",
+        "profileConstraints": {
+          "sectionKinds": [
+            "round-bar"
+          ],
+          "minimumContourCount": 1,
+          "maximumContourCount": 1,
+          "hollow": false
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "wireWidth",
+      "displayName": {
+        "zh-CN": "线径"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "wire_layout",
+      "order": 30,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "wireCenterSpacing",
+      "displayName": {
+        "zh-CN": "竖线中心距"
+      },
+      "valueType": "number",
+      "defaultValue": 50,
+      "group": "wire_layout",
+      "order": 40,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "clampProfileType",
+      "displayName": {
+        "zh-CN": "压条型材"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect-bar",
+      "group": "clamp_profile",
+      "order": 110,
+      "choices": [
+        {
+          "value": "rect-bar",
+          "displayName": {
+            "zh-CN": "矩形实心条"
+          }
+        }
+      ],
+      "presentation": {
+        "editor": "profile-library",
+        "resourceRole": "clamp",
+        "profileConstraints": {
+          "sectionKinds": [
+            "rect-bar"
+          ],
+          "minimumContourCount": 1,
+          "maximumContourCount": 1,
+          "hollow": false
+        },
+        "allowedScopes": [
+          "system",
+          "user"
+        ],
+        "allowExternalDxf": false
+      }
+    },
+    {
+      "key": "clampWidth",
+      "displayName": {
+        "zh-CN": "宽"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "clamp_profile",
+      "order": 120,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "clampDepth",
+      "displayName": {
+        "zh-CN": "厚"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "clamp_profile",
+      "order": 130,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "clampCount",
+      "displayName": {
+        "zh-CN": "中间夹条组数"
+      },
+      "valueType": "integer",
+      "defaultValue": 1,
+      "group": "clamp_layout",
+      "order": 50,
+      "quantity": "count",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "description": "每组含正反两片压条；上下固定压条不计入此数量。"
+    },
+    {
+      "key": "clampBottomOffset",
+      "displayName": {
+        "zh-CN": "首组夹条中心离底"
+      },
+      "valueType": "number",
+      "defaultValue": 500,
+      "group": "clamp_layout",
+      "order": 60,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "clampCount",
+        "value": 0
+      },
+      "description": "一组时由此尺寸确定中心位置；多组时为最下组中心离底。"
+    },
+    {
+      "key": "clampTopOffset",
+      "displayName": {
+        "zh-CN": "末组夹条中心离顶"
+      },
+      "valueType": "number",
+      "defaultValue": 500,
+      "group": "clamp_layout",
+      "order": 70,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "clampCount",
+            "value": 0
+          },
+          {
+            "op": "ne",
+            "parameter": "clampCount",
+            "value": 1
+          }
+        ]
+      },
+      "description": "两组及以上时生效，从首组到末组中心等距排布。"
+    }
+  ]
+}

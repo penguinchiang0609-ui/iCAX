@@ -1,5 +1,6 @@
 #include "SheetNestingSeparationRepair.h"
 #include "NestingInternal.h"
+#include "SheetNestingDomainSearch.h"
 #include <clipper2/clipper.h>
 #include <algorithm>
 #include <array>
@@ -9,6 +10,7 @@
 #include <map>
 #include <numeric>
 #include <set>
+#include <stdexcept>
 #include <tuple>
 
 namespace iCAX::SheetNesting
@@ -108,25 +110,30 @@ namespace
     }
     class TriangleSeparationRepair final:public IPostProcessor
     {
+        TriangleSeparationRepairSettings Settings;
     public:
+        explicit TriangleSeparationRepair(TriangleSeparationRepairSettings settings):Settings(settings){}
         Result Run(const Problem& problem,const Result& incumbent,const Options& options) override
         {
             const auto started=Clock::now();Result kept=incumbent;Statistics work;work.VerificationSeconds=work.EvaluationSeconds=0;
-            bool cancelled=false;std::string reason="finite-candidates-exhausted";std::size_t seedCount=0;
+            bool cancelled=false;std::string reason="finite-candidates-exhausted";std::size_t seedCount=0,seedBudgetSkips=0,eventSeeds=0,selectedEventSeeds=0;
+            const auto attemptLimit=std::min(options.MaxPlacementAttempts,MaxAttempts);
             const auto elapsed=[&]{return std::chrono::duration<double>(Clock::now()-started).count();};
             const auto stop=[&]
             {
                 if(!cancelled&&options.Cancel&&options.Cancel())cancelled=true;
-                return cancelled||elapsed()>=options.TimeLimitSeconds||work.PlacementAttempts>=std::min(options.MaxPlacementAttempts,MaxAttempts);
+                return cancelled||elapsed()>=options.TimeLimitSeconds||work.PlacementAttempts>=attemptLimit;
             };
             const auto finish=[&]
             {
                 if(cancelled)reason="cancelled";else if(elapsed()>=options.TimeLimitSeconds)reason="time-limit";
-                else if(work.PlacementAttempts>=std::min(options.MaxPlacementAttempts,MaxAttempts))reason="attempt-limit";
+                else if(work.PlacementAttempts>=attemptLimit)reason="attempt-limit";
                 const auto origins=kept.Stats;kept.Stats=work;kept.Stats.CombinationGroups=origins.CombinationGroups;
                 kept.Stats.CircleLatticeGroups=origins.CircleLatticeGroups;kept.Stats.GapFilledParts=origins.GapFilledParts;
                 kept.Stats.ElapsedSeconds=kept.Stats.PostProcessingSeconds=elapsed();if(cancelled)kept.State=Status::Cancelled;
-                kept.Diagnostics.push_back("repair.triangle-separation: "+reason+"; seeds="+std::to_string(seedCount));return kept;
+                kept.Diagnostics.push_back("repair.triangle-separation: "+reason+"; seeds="+std::to_string(seedCount)+
+                    "; seed-budget-skips="+std::to_string(seedBudgetSkips)+"; event-seeds="+std::to_string(eventSeeds)+
+                    "; selected-event-seeds="+std::to_string(selectedEventSeeds));return kept;
             };
             if(stop())return finish();
             std::size_t missing=0;for(const auto& q:incumbent.Remaining)missing+=q.Quantity;
@@ -152,9 +159,42 @@ namespace
             std::set<std::size_t> used;for(const auto& p:layout.Placements)if(p.PartID==missingPart.ID)used.insert(p.Instance);
             std::size_t instance=0;while(instance<missingPart.Quantity&&used.count(instance))++instance;
             if(instance>=missingPart.Quantity){reason="missing-instance-scope";return finish();}
-            struct Seed{Pose Position;double Score;};std::vector<Seed> seeds;
+            struct Seed{Pose Position;double Score;bool Event=false;};std::vector<Seed> seeds;
             auto angles=Detail::CandidateAngles(missingPart,problem.Tolerance);if(angles.size()>MaxAngles)angles.resize(MaxAngles);
             std::vector<Clipper2Lib::PathD> fixedPaths;for(const auto& p:layout.Placements)fixedPaths.push_back(WorldPath(*parts.at(p.PartID),p.Transform));
+            if(Settings.UseNfpSeeds&&!stop())
+            {
+                const double deadline=elapsed()+std::min(3.,std::max(0.,options.TimeLimitSeconds-elapsed())*Settings.ProbeTimeShare);
+                const auto probeStop=[&]{return stop()||elapsed()>=deadline;};
+                auto budget=options;budget.TimeLimitSeconds=std::max(0.,deadline-elapsed());
+                budget.MaxPlacementAttempts=std::min(Settings.MaxProbeAttempts,std::max<std::size_t>(1,(attemptLimit-work.PlacementAttempts)/5));budget.Cancel=probeStop;
+                auto probe=Detail::MakePlacementDomainProbe();
+                const auto query=probe->Find(problem,layout,static_cast<std::size_t>(&missingPart-problem.Parts.data()),Settings.MaxProbeBlockers,budget);
+                work.PlacementAttempts+=query.Attempts;
+                for(const auto& candidate:query.Candidates)
+                {
+                    if(stop())break;
+                    const auto path=WorldPath(missingPart,candidate.Transform);double score=0;
+                    // The domain probe has checked all originals. Only its
+                    // verified blockers can contribute intersection material.
+                    for(const auto blocker:candidate.Blockers)score+=IntersectArea(path,fixedPaths.at(blocker));
+                    if(std::isfinite(score)){seeds.push_back({candidate.Transform,score/std::max(Detail::Area(missingPart.Geometry),1e-20),true});++eventSeeds;}
+                }
+                // Keep only genuinely different geometric orientations for
+                // this optional event-seeded job; allowed-angle semantics stay
+                // unchanged and the legacy job preserves its original path.
+                std::set<std::vector<std::pair<long long,long long>>> seen;
+                std::vector<double> distinct;
+                for(const auto angle:angles)
+                {
+                    const auto b=Detail::Bounds(missingPart.Geometry,{0,0,angle});std::vector<std::pair<long long,long long>> ring;
+                    const double unit=std::max(1e-9,problem.Tolerance*.1);
+                    for(auto p:missingPart.Geometry.Outer){p=Detail::Transform(p,{0,0,angle});ring.emplace_back(std::llround((p.X-b.X)/unit),std::llround((p.Y-b.Y)/unit));}
+                    auto key=ring;for(std::size_t j=1;j<ring.size();++j){std::rotate(ring.begin(),ring.begin()+1,ring.end());key=std::min(key,ring);}
+                    if(seen.insert(std::move(key)).second)distinct.push_back(angle);
+                }
+                angles=std::move(distinct);
+            }
             for(double angle:angles)
             {
                 if(stop())break;const auto b=Detail::Bounds(missingPart.Geometry,{0,0,angle});
@@ -177,24 +217,48 @@ namespace
                     std::hypot(seed.Position.X-old.Position.X,seed.Position.Y-old.Position.Y)<=.04*scale){diverse=false;break;}
                 if(diverse)selected.push_back(seed);if(selected.size()>=MaxSeeds)break;
             }
-            for(const auto& seed:selected)
+            std::map<std::pair<std::string,double>,std::vector<Triangle>> triangleCache;
+            for(std::size_t seedIndex=0;seedIndex<selected.size();++seedIndex)
             {
-                if(stop())break;++seedCount;Result candidate=incumbent;auto& output=candidate.Layouts[0];
+                if(stop())break;++seedCount;const auto& seed=selected[seedIndex];
+                if(seed.Event)++selectedEventSeeds;
+                const auto remainingSeeds=selected.size()-seedIndex;
+                // The least-overlap seed keeps a larger first opportunity,
+                // while every other seed retains a share of both resources.
+                const std::size_t weight=seedIndex==0?4:1;
+                const auto remainingWeight=remainingSeeds+weight-1;
+                const double now=elapsed();
+                const double seedDeadline=now+std::max(0.,options.TimeLimitSeconds-now)*weight/remainingWeight;
+                const auto remainingAttempts=attemptLimit-work.PlacementAttempts;
+                const auto seedAttemptLimit=work.PlacementAttempts+std::max<std::size_t>(1,remainingAttempts*weight/remainingWeight);
+                bool seedBudgetSpent=false;
+                // Local exhaustion gives the next seed its share. Only the
+                // caller's cancellation callback may mark the result cancelled.
+                const auto seedStop=[&]
+                {
+                    if(stop())return true;
+                    if(elapsed()>=seedDeadline||work.PlacementAttempts>=seedAttemptLimit)
+                    {seedBudgetSpent=true;return true;}
+                    return false;
+                };
+                Result candidate=incumbent;auto& output=candidate.Layouts[0];
                 output.Placements.push_back({missingPart.ID,instance,seed.Position,0,false});candidate.Remaining.clear();candidate.State=Status::Complete;
                 std::vector<Piece> pieces;std::size_t ntri=0;
                 for(const auto& placement:output.Placements)
                 {
-                    if(stop())break;const auto& part=*parts.at(placement.PartID);auto local=Triangulate(part,placement.Transform.AngleDegrees,scale);
+                    if(seedStop())break;const auto& part=*parts.at(placement.PartID);
+                    const auto key=std::pair(part.ID,placement.Transform.AngleDegrees);auto [it,inserted]=triangleCache.try_emplace(key);
+                    if(inserted)it->second=Triangulate(part,placement.Transform.AngleDegrees,scale);const auto& local=it->second;
                     if(local.empty()||local.size()>MaxTriangles-ntri){pieces.clear();break;}ntri+=local.size();pieces.push_back({&part,placement,std::move(local)});
                 }
-                if(pieces.size()!=output.Placements.size())continue;
+                if(pieces.size()!=output.Placements.size()){if(seedBudgetSpent)++seedBudgetSkips;continue;}
                 double last=std::numeric_limits<double>::infinity();std::size_t stale=0;const auto n=pieces.size();
-                for(std::size_t iteration=0;iteration<MaxIterations&&!stop();++iteration)
+                for(std::size_t iteration=0;iteration<MaxIterations&&!seedStop();++iteration)
                 {
                     std::vector<Clipper2Lib::PathD> paths;for(const auto& p:pieces)paths.push_back(WorldPath(*p.Original,p.PlacementValue.Transform));
                     double energy=0;
-                    for(std::size_t i=0;i<n&&!stop();++i)for(std::size_t j=0;j<i&&!stop();++j)energy+=IntersectArea(paths[i],paths[j]);
-                    if(stop()||!std::isfinite(energy))break;energy/=scale*scale;
+                    for(std::size_t i=0;i<n&&!seedStop();++i)for(std::size_t j=0;j<i&&!seedStop();++j)energy+=IntersectArea(paths[i],paths[j]);
+                    if(seedStop()||!std::isfinite(energy))break;energy/=scale*scale;
                     if(energy<=1e-15)
                     {
                         output.Placements.clear();output.MaterialArea=0;
@@ -213,18 +277,22 @@ namespace
                         pieceBounds.push_back({b.X/scale,b.Y/scale,(b.X+b.Width)/scale,(b.Y+b.Height)/scale});
                     }
                     std::vector<Row> rows;rows.reserve(MaxRows);
-                    for(std::size_t i=0;i<n&&!stop()&&rows.size()<MaxRows;++i)for(std::size_t j=0;j<i&&!stop()&&rows.size()<MaxRows;++j)
+                    for(std::size_t i=0;i<n&&!seedStop()&&rows.size()<MaxRows;++i)for(std::size_t j=0;j<i&&!seedStop()&&rows.size()<MaxRows;++j)
                     {
                         if(!Near(pieceBounds[i],pieceBounds[j],.12))continue;
-                        for(std::size_t ia=0;ia<triangles[i].size()&&!stop()&&rows.size()<MaxRows;++ia)
-                            for(std::size_t ib=0;ib<triangles[j].size()&&!stop()&&rows.size()<MaxRows;++ib)
+                        for(std::size_t ia=0;ia<triangles[i].size()&&!seedStop()&&rows.size()<MaxRows;++ia)
+                            for(std::size_t ib=0;ib<triangles[j].size()&&!seedStop()&&rows.size()<MaxRows;++ib)
                             {
                                 const auto& a=triangles[i][ia];const auto& b=triangles[j][ib];if(!Near(TriBounds(a),TriBounds(b),.12))continue;
                                 const bool vary=stale&&(i*17+j*11+ia*5+ib+seedCount-1+stale)%(stale==1?5:3)==0;
-                                const auto axis=ChooseAxis(a,b,vary);if(axis)rows.push_back({i,j,axis->Normal.X,axis->Normal.Y,axis->Separation-4*problem.Tolerance/scale});
+                                // This stage only accepts zero-gap problems.
+                                // A positive clearance can make exact-contact
+                                // rows inconsistent and waste projection budget;
+                                // final original-material Validate decides safety.
+                                const auto axis=ChooseAxis(a,b,vary);if(axis)rows.push_back({i,j,axis->Normal.X,axis->Normal.Y,axis->Separation});
                             }
                     }
-                    if(rows.empty()||stop())break;
+                    if(rows.empty()||seedStop())break;
                     std::vector<double> low(2*n),high(2*n),x(2*n),boxCorrection(2*n),best=x;
                     for(std::size_t i=0;i<n;++i)
                     {
@@ -236,8 +304,8 @@ namespace
                     const auto solveStarted=Clock::now();double bestScore=std::numeric_limits<double>::infinity();
                     for(std::size_t sweep=0;sweep<MaxSweeps;++sweep)
                     {
-                        if(work.PlacementAttempts>=std::min(options.MaxPlacementAttempts,MaxAttempts)||
-                           ((sweep&15)==0&&(stop()||std::chrono::duration<double>(Clock::now()-solveStarted).count()>=2)))break;
+                        if(work.PlacementAttempts>=seedAttemptLimit||
+                           ((sweep&15)==0&&(seedStop()||std::chrono::duration<double>(Clock::now()-solveStarted).count()>=2)))break;
                         ++work.PlacementAttempts;
                         for(auto& r:rows)
                         {
@@ -251,15 +319,24 @@ namespace
                         for(const auto& r:rows){const double v=std::max(0.,r.X*(x[r.I]-x[r.J])+r.Y*(x[n+r.I]-x[n+r.J])-r.B);score+=v*v;maximum=std::max(maximum,v);}
                         if(score<bestScore){bestScore=score;best=x;}if(maximum<=1e-12)break;
                     }
-                    if(stop())break;
+                    if(seedStop())break;
                     for(std::size_t i=0;i<n;++i)
                     {pieces[i].PlacementValue.Transform.X+=best[i]*scale;pieces[i].PlacementValue.Transform.Y+=best[n+i]*scale;pieces[i].PlacementValue.Group=0;}
                 }
+                if(seedBudgetSpent)++seedBudgetSkips;
             }
             return finish();
         }
     };
 }
 PostProcessStage MakeTriangleSeparationRepairStage()
-{return {"repair.triangle-separation",[]{return std::make_unique<TriangleSeparationRepair>();}};}
+{return MakeTriangleSeparationRepairStage({});}
+PostProcessStage MakeTriangleSeparationRepairStage(TriangleSeparationRepairSettings settings)
+{
+    if(settings.MaxProbeBlockers>8||!settings.MaxProbeAttempts||settings.MaxProbeAttempts>2000000||
+        !std::isfinite(settings.ProbeTimeShare)||settings.ProbeTimeShare<=0||settings.ProbeTimeShare>.5)
+        throw std::invalid_argument("Invalid geometric separation seed limits.");
+    return {settings.UseNfpSeeds?"repair.triangle-separation.nfp-seeds":"repair.triangle-separation",
+        [settings]{return std::make_unique<TriangleSeparationRepair>(settings);}};
+}
 }

@@ -7,7 +7,7 @@ import {setupWorldFrame} from './setupWorldFrame.mjs';
 
 function editable(view){
  const f=selectedFixture(view),setup=view.scene?.domain?.setups?.find(s=>s.id===view.scene.domain.activeSetupId);
- return view.fiveAxisArea==='workpiece'&&activeTool(view)==='fixture'&&f&&f.kind!=='Generated'&&!f.locked&&f.enabled!==false&&!view.fiveFixtureLibrary?.open&&!view.fixtureDesignPicking&&!view.fiveFixtureDesignOpen&&!setup?.locked&&setup?.enabled!==false;
+ return view.fiveAxisArea==='operation'&&activeTool(view)==='fixture'&&f&&f.kind!=='Generated'&&!f.locked&&f.enabled!==false&&!view.fiveFixtureLibrary?.open&&!view.fixtureDesignPicking&&!view.fiveFixtureDesignOpen&&!setup?.locked&&setup?.enabled!==false;
 }
 function matrixValues(matrix){const e=new THREE.Euler().setFromRotationMatrix(matrix,'ZYX'),p=new THREE.Vector3().setFromMatrixPosition(matrix);return [...p.toArray(),e.x*180/Math.PI,e.y*180/Math.PI,e.z*180/Math.PI].map(n=>String(Number(n.toFixed(8))));}
 export function renderFixturePlacement(view){

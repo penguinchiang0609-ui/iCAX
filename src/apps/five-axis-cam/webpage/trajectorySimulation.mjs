@@ -2,7 +2,7 @@ import {chooseCuttingHeadFile} from './cuttingHeadImport.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 import { loadRenderResource } from '../../../iCAX-UI/SDK/Viewport/renderResource.mjs';
 import { escapeText as esc, escapeAttr as attr } from '../../_shared/workbench/utils/format.mjs';
-import { activeTool,selectTool,switchCamPage } from './workspaceModel.mjs';
+import { activeTool,selectTool,switchCamPage,camPathKind,switchCamPathKind } from './workspaceModel.mjs';
 import { button, tooltipAttributes } from './workspaceControls.mjs';
 import { buildPlayback, playbackPose, advancePlayback } from './trajectoryPlayback.mjs';
 import { syncCollision, collisionLabel, paintCollision, disposeCollision, jumpCollision, checkCollision,repairCollision } from './simulationCollision.mjs';
@@ -12,36 +12,41 @@ import {disposeCollisionProgress,installCollisionProgressStyle,paintCollisionPro
 import {collisionDiagnosis,installCollisionDiagnosticsStyle,renderCollisionDiagnosis,renderCollisionRepair,paintCollisionDiagnostics,disposeCollisionDiagnostics,focusCollisionDiagnosis,updateCollisionRepair} from './collisionDiagnostics.mjs';
 import {waitForTaskResult} from './taskProgressStream.mjs';
 import {saveCommittedProjectEdit} from './projectEditPersistence.mjs';
-import {floatingDialogStyle} from './floatingDialogs.mjs';
+import {renderHeadWorkspacePreview} from './cuttingHeadWorkspace.mjs';
 import {scheduleCollisionThreshold,flushCollisionThreshold} from './collisionThreshold.mjs';
 import {refreshMachiningState} from './domainActions.mjs';
 import {loadHeadAssembly,paintHeadAssembly,checkedHeadAssemblyPose,rigidHeadDirectionSupported} from './cuttingHeadAssembly.mjs';
-import {renderCuttingHeadPreview,createSchematicCuttingHead as builtinHead} from './cuttingHeadPreview.mjs';
-import {renderCuttingHeadParameters} from './cuttingHeadParameters.mjs';
-import {renderHeadInstancePicker,renderHeadInstanceEditor,renderHeadLibraryManager,headInstanceCommand} from './cuttingHeadInstances.mjs';
+import {createSchematicCuttingHead as builtinHead} from './cuttingHeadPreview.mjs';
+
+import {renderHeadInstancePicker,headInstanceCommand} from './cuttingHeadInstances.mjs';
 import {camMachinePlayback} from './machinePlaybackContext.mjs';
 import {renderCamMachinePlayback,machinePlaybackReady,machineCommand,machineField,stopMachine} from './machineSimulation.mjs';
-import {renderHeadColliders,flushHeadColliderSaves} from './cuttingHeadColliders.mjs';
+import {flushHeadColliderSaves} from './cuttingHeadColliders.mjs';
 import {collisionPathKey,selectedCollisionPath} from './collisionPathResults.mjs';
 import {collisionChecks,selectedCollisionCheck} from './collisionLocations.mjs';
+import {repairInOrder,scopeContains,checkLocation} from './collisionRepairSequence.mjs';
 import {ensurePlaybackHeadMotion,playbackHeadPose,cancelPlaybackHeadMotion} from './playbackHeadMotion.mjs';
+import {headWorkspaceSelection,clearHeadWorkspaceSelection} from './headWorkspaceSelection.mjs';
+import {headScopeCommand,headScopeState} from './headAssignmentScopes.mjs';
+import {headFitsOperation,headChoiceFitsOperation} from './headMachineCompatibility.mjs';
+import {activeSetupWorldFrame,applySetupDisplayFrame} from './setupWorldFrame.mjs';
 
 const setupOf = view => view.scene?.domain?.setups?.find(s => s.id === view.scene.domain.activeSetupId);
 const physicalHead = head => {if(!head)return head;const {instance,...definition}=head;return definition;};
 const state = view => view.fiveSimulation ??= { cursor:0, speed:1, playing:false, showHead:true, headOpen:false, frames:[], message:'', headError:'' };
 const active = (context,view) => !view.disposed && context.isCurrentProject?.() !== false && view.fiveAxisArea === 'toolpath' && activeTool(view) === 'simulation';
-const collisionActive = (context,view) => !view.disposed && context.isCurrentProject?.() !== false && view.fiveAxisArea === 'toolpath' && view.fiveCamInspector==='collision' && ['cutting','rapid','order'].includes(view.fiveCamPage||'cutting') && activeTool(view)!=='simulation';
+const collisionActive = (context,view) => !view.disposed && context.isCurrentProject?.() !== false && view.fiveAxisArea === 'toolpath' && view.fiveCamInspector==='collision' && ['cutting','rapid','order','collision'].includes(view.fiveCamPage||'cutting') && activeTool(view)!=='simulation';
 const headActive = (context,view) => !view.disposed && context.isCurrentProject?.() !== false && view.fiveAxisArea === 'toolpath';
 function stop(s) { s.playing=false; cancelAnimationFrame(s.animation); s.animation=0; s.lastTime=0; }
 function focusCollisionPose(view,s){
   if(focusCollisionDiagnosis(view,s))return;
   const pose=playbackPose(s.frames,s.cursor),viewport=view.viewport;if(!pose||!viewport?.setCameraState)return;
-  const camera=viewport.getCameraState();viewport.setCameraState({...camera,target:{x:pose.position.x,y:pose.position.y,z:pose.position.z},radius:Math.min(camera.radius,180)});
+  const position=pose.position.clone().applyMatrix4(activeSetupWorldFrame(view)),camera=viewport.getCameraState();viewport.setCameraState({...camera,target:{x:position.x,y:position.y,z:position.z},radius:Math.min(camera.radius,180)});
 }
 export function pauseSimulation(view) { if(view.fiveSimulation)stop(view.fiveSimulation);if(view.fiveMachine)stopMachine(view); }
 function sync(view) {
   const s=state(view), setup=setupOf(view), geometry=setup?.generatedGeometry;
-  const key=JSON.stringify([view.scene?.domain?.expected?.epoch,setup?.id,geometry,view.scene?.domain?.placements,setup?.rapidSettings?.followHeightMm]);
+  const key=JSON.stringify([view.scene?.domain?.expected?.epoch,setup?.id,setup?.assemblyTransform,geometry,view.scene?.domain?.placements,setup?.rapidSettings?.followHeightMm]);
   if (key!==s.sourceKey) {
     stop(s);disposeSimulationTrace(s);s.traceStart=0; s.sourceKey=key; s.cursor=0; s.message='';s.alarmCollision=null;s.frameContact=null;
     try { const result=buildPlayback(setup,view.scene?.domain?.placements??[]); s.frames=result.frames; s.message=view.fiveCamInspector==='collision'&&activeTool(view)!=='simulation'?'':result.reason; }
@@ -54,10 +59,11 @@ function sync(view) {
     s.headKey=null;
   }
   syncCollision(view,s);
-  if(view.fiveCamInspector==='collision'&&!s.checking&&!s.repairing){
+  if(view.fiveCamInspector==='collision'&&!s.checking&&!s.repairing&&!s.repairSequence){
     const path=selectedCollisionPath(view),key=JSON.stringify([path,s.collisionKey]);
     if(s.collisionPathSelection!==key){
       s.collisionPathSelection=key;
+      if(s.repairScopeSelection!==undefined&&s.repairScopeSelection!==path)s.repairScope=null;
       const segment=(collisionChecks(s.collisionReport)||s.collisionReport?.segments)?.find(segment=>['Collision','Unchecked'].includes(segment.status)&&collisionPathKey(s.frames[Number(segment.index)])===path);
       s.selectedCollisionCheck=segment?.kind?{kind:segment.kind,key:segment.key}:null;
       const index=segment?Number(segment.index):s.frames.findIndex(frame=>collisionPathKey(frame)===path);
@@ -83,7 +89,7 @@ export function renderCamHeadCard(view){
  const name=head?.instance?.name||(head?.collisionSource==='MachineInstance'?`${head.assembly?.kind?head.assembly.kind+' · ':''}${head.machineHeadName||head.name||'机床切割头'}`:head?.name||'未选择切割头');
  return `<section class="five-cam-head" data-five-key="cam-head"><header><strong>切割头模型</strong>${button('five.simulation.head-open','设置切割头',`aria-expanded="${!!s?.headOpen}" ${view.pending||s?.busy?'disabled':''}`)}</header><div class="five-cam-head-name" title="${attr(name)}">${esc(name)}</div><small>${head?.collisionModel?.status==='MachineBindingRequired'?'刀头结构预览 · 绑定机床后检查完整机构':`${head?.collisionSource==='MachineInstance'?'使用绑定机床 · ':''}${head?.calibrated&&count?`${count} 个喷嘴碰撞盒 · 用于安全空移和碰撞检测`:'请确认切割头及已启用的碰撞盒'}`}</small></section>`;
 }
-export function renderHeadSettings(view){return view.fiveAxisArea==='toolpath'?renderHead(view):'';}
+export function renderHeadSettings(view){return view.fiveAxisArea==='toolpath'&&view.fiveCamPage==='head'?renderHeadWorkspacePreview(view):'';}
 function collisionHeadName(view,head) {
   if(head?.collisionSource!=='MachineInstance')return head?.name||'当前切割头';
   const machine=view.scene?.machines?.find(item=>(item.entityId||item.id)===head.collisionMachineId);
@@ -92,20 +98,6 @@ function collisionHeadName(view,head) {
 function headCollisionHint(view,head){
  const count=Number(head?.collisionModel?.boxCount)||0;
  return head?.calibrated?`已标定喷嘴端点和光束方向，启用 ${count} 个切割头碰撞盒。`:'请标定喷嘴端点和光束方向，并确认切割头碰撞盒。';
-}
-function renderHead(view) {
-  const s=state(view); if(!s.headOpen)return '';
-  renderHeadInstancePicker(view);
-  const head=setupOf(view)?.headModel, bound=head?.collisionSource==='MachineInstance';
-  const retry=s.request?.method==='Configure'&&s.request.payload.kind==='Builtin'?button('five.simulation.head-builtin','重试切换',view.pending||bound?'disabled':''):s.request?.method==='Import'?button('five.simulation.head-import','重试导入',view.pending||bound?'disabled':''):'';
-  return `<div class="five-head-popover five-floating-dialog five-cam-head-dialog" data-five-floating="cutting-head" ${floatingDialogStyle(view,'cutting-head')} role="dialog" aria-label="切割头设置" data-five-key="head-popover">
-    <header data-five-dialog-drag><strong>切割头设置</strong>${button('five.simulation.head-close','×',`aria-label="关闭切割头" ${tooltipAttributes('关闭切割头设置')}`)}</header>
-    <div class="five-head-body"><section class="five-head-selection" data-five-key="head-selection" aria-label="选择切割头">${renderHeadInstancePicker(view,s.builtinHeads||[])}${retry}</section>${renderHeadLibraryManager(view)}${renderCuttingHeadPreview(view)}<div class="five-head-settings" data-five-key="head-settings"><h3 class="five-head-settings-title">当前刀头参数</h3><div class="five-head-name" title="${attr(head?.name||'')}"><small>模型</small><span>${esc(bound?head.machineHeadName||'机床切割头':head?.name??'未选择')}</span></div>
-    ${renderHeadInstanceEditor(view,head)}
-    ${renderHeadColliders(view)}
-    ${s.busy&&s.request?.method==='Configure'?'<div role="status" data-five-key="head-saving">正在更新切割头…</div>':''}
-    ${s.headError?`<div class="five-position-error" role="alert">${esc(s.headError)}</div>`:''}
-    ${view.pending&&s.task?.status==='Running'?`<div role="status">正在导入… ${button('five.simulation.head-cancel','取消',tooltipAttributes('取消当前切割头模型导入'))}</div>`:''}</div></div></div>`;
 }
 export function renderSimulation(view) {
   if(camMachinePlayback(view))return renderCamMachinePlayback(view);
@@ -128,14 +120,14 @@ export function renderSimulation(view) {
 export function renderCollisionCheck(view) {
   const s=sync(view),report=s.collisionReport;
   const head=setupOf(view)?.headModel,scope=head?.collisionSource==='MachineInstance'?collisionHeadName(view,head):report?.scope==='BuiltinSchematicWorkpieceAndFixtures'||!head?.geometryRef?'内置示意头':collisionHeadName(view,head);
-  const path=selectedCollisionPath(view),belongs=frame=>collisionPathKey(frame)===path;
-  const selected=belongs(s.frames[Math.floor(s.cursor)]),busy=!!(s.checking||s.repairing),details=s.checking?renderCollisionActivity(s):s.repairing?renderCollisionRepair(view,s):selected?renderCollisionDiagnosis(view,s)+renderCollisionRepair(view,s):'';
+  const path=selectedCollisionPath(view),groupScope=s.repairScope?.pathKind||(s.checking&&['Cutting','Rapid'].includes(s.checkScope)?s.checkScope:null),belongs=frame=>groupScope?!!frame&&(frame.role==='Rapid')===(groupScope==='Rapid'):collisionPathKey(frame)===path;
+  const selected=belongs(s.frames[Math.floor(s.cursor)]),busy=!!(s.checking||s.repairing),details=s.checking?renderCollisionActivity(s):s.repairing?renderCollisionRepair(view,s):selected||groupScope?renderCollisionDiagnosis(view,s)+renderCollisionRepair(view,s):'';
   const globalChecking=s.checking&&s.checkScope==='AllPaths';
-  const name=globalChecking?'当前装夹全部刀路':view.fiveCamPage==='rapid'?'当前空移刀路':'当前切割刀路';
+  const name=groupScope?`全部${groupScope==='Rapid'?'空移':'切割'}刀路`:globalChecking?'当前装夹全部刀路':camPathKind(view)==='rapid'?'当前空移刀路':'当前切割刀路';
   const pending=s.collisionRequest??s.collisionPreparationRequest;
   const retryPath=!!pending&&(pending.intentId?path===`cut:${pending.intentId}`:pending.to&&path===`rapid:${pending.from}/${pending.to}`);
-  return `<section class="five-collision-inspector" data-five-collision-inspector data-five-key="collision-inspector" data-collision-running="${!!s.checking}" role="tabpanel" aria-label="碰撞与限位">
-    <header class="five-collision-inspector-heading"><strong>${name}</strong><span>碰撞与限位</span></header>
+  return `<section class="five-collision-inspector" data-five-collision-inspector data-five-key="collision-inspector" data-collision-running="${!!s.checking}" role="tabpanel" aria-label="碰撞与超限">
+    <header class="five-collision-inspector-heading"><strong>${name}</strong><span>碰撞与超限</span></header>
     <div class="five-collision-dialog-toolbar" data-five-key="collision-toolbar"><span data-five-collision-status>${esc(collisionLabel(s,belongs))}</span><div class="five-collision-dialog-toolbar-actions"><label class="five-collision-threshold">碰撞阈值（mm）<input type="text" inputmode="decimal" aria-label="碰撞阈值" data-five-simulation-field="threshold" data-five-key="collision-threshold" value="${attr(s.thresholdDraft??setupOf(view)?.rapidSettings?.collisionThresholdMm??.1)}" ${view.pending?(view.sceneRefreshPending?'readonly':'disabled'):''}></label>${button(s.checking?'five.simulation.collision-cancel':s.repairing?'five.simulation.repair-cancel':'five.simulation.collision-check-path',s.checking?'取消检测':s.repairing?'取消自动修复':retryPath?'重试本条检测':report?'重新检测本条':'检测本条',!busy&&(!s.collisionPathHasFrame||view.pending)?'disabled':'class="five-primary"')}</div></div>
     <div class="five-collision-inspector-content" data-five-key="collision-content">
       ${renderCollisionIssues(view,s,belongs)||`<div class="five-collision-dialog-empty" data-five-key="collision-empty">${!s.collisionPathHasFrame?'请在左侧选择一条已生成的刀路。':report?.validity==='Current'?'此刀路未发现碰撞或未验证段。':'尚无有效检测结果，请检测本条刀路。'}</div>`}<div class="five-collision-dialog-detail" data-five-key="collision-detail">${details}</div>
@@ -205,6 +197,7 @@ function paint(context,view) {
     if(!rigidHeadDirectionSupported(pose)){s.group.visible=false;s.laser.visible=false;s.headPoseError='刚性刀头没有旋转轴，不能执行倾斜刀轴；请使用三轴刀路或选择带关节的刀头。';s.message=s.headPoseError;if(s.playing)stop(s);}
     else s.group.quaternion.identity();
   }
+  if(s.group&&pose)applySetupDisplayFrame(view,s.group);
   if(pose&&active(context,view)){
     s.frameContact=checkPlaybackContact(view,s);s.alarmCollision=s.frameContact.status==='Collision'?s.frameContact:null;
     if(s.alarmCollision){if(s.playing)stop(s);s.message='当前位置发生碰撞，仿真已暂停。';}
@@ -220,7 +213,7 @@ function paint(context,view) {
   if(collision){if(s.collisionPathHasFrame===false&&!s.checking&&!s.repairing)disposeCollisionDiagnostics(s);else paintCollisionDiagnostics(view,s);}
   const slider=mount.querySelector('[data-five-simulation-field="seek"]');if(slider)slider.value=s.cursor;
   for(const [action,disabled] of [['play',s.playing||!s.frames.length||view.pending],['pause',!s.playing],['previous',s.cursor<=0||!s.frames.length||view.pending],['next',s.cursor>=s.frames.length-1||!s.frames.length||view.pending]]) {
-    const el=mount.querySelector(`[data-five-command="five.simulation.${action}"]`);if(el)el.disabled=!!disabled||!!view.fiveJobPlayback?.boundary;
+    for(const el of [...mount.querySelectorAll(`[data-five-command="five.simulation.${action}"]`),...mount.ownerDocument.querySelectorAll(`.product-ribbon [data-command-id="five.simulation.${action}"]`)])el.disabled=!!disabled||!!view.fiveJobPlayback?.boundary;
   }
 }
 function animate(context,view) {
@@ -246,11 +239,31 @@ export function syncSimulation(context,view,ops) {
   if(ops)ensurePlaybackHeadMotion(context,view,s,ops,()=>{if(active(context,view))paint(context,view);});
   void loadHead(context,view,s).then(()=>{if(active(context,view))paint(context,view);});paint(context,view);
 }
+async function previewWorkspaceHead(context,view,choice,ops){
+ const selection=headWorkspaceSelection(view),setupId=selection.setupId,serial=++selection.serial;
+ const current=()=>!view.disposed&&context.isCurrentProject?.()!==false&&view.fiveHeadSelection===selection&&setupOf(view)?.id===setupId&&selection.serial===serial;
+ try{
+  await flushHeadColliderSaves(context,view,ops);if(!current())return;
+  if(choice===view.fiveHeadEditor?.currentChoice){clearHeadWorkspaceSelection(view);ops.renderProject(context,view);return;}
+  Object.assign(selection,{choice,head:null,loading:!!choice,error:'',axis:0});delete selection.draft;
+  ops.renderProject(context,view);if(!choice)return;
+   if(!headChoiceFitsOperation(view,choice))throw Error('所选切割头不适用于本工序机型。');
+  const instanceId=view.fiveHeadEditor?.choices?.get(choice);
+  const payload=instanceId?{setupId,kind:'Instance',instanceId}:choice.startsWith('builtin:')?{setupId,kind:'Builtin',builtinDefinitionId:choice.slice(8)}:choice.startsWith('profile:')?{setupId,kind:'Configuration',entryId:choice.slice(8)}:{setupId,kind:'Instance',instanceId:choice};
+  const result=await context.sceneProxy.invoke('CamHead.Preview',payload);
+   if(current()){if(!result?.head)throw Error('无法读取所选切割头。');if(!headFitsOperation(view,result.head))throw Error('所选切割头不适用于本工序机型。');selection.head=result.head;}
+ }catch(error){if(current())selection.error=error.message;}
+ finally{if(current()){selection.loading=false;if(view.fiveCamPage==='head')ops.renderProject(context,view);}}
+}
 export function simulationField(context,view,name,value,ops) {
   if(camMachinePlayback(view)&&['seek','speed'].includes(name)){machineField(context,view,name,value,ops);return;}
   const s=state(view);
   if(name==='head-choice'){
     if(!ops||view.disposed||context.isCurrentProject?.()===false||setupOf(view)?.machineSetup?.machineId||setupOf(view)?.headModel?.collisionSource==='MachineInstance')return;
+    if(view.fiveCamPage==='head'&&value!=='import'){
+      if(view.pending||s.busy||s.request||view.fiveHeadEditor?.request||view.fiveHeadEditor?.importPrompt||headWorkspaceSelection(view).applying||headScopeState(view).busy||headScopeState(view).request)return;
+      void previewWorkspaceHead(context,view,value,ops);return;
+    }
     s.resumeHeadChoice=()=>{if(!s.headChoiceBusy&&!view.pending&&s.queuedHeadChoice!==undefined&&!s.request&&!view.fiveHeadEditor?.request)simulationField(context,view,'head-choice',s.queuedHeadChoice,ops);};
     if(s.headChoiceBusy||s.request||view.fiveHeadEditor?.request){s.queuedHeadChoice=value;return;}
     if(view.pending||view.fiveHeadEditor?.importPrompt)return;
@@ -260,6 +273,7 @@ export function simulationField(context,view,name,value,ops) {
         await flushHeadColliderSaves(context,view,ops);
         while(s.queuedHeadChoice!==undefined&&!view.disposed&&context.isCurrentProject?.()!==false){
           const choice=s.queuedHeadChoice;delete s.queuedHeadChoice;s.headChoiceValue=choice;
+          if(!headChoiceFitsOperation(view,choice))throw Error('所选切割头不适用于本工序机型。');
           const existing=view.fiveHeadEditor?.choices?.get(choice);
           if(existing){view.fiveHeadEditor.selectedInstance=existing;await headInstanceCommand(context,view,'select',ops);}
           else if(choice==='import')await simulationCommand(context,view,'head-import',ops);
@@ -290,6 +304,9 @@ export function simulationField(context,view,name,value,ops) {
 }
 const parseVector=values=>values.map(v=>{if(!String(v).trim()||!Number.isFinite(Number(v)))throw Error('请输入有效的坐标和方向数值。');return Number(v);});
 export async function simulationCommand(context,view,action,ops) {
+  if(action==='head-use')return headScopeCommand(context,view,'set',ops);
+  const scoped=/^(collision-(?:check|auto-scope|manual-scope)):(Cutting|Rapid)$/.exec(action);
+  if(scoped)action=scoped[1];
   if(camMachinePlayback(view)&&['play','pause','previous','next','reset','head-toggle'].includes(action)){
     if(action==='play'&&!machinePlaybackReady(view)){await machineCommand(context,view,'build',ops);if(!machinePlaybackReady(view))return false;}
     return machineCommand(context,view,action,ops);
@@ -300,21 +317,62 @@ export async function simulationCommand(context,view,action,ops) {
   if(action==='trace-clear'&&active(context,view)){
     clearSimulationTrace(view,s);const menu=context.mount.querySelector('.five-trace-menu');if(menu){menu.open=false;menu.querySelector('summary').focus({preventScroll:true});}paint(context,view);return;
   }
-  if(action==='collision-cancel'){s.collisionCancelRequested=true;updateCollisionActivity(context,s);await s.cancelCheck?.();return;}
-  if(action==='repair-cancel'){s.repairCancelRequested=true;updateCollisionRepair(context,s);await s.cancelRepair?.();return;}
+  if(action==='collision-cancel'){s.repairSequenceCancelled=true;s.collisionCancelRequested=true;updateCollisionActivity(context,s);await s.cancelCheck?.();return;}
+  if(action==='repair-cancel'){s.repairSequenceCancelled=true;s.repairCancelRequested=true;updateCollisionRepair(context,s);await s.cancelRepair?.();return;}
   if(action==='head-cancel'){s.headCancelRequested=true;await s.cancelHeadTask?.();return;}
-  if(action==='head-close'){s.headOpen=false;ops.renderProject(context,view);return;}
+  if(action==='head-close'){s.headOpen=false;switchCamPage(view,'cutting');selectTool(view,'select');ops.renderProject(context,view);return;}
   if(action==='pause'){stop(s);paint(context,view);return;}
   if(view.pending)return;
+  if(action==='collision-auto-scope'||action==='collision-manual-scope'){
+    const scope={pathKind:scoped?.[2]||(camPathKind(view)==='rapid'?'Rapid':'Cutting')};
+    s.repairScope=action==='collision-auto-scope'?scope:null;s.repairScopeSelection=selectedCollisionPath(view);
+    s.selectedCollisionCheck=null;
+    const first=s.frames.findIndex(frame=>(frame.role==='Rapid')===(scope.pathKind==='Rapid'));s.cursor=Math.max(0,first);
+    const issue=collisionChecks(s.collisionReport)?.find(row=>scopeContains(scope,checkLocation(row))&&(row.status==='Collision'||row.reason==='CAM_HEAD_LIMIT_NO_SOLUTION'));
+    if(issue){
+      const location=checkLocation(issue);
+      if(action==='collision-manual-scope'){
+        if(view.fiveCamPage==='collision'){switchCamPathKind(view,location.role==='Rapid'?'rapid':'cutting');selectTool(view,location.role==='Rapid'?'rapid':'select');}
+        if(location.role==='Rapid'){const {openRapid,rapidPick}=await import('./rapidPlanning.mjs');const pair=location.from+'/'+location.to;openRapid(view,false,false,pair);rapidPick(view,pair);}
+        else{const {selectCut}=await import('./cutSelection.mjs');selectCut(view,location.intentId);}
+        s.collisionPathSelection=null;sync(view);
+      }
+      s.selectedCollisionCheck={kind:issue.kind,key:issue.key};s.cursor=Number(issue.index);
+    }
+    ops.renderProject(context,view);return;
+  }
   if(view.fiveJobPlayback?.boundary&&['play','previous','next'].includes(action))return;
   if(action==='collision-check'||action==='collision-check-path'){
-    let scope=null;if(action==='collision-check-path'){
-      const path=selectedCollisionPath(view);
+    s.repairScope=null;
+    let scope={pathKind:scoped?.[2]||(camPathKind(view)==='rapid'?'Rapid':'Cutting')};if(action==='collision-check-path'){
+      s.repairScope=null;const path=selectedCollisionPath(view);
       if(path.startsWith('cut:')){const intentId=path.slice(4);if(!intentId)return;scope={intentId};}
       else{const [from,to]=path.slice(6).split('/');if(!from||!to)return;scope={from,to};}
     }
     stop(s);if(!await flushCollisionThreshold(context,view,ops)||!collisionActive(context,view))return;
     if(await checkCollision(context,view,s,ops,()=>collisionActive(context,view),()=>paint(context,view),scope)&&collisionActive(context,view)){sync(view);paint(context,view);ops.renderProject(context,view);}return;
+  }
+  if(action==='collision-repair-scope'||action==='collision-repair-path'){
+    let scope=s.repairScope;
+    if(action==='collision-repair-path'){
+      const path=selectedCollisionPath(view);if(path.startsWith('cut:'))scope={intentId:path.slice(4)};
+      else{const [from,to]=path.slice(6).split('/');scope={from,to};}
+    }
+    if(!scope)return;
+    const angle=s.repairDeviationDraft??String(s.repairDeviationDeg??15),distance=s.repairTranslationDraft??String(s.repairTranslationMm??5);
+    if(!String(angle).trim()||!Number.isFinite(Number(angle))||Number(angle)<0||Number(angle)>180||!String(distance).trim()||!Number.isFinite(Number(distance))||Number(distance)<0){s.message='请输入 0～180° 的角度容差和不小于 0 的位置容差。';ops.renderProject(context,view);return;}
+    stop(s);s.repairSequence=true;s.repairSequenceCancelled=false;
+    const live=()=>collisionActive(context,view),cancelled=()=>!!s.repairSequenceCancelled;
+    try{
+      const summary=await repairInOrder(scope,{
+        readReport:()=>s.collisionReport,active:live,cancelled,
+        phaseChanged:phase=>{s.repairSequencePhase=phase;},
+        check:async target=>{if(cancelled()||!live())return false;const ok=await checkCollision(context,view,s,ops,live,()=>paint(context,view),target);if(ok&&live())sync(view);return ok;},
+        repair:async(issue,repairPhase,toleranceOrigins)=>{s.selectedCollisionCheck={kind:issue.kind,key:issue.key};s.cursor=Number(issue.index);await repairCollision(context,view,s,ops,live,{repairPhase,toleranceOrigins});return s.repairResult;}
+      });
+      if(live()){s.message=summary.cancelled?'自动修复已取消，已保存的修改可以撤销。':summary.incomplete?summary.reason||s.message||'本次检测未完成，自动修复已停止。':`本次已保存 ${summary.changed} 次局部修正${summary.unresolved.length?`，${summary.unresolved.length} 处仍需调整`:''}。`;sync(view);paint(context,view);}
+    }finally{s.repairSequence=false;s.repairScope=null;view.pending=false;if(live())ops.renderProject(context,view);}
+    return;
   }
   if(action==='collision-repair'){stop(s);if(await repairCollision(context,view,s,ops,()=>collisionActive(context,view))&&collisionActive(context,view)){sync(view);const focus=s.repairFocus,point=focus?.target&&new THREE.Vector3(...focus.target),index=point?s.frames.findIndex(f=>f.intentId===focus.intentId&&f.role===focus.role&&f.target?.distanceTo(point)<1e-7):-1;s.cursor=index>=0?index:Math.min(s.frames.length-1,focus?.index||0);paint(context,view);ops.renderProject(context,view);}return;}
   if(action==='collision-focus'){focusCollisionPose(view,s);paint(context,view);return;}
@@ -332,7 +390,7 @@ export async function simulationCommand(context,view,action,ops) {
     if(point?.rapidPointIndex===undefined)return;
     const {rapidCommand,openRapid,rapidPick,flushRapidPathSave}=await import('./rapidPlanning.mjs');const {rapidPathFieldChanged}=await import('./rapidPathEditing.mjs');
     const pair=`${point.from}/${point.to}`;
-    if(view.fiveRapid?.id!==pair){if(view.fiveRapid?.pathEdit)await flushRapidPathSave(context,view,ops,true);switchCamPage(view,'rapid');selectTool(view,'rapid');openRapid(view,false,false,pair);rapidPick(view,pair);}
+    if(view.fiveRapid?.id!==pair){if(view.fiveRapid?.pathEdit)await flushRapidPathSave(context,view,ops,true);if(view.fiveCamPage==='collision')switchCamPathKind(view,'rapid');else switchCamPage(view,'rapid');selectTool(view,'rapid');openRapid(view,false,false,pair);rapidPick(view,pair);}
     if(view.fiveRapid?.id!==pair)return;
     await rapidCommand(context,view,'path-edit',ops);const edit=view.fiveRapid?.pathEdit;if(!edit)return;
     const index=Number(point.rapidPointIndex)===Number(point.rapidPointCount)-1?edit.points.length-1:Number(point.rapidPointIndex);
@@ -350,7 +408,7 @@ export async function simulationCommand(context,view,action,ops) {
     stop(s);await flushCollisionThreshold(context,view,ops);return;
   }
   if(action==='head-open'){
-    stop(s);s.headOpen=!s.headOpen;ops.renderProject(context,view);
+    stop(s);switchCamPage(view,'head');selectTool(view,'select');s.headOpen=true;ops.renderProject(context,view);
     if(s.headOpen&&!view.fiveHeadEditor?.libraryLoaded)void headInstanceCommand(context,view,'refresh-profiles',ops);
     if(s.headOpen&&setupOf(view)?.headModel?.collisionSource!=='MachineInstance'&&!s.builtinHeads&&!s.builtinHeadsLoading){
       s.builtinHeadsLoading=true;ops.renderProject(context,view);
@@ -370,15 +428,15 @@ export async function simulationCommand(context,view,action,ops) {
   stop(s);s.headOpen=true;s.headError='';s.headCancelRequested=false;
   try {
     if(!s.request){
-      let sourcePath;
+      let sourcePath;const targetSetupId=setupOf(view)?.id;
       if(action==='head-import'){
         sourcePath=await chooseCuttingHeadFile(context,view);
-        if(!sourcePath||!headActive(context,view))return;
+        if(!sourcePath||!headActive(context,view)||setupOf(view)?.id!==targetSetupId)return;
       }
       const domain=view.scene.domain;
       const payload={commandId:crypto.randomUUID(),expected:domain.expected,setupId:domain.activeSetupId};
       if(action==='head-import')payload.sourcePath=sourcePath;
-      else if(action==='head-builtin'){if(!s.builtinHeadIdDraft)throw Error('请选择内置切割头。');Object.assign(payload,{kind:'Builtin',builtinDefinitionId:s.builtinHeadIdDraft});}
+      else if(action==='head-builtin'){if(!s.builtinHeadIdDraft)throw Error('请选择内置切割头。');if(!headChoiceFitsOperation(view,'builtin:'+s.builtinHeadIdDraft))throw Error('所选切割头不适用于本工序机型。');Object.assign(payload,{kind:'Builtin',builtinDefinitionId:s.builtinHeadIdDraft});}
       else {const d=headDraft(view);Object.assign(payload,{kind:'Imported',tcpLocalPosition:parseVector(d.tcp),beamLocalDirection:parseVector(d.beam)});}
       s.request={method:action==='head-import'?'Import':'Configure',payload};
     }
@@ -400,7 +458,7 @@ export async function simulationCommand(context,view,action,ops) {
     if(headActive(context,view)){
       if(!await refreshMachiningState(context,view,ops))throw Error('读取切割头设置失败，请刷新后重试。');
       const imported=setupOf(view)?.headModel;
-      if(action==='head-import'&&imported?.instance){renderHeadInstancePicker(view);view.fiveHeadEditor.importPrompt={instanceId:imported.instance.id,name:imported.name||imported.instance.name,save:false};}
+      if(action==='head-import'&&imported?.instance){clearHeadWorkspaceSelection(view);renderHeadInstancePicker(view);view.fiveHeadEditor.importPrompt={instanceId:imported.instance.id,name:imported.name||imported.instance.name,save:false};}
       ops.appendProjectLog(context,'ok',action==='head-import'?`${imported?.assembly?'刀头机构':'刚性刀头'}已导入${imported?.calibrated?'':'，请标定喷嘴端点和光束方向'}`:'切割头已更新');
     }
   }catch(error){

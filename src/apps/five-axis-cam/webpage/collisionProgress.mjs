@@ -1,4 +1,5 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {applySetupDisplayFrame} from './setupWorldFrame.mjs';
 import {escapeText as esc,escapeAttr as attr} from '../../_shared/workbench/utils/format.mjs';
 import {collisionObstacle} from './collisionDiagnostics.mjs';
 import {collisionChecks,collisionLocationLabel,collisionPathLabel,collisionIssueLabel} from './collisionLocations.mjs';
@@ -50,14 +51,15 @@ export function disposeCollisionProgress(s){
 export function paintCollisionProgress(view,s){
   const index=s.checkExactProgress?.current,frame=index!==null&&index!==undefined?s.frames[index]:null,next=frame?s.frames[index+1]:null;
   if(!s.checking||!frame||!view.viewport){if(s.checkOverlay)s.checkOverlay.group.visible=false;return;}
-  if(s.checkOverlay?.index===index){s.checkOverlay.group.visible=true;return;}
+  if(s.checkOverlay?.index===index){s.checkOverlay.group.visible=true;applySetupDisplayFrame(view,s.checkOverlay.group);return;}
   const old=s.checkOverlay;old?.group.removeFromParent();old?.group.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
   const group=new THREE.Group();group.name='five-collision-active-segment';group.userData={segmentIndex:index,poseSource:'NativeCollisionTaskSegmentStart'};
   const material=new THREE.LineBasicMaterial({color:0x39c9cf,depthTest:false,transparent:true,opacity:.9});
   // A discontinuous connector has no swept geometry to preview.
   if(next&&!next.breakBefore){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([frame.position,next.position]),material);line.name='collision-current-sweep';line.renderOrder=95;line.raycast=()=>{};group.add(line);}else material.dispose();
   const marker=new THREE.Mesh(new THREE.SphereGeometry(1.6,12,8),new THREE.MeshBasicMaterial({color:0x39c9cf,depthTest:false,transparent:true,opacity:.9}));marker.name='collision-current-start';marker.position.copy(frame.position);marker.renderOrder=96;marker.raycast=()=>{};group.add(marker);view.viewport.scene.add(group);s.checkOverlay={group,index};
-  marker.onBeforeRender=(_renderer,_scene,camera)=>{const height=Math.max(1,view.viewport.renderer.domElement.clientHeight),world=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*marker.position.distanceTo(camera.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));marker.scale.setScalar(world/height*5/1.6);marker.updateMatrixWorld();};
+  applySetupDisplayFrame(view,group);
+  marker.onBeforeRender=(_renderer,_scene,camera)=>{const height=Math.max(1,view.viewport.renderer.domElement.clientHeight),world=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*marker.getWorldPosition(new THREE.Vector3()).distanceTo(camera.position)*Math.tan(THREE.MathUtils.degToRad(camera.fov/2));marker.scale.setScalar(world/height*5/1.6);marker.updateMatrixWorld();};
 }
 export function animateCollisionProgress(context,view,s,active,onPose){
   disposeCollisionProgress(s);installCollisionProgressStyle(context.mount?.ownerDocument);

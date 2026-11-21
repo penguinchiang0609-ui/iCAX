@@ -9,6 +9,7 @@ namespace iCAX::Render
 {
     inline constexpr const char* kRenderGeometryIdentifier = "ICRG";
     inline constexpr const char* kRenderMaterialIdentifier = "ICRM";
+    inline constexpr const char* kRenderTextureIdentifier = "ICRT";
     inline constexpr uint32_t kRenderResourceSchemaVersion = 1;
 
     struct SRenderMeshEdges
@@ -32,9 +33,19 @@ namespace iCAX::Render
     _RENDER_DATA_EXP iCAX::Resource::CFlatBufferResource
         MakeRenderMaterialResource(IN const SRenderMaterialData& Material_);
 
+    _RENDER_DATA_EXP iCAX::Resource::CFlatBufferResource
+        MakeRenderTextureResource(
+            IN const std::vector<std::uint8_t>& EncodedImage_,
+            IN uint32_t nPixelWidth_, IN uint32_t nPixelHeight_,
+            IN const std::string& strMimeType_ = "image/png",
+            IN uint64_t nDataVersion_ = 1);
+
     _RENDER_DATA_EXP bool IsRenderGeometryResource(
         IN const iCAX::Resource::CFlatBufferResource& Resource_) noexcept;
 
     _RENDER_DATA_EXP bool IsRenderMaterialResource(
+        IN const iCAX::Resource::CFlatBufferResource& Resource_) noexcept;
+
+    _RENDER_DATA_EXP bool IsRenderTextureResource(
         IN const iCAX::Resource::CFlatBufferResource& Resource_) noexcept;
 }

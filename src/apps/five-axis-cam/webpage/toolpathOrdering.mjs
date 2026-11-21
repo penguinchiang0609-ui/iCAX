@@ -2,6 +2,7 @@ import { buildCutTree } from './cutTreeModel.mjs';
 import {revealSceneCut} from './sceneListReveal.mjs';
 import { saveCommittedCutEdit } from './cutEditPersistence.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import { activeTool, workspaceState } from './workspaceModel.mjs';
 import { escapeText as esc } from '../../_shared/workbench/utils/format.mjs';
 import { button } from './workspaceControls.mjs';
@@ -154,7 +155,7 @@ export function orderingAtPointer(view,event){
   for(const op of result?.operations||[]){
     if(view.scene.intentToolpaths?.find(c=>c.id===op.intentId)?.locked)continue;
     const placement=view.scene.domain.placements.find(p=>p.id===op.placementId);if(!placement)continue;
-    const matrix=new THREE.Matrix4().set(...placement.transform);
+    const matrix=placementWorldMatrix(view,placement);
     for(const part of op.parts){let last;
       for(const p of part.points){const q=new THREE.Vector3(...p).applyMatrix4(matrix).project(viewport.camera),b=[box.x+(q.x+1)*box.width/2,box.y+(1-q.y)*box.height/2,q.z];
         if(last&&last[2]>=-1&&last[2]<=1&&b[2]>=-1&&b[2]<=1){const dx=b[0]-last[0],dy=b[1]-last[1],t=Math.max(0,Math.min(1,((event.clientX-last[0])*dx+(event.clientY-last[1])*dy)/(dx*dx+dy*dy||1)));

@@ -9,10 +9,12 @@ import { activeTool, selectTool, geometryEditing } from './workspaceModel.mjs';
 import { selectedPlacement } from './registrationActions.mjs';
 import {workpieceLocked} from './workpieceState.mjs';
 import {placementSnapOptions,updatePlacementSnapFeedback} from './placementSnapping.mjs';
-import {setupWorldFrame} from './setupWorldFrame.mjs';
+import {setupReferenceWorldFrame} from './setupWorldFrame.mjs';
+import {operationPlacementMatrix,placementMovesAssembly} from './operationAssembly.mjs';
 import { escapeText as esc, escapeAttr as attr } from '../../_shared/workbench/utils/format.mjs';
 
 export const placementTools = ['translate', 'rotate', 'scale'];
+const placementArea = (view,mode) => mode==='scale'?view.fiveAxisArea==='workpiece':view.fiveAxisArea==='operation';
 const initialValue = d => d.mode === 'scale' ? '1' : '0';
 const scaleFactors = d => {
   const value=readNumber(d.value);
@@ -39,7 +41,7 @@ const draftWorld = (d,matrix) => draftParent(d).multiply(matrix);
 // Workpiece activation belongs to the page, not to viewport selection. Restore
 // handles after loading/reopening, a version change, or returning from another page.
 export function preparePlacement(view) {
-  if(view.fiveAxisArea!=='workpiece'||!view.scene?.model?.isLoaded)return false;
+  if(!['workpiece','operation'].includes(view.fiveAxisArea)||!view.scene?.model?.isLoaded)return false;
   if(workpieceLocked(view)){disposePlacementPreview(view);view.fivePlacement=null;return false;}
   
   const mode=activeTool(view),d=view.fivePlacement;
@@ -50,18 +52,19 @@ export function preparePlacement(view) {
 }
 
 export function openPlacement(view, mode) {
-  if ((view.fiveAxisArea!=='workpiece'||(mode==='scale')!==geometryEditing(view))||workpieceLocked(view)||view.fivePlacement?.request || view.pending) return;
+  if (!placementArea(view,mode)||workpieceLocked(view)||view.fivePlacement?.request || view.pending) return;
   disposePlacementPreview(view);
   const placement = selectedPlacement(view);
   if (!placement) { view.error = '请先导入工件。'; return; }
   const object = view.viewport?.sceneObjects.get(placement.id);
   if (!object?.geometry) { view.error = '工件显示尚未就绪，请稍后重试。'; return; }
   let parent;
-  try{parent=rowMajor(setupWorldFrame(view,placement.setupId));}catch(error){view.error=error.message;return;}
+  try{parent=rowMajor(setupReferenceWorldFrame(view,placement.setupId));}catch(error){view.error=error.message;return;}
   object.geometry.computeBoundingBox();
   view.fivePlacement = {
     open:true, mode, placementId:placement.id, setupId:placement.setupId, key:sourceKey(view),
-    base:[...placement.transform], original:[...placement.transform], parentWorld:parent,
+    base:rowMajor(operationPlacementMatrix(view,placement)), original:rowMajor(operationPlacementMatrix(view,placement)), parentWorld:parent,
+    motionScope:placementMovesAssembly(view,placement.setupId)?'Assembly':'Workpiece',
     localCenter:object.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray(),
     space:view.fivePlacementSpace ?? 'world', axis:null, value:mode==='scale'?'1':'0', planeValues:['0','0','0'], appliedScale:1,
   };
@@ -111,7 +114,7 @@ export function placementMatrix(d) {
 
 function transformParameterState(view){
   const placement=selectedPlacement(view);if(!placement)return null;
-  let matrix=new THREE.Matrix4().set(...placement.transform),preview=false;
+   let matrix=operationPlacementMatrix(view,placement),preview=false;
   if(activeTool(view)==='align'&&view.fiveAlignment?.report){matrix=new THREE.Matrix4().set(...view.fiveAlignment.report.transform);preview=true;}
   const d=view.fivePlacement;
   if(d?.open&&d.placementId===placement.id&&(d.panel||activeTool(view)===d.mode)&&d.key===sourceKey(view)){
@@ -138,7 +141,7 @@ export function renderTransformParameters(view){
   const alignment=view.fiveAlignment,alignmentBusy=!!alignment&&(alignment.dirty||alignment.saving||alignment.request||alignment.selecting||alignment.picking||Object.keys(alignment.fieldErrors).length);
   const busy=view.pending||!!view.fiveWorkpieceRemoval?.request||!!view.fiveWorkpieceLock?.request||!!view.fivePlacement?.request||alignmentBusy,readonly=workpieceLocked(view)||busy;
   const group=(id,title,unit)=>`<section data-five-key="transform-${id}"><h4>${title}<small>${unit}</small></h4><div class="five-transform-vector">${['X','Y','Z'].map((axis,i)=>`<label class="axis-${axis.toLowerCase()}" for="five-transform-${attr(state.placement.id)}-${id}-${axis}">${axis}</label><input id="five-transform-${attr(state.placement.id)}-${id}-${axis}" data-five-key="${id}-${axis}" data-five-transform-value="${id}-${axis}" data-five-transform-field="${id}-${axis}" aria-label="${title} ${axis}" type="text" inputmode="decimal" autocomplete="off" value="${attr(transformFieldValue(view,state,id,i))}" data-model-value-authoritative="true" ${readonly?'readonly':''}>`).join('')}</div></section>`;
-  return `<section class="five-transform-parameters" data-five-key="transform-parameters" data-five-transform-id="${attr(state.placement.id)}"><header>${geometryEditing(view)?'几何缩放':'位姿'}</header><p>${geometryEditing(view)?'修改共享工件几何':'工件 → 当前装夹坐标系'}<span data-five-transform-status>${state.preview?'预览中':'已保存'}</span></p>
+  return `<section class="five-transform-parameters" data-five-key="transform-parameters" data-five-transform-id="${attr(state.placement.id)}"><header>${geometryEditing(view)?'几何缩放':placementMovesAssembly(view,state.placement.setupId)?'总成位姿':'位姿'}</header><p>${geometryEditing(view)?'修改共享工件几何':placementMovesAssembly(view,state.placement.setupId)?'工件与工装整体放置':'工件 → 当前装夹坐标系'}<span data-five-transform-status>${state.preview?'预览中':'已保存'}</span></p>
     ${geometryEditing(view)?group('scale','几何缩放','×'):group('position','位置','mm')+group('rotation','旋转','°')}
     <small>${alignmentBusy?'自身坐标系修改实时生效并自动保存。':workpieceLocked(view)?'关联的装夹姿态已锁定；请在左侧解锁对应装夹后修改。':geometryEditing(view)?'XYZ 等比缩放，所有装夹共用新几何；应用后比例回到 1。':'Enter 或离开输入框应用，Esc 取消。放置只影响当前装夹。'}</small></section>`;
 }
@@ -183,9 +186,9 @@ export function transformParameterChanged(view,field,value){
 
 export function disposePlacementPreview(view) {
   const d = view.fivePlacement;
-  if (d?.previewViewport) d.previewViewport.clearTransformPreview(d.placementId);
+  if (d?.previewViewport)for(const id of d.previewIds||[d.placementId])d.previewViewport.clearTransformPreview(id);
   if (d?.gizmoViewport?.transformManipulator?.options?.owner==='workpiece-placement') d.gizmoViewport.clearTransformManipulator();
-  if (d) { d.previewViewport=null; d.gizmoViewport=null; d.previewKey=''; }
+  if (d) { d.previewViewport=null;d.previewIds=null; d.gizmoViewport=null; d.previewKey=''; }
 }
 
 export function placementSpaceChanged(view, space) {
@@ -254,11 +257,11 @@ export function syncPlacementInteraction(context,view,ops) {
 export function syncPlacementPreview(view) {
   syncTransformParameters(view);
   const d=view.fivePlacement; if(!d)return;
-  if(d.panel&&(view.fiveAxisArea!=='workpiece'||(d.mode==='scale')!==geometryEditing(view))||!d.panel&&activeTool(view)!==d.mode||!d.open||(!d.saving&&!d.request&&d.key!==sourceKey(view))){
+  if(d.panel&&!placementArea(view,d.mode)||!d.panel&&activeTool(view)!==d.mode||!d.open||(!d.saving&&!d.request&&d.key!==sourceKey(view))){
     disposePlacementPreview(view); if(!d.request)d.open=false; return;
   }
   const vp=view.viewport; if(!vp)return;
-  try{d.parentWorld=rowMajor(setupWorldFrame(view,d.setupId));}catch(error){view.error=error.message;disposePlacementPreview(view);return;}
+  try{d.parentWorld=rowMajor(setupReferenceWorldFrame(view,d.setupId));}catch(error){view.error=error.message;disposePlacementPreview(view);return;}
   let matrix;
   try {matrix=d.request?.transform?new THREE.Matrix4().set(...d.request.transform):placementMatrix(d);}
   catch {matrix=new THREE.Matrix4().set(...d.original);}
@@ -266,7 +269,12 @@ export function syncPlacementPreview(view) {
   const signature=JSON.stringify(matrix.elements);
   if(d.previewViewport!==vp)disposePlacementPreview(view);
   if(d.previewKey!==signature||!vp.transformPreviews.has(d.placementId)){
-    vp.setTransformPreview(d.placementId,matrix.elements);d.previewViewport=vp;d.previewKey=signature;
+    vp.setTransformPreview(d.placementId,matrix.elements);d.previewViewport=vp;d.previewKey=signature;d.previewIds=new Set([d.placementId]);
+    if(d.motionScope==='Assembly'&&d.mode!=='scale'){
+      const placement=view.scene.domain.placements.find(p=>p.id===d.placementId);
+      const frame=matrix.clone().multiply(new THREE.Matrix4().set(...placement.transform).invert());
+      for(const part of view.scene.domain.fixtures||[])if(part.setupId===d.setupId){vp.setTransformPreview(part.id,frame.clone().multiply(new THREE.Matrix4().set(...part.transform)).elements);d.previewIds.add(part.id);}
+    }
   }
 }
 
@@ -290,7 +298,7 @@ export function renderPlacement(view) {
     const busy=!!(d.saving||d.request),check='<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>',close='<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg>';
     return `<section class="five-position-dialog five-floating-dialog five-scale-operation" data-five-key="scale-operation" data-five-floating="scale" ${floatingDialogStyle(view,'scale')} role="dialog" aria-label="缩放工件"><header class="five-position-title" data-five-dialog-drag><strong>缩放</strong><button type="button" data-five-command="five.placement.close" aria-label="取消缩放" title="取消" ${busy?'disabled':''}>${close}</button></header><div class="five-scale-body"><label for="five-scale-factor">比例</label><input id="five-scale-factor" data-five-key="placement-input-value" data-five-placement-field="value" aria-label="缩放比例" type="text" inputmode="decimal" autocomplete="off" value="${attr(d.value)}" ${busy?'readonly':''}><small>×</small><button type="button" data-five-command="five.placement.apply" title="执行缩放" aria-label="执行缩放" ${d.saving?'disabled':''}>${check}</button><p>XYZ 等比缩放，所有装夹共用新几何。</p>${d.saving?'<p role="status">正在缩放…</p>':view.error?`<p class="five-placement-error" role="alert">${esc(view.error)}</p>`:''}</div></section>`;
   }
-  const toolbar=renderTransformTools({owner:'placement',title:'工件变换',mode:d.mode,busy:view.pending||d.request,modes:(geometryEditing(view)?[['scale','缩放']]:[['translate','平移'],['rotate','旋转']]).map(([mode,title])=>[mode,title,'five.tool.'+mode])});
+  const toolbar=renderTransformTools({owner:'placement',title:d.motionScope==='Assembly'?'装夹总成变换':'工件变换',mode:d.mode,busy:view.pending||d.request,modes:(geometryEditing(view)?[['scale','缩放']]:[['translate','平移'],['rotate','旋转']]).map(([mode,title])=>[mode,title,'five.tool.'+mode])});
   if(!d.axis)return toolbar;
   const title=d.mode==='translate'?'位移':d.mode==='scale'?'缩放比例':'角度',busy=d.saving||!!d.request;
   const fields=planeSelected(d)?[...d.axis].map(axis=>({name:axis,label:axis.toUpperCase(),value:d.planeValues['xyz'.indexOf(axis)],aria:`${axis.toUpperCase()} 位移`}))
@@ -369,7 +377,7 @@ export async function placementCommand(context,view,action,ops,focusAfterDrag=fa
     }
     if(request.transform)d.original=[...request.transform];d.key=sourceKey(view);d.request=null;
     if(d.oneShot&&view.fivePlacement===d){disposePlacementPreview(view);view.fivePlacement=null;selectTool(view,'select');}
-    ops.appendProjectLog(context,'ok',d.mode==='scale'?'工件已缩放，请重新提取刀路。':`工件已${d.mode==='translate'?'平移':'旋转'}，后续加工结果需重新生成。`);
+    ops.appendProjectLog(context,'ok',d.mode==='scale'?'工件已缩放，请重新提取刀路。':committed?.motionScope==='Assembly'?`工件与工装已整体${d.mode==='translate'?'平移':'旋转'}。`:`工件已${d.mode==='translate'?'平移':'旋转'}，后续加工结果需重新生成。`);
   }catch(error){
     if(current(context,view))view.error=d.request?'结果未确认，按 Enter 重试。'
       :/EXPECTED|EPOCH|SEQUENCE|REVISION/.test(error.message)?'工程已变化，请重新打开操作。':error.message;

@@ -79,7 +79,9 @@ namespace {
         for(const auto* name:{"candidate","assembly"})if(design.contains(name)){
             const auto assembly=ProjectFixtureAssembly(scene,setupID,design,design.at(name).To<Map>(),Text(name)=="assembly");
             Map state{{"id",assembly.at("id")},{"validity",assembly.at("validity")},{"geometryValidity",assembly.at("geometryValidity")}};
-            if(assembly.contains("cutClearance"))state["cutClearance"]=Map{{"validity",assembly.at("cutClearance").To<Map>().at("validity")},{"status",assembly.at("cutClearance").To<Map>().at("status")}};
+            // Disabled clearance has a status but no validity certificate.
+            // Match the full fixture projection without inventing a certificate.
+            if(assembly.contains("cutClearance"))state["cutClearance"]=FixtureFields(assembly.at("cutClearance").To<Map>(),{"validity","status"});
             if(assembly.contains("openingPreclearance"))state["openingPreclearance"]=Map{{"validity",assembly.at("openingPreclearance").To<Map>().at("validity")},{"status",assembly.at("openingPreclearance").To<Map>().at("status")}};
             result[name]=state;
         }
@@ -162,7 +164,7 @@ namespace {
             const auto faces=task.SupportFaceWorker.Result();
             if(task.Cancelled->load())task.Status="Cancelled";
             else if(task.Sequence!=runtime.Sequence||task.ClearanceInputKey!=iCAX::Data::VariantSerializer::Serialize(FixtureDesignSource(scene,task.SetupID)))task.Status="Superseded";
-            else {Array selected;for(auto id:*faces)selected.emplace_back(std::to_string(id));task.SupportSelection={{"supportFaces",selected},{"basis",Text("SampledTrimmedMeshLowerEnvelope")},{"meshDeflectionMm",.025}};task.Result={{"selectionId",task.TaskID},{"selectedFaceCount",static_cast<UInt>(selected.size())}};task.Status="Completed";}
+            else {Array selected;for(auto id:*faces)selected.emplace_back(std::to_string(id));task.SupportSelection={{"supportFaces",selected},{"basis",Text("TrimmedBRepLowerEnvelope")}};task.Result={{"selectionId",task.TaskID},{"selectedFaceCount",static_cast<UInt>(selected.size())}};task.Status="Completed";}
         }catch(const std::exception& e){task.Status=task.Cancelled->load()?"Cancelled":"Failed";task.Error=e.what();}
         task.SupportFaceWorker={};
     }
@@ -178,7 +180,7 @@ namespace {
                 Array parts;const auto stations=r.at("stations").To<Array>();
                 if(prepared->PlateDisplayEdges.size()!=plates->size())throw std::runtime_error("CAM_DISPLAY_SERVICE_UNAVAILABLE");
                 for(size_t i=0;i<plates->size();++i){auto& p=plates->at(i);const auto& edges=prepared->PlateDisplayEdges[i];
-                    Map exactProfile;if(!p.Base&&String(r,"jointMode")=="TabSlot"&&FiniteNumber(r.at("tenonRadius"),"PLATE_TENON_RADIUS_INVALID")>0){
+                    Map exactProfile;{
                         if(p.ExactProfile.Boundaries.empty())throw std::runtime_error("PLATE_PROFILE_CURVE_INVALID");
                         exactProfile=iCAX::CAD::TubeCadJson::Encode(p.ExactProfile).To<Map>();
                     }
@@ -197,7 +199,7 @@ namespace {
                     parts.emplace_back(Map{{"partId",p.Base?r.at("baseId"):station.at("id")},{"number",p.Base?Text("B01"):Text(p.Connection?"C":"S")+String(station,"number")},
                         {"role",Text(p.Base?"Base":p.Connection?"Connection":"Support")},{"material",r.at("material")},{"geometryRef",StoredRef(geometry)},{"previewRef",StoredRef(preview)},
                         {"outline",outline},{"holes",holes},{"windowHoleIndices",windows},{"enabled",true},{"joints",joints},{"span",Array{p.Span[0],p.Span[1]}},{"frame",frame},{"thickness",p.Thickness},{"minimumDistance",p.Distance},{"topRetreat",p.TopRetreat},
-                        {"meshDeflectionMm",p.MeshDeflection},{"clearanceAllowanceMm",p.ClearanceAllowance},{"clearanceMethod",Text(p.Base&&p.MeshDeflection==0?"SupportDirectionBounds":p.Base||p.Connection?"CoalMeshWithAllowance":"UnderlyingSurfaceEnvelope")},{"reliefCount",static_cast<UInt>(p.ReliefCount)},
+                        {"meshDeflectionMm",p.MeshDeflection},{"clearanceAllowanceMm",p.ClearanceAllowance},{"clearanceMethod",Text(p.Base?"SupportDirectionBounds":"BRepExtrema")},{"reliefCount",static_cast<UInt>(p.ReliefCount)},
                         {"keepOutReliefCount",static_cast<UInt>(p.KeepOutReliefCount)},
                         {"contactPoints",contacts},{"contactLengthMm",p.ContactLength}});
                     if(!exactProfile.empty())std::get<Map>(parts.back().m_Value)["exactProfile"]=exactProfile;
@@ -427,7 +429,14 @@ namespace {
         out<<"0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n";
         const auto loop=p.at("outline").To<Array>();
         const auto polyline=[&](const Array& points,const char* layer){out<<"0\nLWPOLYLINE\n100\nAcDbEntity\n8\n"<<layer<<"\n100\nAcDbPolyline\n90\n"<<points.size()<<"\n70\n1\n";for(const auto& v:points){auto q=v.To<Array>();out<<"10\n"<<q[0].To<double>()<<"\n20\n"<<q[1].To<double>()<<"\n";if(q.size()>2&&q[2].To<double>()!=0)out<<"42\n"<<q[2].To<double>()<<"\n";}};
-        const auto boundary=[&](const FixtureDXFBoundary& value,const char* layer){if(value.Circle){const auto c=*value.Circle;out<<"0\nCIRCLE\n100\nAcDbEntity\n8\n"<<layer<<"\n100\nAcDbCircle\n10\n"<<c[0]<<"\n20\n"<<c[1]<<"\n30\n0\n40\n"<<c[2]<<"\n";}else polyline(value.Vertices,layer);};
+        const auto boundary=[&](const FixtureDXFBoundary& value,const char* layer){
+            if(!value.Splines.empty()){for(const auto& spline:value.Splines){size_t knots=0;for(auto multiplicity:spline.Multiplicities)knots+=multiplicity;
+                out<<"0\nSPLINE\n100\nAcDbEntity\n8\n"<<layer<<"\n100\nAcDbSpline\n210\n0\n220\n0\n230\n1\n70\n12\n71\n"<<spline.Degree<<"\n72\n"<<knots<<"\n73\n"<<spline.Poles.size()<<"\n74\n0\n";
+                for(size_t i=0;i<spline.Knots.size();++i)for(int j=0;j<spline.Multiplicities[i];++j)out<<"40\n"<<spline.Knots[i]<<'\n';
+                for(auto weight:spline.Weights)out<<"41\n"<<weight<<'\n';
+                for(const auto& pole:spline.Poles)out<<"10\n"<<pole.X<<"\n20\n"<<pole.Y<<"\n30\n0\n";
+            }}else if(value.Circle){const auto c=*value.Circle;out<<"0\nCIRCLE\n100\nAcDbEntity\n8\n"<<layer<<"\n100\nAcDbCircle\n10\n"<<c[0]<<"\n20\n"<<c[1]<<"\n30\n0\n40\n"<<c[2]<<"\n";}else polyline(value.Vertices,layer);
+        };
         boundary(FixtureDXFOuter(p),"CUT_OUTER");for(const auto& hole:FixtureDXFHoles(p))boundary(hole,"CUT_INNER");
         double minx=1e100,miny=1e100,maxx=-1e100;for(const auto& v:loop){auto point=v.To<Array>();double x=point[0].To<double>(),y=point[1].To<double>();minx=std::min(x,minx);maxx=std::max(x,maxx);miny=std::min(y,miny);}
         const auto text=[&](const Text& number,double x,double y,double height=2.){out<<"0\nTEXT\n100\nAcDbEntity\n8\nMARK_ID\n100\nAcDbText\n10\n"<<x<<"\n20\n"<<y<<"\n30\n0\n40\n"<<height<<"\n1\n"<<number<<"\n";};

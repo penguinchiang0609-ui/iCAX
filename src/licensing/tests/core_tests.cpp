@@ -13,6 +13,32 @@ void Reject(const std::function<void()>& action, const char* name) {
     bool failed = false; try { action(); } catch (const std::exception&) { failed = true; }
     Check(failed, name);
 }
+void TpmTransportStatusTests() {
+    tpm::CheckStatus(TBS_SUCCESS, "connect");
+    const TBS_RESULT failures[]{
+        static_cast<TBS_RESULT>(TBS_E_TPM_NOT_FOUND),
+        static_cast<TBS_RESULT>(TBS_E_SERVICE_DISABLED),
+        static_cast<TBS_RESULT>(TBS_E_SERVICE_NOT_RUNNING),
+        static_cast<TBS_RESULT>(TBS_E_ACCESS_DENIED),
+        static_cast<TBS_RESULT>(TBS_E_PROVISIONING_INCOMPLETE),
+        0xDEADBEEFu
+    };
+    for (const auto status : failures) {
+        bool rejected = false;
+        try { tpm::CheckStatus(status, "connect"); }
+        catch (const tpm::TransportError& error) {
+            rejected = true;
+            const std::string message = error.what();
+            Check(error.status == status && message.find(tpm::StatusHex(status)) != std::string::npos,
+                "TPM failure retains original Windows status");
+            Check(message.find("connect") != std::string::npos, "TPM failure identifies the operation");
+        }
+        Check(rejected, "Known and unknown Windows TPM failures cannot be accepted");
+    }
+    Check(tpm::StatusHex(static_cast<TBS_RESULT>(TBS_E_TPM_NOT_FOUND)) == "0x8028400F", "TBS code keeps all eight hex digits");
+    Check(std::string(tpm::StatusGuidance(static_cast<TBS_RESULT>(TBS_E_SERVICE_DISABLED)))
+        != tpm::StatusGuidance(static_cast<TBS_RESULT>(TBS_E_TPM_NOT_FOUND)), "Disabled service and absent TPM have different remedies");
+}
 // Ephemeral software keys exist ONLY in this test executable; never persisted.
 struct TestKey {
     NCRYPT_PROV_HANDLE provider{};
@@ -284,6 +310,7 @@ int main(int argc, char** argv) {
         Reject([&] { VerifyAtSite<2, Feature::ProductExport>(Sign(issuer, Body(device.Public(), Kind::Permanent, 1)),
             "test-issuer", pub, 1, L"does-not-exist"); }, "Feature denial before device access");
         Reject([&] { VerifyAtSite<3, Feature::ProductDesign>(file, "test-issuer", pub, 3, L"does-not-exist"); }, "Version denial");
+        TpmTransportStatusTests();
         QuoteEvidenceTests();
         NvEvidenceTests();
         TrialTimeTests();

@@ -27,6 +27,23 @@ namespace iCAX::SheetNesting
         std::size_t ConvexPairs = 0;
     };
     enum class NfpStatus { Ready, Unsupported, Cancelled, LimitReached };
+    struct NfpConvexDecomposition
+    {
+        // Counterclockwise convex pieces with disjoint interiors. Their union
+        // is the original polygon material; no replacement convex hull is used.
+        std::vector<std::vector<Point>> Pieces;
+    };
+    struct NfpDecompositionLookup
+    {
+        NfpStatus State = NfpStatus::Unsupported;
+        std::shared_ptr<const NfpConvexDecomposition> Decomposition;
+        // Pieces are canonical coordinates: source point = piece point +
+        // SourceOrigin. For a source placement, rotate that sum by its angle,
+        // then add its placement translation. This is NOT a rotated AABB origin.
+        Point SourceOrigin;
+        bool CacheHit = false;
+        std::string Diagnostic;
+    };
     struct NfpLookup
     {
         NfpStatus State = NfpStatus::Unsupported;
@@ -69,13 +86,20 @@ namespace iCAX::SheetNesting
         NfpCache& operator=(const NfpCache&) = delete;
         NfpLookup Get(const Shape& stationary, double stationaryAngle,
                       const Shape& moving, double movingAngle,
-                      const NfpBuildOptions& options = {});
+                      const NfpBuildOptions& options = {},bool stationaryMirrored=false,bool movingMirrored=false);
         // Prepare once per immutable source shape. Repeated angle-pair queries
         // then skip ring normalization, sorting and source validation.
-        NfpPreparedShape Prepare(const Shape& shape, const NfpBuildOptions& options = {});
+        // Reflection creates a private local-Y geometry copy and a distinct
+        // cache identity. Part permissions remain the domain caller's duty.
+        NfpPreparedShape Prepare(const Shape& shape, const NfpBuildOptions& options = {},bool mirrored=false);
         NfpLookup Get(const NfpPreparedShape& stationary, double stationaryAngle,
                       const NfpPreparedShape& moving, double movingAngle,
                       const NfpBuildOptions& options = {});
+        // Reuse the same exact convex decomposition used by the NFP kernel.
+        // Handles stay immutable and valid after cache eviction or Clear().
+        // MaxConvexPairs limits pair NFP construction, not this single shape.
+        NfpDecompositionLookup Decompose(const Shape& shape, const NfpBuildOptions& options = {});
+        NfpDecompositionLookup Decompose(const NfpPreparedShape& shape, const NfpBuildOptions& options = {});
         NfpCacheStatistics Statistics() const;
         void Clear();
     private:

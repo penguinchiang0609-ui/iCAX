@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include <TubeDesigner/BRepTubeUnfoldingService.h>
+#include <TubeDesigner/NestingAdapter.h>
 #include <TubeDesigner/TubeSideSketchCurveService.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
@@ -17,6 +18,9 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <Bnd_Box.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
@@ -145,6 +149,26 @@ namespace
         return BRepAlgoAPI_Cut(
             BRepPrimAPI_MakeCylinder(gp_Ax2(gp::Origin(),gp::DX()),OuterRadius_,200.0).Shape(),
             BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,Offset_,0),gp::DX()),InnerRadius_,200.0).Shape()).Shape();
+    }
+
+    TopoDS_Shape RoundTubeWithPlanarEnds(const double InnerOffset_ = 0.0,
+        const double InnerRadius_ = 13.0)
+    {
+        auto _Tube = RoundTube(15.0, InnerRadius_, InnerOffset_);
+        // Different physical plane gradients require a nonzero relative roll
+        // for a forward-forward pair. Both complete caps remain inside blank.
+        for (const auto& _End : std::array<std::array<double, 4>, 2>{
+                std::array<double, 4>{20.0, 0.5, 0.2, 1.0},
+                std::array<double, 4>{180.0, -0.2, 0.5, -1.0}})
+        {
+            const gp_Pnt _Origin(_End[0], 0.0, 0.0);
+            const gp_Dir _Normal(1.0, -_End[1], -_End[2]);
+            const auto _Face = BRepBuilderAPI_MakeFace(gp_Pln(_Origin, _Normal)).Face();
+            const auto _Keep = BRepPrimAPI_MakeHalfSpace(_Face,
+                _Origin.Translated(gp_Vec(_Normal) * (_End[3] * 100.0))).Solid();
+            _Tube = BRepAlgoAPI_Common(_Tube, _Keep).Shape();
+        }
+        return _Tube;
     }
 
     TopoDS_Shape RoundedRectangleTube(double Radius_ = 5.0)
@@ -448,6 +472,188 @@ TEST(BRepTubeUnfoldingService, EncodesPeriodicEndCurvesForNesting)
     ASSERT_TRUE(_Snapshot.at("nestingFeatures").Is<iCAX::Data::ObjectMap>());
     EXPECT_TRUE(_Snapshot.at("nestingFeatures").To<iCAX::Data::ObjectMap>()
         .at("available").To<bool>());
+}
+
+TEST(BRepTubeUnfoldingService, CertifiesNativeRoundPlanarEndsWithoutReadingSampledWires)
+{
+    auto _Result = iCAX::TubeDesigner::UnfoldTubeBRepSurface(RoundTubeWithPlanarEnds());
+    ASSERT_TRUE(_Result.bOK) << Diagnostic(_Result);
+    ASSERT_TRUE(_Result.AnalyticNestingGeometry.has_value()) << Diagnostic(_Result);
+    const auto _Profiles = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(_Result, 8, 0);
+    ASSERT_TRUE(_Profiles.bOK) << _Profiles.Diagnostic;
+    EXPECT_EQ(_Profiles.Geometry.Left.SourceQuality, iCAX::TubeNesting::ProfileSourceQuality::NativeCertified);
+    EXPECT_EQ(_Profiles.Geometry.Right.SourceQuality, iCAX::TubeNesting::ProfileSourceQuality::NativeCertified);
+    ASSERT_EQ(_Profiles.Geometry.Left.Levels.size(), 1u);
+    ASSERT_EQ(_Profiles.Geometry.Right.Levels.size(), 1u);
+    const auto& _Left = _Profiles.Geometry.Left.Levels.front();
+    const auto& _Right = _Profiles.Geometry.Right.Levels.front();
+    EXPECT_NEAR(_Left.Cosine.at(0), 750.0, 1.0e-7);
+    EXPECT_NEAR(_Left.Sine.at(0), 300.0, 1.0e-7);
+    EXPECT_NEAR(_Right.Cosine.at(0), -300.0, 1.0e-7);
+    EXPECT_NEAR(_Right.Sine.at(0), 750.0, 1.0e-7);
+    EXPECT_GT(_Left.ResidualUpper, 0.0);
+    EXPECT_LT(_Left.ResidualUpper, 0.01);
+    EXPECT_NEAR(_Right.Constant - _Left.Constant, 16000.0, 1.0e-7);
+    // Corrupt/remove the visual unfolding: native evidence must remain owned
+    // independently and must not depend on a sample count or Fourier fit order.
+    _Result.Surfaces.clear();
+    const auto _WithoutSamples = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(_Result, 256, 32);
+    ASSERT_TRUE(_WithoutSamples.bOK);
+    EXPECT_EQ(_WithoutSamples.Geometry.Left.SourceHash, _Profiles.Geometry.Left.SourceHash);
+    EXPECT_EQ(_WithoutSamples.Geometry.Right.SourceHash, _Profiles.Geometry.Right.SourceHash);
+}
+
+TEST(BRepTubeUnfoldingService, NativeRoundPairPosesMatchAllFourRigidGeometryTransforms)
+{
+    using namespace iCAX::TubeNesting;
+    const auto _Shape = RoundTubeWithPlanarEnds();
+    const auto _Unfolded = iCAX::TubeDesigner::UnfoldTubeBRepSurface(_Shape);
+    ASSERT_TRUE(_Unfolded.bOK) << Diagnostic(_Unfolded);
+    const auto _Profiles = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(_Unfolded);
+    ASSERT_TRUE(_Profiles.bOK);
+    ASSERT_EQ(_Profiles.Geometry.Left.SourceQuality, ProfileSourceQuality::NativeCertified);
+    const double _Length = static_cast<double>(_Profiles.MaximumLength) / 100.0;
+    // Both end planes have equal amplitude and centres 20/180, so the blank
+    // centre is x=100. The physical angular reference is global (Y,Z).
+    ASSERT_TRUE(_Profiles.CertifiedLocalCenter.has_value());
+    const auto _Center = *_Profiles.CertifiedLocalCenter;
+    const PairPartType _Part{"round", "round", {}, _Profiles.MaximumLength, 16000, 2};
+    const auto _Placed = [&](const double Start_, const bool Reverse_, const double Roll_) {
+        const auto _Values = iCAX::TubeDesigner::MakeNestingPlacementTransform(
+            _Center, Start_, Start_ + _Length, Reverse_, Roll_);
+        gp_Trsf _Transform;
+        _Transform.SetValues(_Values[0].To<double>(), _Values[1].To<double>(), _Values[2].To<double>(), _Values[3].To<double>(),
+            _Values[4].To<double>(), _Values[5].To<double>(), _Values[6].To<double>(), _Values[7].To<double>(),
+            _Values[8].To<double>(), _Values[9].To<double>(), _Values[10].To<double>(), _Values[11].To<double>());
+        return BRepBuilderAPI_Transform(_Shape, _Transform, true).Shape();
+    };
+    for (const auto _A : {Direction::Forward, Direction::Reverse})
+        for (const auto _B : {Direction::Forward, Direction::Reverse})
+        {
+            const auto _Pose = SolveOrientedPairPose(_Part, _Profiles.Geometry, _A,
+                _Part, _Profiles.Geometry, _B, {});
+            ASSERT_EQ(_Pose.Status, PairPoseStatus::CertifiedEpsilonOptimal) << _Pose.Diagnostic;
+            EXPECT_LT(_Pose.RequiredSeparationUpper, static_cast<double>(_Profiles.MaximumLength) - 1000.0);
+            const double _Start = std::ceil(_Pose.RequiredSeparationUpper) / 100.0;
+            const auto _First = _Placed(0.0, _A == Direction::Reverse, 0.0);
+            const auto _Second = _Placed(_Start, _B == Direction::Reverse, _Pose.RelativeRotationRadians);
+            const auto _Common = BRepAlgoAPI_Common(_First, _Second).Shape();
+            GProp_GProps _Volume;
+            BRepGProp::VolumeProperties(_Common, _Volume);
+            EXPECT_LE(std::abs(_Volume.Mass()), 1.0e-5)
+                << static_cast<int>(_A) << ',' << static_cast<int>(_B)
+                << " roll=" << _Pose.RelativeRotationRadians;
+        }
+}
+
+TEST(BRepTubeUnfoldingService, NativeRoundEvidenceRejectsEccentricAndNoncircularStock)
+{
+    for (const auto& _Shape : {RoundTubeWithPlanarEnds(0.5), SlantedEndTube()})
+    {
+        const auto _Result = iCAX::TubeDesigner::UnfoldTubeBRepSurface(_Shape);
+        ASSERT_TRUE(_Result.bOK) << Diagnostic(_Result);
+        EXPECT_FALSE(_Result.AnalyticNestingGeometry.has_value());
+        const auto _Profiles = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(_Result);
+        ASSERT_TRUE(_Profiles.bOK) << _Profiles.Diagnostic;
+        EXPECT_EQ(_Profiles.Geometry.Left.SourceQuality, iCAX::TubeNesting::ProfileSourceQuality::NumericOnly);
+        EXPECT_EQ(_Profiles.Geometry.Right.SourceQuality, iCAX::TubeNesting::ProfileSourceQuality::NumericOnly);
+    }
+}
+
+TEST(BRepTubeUnfoldingService, NativeRoundCertificateSurvivesProductionTransformsAndEnvelopeGrowth)
+{
+    using namespace iCAX::TubeDesigner;
+    for (const bool _ThinTranslated : {false, true})
+        for (const bool _Reverse : {false, true})
+        {
+            auto _Shape = RoundTubeWithPlanarEnds(0.0, _ThinTranslated ? 14.99 : 13.0);
+            if (_ThinTranslated)
+            {
+                gp_Trsf _Translate;
+                _Translate.SetTranslation(gp_Vec(123.4, 37.5, -42.25));
+                _Shape = BRepBuilderAPI_Transform(_Shape, _Translate, true).Shape();
+            }
+            const auto _Unfolded = UnfoldTubeBRepSurface(_Shape);
+            ASSERT_TRUE(_Unfolded.bOK) << Diagnostic(_Unfolded);
+            auto _Profiles = EncodeTubeNestingEndProfiles(_Unfolded);
+            ASSERT_TRUE(_Profiles.bOK) << _Profiles.Diagnostic;
+            ASSERT_EQ(_Profiles.Geometry.Left.SourceQuality,
+                iCAX::TubeNesting::ProfileSourceQuality::NativeCertified);
+            // Use the same centred envelope growth contract as the SDO.
+            ASSERT_TRUE(RebaseTubeNestingGeometry(_Profiles.Geometry,
+                _Profiles.MaximumLength, _Profiles.MaximumLength + 1));
+            ++_Profiles.MaximumLength;
+            SNestingPart _Part;
+            _Part.ID = "native-round";
+            _Part.ProfileKey = "round-certified";
+            _Part.Length = static_cast<double>(_Profiles.MaximumLength) / 100.0;
+            _Part.Quantity = 2;
+            ASSERT_TRUE(_Profiles.CertifiedLocalCenter.has_value());
+            _Part.LocalCenter = *_Profiles.CertifiedLocalCenter;
+            _Part.PairGeometry = _Profiles.Geometry;
+            _Part.DirectionAllowed = {_Reverse ? false : true, _Reverse ? true : false};
+            SNestingStock _Stock;
+            _Stock.ID = "stock";
+            _Stock.ProfileKey = _Part.ProfileKey;
+            _Stock.Length = 340.0;
+            _Stock.Quantity = -1;
+            const auto _Solved = SolveManufacturingNesting({_Part}, {_Stock}, 0.1, 1);
+            const auto& _Metrics = _Solved.at("metrics").To<iCAX::Data::ObjectMap>();
+            ASSERT_EQ(_Metrics.at("placedPartCount").To<unsigned long long>(), 2u);
+            const auto& _Plans = _Solved.at("plans").To<iCAX::Data::VariantArray>();
+            ASSERT_EQ(_Plans.size(), 1u); // Without the certified overlap two blanks exceed 340.
+            const auto& _Placements = _Plans.front().To<iCAX::Data::ObjectMap>()
+                .at("placements").To<iCAX::Data::VariantArray>();
+            ASSERT_EQ(_Placements.size(), 2u);
+            EXPECT_GT(std::abs(_Placements[1].To<iCAX::Data::ObjectMap>()
+                .at("rotationRadians").To<double>()), 0.1);
+            std::vector<TopoDS_Shape> _Placed;
+            for (const auto& _Placement : _Placements)
+            {
+                const auto& _Map = _Placement.To<iCAX::Data::ObjectMap>();
+                EXPECT_EQ(_Map.at("reversed").To<bool>(), _Reverse);
+                const auto& _V = _Map.at("trsf").To<iCAX::Data::VariantArray>();
+                gp_Trsf _Transform;
+                _Transform.SetValues(_V[0].To<double>(), _V[1].To<double>(), _V[2].To<double>(), _V[3].To<double>(),
+                    _V[4].To<double>(), _V[5].To<double>(), _V[6].To<double>(), _V[7].To<double>(),
+                    _V[8].To<double>(), _V[9].To<double>(), _V[10].To<double>(), _V[11].To<double>());
+                _Placed.push_back(BRepBuilderAPI_Transform(_Shape, _Transform, true).Shape());
+            }
+            const auto _Common = BRepAlgoAPI_Common(_Placed[0], _Placed[1]).Shape();
+            GProp_GProps _Volume;
+            BRepGProp::VolumeProperties(_Common, _Volume);
+            EXPECT_LE(std::abs(_Volume.Mass()), 1.0e-5);
+            BRepExtrema_DistShapeShape _Distance(_Placed[0], _Placed[1]);
+            ASSERT_TRUE(_Distance.IsDone());
+            EXPECT_GE(_Distance.Value(), 0.08); // 0.1 mm axial gap projected to the oblique plane.
+        }
+}
+
+TEST(BRepTubeUnfoldingService, NativeRoundCertificateRejectsAnyNonzeroCylinderAxisTilt)
+{
+    gp_Trsf _Tilt;
+    _Tilt.SetRotation(gp_Ax1(gp::Origin(), gp::DZ()), 1.0e-11);
+    const auto _Shape = BRepBuilderAPI_Transform(RoundTubeWithPlanarEnds(), _Tilt, true).Shape();
+    const auto _Result = iCAX::TubeDesigner::UnfoldTubeBRepSurface(_Shape);
+    ASSERT_TRUE(_Result.bOK) << Diagnostic(_Result);
+    EXPECT_FALSE(_Result.AnalyticNestingGeometry.has_value());
+}
+
+TEST(BRepTubeUnfoldingService, RebaseNativeEndGeometryPreservesBothEndsAndRejectsShrinkAtomically)
+{
+    const auto _Result = iCAX::TubeDesigner::UnfoldTubeBRepSurface(RoundTubeWithPlanarEnds());
+    auto _Profiles = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(_Result);
+    ASSERT_TRUE(_Profiles.bOK);
+    const double _Left = _Profiles.Geometry.Left.Levels.front().Constant;
+    const double _Right = _Profiles.Geometry.Right.Levels.front().Constant;
+    EXPECT_FALSE(iCAX::TubeDesigner::RebaseTubeNestingGeometry(_Profiles.Geometry,
+        _Profiles.MaximumLength, _Profiles.MaximumLength - 1));
+    EXPECT_EQ(_Profiles.Geometry.Left.Levels.front().Constant, _Left);
+    EXPECT_EQ(_Profiles.Geometry.Right.Levels.front().Constant, _Right);
+    ASSERT_TRUE(iCAX::TubeDesigner::RebaseTubeNestingGeometry(_Profiles.Geometry,
+        _Profiles.MaximumLength, _Profiles.MaximumLength + 3));
+    EXPECT_EQ(_Profiles.Geometry.Left.Levels.front().Constant, _Left + 1.5);
+    EXPECT_EQ(_Profiles.Geometry.Right.Levels.front().Constant, _Right + 1.5);
 }
 
 TEST(BRepTubeUnfoldingService, RejectsEmptyInputWithoutThrowing)

@@ -16,7 +16,7 @@ namespace
 {
     struct Unit {std::string ID;std::vector<std::pair<std::size_t,Pose>> Members;};
     Pose Compose(Pose a,Pose b)
-    {const auto point=Transform({b.X,b.Y},a);return {point.X,point.Y,NormalizeAngle(a.AngleDegrees+b.AngleDegrees)};}
+    {return ComposePose(a,b);}
     Shape Hull(const Clipper2Lib::PathsD& paths)
     {
         std::vector<Point> points;
@@ -57,7 +57,7 @@ namespace
         {
             const auto& original=*std::find_if(p.Parts.begin(),p.Parts.end(),[&](const auto& a){return a.ID==part.ID;});
             const auto angles=CandidateAngles(original,p.Tolerance);const auto angle=angles.front();
-            circles[part.ID]={Transform(original.Geometry.Center,{0,0,angle}),angle};
+            circles[part.ID]={original.Geometry.Center,angle};
             const auto r=part.Geometry.Radius;part.Geometry={};part.Geometry.Outer={{-r,-r},{r,-r},{r,r},{-r,r}};
             part.FreeRotation=false;part.AllowedAnglesDegrees={0};
         }
@@ -70,7 +70,8 @@ namespace
                 if(const auto it=circles.find(placed.PartID);it!=circles.end())
                 {
                     const auto center=Transform({0,0},placed.Transform);
-                    placed.Transform={center.X-it->second.first.X,center.Y-it->second.first.Y,it->second.second};
+                    const auto offset=Transform(it->second.first,{0,0,it->second.second,placed.Transform.Mirrored});
+                    placed.Transform={center.X-offset.X,center.Y-offset.Y,it->second.second,placed.Transform.Mirrored};
                 }
                 const auto part=std::find_if(p.Parts.begin(),p.Parts.end(),[&](const auto& a){return a.ID==placed.PartID;});
                 layout.MaterialArea+=Area(part->Geometry);

@@ -28,12 +28,12 @@ test('invalid counts and mismatched fixed positions never start generation',asyn
     let calls=0;await assert.rejects(designCommand({sceneProxy:{invoke(){calls++;}}},view,'generate',{renderProject(){}}),/数量|坐标/);assert.equal(calls,0);
   }
 });
-test('a late position calculation cannot overwrite counts typed while it was being calculated',async()=>{
+test('position calculation locks count edits until its recommendation completes',async()=>{
   const view={fiveFixtureDesignOpen:true,scene:{domain:{activeSetupId:'s',expected:{},setups:[{id:'s',fixtureDesign:{}}]}}};
   Object.assign(designDraft(view),{supportFaces:['7']});let release;
   const ctx={isCurrentProject:()=>true,sceneProxy:{invoke(){return new Promise(r=>{release=r;});}}};
   const request=designCommand(ctx,view,'layout-positions',{renderProject(){}});
   const {designChanged}=await import('../../apps/five-axis-cam/webpage/fixtureDesign.mjs');designChanged(view,'supportCount','8');
   release({supportCount:6,connectionCount:2,axis:'X',supportPositions:[],connectionPositions:[]});await request;
-  assert.equal(designDraft(view).supportCount,'8');
+  assert.equal(designDraft(view).supportCount,6);assert.equal(view.fiveFixtureDesignRequest,null);
 });

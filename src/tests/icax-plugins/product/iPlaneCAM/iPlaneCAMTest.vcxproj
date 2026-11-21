@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration><ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{8CB77461-EE84-4F33-81DA-321507FBB837}</ProjectGuid><RootNamespace>iPlaneCAMTest</RootNamespace><ProjectName>iPlaneCAMTest</ProjectName><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet><UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries><UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+  <ItemDefinitionGroup><ClCompile><PrecompiledHeader>NotUsing</PrecompiledHeader><LanguageStandard>stdcpp20</LanguageStandard><PreprocessorDefinitions>NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ICAXSourceRoot)iCAX-Engine\foundation;$(ICAXSourceRoot)iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /wd4251 /bigobj %(AdditionalOptions)</AdditionalOptions></ClCompile><Link><SubSystem>Console</SubSystem></Link></ItemDefinitionGroup>
+  <ItemGroup><ClCompile Remove="$(iCAXTestRoot)pch.cpp"/><ClCompile Include="RuntimeTests.cpp"/><ClInclude Include="PolylineCloseTests.inc"/><ClInclude Include="DrawingDimensionTests.inc"/><ClInclude Include="GeometryServiceTests.inc"/><ClInclude Include="ArtworkServiceTests.inc"/><ClInclude Include="ArtworkTextureTests.inc"/><ClInclude Include="ArtworkBusinessTests.inc"/><ClInclude Include="MixedPolylineTests.inc"/><ClInclude Include="SketchEditingTests.inc"/><ClInclude Include="ColoredLayerTests.inc"/></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\Product\Product.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\Project\Project.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Plugins\product\iPlaneCAM\iPlaneCAM.vcxproj"/>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\EntityViewRuntime\EntityViewRuntime.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+</Project>

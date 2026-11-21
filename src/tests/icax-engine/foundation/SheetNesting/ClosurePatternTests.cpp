@@ -15,7 +15,8 @@ Problem FailedJigsaw15(){Problem p;p.Tolerance=1e-6;p.Stocks={{"S0",600,600,1,1,
 return p;}
 void VerifyPatterns(const Problem& original,const std::vector<Detail::Pattern>& patterns,std::size_t maxMembers=4){
  for(const auto& pattern:patterns){Require(!pattern.Members.empty()&&pattern.Members.size()<=maxMembers,"pattern member cap");
-  std::map<std::size_t,std::size_t> need;for(auto&m:pattern.Members){Require(m.PartIndex<original.Parts.size(),"original member index");++need[m.PartIndex];Require(Detail::AngleAllowed(original.Parts[m.PartIndex],m.Transform.AngleDegrees,original.Tolerance),"original angle");}
+  Require(Detail::HasSinglePartType(pattern.Members),"closure combined distinct original indices");
+  std::map<std::size_t,std::size_t> need;for(auto&m:pattern.Members){Require(m.PartIndex<original.Parts.size(),"original member index");++need[m.PartIndex];Require(Detail::PoseAllowed(original.Parts[m.PartIndex],m.Transform,original.Tolerance),"original pose permission");}
   Problem p=original;p.Parts.clear();p.EdgeMargin=0;p.Stocks={{"pattern",pattern.Width,pattern.Height,1,1,original.Parts[pattern.Members[0].PartIndex].Material}};
   for(auto [index,quantity]:need){auto q=original.Parts[index];Require(quantity<=q.Quantity,"inventory");q.Quantity=quantity;p.Parts.push_back(q);}
   Result result;result.State=Status::Complete;Layout layout;layout.StockID="pattern";layout.Width=pattern.Width;layout.Height=pattern.Height;std::map<std::size_t,std::size_t> seen;
@@ -24,27 +25,45 @@ void VerifyPatterns(const Problem& original,const std::vector<Detail::Pattern>& 
  }
 }
 bool HasClosedRectangle(const std::vector<Detail::Pattern>& patterns,std::size_t members){return std::any_of(patterns.begin(),patterns.end(),[&](const auto&p){return p.Members.size()==members&&p.Kind==ShapeKind::Rectangle;});}
+bool OnlySingletons(const std::vector<Detail::Pattern>& patterns){return std::all_of(patterns.begin(),patterns.end(),[](const auto&p){return p.Members.size()==1;});}
+Problem SameTypeClosure(){Problem p;p.Tolerance=1e-6;p.Stocks={{"repeat-sheet",120,80,1,1,""}};
+ Part q;q.ID="repeat-rectangle";q.Quantity=4;q.FreeRotation=false;q.AllowedAnglesDegrees={0};q.Geometry.Outer={{0,0},{30,0},{30,20},{0,20}};p.Parts.push_back(q);return p;}
+void ShiftAndSubdivide(Problem& p){
+ for(std::size_t i=0;i<p.Parts.size();++i){auto& ring=p.Parts[i].Geometry.Outer;for(auto&v:ring){v.X+=1200.25*(i+1);v.Y-=750.5*(i+2);}std::reverse(ring.begin(),ring.end());std::rotate(ring.begin(),ring.begin()+3,ring.end());auto old=ring;ring.clear();for(std::size_t k=0;k<old.size();++k){auto a=old[k],b=old[(k+1)%old.size()];ring.push_back(a);ring.push_back({(a.X+b.X)/2,(a.Y+b.Y)/2});}}
+ std::reverse(p.Parts.begin(),p.Parts.end());
+}
 }
 int main(){try{
  Options options;options.MaxPatterns=128;options.MaxPlacementAttempts=60000;
- auto original=FailedJigsaw15();auto patterns=Detail::BuildClosurePatterns(original,options,{});VerifyPatterns(original,patterns);Require(HasClosedRectangle(patterns,4),"real former failure must close");
- auto shifted=original;
- for(std::size_t i=0;i<shifted.Parts.size();++i){auto& ring=shifted.Parts[i].Geometry.Outer;for(auto&v:ring){v.X+=1200.25*(i+1);v.Y-=750.5*(i+2);}std::reverse(ring.begin(),ring.end());std::rotate(ring.begin(),ring.begin()+3,ring.end());auto old=ring;ring.clear();for(std::size_t k=0;k<old.size();++k){auto a=old[k],b=old[(k+1)%old.size()];ring.push_back(a);ring.push_back({(a.X+b.X)/2,(a.Y+b.Y)/2});}}
- std::reverse(shifted.Parts.begin(),shifted.Parts.end());patterns=Detail::BuildClosurePatterns(shifted,options,{});VerifyPatterns(shifted,patterns);Require(HasClosedRectangle(patterns,4),"mixed origins/subdivisions/order must close");
- auto small=options;small.MaxPatterns=1;patterns=Detail::BuildClosurePatterns(original,small,{});VerifyPatterns(original,patterns);Require(patterns.size()<=original.Parts.size()+1,"small additional pattern cap");
- small=options;small.MaxPatternMembers=2;patterns=Detail::BuildClosurePatterns(original,small,{});VerifyPatterns(original,patterns,2);Require(patterns.size()==original.Parts.size(),"four-piece problem unsupported at member cap two retains singleton inventory");
- small.MaxPatternMembers=1;patterns=Detail::BuildClosurePatterns(original,small,{});VerifyPatterns(original,patterns,1);Require(patterns.size()==original.Parts.size(),"member cap one");
- small.MaxPatternMembers=0;Require(Detail::BuildClosurePatterns(original,small,{}).empty(),"member cap zero");small=options;small.MaxPatterns=0;Require(Detail::BuildClosurePatterns(original,small,{}).empty(),"pattern cap zero");
- auto gap=original;gap.PartGap=.4;patterns=Detail::BuildClosurePatterns(gap,options,{});VerifyPatterns(gap,patterns);Require(patterns.size()==gap.Parts.size()&&std::all_of(patterns.begin(),patterns.end(),[](const auto&p){return p.Members.size()==1;}),"positive gap keeps true singleton geometry");
+ auto original=FailedJigsaw15();auto patterns=Detail::BuildClosurePatterns(original,options,{});VerifyPatterns(original,patterns);
+ Require(patterns.size()==original.Parts.size()&&OnlySingletons(patterns),"distinct complementary jigsaw originals entered cross-type closure");
+ auto shifted=original;ShiftAndSubdivide(shifted);patterns=Detail::BuildClosurePatterns(shifted,options,{});VerifyPatterns(shifted,patterns);
+ Require(patterns.size()==shifted.Parts.size()&&OnlySingletons(patterns),"source origins, subdivisions or ordering bypassed cross-type closure restriction");
+ auto self=SameTypeClosure();patterns=Detail::BuildClosurePatterns(self,options,{});VerifyPatterns(self,patterns);
+ Require(HasClosedRectangle(patterns,4),"same-original four-member closure was disabled");
+ auto shiftedSelf=self;ShiftAndSubdivide(shiftedSelf);patterns=Detail::BuildClosurePatterns(shiftedSelf,options,{});VerifyPatterns(shiftedSelf,patterns);
+ Require(HasClosedRectangle(patterns,4),"same-original origins, winding and subdivisions changed closure reachability");
+ auto small=options;small.MaxPatterns=1;patterns=Detail::BuildClosurePatterns(self,small,{});VerifyPatterns(self,patterns);
+ Require(patterns.size()<=self.Parts.size()+1,"small additional pattern cap");
+ small=options;small.MaxPatternMembers=2;patterns=Detail::BuildClosurePatterns(self,small,{});VerifyPatterns(self,patterns,2);
+ Require(patterns.size()==self.Parts.size(),"four-instance inventory outside member-cap-two closure keeps singleton inventory");
+ small.MaxPatternMembers=1;patterns=Detail::BuildClosurePatterns(self,small,{});VerifyPatterns(self,patterns,1);Require(patterns.size()==self.Parts.size(),"member cap one");
+ small.MaxPatternMembers=0;Require(Detail::BuildClosurePatterns(self,small,{}).empty(),"member cap zero");small=options;small.MaxPatterns=0;Require(Detail::BuildClosurePatterns(self,small,{}).empty(),"pattern cap zero");
+ auto gap=self;gap.PartGap=.4;patterns=Detail::BuildClosurePatterns(gap,options,{});VerifyPatterns(gap,patterns);Require(patterns.size()==gap.Parts.size()&&OnlySingletons(patterns),"positive gap keeps true singleton geometry");
  auto five=original;Part fifth;fifth.ID="fifth";fifth.FreeRotation=false;fifth.AllowedAnglesDegrees={0};fifth.Geometry.Outer={{0,0},{10,0},{10,20},{0,20}};five.Parts.push_back(fifth);patterns=Detail::BuildClosurePatterns(five,options,{});VerifyPatterns(five,patterns);Require(patterns.size()==5&&std::all_of(patterns.begin(),patterns.end(),[](const auto&p){return p.Members.size()==1;}),"five-piece inventory is outside small-closure scope");
- auto two=Problem{};two.Stocks={{"two",140,60,1,1,""}};for(int i=0;i<2;++i){auto q=fifth;q.ID="two-"+std::to_string(i);double w=i?40:100;q.Geometry.Outer={{0,0},{w,0},{w,60},{0,60}};two.Parts.push_back(q);}small=options;small.MaxPatternMembers=2;patterns=Detail::BuildClosurePatterns(two,small,{});VerifyPatterns(two,patterns,2);Require(HasClosedRectangle(patterns,2),"two-member closure remains supported");
- int calls=0;patterns=Detail::BuildClosurePatterns(original,options,[&](){return ++calls==12;});VerifyPatterns(original,patterns);Require(calls==12,"single-pulse cancellation must latch before the wider pass");
- calls=0;patterns=Detail::BuildClosurePatterns(original,options,[&](){return ++calls==1;});Require(patterns.empty()&&calls==1,"immediate cancellation");
+ auto two=Problem{};two.Stocks={{"two",140,60,1,1,""}};for(int i=0;i<2;++i){auto q=fifth;q.ID="two-"+std::to_string(i);double w=i?40:100;q.Geometry.Outer={{0,0},{w,0},{w,60},{0,60}};two.Parts.push_back(q);}small=options;small.MaxPatternMembers=2;patterns=Detail::BuildClosurePatterns(two,small,{});VerifyPatterns(two,patterns,2);
+ Require(patterns.size()==two.Parts.size()&&OnlySingletons(patterns),"different rectangle originals entered cross-type closure");
+ auto sameTwo=two;sameTwo.Parts.resize(1);sameTwo.Parts[0].Quantity=2;sameTwo.Parts[0].Geometry.Outer={{0,0},{70,0},{70,60},{0,60}};
+ patterns=Detail::BuildClosurePatterns(sameTwo,small,{});VerifyPatterns(sameTwo,patterns,2);Require(HasClosedRectangle(patterns,2),"same-original two-member closure remains supported");
+ int calls=0;patterns=Detail::BuildClosurePatterns(self,options,[&](){return ++calls==12;});VerifyPatterns(self,patterns);Require(calls==12,"single-pulse cancellation must latch before the wider pass");
+ calls=0;patterns=Detail::BuildClosurePatterns(self,options,[&](){return ++calls==1;});Require(patterns.empty()&&calls==1,"immediate cancellation");
  options.TimeLimitSeconds=1;
- auto job=RunJob({"closure-test","rules.composite-closure",original,options},DefaultStrategies());
- Require(job.Checked.Valid&&job.Checked.Complete&&job.Output.Layouts.size()==1,"registered closure job must complete original demand on one stock");
+ auto job=RunJob({"closure-test","rules.composite-closure",self,options},DefaultStrategies());
+ Require(job.Checked.Valid&&job.Checked.Complete&&job.Output.Layouts.size()==1,"registered self-closure job must complete original demand on one stock");
+ job=RunJob({"separate-types-test","rules.composite-closure",two,options},DefaultStrategies());
+ Require(job.Checked.Valid&&job.Checked.Complete&&job.Output.Layouts.size()==1,"forbidding cross-type closure blocked independent original rectangles on one stock");
  bool pulse=true;options.Cancel=[&]{const bool answer=pulse;pulse=false;return answer;};
- job=RunJob({"closure-cancel","rules.composite-closure",original,options},DefaultStrategies());
+ job=RunJob({"closure-cancel","rules.composite-closure",self,options},DefaultStrategies());
  Require(job.Checked.Valid&&job.Output.State==Status::Cancelled,"registered closure cancellation stays latched");
  std::cout<<"ClosurePatternTests passed\n";return 0;
  }catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}}

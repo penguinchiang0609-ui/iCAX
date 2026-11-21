@@ -1,5 +1,6 @@
 import { activeTool, currentDraft } from './workspaceModel.mjs';
 import { selectedPlacement } from './registrationActions.mjs';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 
 // Transient selection annotations only. Scene placement remains authoritative.
 export function updateRegistrationAnnotations(view) {
@@ -9,7 +10,7 @@ export function updateRegistrationAnnotations(view) {
     if (view.fiveRegistrationAnnotations) viewport.setSpecificationAnnotations([]);
     view.fiveRegistrationAnnotations = false; return;
   }
-  const d = currentDraft(view, tool), matrix = placement.transform;
+  const d = currentDraft(view, tool), matrix = placementWorldMatrix(view,placement).transpose().toArray();
   const read = prefix => {
     const values = [...'XYZ'].map(axis => d[`${prefix}${axis}`]);
     return values.every(v => String(v).trim() && Number.isFinite(Number(v))) ? values.map(Number) : null;

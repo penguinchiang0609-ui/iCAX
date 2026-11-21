@@ -53,21 +53,22 @@ bool ProjectionEvidenceFits(const TopoDS_Face& face,const std::vector<SSourcePro
         const bool outsideBounds=bounds.IsOut(p);
         if(cavity&&outsideBounds)continue;
         const auto relation=outsideBounds?EPointRelation::Outside:classifier.Classify(point);
+        double boundaryDistance=std::numeric_limits<double>::infinity();
         if(cavity) {
             if(relation!=EPointRelation::Inside)continue;
         } else {
             if(relation!=EPointRelation::Outside)continue;
-            double distance=std::numeric_limits<double>::infinity();
             for(const auto& boundary:classifier.Boundary) {
-                distance=std::min({distance,p.Distance(boundary.Curve->Value(boundary.First)),
+                boundaryDistance=std::min({boundaryDistance,p.Distance(boundary.Curve->Value(boundary.First)),
                     p.Distance(boundary.Curve->Value(boundary.Last))});
                 GeomAPI_ProjectPointOnCurve nearest(p,boundary.Curve,boundary.First,boundary.Last);
-                if(nearest.NbPoints())distance=std::min(distance,nearest.LowerDistance());
+                if(nearest.NbPoints())boundaryDistance=std::min(boundaryDistance,nearest.LowerDistance());
             }
-            if(distance<=tolerance)continue;
+            if(boundaryDistance<=tolerance)continue;
         }
         reason=std::string(cavity?"Interior":"Uncontained")+" source edge="+std::to_string(source.EdgeId)
             +" face="+std::to_string(source.FaceId)+" point=("+std::to_string(point.X)+","+std::to_string(point.Y)+")";
+        if(!cavity)reason+=" boundary-distance="+std::to_string(boundaryDistance)+" mm";
         return false;
     }
     return true;

@@ -9,6 +9,7 @@ import {rapidTransitionAtPointer} from './rapidPlanning.mjs';
 import {axisInfluenceAtPointer} from './toolAxisInfluence.mjs';
 import {createToolAxisPointGlyph} from './toolAxisDisplay.mjs';
 import {orderingAtPointer} from './toolpathOrdering.mjs';
+import {activeSetupWorldFrame} from './setupWorldFrame.mjs';
 
 const kind=mode=>mode==='plane'?'face':['axis','direction'].includes(mode)?'axis':mode==='line'?'line':'point';
 const alive=(context,view)=>!view.disposed&&context.isCurrentProject?.()!==false;
@@ -143,7 +144,7 @@ export function handleSelectionFeedbackHover(context,view,data,hit,event,_hits,p
   }
   if(mode.owner==='rapid'){
     const edit=view.fiveRapid.pathEdit;
-    if(edit){const p=rapidPathPointAtPointer(view,event);if(p)pathOverlay(view,state,view.viewport.scene,{kind:'point',index:p.index},null,p.point);else clear(state);}
+    if(edit){const p=rapidPathPointAtPointer(view,event);if(p)pathOverlay(view,state,view.viewport.scene,{kind:'point',index:p.index},null,new THREE.Vector3(...p.point).applyMatrix4(activeSetupWorldFrame(view)).toArray());else clear(state);}
     else {const t=rapidTransitionAtPointer(view,event);if(t)pathOverlay(view,state,view.viewport.scene,{kind:'line',transitionId:t.id},t.points);else clear(state);}return true;
   }
   if(mode.owner==='order'){
@@ -155,7 +156,7 @@ export function handleSelectionFeedbackHover(context,view,data,hit,event,_hits,p
       const d=view.fiveAxisPointEdit,pick=axisInfluenceAtPointer(view,d,event),source=placementObject(view,d.id);clear(state);
       if(pick&&source){const g=group(state,source,{kind:'axis',index:pick.index}),original=view.fiveAxisPointPreview?.group.children.find(o=>o.userData.influenceStation===pick.station),axis=createToolAxisPointGlyph(view,d.id,pick.station,original?.userData.toolAxisSamples[0].direction||pick.station.direction);axis.material.uniforms.color.value.setHex(0x68e6f3);axis.material.uniforms.size.value=1.6;g.add(axis);inert(g);}return true;
     }
-    const point=toolAxisPointAtPointer(view,event);if(point&&(!view.fiveAxisPointDelete||canDeleteToolAxisPoint(point))){clear(state);pathOverlay(view,state,view.viewport.scene,{kind:'point',pointId:point.id},null,point.setupPoint);return true;}
+    const point=toolAxisPointAtPointer(view,event);if(point&&(!view.fiveAxisPointDelete||canDeleteToolAxisPoint(point))){clear(state);pathOverlay(view,state,view.viewport.scene,{kind:'point',pointId:point.id},null,new THREE.Vector3(...point.setupPoint).applyMatrix4(activeSetupWorldFrame(view)).toArray());return true;}
     if(view.fiveAxisPointDelete){clear(state);return true;}
     if(!view.fiveAxisPointInsert&&!view.fiveAxisPointEdit?.picking){clear(state);return true;}
   }

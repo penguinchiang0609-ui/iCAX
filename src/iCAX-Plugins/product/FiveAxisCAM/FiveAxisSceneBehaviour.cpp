@@ -14,8 +14,8 @@ namespace
         { iCAX::Behaviour::CBehaviourSchedule schedule; schedule.ExecutionOrder = -9000; return schedule; }
     protected:
         void OnAwake(iCAX::Database::CComponentBase&, const iCAX::Application::IApplicationContext&,
-            const iCAX::Product::IProductContext&, iCAX::Project::IProjectContext&, iCAX::Project::ISceneContext& scene) override
-        { iCAX::FiveAxisCAM::InitializeScene(scene); }
+            const iCAX::Product::IProductContext& product, iCAX::Project::IProjectContext&, iCAX::Project::ISceneContext& scene) override
+        { iCAX::FiveAxisCAM::BindFixtureLibraryStore(scene,product.GetUserDataStore());iCAX::FiveAxisCAM::InitializeScene(scene); }
         void OnUpdate(iCAX::Database::CComponentBase&, const iCAX::Application::IApplicationContext&,
             const iCAX::Product::IProductContext&, iCAX::Project::IProjectContext&, iCAX::Project::ISceneContext& scene,
             const double& delta, const double&) override

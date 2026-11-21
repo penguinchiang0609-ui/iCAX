@@ -231,11 +231,41 @@ try {
     await page.locator('dialog[data-project-close-dialog]').waitFor({ state: 'detached' });
   };
   const closed = async id => page.waitForFunction(id => !window.fixture.product.projects.has(id), id);
-  const close = async (id, choice = 'discard') => { await promptClose(id); await choose(choice); await closed(id); };
+  const assertCloseIntent = async (id, choice) => {
+    const request = await page.evaluate(id => window.fixture.requests.findLast(r => r.method === 'Product.CloseProjectCatalog' && r.projectId === id), id);
+    const catalogId = await page.evaluate(id => window.fixture.entries.get(id).catalog.catalogId, id);
+    assert.equal(request.scope, 'product', 'Project close uses the product channel');
+    assert.deepEqual(request.payload, { catalogId, discardChanges: choice === 'discard' }, 'Only an explicit Discard may remove recovery data');
+    return request;
+  };
+  const close = async (id, choice = 'discard') => {
+    await promptClose(id); await choose(choice); await closed(id); await assertCloseIntent(id, choice);
+  };
   const requestCount = method => page.evaluate(method => window.fixture.requests.filter(r => r.method === method).length, method);
   const screenshot = async name => { const path = resolve(output, name + '.png'); await page.screenshot({ path }); report.screenshots.push(path); };
 
   await activeReady();
+  const closeContract = await page.evaluate(async () => {
+    const { ProductProxy } = await import('/src/iCAX-UI/ProductProxy/ProductProxy.mjs');
+    const requests = [];
+    const proxy = new ProductProxy({ async invoke(channel, method, payload) {
+      requests.push({ channel, method, payload }); return { catalogs: [] };
+    } }, { productId: 'close-contract', productChannelId: 'close-contract-channel' });
+    await proxy.closeProjectCatalog('ordinary-close');
+    await proxy.closeProjectCatalog('saved-close', { discardChanges: false });
+    await proxy.closeProjectCatalog('discard-close', { discardChanges: true });
+    let rejectedInvalidFlag = false;
+    try { await proxy.closeProjectCatalog('invalid-close', { discardChanges: 'false' }); }
+    catch (error) { rejectedInvalidFlag = error instanceof TypeError; }
+    return { requests, rejectedInvalidFlag };
+  });
+  assert.equal(closeContract.rejectedInvalidFlag, true, 'A string flag cannot accidentally discard recovery data');
+  assert.deepEqual(closeContract.requests, [
+    { channel: 'close-contract-channel', method: 'Product.CloseProjectCatalog', payload: { catalogId: 'ordinary-close', discardChanges: false } },
+    { channel: 'close-contract-channel', method: 'Product.CloseProjectCatalog', payload: { catalogId: 'saved-close', discardChanges: false } },
+    { channel: 'close-contract-channel', method: 'Product.CloseProjectCatalog', payload: { catalogId: 'discard-close', discardChanges: true } },
+  ]);
+  report.checks.push('ProductProxy defaults ordinary closes to discardChanges=false and rejects nonboolean flags before sending a native request');
   assert.equal(await page.evaluate(async () => {
     const s = window.__icaxAppShell.getState();
     const { isProjectReadOnly } = await import('/src/apps/tube-designer/webpage/entry.mjs');
@@ -309,6 +339,7 @@ try {
   await page.waitForFunction(key => window.fixture.gates.get(key)?.waiting, bgGate);
   await rememberInteraction('CURRENT-LATEST-BACKGROUND'); await latestInteraction();
   await page.evaluate(key => window.fixture.release(key), bgGate); await closed(bId);
+  await assertCloseIntent(bId, 'discard');
   await page.waitForTimeout(80);
   report.backgroundContinuity = await interaction(); assertInteraction('CURRENT-LATEST-BACKGROUND', aId, report.backgroundContinuity);
   assert.equal(await page.locator(`[data-action="close-open-project"][data-project-id="${bId}"]`).count(), 0);
@@ -340,6 +371,7 @@ try {
   await page.waitForFunction(key => window.fixture.gates.get(key)?.waiting, raceGate);
   await select(raceDestination); await rememberInteraction('USER-SWITCHED-LATEST'); await latestInteraction();
   await page.evaluate(key => window.fixture.release(key), raceGate); await closed(raceId); await page.waitForTimeout(80);
+  await assertCloseIntent(raceId, 'discard');
   report.navigationContinuity = await interaction(); assertInteraction('USER-SWITCHED-LATEST', raceDestination, report.navigationContinuity);
   report.checks.push('When the user selects another project during an active close reply, that project owns navigation and its live editor state is retained');
 
@@ -351,6 +383,7 @@ try {
   assert.equal(saveRequests[0].payload.projectPath, 'D:/ProjectCloseTests/SavedTarget.ictd');
   assert.equal((await shell()).activeProjectId, aId);
   report.checks.push('Save and close persists the specific background project through its scene Project.Save channel, then closes its product catalogue without selecting it');
+  report.checks.push('The existing product close request forwards explicit Discard as discardChanges=true for the exact target catalogue; Save forwards false after the target scene save succeeds');
 
   const cancelSaveId = await create('CancelSave'); await select(aId);
   const closeBeforeSaveCancel = await requestCount('Product.CloseProjectCatalog');
@@ -428,7 +461,14 @@ try {
   // Exercise the public pages with real DOM navigation. Saved documents are
   // immutable fixture snapshots: reopening must read them, not an old view.
   report.pageLifecycle = [];
-  for (const area of ['view', 'nesting', 'machining', 'profiles', 'products', 'tools', 'assemblies', 'about']) {
+  const publicTabIds = await page.evaluate(async () => {
+    const { ribbonDefinition } = await import('/src/apps/tube-designer/webpage/ribbonDefinition.mjs');
+    return ribbonDefinition.tabs.map(tab => tab.id);
+  });
+  assert.deepEqual(await page.locator('.ribbon-tabs .ribbon-tab[data-tab-id]').evaluateAll(nodes => nodes.map(node => node.dataset.tabId)), publicTabIds);
+  report.publicTabIds = publicTabIds;
+  const pageAreas = publicTabIds.flatMap(id => id === 'resources' ? ['profiles', 'products', 'tools', 'assemblies'] : [id]);
+  for (const area of pageAreas) {
     const name = 'Page-' + area, expectedCode = 'SAVED-FROM-' + area;
     const id = await open(name);
     await code().fill(expectedCode);
@@ -438,7 +478,7 @@ try {
       return !v.tubeDesignerProductParameterCommitPromise
         && window.fixture.entries.get(id).scene.tubeDesigner.product.parameters.productCode === expectedCode;
     }, { id, expectedCode });
-    const tab = ['view', 'nesting', 'machining', 'about'].includes(area) ? area : 'resources';
+    const tab = publicTabIds.includes(area) ? area : 'resources';
     await page.locator(`[data-action="select-ribbon-tab"][data-tab-id="${tab}"]`).click();
     if (tab === 'resources') {
       await page.locator(`[data-action="ribbon-command"][data-command-id="resources.${area}"]`).click();

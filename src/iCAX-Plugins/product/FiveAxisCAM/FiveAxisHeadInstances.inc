@@ -6,6 +6,7 @@ namespace {
         const auto setup=Require<CFiveAxisSetupComponent>(scene.Database(),setupID);const auto job=Require<CFiveAxisJobComponent>(scene.Database(),setup->GetJobID());
         const auto id=Identifier(instance,"id");auto instances=job->GetHeadInstances();if(!instances.contains(iCAX::Data::to_string(id)))throw std::invalid_argument("CAM_HEAD_INSTANCE_MISSING");
         const auto users=HeadInstanceUsers(scene,id);if(physical)for(const auto& user:users)RequireSetupUnlocked(scene,user);
+        if(physical)for(const auto& user:users)RequireHeadFitsOperation(scene,user,instance);
         instance["revision"]=Next(instance.at("revision").To<UInt>());instances[iCAX::Data::to_string(id)]=instance;
         Transaction(scene.Database(),label,[&](auto& tx){
             tx.ModifyComponent(setup->GetJobID(),CFiveAxisJobComponent::S_ClassName,{{"HeadInstances",instances},{"InputRevision",Next(job->GetInputRevision())}});
@@ -40,14 +41,16 @@ Map ManageHeadInstance(Scene& scene,const Map& request){
         const auto action=String(request,"action");RequireSetupUnlocked(scene,setupID);const auto job=Require<CFiveAxisJobComponent>(scene.Database(),setup->GetJobID());
         if(action=="delete"){
             const auto id=Identifier(request,"instanceId");auto instances=job->GetHeadInstances();if(!instances.contains(iCAX::Data::to_string(id)))throw std::invalid_argument("CAM_HEAD_INSTANCE_MISSING");
-            if(!HeadInstanceUsers(scene,id).empty())throw std::invalid_argument("CAM_HEAD_INSTANCE_IN_USE: 请先解除所有位姿对该实例的引用。");
+            if(!HeadInstanceUsers(scene,id).empty()||HeadInstanceHasScopeReference(scene,id))throw std::invalid_argument("CAM_HEAD_INSTANCE_IN_USE: 请先解除对该刀头实例的引用。");
             instances.erase(iCAX::Data::to_string(id));Transaction(scene.Database(),"删除未使用刀头实例",[&](auto& tx){tx.ModifyComponent(setup->GetJobID(),CFiveAxisJobComponent::S_ClassName,{{"HeadInstances",instances},{"InputRevision",Next(job->GetInputRevision())}});});return Map{{"deleted",true}};
         }
         if(action=="select"){
             if(!setup->GetMachineSetup().empty())throw std::invalid_argument("CAM_HEAD_MACHINE_BOUND: 绑定机床后请在机床设置中选择工具端。");
             const auto text=String(request,"instanceId");const auto id=text.empty()?ID():Identifier(request,"instanceId");
             if(!text.empty()&&!job->GetHeadInstances().contains(text))throw std::invalid_argument("CAM_HEAD_INSTANCE_MISSING");
-            if(id!=setup->GetHeadInstanceID())RapidChange(scene,setupID,{{"HeadInstanceID",id}},"选择工程刀头");return Map{{"instanceId",text}};
+            if(!text.empty())RequireHeadFitsOperation(scene,setupID,job->GetHeadInstances().at(text).To<Map>());
+            const Map assignment=text.empty()?Map{{"mode",Text("None")}}:Map{{"mode",Text("Instance")},{"instanceId",text}};
+            if(id!=setup->GetHeadInstanceID()||assignment!=setup->GetHeadAssignment())RapidChange(scene,setupID,{{"HeadInstanceID",id},{"HeadAssignment",assignment}},"选择工程刀头");return Map{{"instanceId",text}};
         }
         auto instance=ProjectHeadInstance(scene,*setup);if(instance.empty())throw std::invalid_argument("CAM_HEAD_INSTANCE_REQUIRED: 请先选择刀头模型。");
         if(action=="rename"){const auto name=HeadInstanceName(String(request,"name"));if(name!=String(instance,"name")){instance["name"]=name;WriteHeadInstance(scene,setupID,instance,false,"重命名刀头实例");}}

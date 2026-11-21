@@ -1,8 +1,10 @@
+import {camPathKind} from './workspaceModel.mjs';
 import {saveEditedProject,clearCommittedSaveError} from './projectEditPersistence.mjs';
 import {revealSceneListSelection} from './listNavigation.mjs';
 import {rapidDefaultStrategy,acceptRapidDefaultStrategy,rapidSafetyEnabled} from './rapidDefaultStrategy.mjs';
 import { refreshMachiningState } from './domainActions.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix,setupWorldFrame} from './setupWorldFrame.mjs';
 import { activeTool, selectTool } from './workspaceModel.mjs';
 import { escapeText as esc } from '../../_shared/workbench/utils/format.mjs';
 import { button } from './workspaceControls.mjs';
@@ -115,7 +117,7 @@ export async function cancelInvalidRapidInput(context,view,ops){
  let invalid=false;try{
   if(s.pathEdit)manualRapidPath(view);
   const p=numericValues(s.settings?s.values:s.policy||{});
-  if(s.settings&&(!['Quick','Frog','Fly'].includes(p.strategy)||Object.entries(p).some(([name,n])=>name!=='strategy'&&(isSafeCoordinate(name)?Math.abs(n)>1e8:n<0||n>100000||(!name.startsWith('envelope')&&!['marginMm','collisionThresholdMm'].includes(name)&&n===0)))||((p.envelopeRadiusMm===0)!==(p.envelopeLengthMm===0))))invalid=true;
+  if(s.settings&&(!['Quick','Frog','Fly'].includes(p.strategy)||Object.entries(p).some(([name,n])=>name!=='strategy'&&(isSafeCoordinate(name)?Math.abs(n)>1e8:n<0||n>100000||(!name.startsWith('envelope')&&!['marginMm','collisionThresholdMm','followHeightMm'].includes(name)&&n===0)))||((p.envelopeRadiusMm===0)!==(p.envelopeLengthMm===0))))invalid=true;
   if(!s.settings&&(!['Quick','Frog','Fly'].includes(p.strategy)||p.marginMm<0||p.marginMm>1000||p.liftHeightMm<=0||p.liftHeightMm>100000))invalid=true;
  }catch{invalid=true;}
  if(!invalid)return false;
@@ -239,7 +241,7 @@ export function renderRapid(view,panel=false){
   const list=rapidListModel(view),t=list.transitions.find(t=>pair(t)===state.id),shown=(!state.safeGenerating&&!state.safeCommitPending&&state.preview?.result)||manualRapidDraft(view)||(!state.dirty?t:null),result=shown&&rapidCollisionDisplay(view,{...t,...shown});
   const manual=hasManualRapidPath(view),updateLabel=manual?'更新连接并检查':'自动生成安全空移',needsUpdate=manual;
   const obstacle=result?.obstacleId?(view.scene.domain.fixtures?.find(f=>f.id===result.obstacleId)?.name||'工件'):'';
-  const heading=state.settings?'默认空移策略':panel?'空移属性':title;
+  const heading=state.settings?'生成参数':panel?'空移属性':title;
   if(!state.settings&&t?.definitionOnly)return `<div class="five-position-dialog" data-five-key="rapid-dialog" data-five-tool="rapid" role="${panel?'region':'dialog'}" aria-label="${heading}"><header class="five-position-title"><strong>${heading}</strong>${panel?'':button('five.rapid.close','×','aria-label="关闭空移属性"')}</header><div class="five-position-body five-rapid-body"><label class="five-rapid-field" data-five-key="rapid-field-connection"><span>当前空移段</span><select data-five-rapid-field="connection" aria-label="当前空移段" ${disabled}>${options(list.transitions.map(t=>[pair(t),label(view,t)]),state.id)}</select></label><div class="five-rapid-status" role="status">未生成</div></div></div>`;
   return `<div class="five-position-dialog" data-five-key="rapid-dialog" data-five-tool="${state.settings?'settings':'rapid'}" role="${panel?'region':'dialog'}" aria-label="${heading}">
     <header class="five-position-title"><strong>${heading}</strong>${panel&&!state.settings?'':button('five.rapid.close','×',`aria-label="关闭${heading}" ${view.pending?'disabled':''}`)}</header>
@@ -335,7 +337,7 @@ export async function rapidCommand(context,view,action,ops,preservedManual){
   if(action==='close'){
     if(view.pending||state.request)return;state.open=false;state.token++;view.error='';
     state.cancel?.();state.running=false;
-    if(view.fiveCamPage==='rapid'){selectTool(view,'rapid');openRapid(view);}
+    if(camPathKind(view)==='rapid'){selectTool(view,'rapid');openRapid(view);}
     ops.renderProject(context,view);return;
   }
   if(view.pending||state.running)return;
@@ -368,14 +370,14 @@ export async function rapidCommand(context,view,action,ops,preservedManual){
       const receipt=await context.sceneProxy.invoke('CamScene.QueryCommand',{epoch:request.expected.epoch,commandId:request.commandId});
       if(receipt.status!=='Completed'){if(receipt.status==='NotFound')state.request=null;throw error;}
     }
-    state.request=null;if(!state.settings)forgetRapidCollisionChecks(view,[state.id]);if(state.safeCommitPending){state.pathEdit=null;state.useAutomatic=false;state.safeCommitPending=false;state.safeCandidate=null;state.preview=null;}if(state.settings)acceptRapidDefaultStrategy(view,request.setupId,request.settings.strategy);if(view.fiveCamPage!=='rapid')state.open=false;ops.appendProjectLog(context,'ok',state.settings?'空移设置已保存':'空移调整已保存');
+    state.request=null;if(!state.settings)forgetRapidCollisionChecks(view,[state.id]);if(state.safeCommitPending){state.pathEdit=null;state.useAutomatic=false;state.safeCommitPending=false;state.safeCandidate=null;state.preview=null;}if(state.settings)acceptRapidDefaultStrategy(view,request.setupId,request.settings.strategy);if(camPathKind(view)!=='rapid')state.open=false;ops.appendProjectLog(context,'ok',state.settings?'空移设置已保存':'空移调整已保存');
     if(current(context,view)&&!await refreshMachiningState(context,view,ops))throw Error('读取空移结果失败，请重试。');
     await context.actions?.refreshNativeProjectHistory?.({projectId:context.project?.projectId});
     const path=context.projectProxy?.state?.projectPath||context.project?.projectPath;
     if(path&&!path.includes('://'))await saveEditedProject(context);
     saved=true;
   }catch(error){if(current(context,view))view.error=state.request?'结果尚未确认，请重试。':rapidError(error);}
-  finally{view.pending=false;if(current(context,view)){if(saved&&view.fiveCamPage==='rapid'){openRapid(view,state.settings);if(!state.settings){rapidPick(view,state.id);if(state.pathEdit){const t=geometry(view).transitions.find(t=>pair(t)===state.id);if(t?.planningMethod==='Manual'){view.fiveRapid.pathEdit=state.pathEdit;if(state.pathEdit.construction)refreshRapidPathEdit(view,t);else Object.assign(view.fiveRapid.pathEdit,{points:structuredClone(t.points),directions:structuredClone(t.directions),changed:false});}}}}ops.renderProject(context,view);}}
+  finally{view.pending=false;if(current(context,view)){if(saved&&camPathKind(view)==='rapid'){openRapid(view,state.settings);if(!state.settings){rapidPick(view,state.id);if(state.pathEdit){const t=geometry(view).transitions.find(t=>pair(t)===state.id);if(t?.planningMethod==='Manual'){view.fiveRapid.pathEdit=state.pathEdit;if(state.pathEdit.construction)refreshRapidPathEdit(view,t);else Object.assign(view.fiveRapid.pathEdit,{points:structuredClone(t.points),directions:structuredClone(t.directions),changed:false});}}}}ops.renderProject(context,view);}}
 }
 export function syncRapidPathEditing(context,view,ops){if(view.fiveRapid){view.fiveRapid.saveBinding={context,ops};view.fiveRapid.savePath=(delay=300)=>scheduleRapidPathSave(context,view,ops,delay);view.fiveRapid.saveTopology=()=>saveRapidPathTopology(context,view,ops);}syncPathEditing(context,view,ops,()=>scheduleRapidPathSave(context,view,ops,0));}
 export function handleRapidPick(context,view,_data,_hit,event,_hits,ops){
@@ -389,7 +391,7 @@ export function rapidTransitionAtPointer(view,event){
   const result=rapidPreview(view,geometry(view)),viewport=view.viewport,box=viewport.renderer.domElement.getBoundingClientRect();let best=9,hit=null;
   for(const t of result?.transitions||[]){const op=result.operations.find(o=>o.intentId===t.from),placement=view.scene.domain.placements.find(p=>p.id===op?.placementId);if(!placement)continue;
     if(!hasRapidGeometry(t))continue;
-    const matrix=t.frame==='Setup'?new THREE.Matrix4():new THREE.Matrix4().set(...placement.transform);let last;
+    const matrix=t.frame==='Setup'?setupWorldFrame(view,placement.setupId):placementWorldMatrix(view,placement);let last;
     for(const point of t.points||[]){const q=new THREE.Vector3(...point).applyMatrix4(matrix).project(viewport.camera),b=[box.x+(q.x+1)*box.width/2,box.y+(1-q.y)*box.height/2,q.z];
       if(last&&Math.abs(last[2])<=1&&Math.abs(b[2])<=1){const dx=b[0]-last[0],dy=b[1]-last[1],u=Math.max(0,Math.min(1,((event.clientX-last[0])*dx+(event.clientY-last[1])*dy)/(dx*dx+dy*dy||1))),distance=Math.hypot(event.clientX-last[0]-u*dx,event.clientY-last[1]-u*dy);if(distance<best){best=distance;hit={id:pair(t),points:t.points.map(p=>new THREE.Vector3(...p).applyMatrix4(matrix).toArray())};}}last=b;}
   }

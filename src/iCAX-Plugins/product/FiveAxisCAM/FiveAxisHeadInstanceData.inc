@@ -10,12 +10,13 @@ iCAX::CAM::Motion::Vector HeadParameterVector(const Variant& value,bool unit=fal
 Map DefaultHeadParameters(const Map& model){
     Array axes;
     if(model.contains("assembly")){
-        const auto nodes=model.at("assembly").To<Map>().at("nodes").To<Array>();
+        const auto assembly=model.at("assembly").To<Map>();const auto nodes=assembly.at("nodes").To<Array>();std::set<std::size_t> toolChain;
+        auto tool=assembly.at("tool").To<int>();while(tool>=0){if(static_cast<std::size_t>(tool)>=nodes.size()||!toolChain.insert(tool).second)throw std::invalid_argument("CAM_HEAD_TOPOLOGY_MISMATCH");tool=nodes[tool].To<Map>().at("parent").To<int>();}
         for(std::size_t i=0;i<nodes.size();++i){const auto n=nodes[i].To<Map>();if(String(n,"type")=="fixed")continue;
+            if(!toolChain.contains(i))continue;
             axes.emplace_back(Map{{"index",static_cast<UInt>(i)},{"name",n.at("joint")},{"target",Text("Head")},{"velocityDegS",60.},{"origin",n.at("origin")},{"axis",n.at("axis")},{"zeroOffsetDeg",0.},{"sign",1.},
                 {"lowerDeg",FiniteNumber(n.at("lower"),"CAM_HEAD_LIMIT_INVALID")*180/std::numbers::pi},{"upperDeg",FiniteNumber(n.at("upper"),"CAM_HEAD_LIMIT_INVALID")*180/std::numbers::pi}});
         }
-        const auto assembly=model.at("assembly").To<Map>();
         const bool hasHeadAxes=!axes.empty();int workSlot=0;if(assembly.contains("workpieceAxes"))for(const auto& name:assembly.at("workpieceAxes").To<Array>()){
             axes.emplace_back(Map{{"index",static_cast<UInt>(nodes.size()+axes.size())},{"name",name},{"target",Text("Workpiece")},{"velocityDegS",60.},
                 {"origin",HeadNumbers(iCAX::CAM::Motion::Identity())},{"axis",workSlot++==0&&!hasHeadAxes?Array{1.,0.,0.}:Array{0.,0.,1.}},{"zeroOffsetDeg",0.},{"sign",1.},{"lowerDeg",-180.},{"upperDeg",180.}});
@@ -29,7 +30,7 @@ Map NormalizeHeadParameters(const Map& model,const Map& input){
     CutFields(input,{"tcpMode","tcp","beam","gaugeOrigin","lengthMm","axes","collisionOverrides"});
     Map result=input;const auto mode=String(input,"tcpMode");if(mode!="Coordinates"&&mode!="Gauge")throw std::invalid_argument("CAM_HEAD_TCP_MODE_REQUIRED");
     result["tcp"]=HeadNumbers(HeadParameterVector(input.at("tcp")));result["beam"]=HeadNumbers(HeadParameterVector(input.at("beam"),true));result["gaugeOrigin"]=HeadNumbers(HeadParameterVector(input.at("gaugeOrigin")));
-    const auto length=FiniteNumber(input.at("lengthMm"),"CAM_HEAD_LENGTH_REQUIRED");if(length<0||length>100000||mode=="Gauge"&&length<=0)throw std::invalid_argument("CAM_HEAD_LENGTH_REQUIRED: 请填写从安装基准到喷嘴端点的正刀长。");
+    const auto length=FiniteNumber(input.at("lengthMm"),"CAM_HEAD_LENGTH_REQUIRED");if(length<0||length>100000||mode=="Gauge"&&length<=0)throw std::invalid_argument("CAM_HEAD_LENGTH_REQUIRED: 请填写从安装基准到切割点（TCP）的正刀长。");
     result["lengthMm"]=length;
     const auto requested=input.at("axes").To<Array>();
     if(requested.size()>6)throw std::invalid_argument("CAM_HEAD_TOPOLOGY_MISMATCH");
@@ -81,6 +82,7 @@ Map CalibratedHeadModel(const Map& instance){
     if(instance.at("binding").To<Map>().empty()){model["motion"]=CompileHeadMotion(model,p,String(instance,"id"));model["motionType"]=Text(p.at("axes").To<Array>().empty()?"Rigid":"Articulated");}
     return model;
 }
+#include "FiveAxisHeadMachineCompatibility.inc"
 Map ProjectHeadInstance(Scene& scene,const CFiveAxisSetupComponent& setup){
     if(setup.GetHeadInstanceID().is_nil())return {};
     const auto job=Require<CFiveAxisJobComponent>(scene.Database(),setup.GetJobID());const auto instances=job->GetHeadInstances();const auto key=iCAX::Data::to_string(setup.GetHeadInstanceID());
@@ -100,11 +102,13 @@ ID AttachProjectHead(Scene& scene,iCAX::Database::ITransaction& tx,const ID& set
     const auto id=iCAX::Data::GenerateNewUUID();Text name=requestedName;
     if(name.empty()){name=model.contains("assembly")?String(model.at("assembly").To<Map>(),"kind"):Text("刀头");if(name=="Articulated"||name=="Rigid")name="刀头";name+=" "+std::to_string(instances.size()+1);}
     const auto normalized=NormalizeHeadParameters(model,parameters.empty()?DefaultHeadParameters(model):parameters);
+    RequireHeadFitsOperation(scene,setupID,Map{{"id",Text("compatibility")},{"model",model},{"parameters",normalized},{"binding",binding}});
     if(binding.empty()&&!setup->GetMachineSetup().empty())throw std::invalid_argument("CAM_HEAD_MACHINE_BOUND");
     instances[iCAX::Data::to_string(id)]=Map{{"id",iCAX::Data::to_string(id)},{"name",HeadInstanceName(name)},{"model",model},{"parameters",normalized},{"profile",profile},{"binding",binding},{"calibrationConfirmed",confirmed},{"revision",UInt(1)}};
     tx.ModifyComponent(setup->GetJobID(),CFiveAxisJobComponent::S_ClassName,{{"HeadInstances",instances},{"InputRevision",Next(job->GetInputRevision())}});
-    tx.ModifyComponent(setupID,CFiveAxisSetupComponent::S_ClassName,{{"HeadInstanceID",id},{"PlanValidity",Text(setup->GetLastSuccessfulPlanRef().empty()?"Missing":"Stale")}});return id;
+    tx.ModifyComponent(setupID,CFiveAxisSetupComponent::S_ClassName,{{"HeadInstanceID",id},{"HeadAssignment",Map{{"mode",Text("Instance")},{"instanceId",iCAX::Data::to_string(id)}}},{"PlanValidity",Text(setup->GetLastSuccessfulPlanRef().empty()?"Missing":"Stale")}});return id;
 }
+bool HeadInstanceHasScopeReference(Scene&,const ID&);
 Map HeadMachineConfiguration(Scene& scene,Map configuration){
     if(!configuration.contains("headInstanceId"))return configuration;
     const auto job=Require<CFiveAxisJobComponent>(scene.Database(),scene.Database().GetMetaEntity()->GetID());const auto instances=job->GetHeadInstances();const auto key=String(configuration,"headInstanceId");

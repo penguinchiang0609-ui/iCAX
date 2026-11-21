@@ -615,6 +615,7 @@ void iCAX::Project::CProjectScene::Close()
     if (m_pRepository)
     {
         m_pRepository->CloseOperationLog();
+        m_pRepository->SetOperationLogCheckpoint({});
     }
     if (m_pUniverse)
     {

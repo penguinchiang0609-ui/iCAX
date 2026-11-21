@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { browserReportDirectory, importBrowserAsset, readBrowserAsset, serveBrowserAsset } from './browserPackageRuntime.mjs';
 import { installProductInteractionFixture } from './productInteractionFixture.mjs';
 
-const output = browserReportDirectory('minimal-grille-joint-ui-20261028/browser');
+const output = browserReportDirectory('minimal-grille-balcony-joint-ui-20261110/browser');
 const folder = 'apps/tube-designer/templates/product/minimal_protective_grille';
 const descriptor = { ...JSON.parse(readBrowserAsset(`${folder}/template.json`)),
   display: JSON.parse(readBrowserAsset(`${folder}/display.json`)) };
@@ -32,13 +32,15 @@ try {
     .tube-designer-parameter-scroll{height:210px!important;overflow:auto!important}
     .tube-designer-parameter-scroll:after{content:'';display:block;height:1700px}
     #left-note,#right-note{width:170px}.cube{position:absolute;left:10px;top:10px}` });
-  const initialParameters = { ...defaults, jointMode: 'male_female_half_hole', maleHeadWidth: 6,
+  const initialParameters = { ...defaults, layoutStyle: 'balcony_closure', jointMode: 'male_female_half_hole', maleHeadWidth: 6,
+    frameProfileType: 'rect', innerProfileType: 'rect', supportProfileType: 'rect', supportDepth: 10, supportStyle: 'single',
     maleHeadLength: 3.5, frameWidth: 40, frameDepth: 30, frameWallThickness: 1.5,
     innerWidth: 20, innerDepth: 10, innerWallThickness: 1.2 };
   await installProductInteractionFixture(page, descriptor, null, { initialParameters });
   await page.evaluate(async () => {
     const f = window.productFixture;
     const module = await import('/src/apps/tube-designer/webpage/insertJointParameterDetails.mjs');
+    const { matchesParameterCondition } = await import('/src/apps/tube-designer/webpage/parameterConditions.mjs');
     f.jointModule = module; f.operations = [];
     f.mount.addEventListener('change', event => {
       const target = event.target.closest?.('[data-cam-change-action]');
@@ -50,8 +52,10 @@ try {
       const physicalBefore=JSON.stringify(values);
       const result = {};
       for (const declaration of f.template.extensions.parameterGroupDetails) {
+        if (!matchesParameterCondition(declaration.visibleWhen, values)) continue;
         const section = f.mount.querySelector(`[data-insert-joint-part="${declaration.part}"]`);
         const model = module.insertJointParameterDetailModel(declaration, values, { template: f.template });
+        if (result[declaration.part]?.model.active && !model.active) continue;
         result[declaration.part] = { model, count: f.mount.querySelectorAll(`[data-insert-joint-part="${declaration.part}"]`).length,
           svgCount: section?.querySelectorAll('svg[data-insert-joint-artwork]').length ?? 0,
           readouts: Object.fromEntries([...(section?.querySelectorAll('[data-insert-joint-readout]') ?? [])]
@@ -65,16 +69,17 @@ try {
     };
     f.assertJointEditors = () => {
       const values = f.view.scene.tubeDesigner.product.parameters;
-      const active = values.jointMode !== 'butt_weld';
+      const modes = [values.jointMode, ...(['five_face', 'balcony_closure'].includes(values.layoutStyle) ? [values.returnJointMode] : [])];
+      const active = modes.some(mode => mode !== 'butt_weld');
       const full = values.maleEndForm === 'full_section';
-      const through = values.jointMode === 'male_female_through_hole';
+      const half = modes.includes('male_female_half_hole');
       const state = f.jointState();
       for (const part of ['male','female']) {
         if (state[part].count !== (active ? 1 : 0)) throw new Error(`Expected one ${part} local detail for ${values.jointMode}/${values.maleEndForm}`);
         if (active && !state[part].svgCount) throw new Error(`Missing ${part} real SVG artwork`);
         if (!active && state[part].model.active) throw new Error('Butt weld retains active insert model');
       }
-      if (Boolean(f.ordinary('maleHeadLength')) !== (active && !through)) throw new Error('Through mode still asks for fixed insertion length');
+      if (Boolean(f.ordinary('maleHeadLength')) !== half) throw new Error('Single-wall length did not follow both applicable connection settings');
       if (Boolean(f.ordinary('maleHeadWidth')) !== (active && !full)) throw new Error('Full pipe form still asks for tongue width');
       if (Boolean(f.ordinary('holeTotalClearanceHeight')) !== (active && !full)) throw new Error('Tongue allowance escaped its form condition');
       if (Boolean(f.ordinary('fullHeadTotalClearance')) !== (active && full)) throw new Error('Full head allowance condition failed');
@@ -222,14 +227,24 @@ try {
   await change('maleEndForm','tongue',index++);
   for(const [role,id] of [['frame','joint-rect-24'],['inner','joint-rect-24']]) await change(`profile:${role}`,`system:${id}`,index++);
   await captureDetail('rectangular-tongue-and-socket.png');
+  await page.addStyleTag({content:'.cam-info-pane{height:300px!important}.tube-designer-parameter-scroll{height:210px!important}'});
+  await change('jointMode','butt_weld',index++);
+  last=(await change('returnJointMode','male_female_half_hole',index++)).state;
+  assert.equal(last.male.model.active,true);
+  assert.equal(last.male.model.length.receiverEnvelope,14,'Return joint must use the receiver depth');
+  last=(await change('returnJointMode','male_female_through_hole',index++)).state;
+  assert.equal(last.male.model.through,true);
+  assert.equal(last.male.model.length.value,14);
+  await change('returnJointMode','butt_weld',index++);
+  report.cases.push({name:'independent-return-joint-and-depth-axis',latestTypingSelectionScrollCanvasFieldsAndListenersPreserved:true,passed:true});
   assert.deepEqual(errors,[]);
   const final=await page.evaluate(()=>{const f=window.productFixture;f.assertPhysicalCommits();return{requests:f.requests.length,physicalKeys:f.template.parameters.length,stats:f.stats(),notices:f.notices};});
-  assert.equal(final.physicalKeys,49);
+  assert.equal(final.physicalKeys,79);
   assert.equal(final.requests,index);
   Object.assign(report,{passed:true,actualBrowserEvents:true,controlledProfileSnapshots:true,
     retainedInputAndCanvasNodes:true,retainedListeners:true,latestFocusSelectionAndNestedScroll:true,
-    activeProductPhysicalParameterCount:49,commits:final.requests,pageErrors:errors});
-  console.log(`PASS insert joint browser: ${final.requests} actual edits/profile selections, 2 local diagrams, original 49 inputs, async focus/selection/scroll/nodes/listeners retained`);
+    activeProductPhysicalParameterCount:79,layoutStyle:initialParameters.layoutStyle,commits:final.requests,pageErrors:errors});
+  console.log(`PASS insert joint browser: ${final.requests} actual edits/profile selections, 2 local diagrams, all 79 declared inputs, async focus/selection/scroll/nodes/listeners retained`);
 } catch(error) {
   report.error=error.stack;
   if(page) report.diagnostics=await page.evaluate(()=>{const f=window.productFixture;return f?{

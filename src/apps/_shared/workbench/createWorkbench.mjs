@@ -247,6 +247,9 @@ function renderProject(context, view) {
             ? context.renderViewportOverlay(context, view, scene)
             : ""}
         </div>
+        ${typeof context.renderSceneStatusBar === "function"
+          ? context.renderSceneStatusBar(context, view, scene)
+          : ""}
       </section>
       <div class="cam-splitter cam-splitter-right"
            data-cam-resize-pane="right"

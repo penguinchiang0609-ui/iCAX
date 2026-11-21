@@ -8,6 +8,7 @@
 #include "Data/uuid.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProductContext/IProductContext.h"
+#include "ProjectFile/ProjectDocument.h"
 
 #include <cstdint>
 #include <functional>
@@ -107,7 +108,15 @@ namespace iCAX
                 IN const std::string& strProjectPath_,
                 IN const std::string& strMagic_,
                 IN uint32_t nVersion_);
+            void ValidateProjectFileSave(const std::string& ProjectPath_, const std::string& Magic_, uint32_t Version_) const;
             void CloseQuickSaveLog();
+            // Explicit user discard only. Normal close/crash keeps recovery.
+            void DiscardQuickSaveLog();
+            // Product catalogs stage every project before committing discard,
+            // so a later project's I/O rejection can restore earlier ones.
+            void PrepareQuickSaveDiscard();
+            void CommitQuickSaveDiscard() noexcept;
+            void CancelQuickSaveDiscard();
             bool IsQuickSaveLogOpen() const;
             // Capture only after an archive was restored (before journal
             // replay), or after an archive was written successfully.
@@ -169,6 +178,10 @@ namespace iCAX
             static CProjectFault ConvertSceneFault(IN const CSceneFault& Fault_);
             std::string AutoSaveSettingsSignature() const;
             std::vector<iCAX::Resource::CResourceInfo> AutoSavePersistentResources() const;
+            iCAX::ProjectFile::CProjectDocumentInfo QuickSaveResourceIdentity() const;
+            void CheckpointQuickSaveResources();
+            void BindQuickSaveCheckpoint(const std::string& Path_, const std::string& Magic_, uint32_t Version_);
+            void ResetQuickSaveLog(const std::string& Path_, const std::string& Magic_, uint32_t Version_);
 
         private:
             mutable std::recursive_mutex m_Mutex;
@@ -196,6 +209,15 @@ namespace iCAX
             std::vector<iCAX::Resource::CResourceInfo> m_AutoSaveResources;
             uint64_t m_nAutoSaveArchiveSize=0;
             int64_t m_nAutoSaveArchiveWriteTime=0;
+            std::string m_ActiveQuickSaveLogPath;
+            std::string m_QuickSaveJournalID;
+            std::string m_QuickSaveMagic;
+            uint32_t m_nQuickSaveVersion = 0;
+            std::vector<iCAX::Resource::CResourceInfo> m_QuickSaveResources;
+            bool m_bQuickSaveResourceCheckpoint = false;
+            std::string m_DiscardRetiredLog;
+            std::string m_DiscardRetiredResources;
+            bool m_bDiscardLogWasOpen = false;
         };
     }
 }

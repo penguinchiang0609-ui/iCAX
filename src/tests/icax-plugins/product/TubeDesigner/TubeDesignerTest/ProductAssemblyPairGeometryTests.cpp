@@ -42,6 +42,7 @@ namespace
 #include <TubeDesigner/ProductAssemblyPairGeometry.inc>
 #include <TubeDesigner/ProductAssemblyWholeGeometry.inc>
 #include <TubeDesigner/ProductAssemblyFinalNodeGeometry.inc>
+#include <TubeDesigner/ProductManufacturingNonInterference.inc>
 
     VariantArray TransformMatrix(const gp_Trsf& Transform_)
     {
@@ -453,4 +454,51 @@ TEST(ProductAssemblyFinalNodeGeometryTests, AutomaticWindowUsesSectionNotBlankLe
     const auto _Long = BRepPrimAPI_MakeBox(gp_Pnt(0,-5,-5),500,10,10).Shape();
     const auto _Short = BRepPrimAPI_MakeBox(gp_Pnt(0,-10,-8),80,20,16).Shape();
     EXPECT_NEAR(AssemblyFinalNodeLocalRadius(_Long,_Short),40.0,1.0e-6);
+}
+
+TEST(ProductManufacturingNonInterferenceTests, RejectsRealOverlapButAllowsTouchAndSeparatedBounds)
+{
+    const std::vector<SManufacturingNonInterference> requirements{{"node", "a", "b", 1.e-5}};
+    const auto a = BRepPrimAPI_MakeBox(gp_Pnt(0,0,0), 10,10,10).Shape();
+    const auto overlap = BRepPrimAPI_MakeBox(gp_Pnt(5,0,0), 10,10,10).Shape();
+    EXPECT_THROW((void)ValidateManufacturingNonInterference(requirements,
+        {{"a",a},{"b",overlap}}),std::runtime_error);
+    for (const double x : {10., 25.}) {
+        const auto b = BRepPrimAPI_MakeBox(gp_Pnt(x,0,0), 10,10,10).Shape();
+        const auto checks = ValidateManufacturingNonInterference(requirements,{{"a",a},{"b",b}});
+        ASSERT_EQ(checks.size(),1u);
+        EXPECT_NEAR(checks.front().To<ObjectMap>().at("intersectionVolumeMm3").To<double>(),0.,1.e-7);
+    }
+}
+
+TEST(ProductManufacturingNonInterferenceTests, UsesActualCutMaterialInsteadOfIntersectingBounds)
+{
+    const std::vector<SManufacturingNonInterference> requirements{{"node", "a", "b", 1.e-5}};
+    const auto raw = BRepPrimAPI_MakeBox(gp_Pnt(0,0,0), 20,20,20).Shape();
+    const auto slot = BRepPrimAPI_MakeBox(gp_Pnt(-1,8,8), 22,4,4).Shape();
+    const auto host = BRepAlgoAPI_Cut(raw,slot).Shape();
+    const auto branch = BRepPrimAPI_MakeBox(gp_Pnt(-10,8.1,8.1), 40,3.8,3.8).Shape();
+    const auto checks = ValidateManufacturingNonInterference(requirements,{{"a",host},{"b",branch}});
+    ASSERT_EQ(checks.size(),1u);
+    EXPECT_NEAR(checks.front().To<ObjectMap>().at("intersectionVolumeMm3").To<double>(),0.,1.e-7);
+    EXPECT_THROW((void)ValidateManufacturingNonInterference(requirements,{{"a",raw},{"b",branch}}),
+        std::runtime_error);
+}
+
+TEST(ProductManufacturingNonInterferenceTests, RequiresKnownDistinctFinalParticipants)
+{
+    const ObjectMap requirement{{"items",VariantArray{std::string("a"),std::string("b")}},
+        {"maximumIntersectionVolumeMm3",1.e-5}};
+    const ObjectMap connection{{"key",std::string("node")},{"properties",ObjectMap{
+        {"nonInterferencePairs",VariantArray{requirement,requirement}}}}};
+    const auto parsed = ReadManufacturingNonInterference(ObjectMap{{"connections",VariantArray{connection}}});
+    ASSERT_EQ(parsed.size(),1u);
+    const auto a = BRepPrimAPI_MakeBox(10,10,10).Shape();
+    EXPECT_THROW((void)ValidateManufacturingNonInterference(parsed,{{"a",a}}),std::invalid_argument);
+    auto invalid = requirement;
+    invalid["items"] = VariantArray{std::string("a"),std::string("a")};
+    const ObjectMap invalidConnection{{"key",std::string("bad")},
+        {"properties",ObjectMap{{"nonInterferencePairs",VariantArray{invalid}}}}};
+    EXPECT_THROW((void)ReadManufacturingNonInterference(ObjectMap{{"connections",VariantArray{invalidConnection}}}),
+        std::invalid_argument);
 }

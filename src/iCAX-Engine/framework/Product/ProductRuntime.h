@@ -274,6 +274,7 @@ namespace iCAX
             * @return true 表示 catalog 存在并被关闭。
             */
             bool CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_);
+            bool CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_, bool DiscardChanges_);
 
             /*
             * @brief 获取指定 Scene 的前端SDO 端点。

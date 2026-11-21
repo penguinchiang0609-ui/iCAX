@@ -75,6 +75,7 @@
   <ItemGroup>
     <None Include="Schema\RenderGeometryResource.fbs" />
     <None Include="Schema\RenderMaterialResource.fbs" />
+    <None Include="Schema\RenderTextureResource.fbs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

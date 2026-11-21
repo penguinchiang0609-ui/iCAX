@@ -351,13 +351,13 @@ ObjectMap Export(const R::SSectionFaceClassificationResult& classification,
 }
 }
 
-// Replay an explicitly selected, validated neutral Classify checkpoint. This
-// does not reconstruct machining geometry from a review mesh or a STEP copy.
-int RunMachiningEdgeCheckpoint(const fs::path& checkpoint,const fs::path& root,
-    const std::string& group,const std::string& id) {
-    const auto reportPath=root/"Reports"/fs::u8path(group)/(id+".json");
-    ObjectMap report{{"stage",std::string("edgeAnalysis")},{"status",std::string("running")},
-        {"upstreamCheckpoint",Utf8(checkpoint)},{"upstreamStagesReused",true}};
+struct SClassifyCheckpoint final {
+    R::SSectionFaceClassificationResult Classification;
+    R::SSectionWiresResult Section;
+    std::string Source;
+};
+
+SClassifyCheckpoint LoadClassifyCheckpoint(const fs::path& checkpoint) {
     const auto readObject=[](const fs::path& path){std::ifstream stream(path,std::ios::binary);
         if(!stream)throw std::runtime_error("Missing checkpoint JSON: "+Utf8(path));
         const std::string value((std::istreambuf_iterator<char>(stream)),{});return Json::Parse(value).To<ObjectMap>();};
@@ -365,50 +365,64 @@ int RunMachiningEdgeCheckpoint(const fs::path& checkpoint,const fs::path& root,
         if(!stream)throw std::runtime_error("Missing exact neutral checkpoint: "+Utf8(path));
         const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(stream)),{});
         return G::Persistence::Deserialize(bytes);};
+    const auto performance=readObject(checkpoint/"performance.json");
+    if(performance.at("status").To<std::string>()!="passed")throw std::runtime_error("Upstream checkpoint did not pass");
+    const auto stages=performance.at("stages").To<ObjectMap>();
+    for(const auto name:{"heal","align","contour","classify"})
+        if(!stages.at(name).To<ObjectMap>().at("passed").To<bool>())throw std::runtime_error("Incomplete upstream checkpoint stage");
+    R::SSectionFaceClassificationResult classification;classification.bSuccess=true;
+    classification.SplitGeometry=readNeutral(checkpoint/"split.icaxbrep");
+    classification.MachiningGeometry=readNeutral(checkpoint/"machining.icaxbrep");
+    classification.NonMachiningGeometry=readNeutral(checkpoint/"stock.icaxbrep");
+    std::set<std::uint64_t> assigned;
+    for(const auto& face:classification.MachiningGeometry.Faces){classification.MachiningFaceIds.push_back(face.Id);if(!assigned.insert(face.Id).second)throw std::runtime_error("Duplicate machining checkpoint face");}
+    for(const auto& face:classification.NonMachiningGeometry.Faces){classification.NonMachiningFaceIds.push_back(face.Id);if(!assigned.insert(face.Id).second)throw std::runtime_error("Overlapping checkpoint partitions");}
+    if(assigned.size()!=classification.SplitGeometry.Faces.size())throw std::runtime_error("Checkpoint face partitions are incomplete");
+    for(const auto& face:classification.SplitGeometry.Faces)if(!assigned.contains(face.Id))throw std::runtime_error("Checkpoint face IDs disagree");
+    const auto curves=readNeutral(checkpoint/"section-curves.icaxbrep");
+    const auto domains=readObject(checkpoint/"section-domains.json");
+    R::SSectionWiresResult section;section.bSuccess=true;std::size_t curveIndex=0;
+    for(const auto& wireValue:domains.at("wires").To<VariantArray>()) {
+        const auto data=wireValue.To<ObjectMap>();R::SSectionWire wire;
+        wire.bInner=data.at("inner").To<bool>();wire.bClosed=data.at("closed").To<bool>();wire.dSignedArea=data.at("area").To<double>();
+        if(!wire.bClosed)throw std::runtime_error("Checkpoint section wire is open");
+        for(const auto& edgeValue:data.at("edges").To<VariantArray>()) {
+            const auto values=edgeValue.To<ObjectMap>();R::SSectionWireEdge edge;
+            if(curveIndex>=curves.Curves2.size()||curves.Curves2[curveIndex].Id!=curveIndex+1)throw std::runtime_error("Checkpoint curve IDs or domains disagree");
+            edge.Curve=curves.Curves2[curveIndex++].Geometry;
+            edge.SourceEdgeId=std::stoull(values.at("sourceEdgeId").To<std::string>());
+            edge.SourceFaceId=std::stoull(values.at("sourceFaceId").To<std::string>());
+            edge.Range={values.at("first").To<double>(),values.at("last").To<double>()};edge.bReversed=values.at("reversed").To<bool>();
+            const auto a=values.at("start").To<VariantArray>(),b=values.at("end").To<VariantArray>();
+            edge.Start={a.at(0).To<double>(),a.at(1).To<double>()};edge.End={b.at(0).To<double>(),b.at(1).To<double>()};
+            const auto curve=O::BuildOpenCascadeCurve2(edge.Curve);if(curve.IsNull())throw std::runtime_error("Invalid exact checkpoint section curve");
+            const auto start=curve->Value(edge.bReversed?edge.Range.Last:edge.Range.First),end=curve->Value(edge.bReversed?edge.Range.First:edge.Range.Last);
+            if(start.Distance(gp_Pnt2d(edge.Start.X,edge.Start.Y))>.0011||end.Distance(gp_Pnt2d(edge.End.X,edge.End.Y))>.0011)
+                throw std::runtime_error("Checkpoint section endpoint/range mismatch");
+            wire.Edges.push_back(std::move(edge));
+        }
+        if(wire.Edges.empty())throw std::runtime_error("Empty checkpoint wire");
+        for(std::size_t i=0;i<wire.Edges.size();++i){const auto a=wire.Edges[i].End,b=wire.Edges[(i+1)%wire.Edges.size()].Start;
+            if(std::hypot(a.X-b.X,a.Y-b.Y)>.0011)throw std::runtime_error("Disconnected checkpoint section");}
+        section.Wires.push_back(std::move(wire));
+    }
+    if(curveIndex!=curves.Curves2.size()||section.Wires.empty())throw std::runtime_error("Unused or absent checkpoint section curves");
+    return {std::move(classification),std::move(section),performance.at("source").To<std::string>()};
+}
+
+// Replay an explicitly selected, validated neutral Classify checkpoint.
+int RunMachiningEdgeCheckpoint(const fs::path& checkpoint,const fs::path& root,
+    const std::string& group,const std::string& id,
+    const std::function<ObjectMap(const R::SSectionFaceClassificationResult&,const R::SSectionWiresResult&,
+        const R::SMachiningEdgeAnalysisResult&,const O::SOpenCascadeBRepBuildResult&)>& nextWork={},
+    const std::string& nextStage="pathAnalysis",const bool exportEdgeArtifacts=true,
+    const int partialExitCode=1) {
+    const auto reportPath=root/"Reports"/fs::u8path(group)/(id+".json");
+    ObjectMap report{{"stage",std::string("edgeAnalysis")},{"status",std::string("running")},
+        {"upstreamCheckpoint",Utf8(checkpoint)},{"upstreamStagesReused",true}};
     Save(reportPath,report);
     try {
-        const auto performance=readObject(checkpoint/"performance.json");
-        if(performance.at("status").To<std::string>()!="passed")throw std::runtime_error("Upstream checkpoint did not pass");
-        const auto stages=performance.at("stages").To<ObjectMap>();
-        for(const auto name:{"heal","align","contour","classify"})
-            if(!stages.at(name).To<ObjectMap>().at("passed").To<bool>())throw std::runtime_error("Incomplete upstream checkpoint stage");
-        R::SSectionFaceClassificationResult classification;classification.bSuccess=true;
-        classification.SplitGeometry=readNeutral(checkpoint/"split.icaxbrep");
-        classification.MachiningGeometry=readNeutral(checkpoint/"machining.icaxbrep");
-        classification.NonMachiningGeometry=readNeutral(checkpoint/"stock.icaxbrep");
-        std::set<std::uint64_t> assigned;
-        for(const auto& face:classification.MachiningGeometry.Faces){classification.MachiningFaceIds.push_back(face.Id);if(!assigned.insert(face.Id).second)throw std::runtime_error("Duplicate machining checkpoint face");}
-        for(const auto& face:classification.NonMachiningGeometry.Faces){classification.NonMachiningFaceIds.push_back(face.Id);if(!assigned.insert(face.Id).second)throw std::runtime_error("Overlapping checkpoint partitions");}
-        if(assigned.size()!=classification.SplitGeometry.Faces.size())throw std::runtime_error("Checkpoint face partitions are incomplete");
-        for(const auto& face:classification.SplitGeometry.Faces)if(!assigned.contains(face.Id))throw std::runtime_error("Checkpoint face IDs disagree");
-        const auto curves=readNeutral(checkpoint/"section-curves.icaxbrep");
-        const auto domains=readObject(checkpoint/"section-domains.json");
-        R::SSectionWiresResult section;section.bSuccess=true;std::size_t curveIndex=0;
-        for(const auto& wireValue:domains.at("wires").To<VariantArray>()) {
-            const auto data=wireValue.To<ObjectMap>();R::SSectionWire wire;
-            wire.bInner=data.at("inner").To<bool>();wire.bClosed=data.at("closed").To<bool>();wire.dSignedArea=data.at("area").To<double>();
-            if(!wire.bClosed)throw std::runtime_error("Checkpoint section wire is open");
-            for(const auto& edgeValue:data.at("edges").To<VariantArray>()) {
-                const auto values=edgeValue.To<ObjectMap>();R::SSectionWireEdge edge;
-                if(curveIndex>=curves.Curves2.size()||curves.Curves2[curveIndex].Id!=curveIndex+1)throw std::runtime_error("Checkpoint curve IDs or domains disagree");
-                edge.Curve=curves.Curves2[curveIndex++].Geometry;
-                edge.SourceEdgeId=std::stoull(values.at("sourceEdgeId").To<std::string>());
-                edge.SourceFaceId=std::stoull(values.at("sourceFaceId").To<std::string>());
-                edge.Range={values.at("first").To<double>(),values.at("last").To<double>()};edge.bReversed=values.at("reversed").To<bool>();
-                const auto a=values.at("start").To<VariantArray>(),b=values.at("end").To<VariantArray>();
-                edge.Start={a.at(0).To<double>(),a.at(1).To<double>()};edge.End={b.at(0).To<double>(),b.at(1).To<double>()};
-                const auto curve=O::BuildOpenCascadeCurve2(edge.Curve);if(curve.IsNull())throw std::runtime_error("Invalid exact checkpoint section curve");
-                const auto start=curve->Value(edge.bReversed?edge.Range.Last:edge.Range.First),end=curve->Value(edge.bReversed?edge.Range.First:edge.Range.Last);
-                if(start.Distance(gp_Pnt2d(edge.Start.X,edge.Start.Y))>.0011||end.Distance(gp_Pnt2d(edge.End.X,edge.End.Y))>.0011)
-                    throw std::runtime_error("Checkpoint section endpoint/range mismatch");
-                wire.Edges.push_back(std::move(edge));
-            }
-            if(wire.Edges.empty())throw std::runtime_error("Empty checkpoint wire");
-            for(std::size_t i=0;i<wire.Edges.size();++i){const auto a=wire.Edges[i].End,b=wire.Edges[(i+1)%wire.Edges.size()].Start;
-                if(std::hypot(a.X-b.X,a.Y-b.Y)>.0011)throw std::runtime_error("Disconnected checkpoint section");}
-            section.Wires.push_back(std::move(wire));
-        }
-        if(curveIndex!=curves.Curves2.size()||section.Wires.empty())throw std::runtime_error("Unused or absent checkpoint section curves");
+        const auto [classification,section,source]=LoadClassifyCheckpoint(checkpoint);
         const auto built=O::ReconstructOpenCascadeShape(classification.SplitGeometry);
         if(!built.bOK||!BRepCheck_Analyzer(built.Shape,true,true).IsValid())throw std::runtime_error("Invalid exact checkpoint split geometry");
         BRep_Builder builder;TopoDS_Compound machining;builder.MakeCompound(machining);
@@ -419,15 +433,25 @@ int RunMachiningEdgeCheckpoint(const fs::path& checkpoint,const fs::path& root,
         const auto analysis=R::MachiningEdgeAnalysisWork{}.Run(classification,section,options);
         const auto seconds=std::chrono::duration<double>(Clock::now()-began).count();
         if(!analysis.bSuccess) {report["diagnostics"]=Strings(analysis.Diagnostics);throw std::runtime_error("Checkpoint machining edge analysis failed");}
-        const auto artifacts=machining_edge_export::Export(classification,analysis,options,built,machining,
-            root/"EdgeAnalysis"/fs::u8path(group)/id,group);
+        const auto artifacts=exportEdgeArtifacts
+            ?machining_edge_export::Export(classification,analysis,options,built,machining,
+                root/"EdgeAnalysis"/fs::u8path(group)/id,group)
+            :ObjectMap{{"passed",true},{"exported",false}};
         const bool unchanged=before==G::Persistence::Serialize(classification.SplitGeometry);
-        const bool passed=artifacts.at("passed").To<bool>()&&unchanged;
+        bool passed=artifacts.at("passed").To<bool>()&&unchanged;
         const ObjectMap stage{{"status",std::string(passed?"passed":"failed")},{"serviceSuccess",analysis.bSuccess},
             {"analysisComplete",analysis.bComplete},{"computeSeconds",seconds},{"artifactAudit",artifacts},
             {"upstreamStagesReused",true},{"diagnostics",Strings(analysis.Diagnostics)},{"checkpointCadUnchanged",unchanged}};
-        report["stages"]=ObjectMap{{"edgeAnalysis",stage}};report["status"]=std::string(passed?"passed":"failed");
-        report["upstreamSource"]=performance.at("source");Save(reportPath,report);return passed?0:1;
+        ObjectMap stageReports{{"edgeAnalysis",stage}};
+        std::string finalStatus=passed?"passed":"failed";
+        if(nextWork&&passed) {
+            report["stage"]=nextStage;report["stages"]=stageReports;Save(reportPath,report);
+            const auto next=nextWork(classification,section,analysis,built);stageReports[nextStage]=next;
+            finalStatus=next.at("status").To<std::string>();passed=finalStatus=="passed";report["stage"]=nextStage;
+        }
+        report["stages"]=stageReports;report["status"]=finalStatus;
+        report["upstreamSource"]=source;Save(reportPath,report);
+        return passed?0:finalStatus=="partial"?partialExitCode:1;
     } catch(const Standard_Failure& exception) {report["error"]=std::string(exception.GetMessageString());}
       catch(const std::exception& exception) {report["error"]=std::string(exception.what());}
     report["status"]=std::string("failed");Save(reportPath,report);return 1;

@@ -330,6 +330,12 @@ def _installation_holes(parameters, layout, members):
 
 def manufacturing(parameters, layout):
     """Return v4 declarations without evaluating or embedding machining geometry."""
+    if parameters.get('layoutStyle', 'planar') in ('five_face', 'balcony_closure'):
+        path = Path(__file__).with_name('spatial_manufacturing.py')
+        spec = importlib.util.spec_from_file_location('minimal_grille_spatial_manufacturing', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.manufacturing(parameters, layout, sys.modules[__name__])
     mode = parameters.get("jointMode", "butt_weld")
     if mode not in ("butt_weld", "male_female_half_hole", "male_female_through_hole"):
         raise ValueError("内杆连接方式无效")

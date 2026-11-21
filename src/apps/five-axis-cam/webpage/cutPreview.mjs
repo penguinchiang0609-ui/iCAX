@@ -11,6 +11,7 @@ import { sceneColors, sceneColorCss } from './scenePalette.mjs';
 import {toolpathLayerColor,toolpathLayerVisible,syncToolpathLayerMaterials} from './toolpathLayers.mjs';
 import {selectedFaceOverlay} from './faceSelectionPresentation.mjs';
 import {machineViewportActive} from './machinePlaybackContext.mjs';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 
 export function disposeCutPreview(view) {
   const group=view.fiveCutPreview?.group;
@@ -46,7 +47,7 @@ export function updateCutPreview(view) {
   // Number visibility belongs to the CAM page, independently of its active tool.
   if(view.fiveAxisArea==='toolpath'&&!showingGenerated){
     source?.updateWorldMatrix(true,false);
-    const matrix=source?.matrixWorld??new THREE.Matrix4().set(...placement.transform);
+    const matrix=source?.matrixWorld??placementWorldMatrix(view,placement);
     const sequences=cutSequenceNumbers(buildCutTree(view));
     const numbered=saved.filter(c=>c.enabled!==false&&c.previewPoints?.length&&(c.machiningKind!=='Mark'||selected.includes(c.id)));
     viewport.setSpecificationAnnotations(numbered.map(c=>{
@@ -64,13 +65,13 @@ export function updateCutPreview(view) {
     view.fiveCutAnnotations=true;
   }
   const starts=saved.filter(c=>c.enabled!==false&&c.startPoint).map(c=>relativePoint(c,c.startPoint));
-  const key=JSON.stringify([viewport.id,source?.uuid,view.fiveAxisArea,placement.transform,lines,selected,markers,starts,state.selectedFace,faces.map(f=>[f.localId,state.faceRanges?.[f.localId]])]);
+  const key=JSON.stringify([viewport.id,source?.uuid,view.fiveAxisArea,placementWorldMatrix(view,placement).elements,lines,selected,markers,starts,state.selectedFace,faces.map(f=>[f.localId,state.faceRanges?.[f.localId]])]);
   if(view.fiveCutPreview?.key===key&&view.fiveCutPreview.viewport===viewport){syncToolpathLayerMaterials(view,view.fiveCutPreview.group);return;}
   disposeCutPreview(view);
   const group=new THREE.Group();group.name='five-axis-cutting-lines';group.matrixAutoUpdate=false;
   // Native display transforms also include machine support and registration.
   // Keep overlays in the rendered workpiece's coordinates, including live motion.
-  if(!source)group.matrix.set(...placement.transform);
+  if(!source)group.matrix.copy(placementWorldMatrix(view,placement));
   for(const c of lines) {
     if(!c.points?.length)continue;
     const geometry=new THREE.BufferGeometry().setFromPoints(c.points.map(p=>new THREE.Vector3(...p)));

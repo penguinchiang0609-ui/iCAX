@@ -27,7 +27,7 @@ export async function loadFixtureUnitDetails(context,view,unit,{supportFaces=fal
   return design;
 }
 export function ensureFixtureUnitDetails(context,view,ops){
-  if(view.fiveAxisArea!=='workpiece'||activeTool(view)!=='fixture'||view.fiveFixtureDesignOpen||view.pending)return;
+  if(view.fiveAxisArea!=='operation'||activeTool(view)!=='fixture'||view.fiveFixtureDesignOpen||view.pending)return;
   const unit=view.scene?.domain?.fixtureUnits?.find(u=>u.id===view.fiveAxisFixtures?.selected);
   if(unit?.kind!=='Generated')return;
   const key=fixtureDetailsKey(view,unit),cached=view.fiveFixtureDetails?.get(unit.id);

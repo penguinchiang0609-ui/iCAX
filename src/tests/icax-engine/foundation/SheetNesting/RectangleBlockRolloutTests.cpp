@@ -19,7 +19,12 @@ namespace
         p.FreeRotation=false;p.AllowedAnglesDegrees={0};p.Geometry.Outer={{0,0},{w,0},{w,h},{0,h}};return p;
     }
     Options Budget(std::size_t attempts=200000,double seconds=5)
-    {Options o;o.MaxPlacementAttempts=attempts;o.TimeLimitSeconds=seconds;return o;}
+    {
+        Options o;o.MaxPlacementAttempts=attempts;o.TimeLimitSeconds=seconds;
+        // Cancellation pulses below belong to the isolated constructor.
+        o.EnableBasicCompaction=false;
+        return o;
+    }
     JobResult Solve(const Problem& p,Options o=Budget())
     {return RunJob({"rollout-test","rect.block-rollout",p,std::move(o)},DefaultStrategies());}
     std::string Snapshot(const Problem& p)

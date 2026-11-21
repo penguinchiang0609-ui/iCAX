@@ -233,6 +233,8 @@ namespace iCAX
             * @return 当前日志路径；未打开时为空字符串。
             */
             const std::string& GetPath() const;
+            // Stable identity of one journal generation, replaced on truncate.
+            static std::string ReadIdentity(const std::string& Path_, const std::string& Magic_, uint32_t Version_);
 
             /*
             * @brief 追加一个操作批次。

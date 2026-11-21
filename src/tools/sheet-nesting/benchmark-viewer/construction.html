@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>初始排样 · 实际构造过程</title><link rel="stylesheet" href="/construction.css"><script defer src="/layoutGeometry.js"></script><script defer src="/construction.js"></script></head>
+<body>
+<header><a href="/">← 排样报告</a><a href="/materials.html">素材与柏楚对比</a><strong id="page-title">初始排样 · 实际构造过程</strong><span id="connection">正在读取记录…</span><button id="refresh">刷新记录</button></header>
+<main id="replay-main">
+<section class="intro"><h1>看每一路实际如何构造</h1><p>记录实际现有构造，用于审查，未宣称修好排样质量；采集耗时含记录和文件读写开销。</p><p>诊断运行使用记录中的时间与尝试上限，不能与旧批次的质量结果或耗时直接比较。页面只读取原生事件，不根据最终图补造过程。</p><nav id="audits"></nav></section>
+<section class="taskbar"><label>案例 <select id="task"><option value="">暂无记录</option></select></label><span id="task-summary">等待原生记录生成</span><a id="index-link" hidden>原始索引</a><a id="result-link" hidden>原生结果</a></section>
+<section class="run-summary" aria-label="当前记录版本、输入和完成情况"><p id="run-summary">运行版本与时间未记录</p><p id="problem-summary">等待实际输入</p><p id="completion-summary" role="status">尚无最终选择结果</p></section>
+<div id="health" class="notice" role="status"></div>
+<details class="conditions"><summary>本次采集条件</summary><pre id="conditions">无记录</pre></details>
+<div class="workspace">
+<aside class="panel routes-panel"><h2>记录路由 <small id="route-count"></small></h2><button class="route all active" id="all-routes">全部路线与调度</button><div id="routes"></div></aside>
+<section class="panel replay">
+<div class="filters"><label>查看方式 <select id="event-view"><option value="construction">构造过程</option><option value="events">全部原生事件</option></select></label><label id="construction-path-control">构造链 <select id="construction-path"><option value="selected">终局对应路径</option></select></label><label>运行分支 <select id="scope"><option value="">全部分支</option></select></label><label>阶段 <select id="stage"><option value="">全部阶段</option></select></label><label class="overlay-control"><input id="overlay" type="checkbox" checked>显示本事件候选</label></div>
+<p id="construction-path-status" class="hint path-status">构造过程只回放真实原生提交父链；搜索和重启的其他分支保留单独查看。</p>
+<div class="transport"><button id="previous" title="上一事件">←</button><button id="play">播放</button><button id="next" title="下一事件">→</button><input id="timeline" type="range" min="0" max="0" value="0" aria-label="按实际事件记录回放"><output id="position">0 / 0</output><select id="speed" aria-label="播放速度"><option value="700">慢速</option><option value="300" selected>正常</option><option value="100">快速</option></select></div>
+<div class="event-heading"><h2 id="event-title">尚未选择事件</h2><span id="event-id"></span></div>
+<p id="event-reason" class="reason">原生过程数据到达后，可选择路线并逐步查看。</p>
+<div id="snapshot-status" class="snapshot-status">没有状态记录</div>
+<div id="boards" class="boards"><div class="empty">暂无可显示的原生事件</div></div>
+<div class="event-details"><section><h3>原生评分与比较顺序</h3><p class="hint">按记录字段原样显示；字典序越小越好。没有评分记录时不推断评分。</p><div id="ranks" class="ranks"></div></section><section><h3>记录量与预算</h3><div id="measures" class="measures"></div></section></div>
+<details><summary>当前事件原始记录</summary><pre id="event-json">无记录</pre></details>
+</section>
+<aside class="panel events-panel"><h2>事件列表 <small id="event-total"></small></h2><div id="events"></div><div class="pagination"><button id="page-prev">上一页</button><span id="page-label">0 / 0</span><button id="page-next">下一页</button></div></aside>
+</div>
+<section class="panel decisions"><h2>调度与最终选优理由 <small id="decision-count"></small></h2><p class="hint">只显示原生调度事件。每路“终局”可在左侧直接查看；未记录的路线明确显示无终局记录。</p><div id="decisions"></div></section>
+</main>
+<main id="comparison-main" hidden>
+<section class="intro"><h1>初始排样 · 前后对比</h1><p id="comparison-versions"></p><p>比较同型组合限制前后的 plane.order-array 初构。只在双方实际输入约束与执行条件一致时计算前后变化。</p><p id="comparison-conditions">正在读取实际参数。自由旋转是许可，不表示穷举连续角。</p><p>首次完整时间只说明何时首次排齐，不代表最终质量。时间包含过程采集开销。valid / complete 是原生核验声明，未代替独立几何审计。</p></section>
+<p id="comparison-status" class="notice" role="status">正在发现对比记录…</p>
+<div class="comparison-scroll" tabindex="0" aria-label="可横向滚动的排样对比表">
+<table class="comparison-table"><thead><tr><th scope="col">案例</th><th scope="col">输入与条件</th><th scope="col">需求 / 排齐</th><th scope="col">板数</th><th scope="col">整板利用率</th><th scope="col">使用段利用率</th><th scope="col">使用长度</th><th scope="col">首次完整</th><th scope="col">完成耗时</th><th scope="col">前后变化</th><th scope="col">查看记录</th></tr></thead><tbody id="comparison-rows"></tbody></table>
+</div>
+<p class="hint comparison-note">每格上行为限制前，下行为限制后。整板利用率 = 原件净面积 / 已用整板面积。使用段利用率 = 原件净面积 / Σ［原板宽 × clamp（最终原轮廓最高 Y + 上边距，0，原板长）］；包含左侧和底部空白，不交换板材方向。卷料另外看使用长度，1000000 mm 上限不是实际用料长度。改善 / 退步先比较整板利用率，再比较使用段利用率，耗时单独列出。任一侧未结束、读取失败或条件不一致时不计算改善。</p>
+</main>
+</body></html>

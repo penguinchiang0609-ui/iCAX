@@ -7,10 +7,15 @@
 #include "Task/Task.h"
 #include <bit>
 #include <cctype>
+#include <chrono>
+#include <future>
 #include <iomanip>
 #include <iterator>
+#include <memory>
+#include <mutex>
 #include <string_view>
 #include <thread>
+#include <tuple>
 
 namespace iCAX::TubeDesigner
 {
@@ -187,6 +192,8 @@ namespace
         return _Text.str();
     }
 
+#include "NestingPairTableCache.inc"
+
     std::optional<double> Number(const Variant& Value_)
     {
         return std::visit([](const auto& Item_) -> std::optional<double> {
@@ -249,7 +256,131 @@ namespace
     double Mm(const Length Value_) { return static_cast<double>(Value_) / kUnitsPerMm; }
     unsigned long long Count(const std::size_t Value_) { return static_cast<unsigned long long>(Value_); }
 
-    PairTableSolverSettings Settings(const std::size_t Count_)
+    using SearchClock = std::chrono::steady_clock;
+
+    void ValidateSearchOptions(const SNestingSearchOptions& Options_)
+    {
+        if (Options_.Mode != ENestingOptimizationMode::Time
+            && Options_.Mode != ENestingOptimizationMode::Utilization)
+            throw std::invalid_argument("排样优化方式必须为时间优先或利用率优先");
+        if (Options_.SearchTimeSeconds < 1 || Options_.SearchTimeSeconds > 3600)
+            throw std::invalid_argument("排样搜索时长必须为 1 至 3600 秒的整数");
+    }
+
+    std::uint64_t RemainingMilliseconds(const SearchClock::time_point Deadline_)
+    {
+        const auto _Value = std::chrono::ceil<std::chrono::milliseconds>(
+            Deadline_ - SearchClock::now()).count();
+        return _Value > 0 ? static_cast<std::uint64_t>(_Value) : 0;
+    }
+
+    struct SRequestSearchBudget final
+    {
+        using Key = std::tuple<std::string, std::uint32_t, bool>;
+        SearchClock::time_point Deadline;
+        std::map<Key, std::uint64_t> StageMilliseconds;
+
+        SRequestSearchBudget(const std::vector<SNestingPart>& Parts_,
+            const std::vector<SNestingStock>& Stocks_, const SNestingSearchOptions& Options_)
+        {
+            ValidateSearchOptions(Options_);
+            const auto _Total = static_cast<std::uint64_t>(Options_.SearchTimeSeconds) * 1000;
+            Deadline = SearchClock::now() + std::chrono::milliseconds(_Total);
+            std::map<std::string, std::map<std::uint32_t, long double>> _Demands;
+            std::map<std::string, std::array<bool, 2>> _Inventory;
+            for (const auto& _Part : Parts_)
+                if (_Part.Quantity) _Demands[_Part.ProfileKey][_Part.Priority] += _Part.Quantity;
+            for (const auto& _Stock : Stocks_)
+                if (_Stock.Quantity != 0)
+                    _Inventory[_Stock.ProfileKey][_Stock.Quantity == -1 ? 1 : 0] = true;
+            std::map<Key, long double> _Weights;
+            long double _TotalWeight = 0.0L;
+            for (const auto& [_Profile, _Levels] : _Demands)
+            {
+                bool _EarlierLevel = false;
+                const auto _Kinds = _Inventory[_Profile];
+                for (const auto& [_Priority, _Count] : _Levels)
+                {
+                    // Earlier priorities can open a new physical stock which
+                    // becomes finite continuation stock for this level.
+                    if (_Kinds[0] || (_EarlierLevel && _Kinds[1]))
+                    { _Weights[{_Profile, _Priority, true}] = _Count; _TotalWeight += _Count; }
+                    if (_Kinds[1])
+                    { _Weights[{_Profile, _Priority, false}] = _Count; _TotalWeight += _Count; }
+                    _EarlierLevel = true;
+                }
+            }
+            if (_TotalWeight > 0.0L)
+            {
+                // Give small-demand stages a real opportunity to validate and
+                // construct a plan, even when a preceding priority has many
+                // thousands of instances and proves optimal almost at once.
+                const auto _Minimum = (std::min)(std::uint64_t{10},
+                    _Total / static_cast<std::uint64_t>(_Weights.size()));
+                const auto _WeightedBudget = _Total - _Minimum * _Weights.size();
+                std::uint64_t _Unallocated = _WeightedBudget;
+                std::vector<std::pair<long double, Key>> _Remainders;
+                for (const auto& [_Key, _Weight] : _Weights)
+                {
+                    const auto _ExactShare = static_cast<long double>(_WeightedBudget) * _Weight / _TotalWeight;
+                    const auto _Share = (std::min)(_Unallocated,
+                        static_cast<std::uint64_t>(std::floor(_ExactShare)));
+                    StageMilliseconds.emplace(_Key, _Minimum + _Share);
+                    _Unallocated -= _Share;
+                    if (_Minimum == 0) _Remainders.emplace_back(_ExactShare - std::floor(_ExactShare), _Key);
+                }
+                // There can be more stages than whole milliseconds. Assign the
+                // unavoidable scarce remainder deterministically; other stages
+                // retain zero and report the shared time limit honestly.
+                if (_Minimum == 0 && _Unallocated)
+                {
+                    std::sort(_Remainders.begin(), _Remainders.end(), [](const auto& A_, const auto& B_) {
+                        return A_.first != B_.first ? A_.first > B_.first : A_.second < B_.second;
+                    });
+                    for (const auto& [_Remainder, _Key] : _Remainders)
+                    {
+                        if (_Unallocated == 0) break;
+                        ++StageMilliseconds[_Key];
+                        --_Unallocated;
+                    }
+                }
+            }
+        }
+
+        [[nodiscard]] SearchClock::time_point BeginStage(const std::string& Profile_,
+            const std::uint32_t Priority_, const bool Finite_) const
+        {
+            const auto _Found = StageMilliseconds.find({Profile_, Priority_, Finite_});
+            const auto _Share = _Found == StageMilliseconds.end() ? 0 : _Found->second;
+            return (std::min)(Deadline, SearchClock::now() + std::chrono::milliseconds(_Share));
+        }
+    };
+
+    ObjectMap WithSearchSettings(ObjectMap Result_, const SNestingSearchOptions& Options_,
+        const SRequestSearchBudget& Budget_)
+    {
+        std::uint64_t _Allocated = 0;
+        for (const auto& [_Key, _Share] : Budget_.StageMilliseconds) _Allocated += _Share;
+        Result_["search"] = ObjectMap{
+            { "optimizationMode", std::string(Options_.Mode == ENestingOptimizationMode::Utilization
+                ? "utilization" : "time") },
+            { "searchTimeSeconds", static_cast<unsigned long long>(Options_.SearchTimeSeconds) },
+            { "allocatedSearchMilliseconds", _Allocated },
+            { "stageCount", static_cast<unsigned long long>(Budget_.StageMilliseconds.size()) },
+            { "budgetScope", std::string("shared-request") }
+        };
+        if (Result_.at("status").To<std::string>() == "infeasible")
+            for (const auto& _Value : Result_.at("unplaced").To<VariantArray>())
+            {
+                const auto _Row = _Value.To<ObjectMap>();
+                if (_Row.at("reason").To<std::string>().starts_with("搜索时间"))
+                { Result_["status"] = std::string("no_solution_found"); break; }
+            }
+        return Result_;
+    }
+
+    PairTableSolverSettings Settings(const std::size_t Count_,
+        const SNestingSearchOptions& Options_, const std::uint64_t BudgetMilliseconds_)
     {
         PairTableSolverSettings _Settings;
         _Settings.Constraint = ConstraintMode::HybridLargeNeighborhood;
@@ -264,13 +395,41 @@ namespace
         _Settings.ConstraintTimeBudgetMilliseconds = 2000;
         _Settings.ConstraintNeighborhoodPartLimit = 9;
         _Settings.ConstraintNeighborhoodTimeBudgetMilliseconds = Count_ > 200 ? 75 : 150;
-        _Settings.TimeBudgetMilliseconds = Count_ > 200 ? 15000 : 0;
+        _Settings.TimeBudgetMilliseconds = BudgetMilliseconds_;
+        _Settings.ContinueImprovementUntilTimeLimit =
+            Options_.Mode == ENestingOptimizationMode::Utilization;
+        if (Options_.Mode == ENestingOptimizationMode::Time)
+        {
+            _Settings.ConstructionRuns = 2;
+            _Settings.LocalSearchPasses = 1;
+            _Settings.LargeNeighborhoodIterations = Count_ > 200 ? 4 : 8;
+            _Settings.PatternMasterTimeBudgetMilliseconds = (std::min)(BudgetMilliseconds_, std::uint64_t{200});
+        }
         return _Settings;
     }
 
     bool Complete(const SolveResult& Result_)
     {
         return Result_.Status == SolveStatus::Optimal || Result_.Status == SolveStatus::Feasible;
+    }
+
+    auto ProcurementScore(const SolveResult& Result_)
+    {
+        Length _Purchased = 0, _Occupied = 0;
+        for (const auto& _Stock : Result_.Stocks)
+        {
+            if (!_Stock.Continued) _Purchased += _Stock.TotalLength;
+            _Occupied += _Stock.OccupiedLength;
+        }
+        return std::tuple{_Purchased, Result_.Stocks.size(), _Occupied};
+    }
+
+    auto PlacedQuantities(const SolveResult& Result_)
+    {
+        std::map<std::string, std::size_t> _Counts;
+        for (const auto& _Stock : Result_.Stocks)
+            for (const auto& _Placement : _Stock.Placements) ++_Counts[_Placement.DemandID];
+        return _Counts;
     }
 
     PeriodicEndProfile FlatProfile(const double Position_)
@@ -309,7 +468,7 @@ namespace
     // larger shortest-first subsets.  Geometry is never re-evaluated here.
     SolveResult SolveAvailableSubset(
         PairTableSnapshot& Table_, const std::vector<StockType>& Stocks_,
-        const PairTableSolverSettings& Settings_)
+        const PairTableSolverSettings& Settings_, const SearchClock::time_point Deadline_)
     {
         std::vector<std::size_t> _Instances;
         for (std::size_t _Type = 0; _Type < Table_.Types.size(); ++_Type)
@@ -323,6 +482,8 @@ namespace
         _Quick.ConstructionRuns = 1;
         _Quick.LocalSearchPasses = 0;
         _Quick.LargeNeighborhoodIterations = 0;
+        _Quick.PatternMasterTimeBudgetMilliseconds = 0;
+        _Quick.ContinueImprovementUntilTimeLimit = false;
         const auto _Select = [&](const std::size_t Size_)
         {
             for (auto& _Type : Table_.Types) _Type.Quantity = 0;
@@ -334,6 +495,8 @@ namespace
         SolveResult _Best;
         while (_Low < _High)
         {
+            _Quick.TimeBudgetMilliseconds = RemainingMilliseconds(Deadline_);
+            if (_Quick.TimeBudgetMilliseconds == 0) break;
             const auto _Middle = _Low + (_High - _Low + 1) / 2;
             _Select(_Middle);
             auto _Candidate = PairTableSolver().Solve(Table_, Stocks_, _Quick);
@@ -344,11 +507,16 @@ namespace
             }
             else _High = _Middle - 1;
         }
-        if (_Low != 0)
+        if (_Low != 0 && RemainingMilliseconds(Deadline_) > 0)
         {
             _Select(_Low);
-            auto _Optimized = PairTableSolver().Solve(Table_, Stocks_, Settings_);
-            if (Complete(_Optimized)) _Best = std::move(_Optimized);
+            auto _FinalSettings = Settings_;
+            _FinalSettings.TimeBudgetMilliseconds = RemainingMilliseconds(Deadline_);
+            if (_FinalSettings.TimeBudgetMilliseconds == 0) return _Best;
+            auto _Optimized = PairTableSolver().Solve(Table_, Stocks_, _FinalSettings);
+            if (Complete(_Optimized) && PlacedQuantities(_Optimized) == PlacedQuantities(_Best)
+                && ProcurementScore(_Optimized) < ProcurementScore(_Best))
+                _Best = std::move(_Optimized);
         }
         return _Best;
     }
@@ -550,6 +718,31 @@ bool MatchesNestingProfileKey(
     catch (const std::exception&) { return false; }
 }
 
+SNestingSearchOptions ReadNestingSearchOptions(const ObjectMap& Parameters_)
+{
+    SNestingSearchOptions _Options;
+    if (const auto _Mode = Parameters_.find("optimizationMode"); _Mode != Parameters_.end())
+    {
+        if (!_Mode->second.Is<std::string>())
+            throw std::invalid_argument("排样优化方式必须为时间优先或利用率优先");
+        const auto _Text = _Mode->second.To<std::string>();
+        if (_Text == "time") _Options.Mode = ENestingOptimizationMode::Time;
+        else if (_Text == "utilization") _Options.Mode = ENestingOptimizationMode::Utilization;
+        else throw std::invalid_argument("排样优化方式必须为时间优先或利用率优先");
+    }
+    if (_Options.Mode == ENestingOptimizationMode::Utilization) _Options.SearchTimeSeconds = 60;
+    if (const auto _Time = Parameters_.find("searchTimeSeconds"); _Time != Parameters_.end())
+    {
+        const auto _Value = Number(_Time->second);
+        if (!_Value || !std::isfinite(*_Value) || std::floor(*_Value) != *_Value
+            || *_Value < 1.0 || *_Value > 3600.0)
+            throw std::invalid_argument("排样搜索时长必须为 1 至 3600 秒的整数");
+        _Options.SearchTimeSeconds = static_cast<std::uint32_t>(*_Value);
+    }
+    ValidateSearchOptions(_Options);
+    return _Options;
+}
+
 ObjectMap NormalizeNestingSettings(const ObjectMap& Settings_)
 {
     const auto _Version = Settings_.find("version");
@@ -561,6 +754,7 @@ ObjectMap NormalizeNestingSettings(const ObjectMap& Settings_)
         || _Parameters == Settings_.end() || !_Parameters->second.Is<ObjectMap>())
         throw std::invalid_argument("排样设置必须包含母材列表和参数对象");
     const auto _ParameterMap = _Parameters->second.To<ObjectMap>();
+    const auto _Search = ReadNestingSearchOptions(_ParameterMap);
     const auto _GapField = _ParameterMap.find("partGap");
     const auto _Gap = _GapField == _ParameterMap.end() ? std::optional<double>(0.0) : Number(_GapField->second);
     if (!_Gap) throw std::invalid_argument("零件间距必须是数值");
@@ -618,7 +812,10 @@ ObjectMap NormalizeNestingSettings(const ObjectMap& Settings_)
         _NormalizedGroups.emplace_back(ObjectMap{ { "profileKey", _ProfileKey }, { "rows", std::move(_Rows) } });
     }
     return { { "version", 2ll }, { "stocks", std::move(_NormalizedGroups) },
-        { "parameters", ObjectMap{ { "partGap", *_Gap } } } };
+        { "parameters", ObjectMap{ { "partGap", *_Gap },
+            { "optimizationMode", std::string(_Search.Mode == ENestingOptimizationMode::Utilization
+                ? "utilization" : "time") },
+            { "searchTimeSeconds", static_cast<unsigned long long>(_Search.SearchTimeSeconds) } } } };
 }
 
 ObjectMap SolveManufacturingNesting(
@@ -631,7 +828,9 @@ namespace
 {
 ObjectMap SolveManufacturingNestingSinglePriority(
     const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
-    const double PartGap_, const std::size_t MaximumConcurrency_)
+    const double PartGap_, const std::size_t MaximumConcurrency_,
+    const SNestingSearchOptions& SearchOptions_, const SRequestSearchBudget& SearchBudget_,
+    const std::uint32_t Priority_)
 {
     if (Parts_.empty()) throw std::invalid_argument("请先勾选需要排样的零件");
     const auto _OrdinaryStockCount = std::ranges::count_if(
@@ -821,6 +1020,7 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         std::size_t PlacedCount = 0;
         bool AllExact = true;
         unsigned long long SearchNodes = 0;
+        unsigned long long RefinementRounds = 0;
         std::vector<std::string> SolverDiagnostics;
     };
     const auto _Hardware = std::thread::hardware_concurrency();
@@ -828,12 +1028,13 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         ? std::min(8u, std::max(1u, _Hardware > 1 ? _Hardware - 1 : 1u))
         : std::clamp<std::size_t>(MaximumConcurrency_, 1, 8);
     const bool _MultipleProfileGroups = _Groups.size() > 1;
-    const auto _SolveGroup = [_Gap, &_LocalCenters, &_PartPriorities, _MultipleProfileGroups](const PairTableBuildInput& _SourceInput,
+    const auto _SolveGroup = [_Gap, &_LocalCenters, &_PartPriorities, _MultipleProfileGroups,
+        &SearchOptions_, &SearchBudget_, Priority_](const PairTableBuildInput& _SourceInput,
         const std::vector<StockType>& _Stocks) {
         SGroupResult _GroupResult;
         auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
             _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes,
-            _SolverDiagnostics] = _GroupResult;
+            _RefinementRounds, _SolverDiagnostics] = _GroupResult;
         Length _MaximumStock = 0;
         for (const auto& _Stock : _Stocks) _MaximumStock = std::max(_MaximumStock, _Stock.TotalLength);
         PairTableBuildInput _Input;
@@ -868,7 +1069,7 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         // Profile groups are already parallelized outside.  For one profile,
         // use the pair-table's bounded internal worker pool.
         _BuildSettings.MaximumConcurrency = _MultipleProfileGroups ? 1 : 0;
-        auto _Table = BuildPairTable(_Input, _BuildSettings);
+        auto _Table = GetNestingPairTable(_Input, _BuildSettings);
         std::vector<std::string> _TableDiagnostics;
         if (!ValidatePairTable(_Table, &_TableDiagnostics))
             throw std::runtime_error("端口姿态表无效，无法执行排样");
@@ -912,18 +1113,59 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         if (_PhaseCount == 0) continue;
         for (std::size_t _Type = 0; _Type < _Table.Types.size(); ++_Type)
             _Table.Types[_Type].Quantity = _PhaseQuantities[_Type];
-        auto _Settings = Settings(_PhaseCount);
+        const bool _FinitePhase = _PhaseStocks.front().Quantity != 0;
+        const auto _PhaseDeadline = SearchBudget_.BeginStage(
+            _Table.Types.front().CompatibilityKey, Priority_, _FinitePhase);
+        const auto _PhaseBudget = RemainingMilliseconds(_PhaseDeadline);
+        if (_PhaseBudget == 0)
+        {
+            _AllExact = false;
+            for (std::size_t _Type = 0; _Type < _Table.Types.size(); ++_Type)
+                if (_PhaseQuantities[_Type]) _MissingReasons[_Table.Types[_Type].ID] =
+                    "搜索时间已用完，尚未找到放置方案；可增加搜索时长后重算";
+            continue;
+        }
+        // Keep time for a verified partial plan when finite inventory (or a
+        // difficult directed order) cannot cover the complete phase demand.
+        auto _Settings = Settings(_PhaseCount, SearchOptions_,
+            (std::max)(std::uint64_t{1}, _PhaseBudget * 2 / 3));
         _Settings.ConstraintWorkers = _MultipleProfileGroups ? 1 : 0;
         auto _Result = PairTableSolver().Solve(_Table, _PhaseStocks, _Settings);
+        const bool _FullAttemptTimedOut = _Result.Termination == TerminationReason::TimeLimit;
+        auto _PhaseNodes = _Result.Metrics.SearchNodes;
+        auto _PhaseRounds = _Result.Metrics.RefinementRounds;
         if (_Result.Status == SolveStatus::InvalidInput)
             throw std::runtime_error("原生排样求解器拒绝了输入数据");
         if (!Complete(_Result))
         {
-            _Result = SolveAvailableSubset(_Table, _PhaseStocks, _Settings);
+            _Result = SolveAvailableSubset(_Table, _PhaseStocks, _Settings, _PhaseDeadline);
+            _PhaseNodes += _Result.Metrics.SearchNodes;
+            _PhaseRounds += _Result.Metrics.RefinementRounds;
             _AllExact = false;
+            if (_FullAttemptTimedOut || RemainingMilliseconds(_PhaseDeadline) == 0)
+                for (std::size_t _Type = 0; _Type < _Table.Types.size(); ++_Type)
+                    if (_PhaseQuantities[_Type]) _MissingReasons[_Table.Types[_Type].ID] =
+                        "搜索时间受限，在本次搜索时限内尚未找到放置方案；可增加搜索时长后重算";
+        }
+        else if (SearchOptions_.Mode == ENestingOptimizationMode::Utilization
+            && !_Result.ExactSearchCompleted && RemainingMilliseconds(_PhaseDeadline) > 0)
+        {
+            auto _RefineSettings = _Settings;
+            _RefineSettings.TimeBudgetMilliseconds = RemainingMilliseconds(_PhaseDeadline);
+            if (_RefineSettings.TimeBudgetMilliseconds > 0)
+            {
+                _RefineSettings.RandomSeed ^= 0x9e3779b9U;
+                _RefineSettings.PatternMasterSearchRound = 1;
+                auto _Refined = PairTableSolver().Solve(_Table, _PhaseStocks, _RefineSettings);
+                _PhaseNodes += _Refined.Metrics.SearchNodes;
+                _PhaseRounds += _Refined.Metrics.RefinementRounds;
+                if (Complete(_Refined) && ProcurementScore(_Refined) < ProcurementScore(_Result))
+                    _Result = std::move(_Refined);
+            }
         }
         _AllExact = _AllExact && _Result.ExactSearchCompleted;
-        _SearchNodes += _Result.Metrics.SearchNodes;
+        _SearchNodes += _PhaseNodes;
+        _RefinementRounds += _PhaseRounds;
         _SolverDiagnostics.insert(_SolverDiagnostics.end(),
             _Result.Diagnostics.begin(), _Result.Diagnostics.end());
         for (const auto& _Stock : _Result.Stocks)
@@ -1022,7 +1264,7 @@ ObjectMap SolveManufacturingNestingSinglePriority(
     SGroupResult _Aggregate;
     auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
         _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes,
-        _SolverDiagnostics] = _Aggregate;
+        _RefinementRounds, _SolverDiagnostics] = _Aggregate;
     VariantArray _Unplaced, _Diagnostics;
     for (auto& _Result : _Results)
     {
@@ -1036,6 +1278,7 @@ ObjectMap SolveManufacturingNestingSinglePriority(
         _PlacedCount += _Result.PlacedCount;
         _AllExact = _AllExact && _Result.AllExact;
         _SearchNodes += _Result.SearchNodes;
+        _RefinementRounds += _Result.RefinementRounds;
         _SolverDiagnostics.insert(_SolverDiagnostics.end(),
             std::make_move_iterator(_Result.SolverDiagnostics.begin()),
             std::make_move_iterator(_Result.SolverDiagnostics.end()));
@@ -1087,23 +1330,37 @@ ObjectMap SolveManufacturingNestingSinglePriority(
             { "partLength", Mm(_PartLength) }, { "usedLength", Mm(_UsedLength) },
             { "remainingLength", Mm(_TotalStock - _UsedLength) }, { "gapLength", Mm(_UsedLength - _PartLength) },
             { "utilization", _TotalStock > 0 ? static_cast<double>(_PartLength) / _TotalStock : 0.0 },
-            { "searchNodes", _SearchNodes }, { "partGap", Mm(_Gap) }
+            { "searchNodes", _SearchNodes }, { "refinementRounds", _RefinementRounds }, { "partGap", Mm(_Gap) }
         } }
     };
 }
 
 }
 
+SNestingPairTableCacheStatistics GetNestingPairTableCacheStatistics()
+{
+    return NestingPairTableCache().Statistics();
+}
+
 ObjectMap SolveManufacturingNesting(
     const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
     const double PartGap_, const std::size_t MaximumConcurrency_)
 {
+    return SolveManufacturingNesting(Parts_, Stocks_, PartGap_, SNestingSearchOptions{}, MaximumConcurrency_);
+}
+
+ObjectMap SolveManufacturingNesting(
+    const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
+    const double PartGap_, const SNestingSearchOptions& SearchOptions_, const std::size_t MaximumConcurrency_)
+{
+    const SRequestSearchBudget _SearchBudget(Parts_, Stocks_, SearchOptions_);
     std::set<std::uint32_t> _PriorityLevels;
     for (const auto& _Part : Parts_)
         if (_Part.Quantity) _PriorityLevels.insert(_Part.Priority);
     if (_PriorityLevels.size() <= 1)
-        return SolveManufacturingNestingSinglePriority(
-            Parts_, Stocks_, PartGap_, MaximumConcurrency_);
+        return WithSearchSettings(SolveManufacturingNestingSinglePriority(
+            Parts_, Stocks_, PartGap_, MaximumConcurrency_, SearchOptions_, _SearchBudget,
+            _PriorityLevels.empty() ? 0 : *_PriorityLevels.begin()), SearchOptions_, _SearchBudget);
 
     std::set<std::string> _ContinuationPredecessors;
     std::set<std::string> _ReservedPlanIDs;
@@ -1159,7 +1416,7 @@ ObjectMap SolveManufacturingNesting(
     std::set<std::string> _PlacementIDs;
     std::map<std::string, std::size_t> _PlanOrdinals, _PartOrdinals;
     std::size_t _ContinuationOrdinal = 0;
-    unsigned long long _SearchNodes = 0;
+    unsigned long long _SearchNodes = 0, _RefinementRounds = 0;
     bool _AllExact = true;
     bool _AllBoundsCertified = true;
     std::vector<std::string> _LayerDiagnostics;
@@ -1214,7 +1471,8 @@ ObjectMap SolveManufacturingNesting(
         }
 
         auto _LayerResult = SolveManufacturingNestingSinglePriority(
-            _LayerParts, _AvailableStocks, PartGap_, MaximumConcurrency_);
+            _LayerParts, _AvailableStocks, PartGap_, MaximumConcurrency_,
+            SearchOptions_, _SearchBudget, _Priority);
         _RememberDiagnostics(_LayerResult);
         _AccumulateProof(_LayerResult);
         if (const auto _Metrics = _LayerResult.find("metrics");
@@ -1224,6 +1482,9 @@ ObjectMap SolveManufacturingNesting(
             if (const auto _Nodes = _Map.find("searchNodes"); _Nodes != _Map.end())
                 if (const auto _Value = Number(_Nodes->second); _Value && *_Value >= 0.0)
                     _SearchNodes += static_cast<unsigned long long>(*_Value);
+            if (const auto _Rounds = _Map.find("refinementRounds"); _Rounds != _Map.end())
+                if (const auto _Value = Number(_Rounds->second); _Value && *_Value >= 0.0)
+                    _RefinementRounds += static_cast<unsigned long long>(*_Value);
         }
 
         auto _FreshPlans = _LayerResult.at("plans").To<VariantArray>();
@@ -1397,7 +1658,7 @@ ObjectMap SolveManufacturingNesting(
     const auto _Status = !_Unplaced.empty()
         ? (_Plans.empty() ? "infeasible" : "partial")
         : (_AllExact ? "optimal" : "feasible");
-    return {
+    return WithSearchSettings({
         { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
         { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },
         { "proof", ObjectMap{
@@ -1416,8 +1677,9 @@ ObjectMap SolveManufacturingNesting(
             { "gapLength", _UsedLength - _PartLength },
             { "utilization", _TotalStock > 0.0 ? _PartLength / _TotalStock : 0.0 },
             { "searchNodes", _SearchNodes },
+            { "refinementRounds", _RefinementRounds },
             { "partGap", Mm(Quantize(PartGap_, true)) }
         } }
-    };
+    }, SearchOptions_, _SearchBudget);
 }
 }

@@ -5,6 +5,7 @@ import {sampleOrbitPivot,orbitCameraState} from './orbitPivot.mjs';
 import {prepareMeshPicking} from './meshPicking.mjs';
 import { placeSpecificationCallout, layoutSpecificationCallouts } from "./specificationCalloutLayout.mjs";
 import { createMeshFeatureEdgesGeometry } from "./meshFeatureEdges.mjs";
+import { loadRenderTexture } from "./renderTexture.mjs";
 import {
   ColliderFlags,
   ColliderPDOEvents,
@@ -187,6 +188,10 @@ export class ThreeRenderViewport {
     this.meshEdgeGeometries = new WeakMap();
     this.renderedDepthBounds = new WeakMap();
     this.materialPayloads = new Map();
+    this.texturePayloads = new Map();
+    this.texturePromises = new Map();
+    this.desiredTextureUrls = new Set();
+    this.textureGeneration = 0;
     this.resourcePromises = new Map();
     this.viewApplyGeneration = 0;
     this.appliedViewRevision = "0";
@@ -649,6 +654,10 @@ export class ThreeRenderViewport {
     if(this.transformOnlyViewKey===staticKey&&rows.length===this.sceneObjects.size
       &&rows.every(row=>this.sceneObjects.has(String(row.entityId)))
       &&(typeof snapshot?.isCurrent!=="function"||snapshot.isCurrent())){
+      // Undo can return to the last applied view while a newer image is still
+      // decoding. Retire that pending image even on this transform-only path.
+      this.desiredTextureUrls = new Set(rows.map(row => this.materialPayloads.get(String(row.data?.material?.url ?? ""))?.baseColorTextureUrl).filter(Boolean));
+      this.#pruneViewTextures();
       let changed=0;
       for(const row of rows){
         const id=String(row.entityId),matrix=toThreeMatrixArray(row.data.localToWorldMatrix),previous=this.transformPayloads.get(id);
@@ -690,6 +699,12 @@ export class ThreeRenderViewport {
     }
     const resources = await Promise.all([...references.values()].map((reference) =>
       this.#loadViewResource(resourceClient, reference)));
+    if (generation === this.viewApplyGeneration && !this.isDisposed
+        && (typeof snapshot?.isCurrent !== "function" || snapshot.isCurrent())) {
+      this.desiredTextureUrls = new Set(resources.filter(resource => resource?.type === "material")
+        .map(resource => resource.data.baseColorTextureUrl).filter(Boolean));
+      await Promise.all([...this.desiredTextureUrls].map(url => this.#loadViewTexture(resourceClient, url)));
+    }
     // An editor can change while the resources for this snapshot are loading,
     // before it has a replacement snapshot to submit. Do not display stale
     // geometry even for a frame in that interval.
@@ -771,6 +786,7 @@ export class ThreeRenderViewport {
       this.#applyColliderVisibility(objectId, object);
     }
     this.#refreshSceneObjectMaterials();
+    this.#pruneViewTextures();
     this.#updateSelectionVisuals();
     this.#setStatus(rows.length && !desiredIds.size
       ? "View 中暂时没有可读取的几何资源"
@@ -1097,6 +1113,50 @@ export class ThreeRenderViewport {
   setDimensionAnnotations(annotations = []) {
     this.clearDimensionAnnotations(false);
     for (const annotation of Array.isArray(annotations) ? annotations : []) {
+      if (annotation?.kind === "angle") {
+        const center = toFiniteVector3(annotation.center);
+        const radius = Number(annotation.radius);
+        const startDegrees = Number(annotation.startAngleDeg);
+        const sweepDegrees = Number(annotation.sweepAngleDeg);
+        if (!center || !Number.isFinite(radius) || radius <= 0
+            || !Number.isFinite(startDegrees) || !Number.isFinite(sweepDegrees)
+            || Math.abs(sweepDegrees) > 360) continue;
+        // Angular annotations use the document XY plane. Retain an explicit
+        // sweep so reflex angles and full circles do not become short chords.
+        const start = (startDegrees % 360) * Math.PI / 180;
+        const sweep = sweepDegrees * Math.PI / 180;
+        const at = angle => center.clone().add(new THREE.Vector3(
+          radius * Math.cos(angle), radius * Math.sin(angle), 0));
+        const vertices = [center.clone(), at(start), center.clone(), at(start + sweep)];
+        const segments = Math.max(1, Math.ceil(Math.abs(sweepDegrees) / 4));
+        for (let index = 0; index < segments; index++)
+          vertices.push(at(start + sweep * index / segments), at(start + sweep * (index + 1) / segments));
+        if (Math.abs(sweepDegrees) > Number.EPSILON) {
+          const size = radius * 0.045;
+          const direction = Math.sign(sweep);
+          for (const [angle, side] of [[start, 1], [start + sweep, -1]]) {
+            const tip = at(angle);
+            const radial = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).multiplyScalar(size * 0.4);
+            const tangent = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(size * side * direction);
+            const tail = tip.clone().add(tangent);
+            vertices.push(tip, tail.clone().add(radial), tip.clone(), tail.clone().sub(radial));
+          }
+        }
+        const color = new THREE.Color(annotation.color ?? 0xffc857);
+        const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+        const material = new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: 0.96 });
+        const lines = new THREE.LineSegments(geometry, material);
+        lines.renderOrder = 120;
+        this.dimensionContent.add(lines);
+        const label = String(annotation.label ?? "").trim();
+        if (label) {
+          const sprite = this.#createDimensionLabel(label, color);
+          sprite.position.copy(at(start + sweep / 2));
+          sprite.renderOrder = 121;
+          this.dimensionContent.add(sprite);
+        }
+        continue;
+      }
       const start = toFiniteVector3(annotation?.start);
       const end = toFiniteVector3(annotation?.end);
       if (!start || !end || start.distanceToSquared(end) <= Number.EPSILON) continue;
@@ -1974,6 +2034,28 @@ export class ThreeRenderViewport {
     return request;
   }
 
+  #loadViewTexture(resourceClient, url) {
+    let request = this.texturePromises.get(url);
+    if (!request) {
+      const generation = this.textureGeneration;
+      request = loadRenderTexture(resourceClient, url).then(texture => {
+        if (this.isDisposed || generation !== this.textureGeneration || !this.desiredTextureUrls.has(url)
+            || this.texturePromises.get(url) !== request) {
+          texture.dispose();if (this.texturePromises.get(url) === request) this.texturePromises.delete(url);return null;
+        }
+        this.texturePayloads.set(url, texture);return texture;
+      }).catch(error => { if (this.texturePromises.get(url) === request) this.texturePromises.delete(url);throw error; });
+      this.texturePromises.set(url, request);
+    }
+    return request;
+  }
+
+  #pruneViewTextures() {
+    for (const [url, texture] of this.texturePayloads) if (!this.desiredTextureUrls.has(url)) {
+      texture.dispose();this.texturePayloads.delete(url);this.texturePromises.delete(url);
+    }
+  }
+
   #applyColliderPayload(payload) {
     if (!payload?.objectId) {
       return;
@@ -2403,16 +2485,17 @@ export class ThreeRenderViewport {
     if (instance.geometryKind === RenderGeometryKind.mesh) {
       const materialOptions = {
         color: new THREE.Color(color.r / 255, color.g / 255, color.b / 255),
-        transparent: color.a < 1,
-        opacity: Math.max(0.08, color.a),
-        depthWrite: color.a >= 1,
+        map: this.texturePayloads.get(materialResource?.baseColorTextureUrl) ?? null,
+        transparent: color.a < 1 || Boolean(materialResource?.baseColorTextureUrl),
+        opacity: Math.max(materialResource?.baseColorTextureUrl ? 0 : 0.08, color.a),
+        depthWrite: color.a >= 1 && !materialResource?.baseColorTextureUrl,
         side: THREE.DoubleSide,
         vertexColors: meshColor == null && Boolean(hasVertexColors),
         polygonOffset: instance.meshEdges === true,
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
       };
-      return new THREE.MeshPhongMaterial(materialOptions);
+      return materialResource?.materialFlags & 1 ? new THREE.MeshBasicMaterial(materialOptions) : new THREE.MeshPhongMaterial(materialOptions);
     }
     return new THREE.LineBasicMaterial({
       color: new THREE.Color(color.r / 255, color.g / 255, color.b / 255),
@@ -2431,6 +2514,8 @@ export class ThreeRenderViewport {
       instance.meshEdges === true,
       this.#meshColorRGBA(instance) ?? "",
       this.materialPayloads.get(instance.materialId)?.dataVersion ?? "",
+      this.materialPayloads.get(instance.materialId)?.baseColorTextureUrl ?? "",
+      this.materialPayloads.get(instance.materialId)?.materialFlags ?? "",
     ].join("|");
   }
 
@@ -2618,6 +2703,9 @@ export class ThreeRenderViewport {
     this.#clearHover();
     this.clearGhostMesh();
     this.#clearViewContent();
+    this.textureGeneration++;this.desiredTextureUrls.clear();
+    for (const texture of this.texturePayloads.values()) texture.dispose();
+    this.texturePayloads.clear();this.texturePromises.clear();
     for (const object of this.colliderObjects.values()) {
       object.parent?.remove(object);
       disposeObject3D(object);

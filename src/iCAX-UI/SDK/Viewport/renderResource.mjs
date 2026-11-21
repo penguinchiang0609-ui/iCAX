@@ -1,6 +1,7 @@
 export const RenderResourceIdentifiers = Object.freeze({
   geometry: "ICRG",
   material: "ICRM",
+  texture: "ICRT",
 });
 export const RenderGeometryKind = Object.freeze({ mesh: 1, polyline: 2, toolpath: 3 });
 export const RenderFlags = Object.freeze({
@@ -62,6 +63,9 @@ async function parseRenderResourceResponse(response, reference) {
   }
   if (identifier === RenderResourceIdentifiers.material) {
     return { type: "material", url, version, data: parseRenderMaterialResource(buffer) };
+  }
+  if (identifier === RenderResourceIdentifiers.texture) {
+    return { type: "texture", url, version, data: parseRenderTextureResource(buffer) };
   }
   throw new Error(`Unsupported render resource identifier: ${identifier}`);
 }
@@ -184,6 +188,18 @@ export function parseRenderMaterialResource(buffer) {
     materialFlags: readUint32Field(view, root, 8, 0),
     baseColorTextureUrl: readStringField(view, root, 9) ?? "",
   });
+}
+
+export function parseRenderTextureResource(buffer) {
+  const { view, root } = openFlatBuffer(buffer, RenderResourceIdentifiers.texture);
+  const schemaVersion = readUint32Field(view, root, 0, 1);
+  if (schemaVersion !== 1) throw new Error(`Unsupported render texture schema: ${schemaVersion}`);
+  const mimeType = readStringField(view, root, 2), pixelWidth = readUint32Field(view, root, 3, 0), pixelHeight = readUint32Field(view, root, 4, 0);
+  const vector = readVector(view, root, 5);
+  if (!mimeType?.startsWith("image/") || !pixelWidth || !pixelHeight || !vector?.length) throw new Error("Invalid encoded render texture");
+  ensureRange(view, vector.data, vector.length, "encoded image vector");
+  return Object.freeze({ schemaVersion, dataVersion: readUint64FieldText(view, root, 1, "0"), mimeType,
+    pixelWidth, pixelHeight, encodedImage: new Uint8Array(view.buffer, view.byteOffset + vector.data, vector.length) });
 }
 
 function makeLineSegmentPositions(points, ranges) {

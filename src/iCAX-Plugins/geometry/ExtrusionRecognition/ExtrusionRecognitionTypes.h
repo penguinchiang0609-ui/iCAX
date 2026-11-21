@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -126,6 +127,7 @@ namespace iCAX::ExtrusionRecognition
     };
 
     struct SSectionWireEdge;
+    struct _EXTRUSION_RECOGNITION_EXP SSectionContourFit;
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireOptions final
     {
         std::size_t nMaximumConcurrency = 0;
@@ -141,6 +143,8 @@ namespace iCAX::ExtrusionRecognition
         std::function<void(const std::string&)> Progress;
         // Optional neutral-geometry diagnostic; never changes candidate acceptance.
         std::function<void(const std::string&,const std::vector<SSectionWireEdge>&)> CandidateAudit;
+        // Attach fitted analysis supports while preserving the exact contour.
+        bool bFitContourForPartition = false;
     };
 
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireEdge final
@@ -176,6 +180,7 @@ namespace iCAX::ExtrusionRecognition
         std::vector<SSectionWire> Wires;
         std::vector<std::uint64_t> SideFaceIds;
         std::vector<std::string> Diagnostics;
+        std::shared_ptr<const SSectionContourFit> ContourFit;
     };
 
     enum class EFeatureCutMode : std::uint8_t

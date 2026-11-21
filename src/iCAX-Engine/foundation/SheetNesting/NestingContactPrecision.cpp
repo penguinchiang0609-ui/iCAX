@@ -1,5 +1,6 @@
 #include "SheetNestingContactPrecision.h"
 #include "NestingInternal.h"
+#include "NestingAxisSafety.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -60,21 +61,43 @@ ContactPrecisionResult RefineContactPrecision(const Problem& p,const Result& inp
     const auto stop=[&]{return (opt.Cancel&&opt.Cancel())||std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count()>=opt.TimeLimitSeconds;};
     if(!std::isfinite(opt.Clearance)||!std::isfinite(opt.MaxAxisShift)||!std::isfinite(opt.TimeLimitSeconds)||opt.Clearance<=0||opt.MaxAxisShift<=0||opt.TimeLimitSeconds<=0||!opt.MaxSweeps){out.State=ContactPrecisionStatus::InvalidInput;out.Diagnostic="Invalid refinement budget or dimensions.";return out;}
     const auto valid=Validate(p,input);if(!valid.Valid){out.State=ContactPrecisionStatus::InvalidInput;out.Diagnostic="Input layout failed native validation.";return out;}
-    if(p.Stocks.size()!=1||input.Layouts.size()!=1||p.PartGap!=0){out.Diagnostic="Only a single polygon sheet with zero gap is supported.";return out;}
+    if(input.Layouts.size()>1)
+    {
+        auto combined=input;bool changed=false;std::size_t sweeps=0;
+        for(std::size_t board=0;board<input.Layouts.size();++board)
+        {
+            if(stop()||sweeps>=opt.MaxSweeps){out.State=ContactPrecisionStatus::LimitReached;out.Diagnostic="Whole-layout precision budget exhausted; original retained.";return out;}
+            auto local=input;local.Layouts={input.Layouts[board]};local.Remaining.clear();std::map<std::string,std::size_t> counts;
+            for(const auto& q:local.Layouts[0].Placements)++counts[q.PartID];
+            for(const auto& part:p.Parts)if(counts[part.ID]<part.Quantity)local.Remaining.push_back({part.ID,part.Quantity-counts[part.ID]});
+            local.State=local.Remaining.empty()?Status::Complete:Status::Partial;
+            auto budget=opt;budget.TimeLimitSeconds-=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();budget.MaxSweeps-=sweeps;
+            const auto refined=RefineContactPrecision(p,local,budget);
+            if(refined.State!=ContactPrecisionStatus::Applied&&refined.State!=ContactPrecisionStatus::AlreadySeparated)
+            {out.State=refined.State;out.Diagnostic="Whole-layout precision repair retained its original: "+refined.Diagnostic;return out;}
+            combined.Layouts[board]=refined.Output.Layouts[0];changed|=refined.State==ContactPrecisionStatus::Applied;
+            out.Constraints+=refined.Constraints;sweeps+=refined.Sweeps;out.MaximumShift=std::max(out.MaximumShift,refined.MaximumShift);out.MaximumResidual=std::max(out.MaximumResidual,refined.MaximumResidual);
+        }
+        if(!Validate(p,combined).Valid){out.State=ContactPrecisionStatus::Infeasible;return out;}
+        out.Sweeps=sweeps;out.State=changed?ContactPrecisionStatus::Applied:ContactPrecisionStatus::AlreadySeparated;out.Output=std::move(combined);out.Diagnostic="Original identities and nominal clearances verified on every physical sheet.";return out;
+    }
+    if(input.Layouts.size()!=1){out.Diagnostic="A nonempty polygon layout is required.";return out;}
     const auto& old=input.Layouts[0];const auto n=old.Placements.size();if(n==0||n>128){out.Diagnostic="Placement count outside supported range.";return out;}
     std::map<std::string,std::size_t> ids;for(std::size_t i=0;i<p.Parts.size();++i){const auto& shape=p.Parts[i].Geometry;if(shape.Radius>0||!shape.Holes.empty()){out.Diagnostic="Circles and holes are unsupported.";return out;}ids.emplace(p.Parts[i].ID,i);}
     std::vector<std::vector<Triangle>> shapes(n);std::vector<Box> bounds(n);std::vector<double> low(2*n),high(2*n),v(2*n),correction(2*n),best=v;
-    const auto& stock=p.Stocks[0];const double unit=opt.Clearance;
+    const auto stockIt=std::find_if(p.Stocks.begin(),p.Stocks.end(),[&](const Stock& s){return s.ID==old.StockID;});
+    if(stockIt==p.Stocks.end()){out.State=ContactPrecisionStatus::InvalidInput;return out;}
+    const auto& stock=*stockIt;const double unit=opt.Clearance,required=p.PartGap+unit;
     for(std::size_t i=0;i<n;++i){if(stop()){out.State=ContactPrecisionStatus::LimitReached;return out;}
         const auto it=ids.find(old.Placements[i].PartID);if(it==ids.end()||!triangulate(p.Parts[it->second].Geometry,old.Placements[i].Transform,shapes[i])){out.Diagnostic="Polygon triangulation unsupported.";return out;}
         const auto b=Bounds(p.Parts[it->second].Geometry,old.Placements[i].Transform);bounds[i]={b.X,b.Y,b.X+b.Width,b.Y+b.Height};
         low[i]=std::max(-opt.MaxAxisShift,p.EdgeMargin-b.X)/unit;high[i]=std::min(opt.MaxAxisShift,stock.Width-p.EdgeMargin-b.X-b.Width)/unit;
         low[n+i]=std::max(-opt.MaxAxisShift,p.EdgeMargin-b.Y)/unit;high[n+i]=std::min(opt.MaxAxisShift,stock.Height-p.EdgeMargin-b.Y-b.Height)/unit;
         if(low[i]>high[i]||low[n+i]>high[n+i]){out.State=ContactPrecisionStatus::Infeasible;out.Diagnostic="No permitted board-bound translation.";return out;}}
-    const double cutoff=2*std::sqrt(2.)*opt.MaxAxisShift+2*unit;std::vector<Row> rows;
+    const double cutoff=p.PartGap+2*std::sqrt(2.)*opt.MaxAxisShift+2*unit;std::vector<Row> rows;
     for(std::size_t i=0;i<n&&!stop();++i)for(std::size_t j=0;j<i&&!stop();++j){if(far(bounds[i],bounds[j],cutoff))continue;
         for(const auto& a:shapes[i])for(const auto& b:shapes[j]){if(stop()){out.State=ContactPrecisionStatus::LimitReached;out.Diagnostic="Constraint generation interrupted.";return out;}if(far(box(a),box(b),cutoff))continue;const auto s=separation(a,b);
-            if(s[0]<cutoff){rows.push_back({i,j,s[1],s[2],(s[0]-unit)/unit,0});if(rows.size()>12000){out.State=ContactPrecisionStatus::LimitReached;out.Diagnostic="Contact constraint limit exceeded.";return out;}}}}
+            if(s[0]<cutoff){rows.push_back({i,j,s[1],s[2],(s[0]-required)/unit,0});if(rows.size()>12000){out.State=ContactPrecisionStatus::LimitReached;out.Diagnostic="Contact constraint limit exceeded.";return out;}}}}
     if(stop()){out.State=ContactPrecisionStatus::LimitReached;out.Diagnostic="Constraint generation interrupted.";return out;}
     out.Constraints=rows.size();if(rows.empty()){out.State=ContactPrecisionStatus::AlreadySeparated;out.Diagnostic="No nearby polygon pairs.";return out;}
     double bestResidual=std::numeric_limits<double>::infinity();
@@ -91,6 +114,18 @@ ContactPrecisionResult RefineContactPrecision(const Problem& p,const Result& inp
     auto candidate=input;
     for(std::size_t i=0;i<n;++i){const double x=best[i]*unit,y=best[n+i]*unit;auto& pose=candidate.Layouts[0].Placements[i].Transform;pose.X+=x;pose.Y+=y;out.MaximumShift=std::max(out.MaximumShift,std::hypot(x,y));}
     if(!Validate(p,candidate).Valid){out.State=ContactPrecisionStatus::Infeasible;out.Diagnostic="Refined layout failed native validation; original retained.";return out;}
+    for(std::size_t i=0;i<n;++i)
+    {
+        const auto& q=candidate.Layouts[0].Placements[i];const auto geometry=AxisSafety::Make(p.Parts[ids.at(q.PartID)].Geometry,q.Transform);
+        if(AxisSafety::Containment(geometry,stock.Width,stock.Height,p.EdgeMargin)!=AxisSafety::Verdict::Safe)
+        {out.State=ContactPrecisionStatus::Infeasible;out.Diagnostic="Nominal board clearance was not proved; original retained.";return out;}
+        for(std::size_t j=0;j<i;++j)
+        {
+            const auto& other=candidate.Layouts[0].Placements[j];
+            if(AxisSafety::Pair(geometry,AxisSafety::Make(p.Parts[ids.at(other.PartID)].Geometry,other.Transform),p.PartGap,p.AllowCommonEdges,p.Tolerance)!=AxisSafety::Verdict::Safe)
+            {out.State=ContactPrecisionStatus::Infeasible;out.Diagnostic="Nominal original-material distance was not proved; original retained.";return out;}
+        }
+    }
     out.State=ContactPrecisionStatus::Applied;out.Output=std::move(candidate);out.Diagnostic="Conservative polygon separation applied; independent exact geometry validation remains advisable.";return out;
 }
 namespace {

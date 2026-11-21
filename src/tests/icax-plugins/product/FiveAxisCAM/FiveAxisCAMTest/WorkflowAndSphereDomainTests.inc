@@ -1,6 +1,6 @@
 namespace {
     Map WorkflowRequest(Scene& scene,const Map& part,Text action){
-        auto request=ActivateRequest(scene,part);request["action"]=action;if(action=="create")request["name"]=Text("第二装夹");return request;
+        auto request=ActivateRequest(scene,part);request["action"]=action;if(action=="create"){request["name"]=Text("第二装夹");request["machineType"]=Text("HeadHead");}return request;
     }
 }
 TEST(FiveAxisWorkflow, ImportedCreatedAndCopiedSetupsAllowCamWithoutConfirmation)

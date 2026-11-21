@@ -1082,7 +1082,10 @@ namespace iCAX::TubeNesting
                 else
                 {
                     const auto& _Pose = Table_.Poses[_Entry.PoseMetadataIndex];
-                    if (!std::isfinite(_Pose.RelativeRotationRadians)
+                    const bool _UsablePoseStatus = _Pose.PoseStatus == PairPoseStatus::BestFeasible
+                        || _Pose.PoseStatus == PairPoseStatus::CertifiedEpsilonOptimal
+                        || _Pose.PoseStatus == PairPoseStatus::BudgetExhausted;
+                    const bool _InvalidPose = !std::isfinite(_Pose.RelativeRotationRadians)
                         || !std::isfinite(_Pose.ContinuousSeparationUpper)
                         || !std::isfinite(_Pose.ContinuousSeparationLower)
                         || !std::isfinite(_Pose.OptimalityGap)
@@ -1090,11 +1093,38 @@ namespace iCAX::TubeNesting
                         || _Pose.ContinuousSeparationUpper
                             < _Pose.ContinuousSeparationLower
                         || _Pose.OptimalityGap < 0.0
-                        || static_cast<unsigned>(_Pose.PoseStatus)
-                            > static_cast<unsigned>(PairPoseStatus::BudgetExhausted)
+                        || !_UsablePoseStatus
                         || static_cast<unsigned>(_Pose.SourceQuality)
-                            > static_cast<unsigned>(ProfileSourceQuality::NumericOnly))
+                            > static_cast<unsigned>(ProfileSourceQuality::NumericOnly);
+                    if (_InvalidPose)
                         _AddDiagnostic("pair-table contains invalid pose metadata");
+                    else
+                    {
+                        // A feasible edge is consumed as the actual start
+                        // displacement L_A - saving. It must retain at least
+                        // the integer separation certified by its pose. Extra
+                        // process loss may make this displacement larger, so
+                        // equality is deliberately not required.
+                        const auto _LengthA = Table_.Types[_TypeA].MaximumLength;
+                        if (_LengthA > 0
+                            && _Entry.NetSaving > _LengthA - _Pose.RequiredSeparation)
+                            _AddDiagnostic("pair-table saving understates its required pose separation");
+
+                        // Check the conservative quantization with an integer
+                        // comparison. Converting RequiredSeparation to double
+                        // first could hide a one-quantum shortage above 2^53.
+                        const double _RoundedUpper = std::ceil(
+                            (std::max)(0.0, _Pose.ContinuousSeparationUpper));
+                        if (_RoundedUpper >= static_cast<double>(
+                                (std::numeric_limits<Length>::max)())
+                            || _Pose.RequiredSeparation < static_cast<Length>(_RoundedUpper))
+                            _AddDiagnostic("pair-table integer separation understates its continuous upper bound");
+
+                        const double _IntervalGap = _Pose.ContinuousSeparationUpper
+                            - _Pose.ContinuousSeparationLower;
+                        if (!std::isfinite(_IntervalGap) || _Pose.OptimalityGap < _IntervalGap)
+                            _AddDiagnostic("pair-table optimality gap understates its pose interval");
+                    }
                     if (_Entry.Status == PairEntryStatus::Certified
                         && (_Pose.PoseStatus
                                 != PairPoseStatus::CertifiedEpsilonOptimal

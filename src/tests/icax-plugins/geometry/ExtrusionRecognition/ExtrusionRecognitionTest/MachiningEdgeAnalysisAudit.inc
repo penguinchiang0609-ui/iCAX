@@ -69,6 +69,96 @@ TopoDS_Shape DetachedFaces(const TopoDS_Shape& shape,const bool reverseLast=fals
     }
     return result;
 }
+
+struct DetachedSkinFixture
+{
+    R::SSectionFaceClassificationResult Classification;
+    std::uint64_t MachiningEdgeId=0,SkinEdgeId=0,SkinFaceId=0;
+};
+
+DetachedSkinFixture ApproximateDetachedSkin(const bool bowed=false,const double extraMachiningGap=0)
+{
+    const auto skinPlane=Polygon({{0,0,0},{10,0,0},{10,0,10},{0,0,10}});
+    const auto skin=BRepBuilderAPI_NurbsConvert(skinPlane,true).Shape();
+    TopoDS_Face machining;
+    if(bowed)
+    {
+        TColgp_Array1OfPnt poles(1,3);poles(1)={0,0,0};poles(2)={0,2,5};poles(3)={0,0,10};
+        BRepBuilderAPI_MakeWire wire;wire.Add(BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(poles)).Edge());
+        for(const auto& endpoints:{std::pair{gp_Pnt(0,0,10),gp_Pnt(0,4,10)},
+            std::pair{gp_Pnt(0,4,10),gp_Pnt(0,4,0)},std::pair{gp_Pnt(0,4,0),gp_Pnt(0,0,0)}})
+            wire.Add(BRepBuilderAPI_MakeEdge(endpoints.first,endpoints.second).Edge());
+        machining=BRepBuilderAPI_MakeFace(wire.Wire()).Face();
+    }
+    else machining=Polygon({{0,0,0},{0,4,0},{0,4,10},{0,0,10}});
+    BRep_Builder builder;TopoDS_Compound pair;builder.MakeCompound(pair);
+    builder.Add(pair,machining);builder.Add(pair,skin);
+    DetachedSkinFixture fixture;fixture.Classification=AllMachining(pair);
+    auto& classification=fixture.Classification;
+    classification.MachiningFaceIds={classification.SplitGeometry.Faces.front().Id};
+    fixture.SkinFaceId=classification.SplitGeometry.Faces.back().Id;
+    classification.NonMachiningFaceIds={fixture.SkinFaceId};
+    const auto built=O::ReconstructOpenCascadeShape(classification.SplitGeometry);
+    if(!built.bOK||BRepAdaptor_Surface(built.Faces.at(fixture.SkinFaceId)).GetType()!=GeomAbs_BSplineSurface)
+        throw std::runtime_error("Detached source skin fixture must retain its BSpline surface");
+    for(auto& edge:classification.SplitGeometry.Edges)
+    {
+        BRepAdaptor_Curve native(built.Edges.at(edge.Id));
+        const auto a=native.Value(native.FirstParameter()),b=native.Value(native.LastParameter());
+        if(std::max(std::abs(a.X()),std::abs(b.X()))>1e-8
+            ||std::max(std::abs(a.Y()),std::abs(b.Y()))>1e-8
+            ||std::abs(std::abs(a.Z()-b.Z())-10)>1e-8)continue;
+        bool machiningOwner=false;
+        for(const auto& wire:classification.SplitGeometry.Wires)
+            if(std::find(classification.SplitGeometry.Faces.front().WireIds.begin(),
+                classification.SplitGeometry.Faces.front().WireIds.end(),wire.Id)
+                !=classification.SplitGeometry.Faces.front().WireIds.end())
+                for(const auto& use:wire.Coedges)machiningOwner=machiningOwner||use.EdgeId==edge.Id;
+        if(machiningOwner)fixture.MachiningEdgeId=edge.Id;else fixture.SkinEdgeId=edge.Id;
+        const double displacement=.006+(machiningOwner?extraMachiningGap:0);
+        for(auto& curve:classification.SplitGeometry.Curves3)if(curve.Id==edge.Curve3Id)
+        {
+            if(auto line=std::get_if<G::Line3>(&curve.Geometry))line->Axis.Location.Y+=displacement;
+            else if(auto spline=std::get_if<G::BSpline3>(&curve.Geometry))for(auto& pole:spline->Poles)pole.Y+=displacement;
+            else if(auto nurbs=std::get_if<G::NURBS3>(&curve.Geometry))for(auto& pole:nurbs->Poles)pole.Y+=displacement;
+            else if(auto bezier=std::get_if<G::Bezier3>(&curve.Geometry))for(auto& pole:bezier->Poles)pole.Y+=displacement;
+            else throw std::runtime_error("Unsupported detached source fixture curve");
+        }
+        // Only the source 3D approximation changes. Both owners retain their
+        // original pcurves; the BSpline source skin remains exactly at Y=0.
+        edge.Tolerance=.01;
+    }
+    if(!fixture.MachiningEdgeId||!fixture.SkinEdgeId||fixture.MachiningEdgeId==fixture.SkinEdgeId)
+        throw std::runtime_error("Detached source fixture must have two independent coedges");
+    classification.MachiningGeometry=R::detail::SectionFaceSubset(classification.SplitGeometry,classification.MachiningFaceIds);
+    classification.NonMachiningGeometry=R::detail::SectionFaceSubset(classification.SplitGeometry,classification.NonMachiningFaceIds);
+    return fixture;
+}
+
+DetachedSkinFixture RefinedNativeSplineSkin(const double extraMachiningGap)
+{
+    auto fixture=ApproximateDetachedSkin(false,extraMachiningGap);
+    auto& classification=fixture.Classification;
+    const auto built=O::ReconstructOpenCascadeShape(classification.SplitGeometry);
+    for(auto& edge:classification.SplitGeometry.Edges)
+    {
+        if(edge.Id!=fixture.MachiningEdgeId&&edge.Id!=fixture.SkinEdgeId)continue;
+        double first=0.,last=0.;const auto support=BRep_Tool::Curve(built.Edges.at(edge.Id),first,last);
+        const Handle(Geom_Curve) finite=new Geom_TrimmedCurve(support,first,last);
+        auto spline=GeomConvert::CurveToBSplineCurve(finite);
+        if(edge.Id==fixture.MachiningEdgeId)
+        {
+            spline->IncreaseDegree(3);
+            spline->InsertKnot(first+(last-first)*.37,1,0.,false);
+        }
+        const auto record=O::ConvertOpenCascadeShapeToBRep(BRepBuilderAPI_MakeEdge(spline,first,last).Edge(),"","",.001);
+        if(record.Curves3.size()!=1)throw std::runtime_error("Native spline certificate fixture must retain one unchanged curve reference");
+        for(auto& curve:classification.SplitGeometry.Curves3)if(curve.Id==edge.Curve3Id)curve.Geometry=record.Curves3.front().Geometry;
+    }
+    classification.MachiningGeometry=R::detail::SectionFaceSubset(classification.SplitGeometry,classification.MachiningFaceIds);
+    classification.NonMachiningGeometry=R::detail::SectionFaceSubset(classification.SplitGeometry,classification.NonMachiningFaceIds);
+    return fixture;
+}
 }
 
 int MachiningEdgeAnalysisAudit(const fs::path& directory)
@@ -351,6 +441,71 @@ int MachiningEdgeAnalysisAudit(const fs::path& directory)
                 &&edge.bSourceSkinMembership&&edge.MaxSkinDistance>.005;}),
             "shared source skin attribution retains the original approximate deviation");
 
+        const auto detachedSkin=ApproximateDetachedSkin();
+        const auto detachedBytes=G::Persistence::Serialize(detachedSkin.Classification.SplitGeometry);
+        const auto detachedSkinResult=work.Run(detachedSkin.Classification,section);
+        check(detachedSkinResult.bSuccess&&std::any_of(detachedSkinResult.Edges.begin(),detachedSkinResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId==detachedSkin.MachiningEdgeId&&edge.bSkinRelationValid
+                &&edge.SkinRelation==R::ESkinRelation::OnSkin&&edge.bSourceSkinMembership
+                &&std::find(edge.SourceSkinFaceIds.begin(),edge.SourceSkinFaceIds.end(),detachedSkin.SkinFaceId)!=edge.SourceSkinFaceIds.end()
+                &&edge.MaxSkinDistance>.005;})
+            &&detachedBytes==G::Persistence::Serialize(detachedSkin.Classification.SplitGeometry),
+            "detached coincident source coedges inherit BSpline skin ownership while retaining 0.006 mm approximation and unchanged CAD");
+
+        const auto bowedSkin=ApproximateDetachedSkin(true);
+        const auto bowedSkinResult=work.Run(bowedSkin.Classification,section);
+        check(bowedSkinResult.bSuccess&&std::any_of(bowedSkinResult.Edges.begin(),bowedSkinResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId==bowedSkin.MachiningEdgeId&&edge.MaxSkinDistance>.5;})
+            &&std::all_of(bowedSkinResult.Edges.begin(),bowedSkinResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId!=bowedSkin.MachiningEdgeId
+                ||(edge.SkinRelation!=R::ESkinRelation::OnSkin&&!edge.bSourceSkinMembership);}),
+            "matching detached skin endpoints do not attribute a curve that bows into the wall interior");
+
+        for(const double gap:{0.,.0005,.02})
+        {
+            const auto fixture=RefinedNativeSplineSkin(gap);
+            const auto original=G::Persistence::Serialize(fixture.Classification.SplitGeometry);
+            const auto analyzed=work.Run(fixture.Classification,section);
+            bool membership=false,certificate=false,retainedDeviation=false;
+            for(const auto& edge:analyzed.Edges)if(edge.EdgeId==fixture.MachiningEdgeId)
+            {
+                membership=membership||edge.bSourceSkinMembership;
+                certificate=certificate||(edge.SkinRelation==R::ESkinRelation::OnSkin
+                    &&edge.SkinReason.find("source-skin-native-bspline-whole-domain-certificate")!=std::string::npos
+                    &&edge.SkinReason.find("certificate-bound-mm=")!=std::string::npos
+                    &&edge.SkinReason.find("accepted-declared-tolerance-mm=")!=std::string::npos);
+                retainedDeviation=retainedDeviation||edge.MaxSkinDistance>.005;
+            }
+            check(analyzed.bSuccess&&original==G::Persistence::Serialize(fixture.Classification.SplitGeometry),
+                "native whole-domain skin certificate preserves original CAD at gap "+std::to_string(gap));
+            check(gap<=.01?(membership&&certificate&&retainedDeviation):!membership,
+                gap==0.?"exact degree elevation and knot subdivision retain detached skin ownership":
+                gap<.01?"whole-domain native spline bound accepts declared CAD approximation and retains ideal deviation":
+                    "native spline correspondence exceeding either declared edge tolerance is rejected");
+        }
+
+        const auto nearSkin=ApproximateDetachedSkin(false,.0005);
+        const auto nearSkinResult=work.Run(nearSkin.Classification,section);
+        check(nearSkinResult.bSuccess&&std::any_of(nearSkinResult.Edges.begin(),nearSkinResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId==nearSkin.MachiningEdgeId&&edge.MaxSkinDistance>.006
+                &&edge.SkinRelation==R::ESkinRelation::OnSkin&&edge.bSourceSkinMembership
+                &&edge.SkinReason.find("native-line-original-parameter-degree-one")!=std::string::npos;}),
+            "native line whole-domain provenance accepts a 0.0005 mm correspondence within both original 0.01 mm edge tolerances and retains ideal-skin deviation");
+        const auto distantLine=ApproximateDetachedSkin(false,.02);
+        const auto distantLineResult=work.Run(distantLine.Classification,section);
+        check(distantLineResult.bSuccess&&std::all_of(distantLineResult.Edges.begin(),distantLineResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId!=distantLine.MachiningEdgeId||!edge.bSourceSkinMembership;}),
+            "native line provenance rejects a 0.02 mm correspondence exceeding either original 0.01 mm edge tolerance");
+        auto strictTargetLine=ApproximateDetachedSkin(false,.0005);
+        for(auto& edge:strictTargetLine.Classification.SplitGeometry.Edges)
+            if(edge.Id==strictTargetLine.MachiningEdgeId)edge.Tolerance=1e-7;
+        strictTargetLine.Classification.MachiningGeometry=R::detail::SectionFaceSubset(
+            strictTargetLine.Classification.SplitGeometry,strictTargetLine.Classification.MachiningFaceIds);
+        const auto strictTargetLineResult=work.Run(strictTargetLine.Classification,section);
+        check(strictTargetLineResult.bSuccess&&std::all_of(strictTargetLineResult.Edges.begin(),strictTargetLineResult.Edges.end(),[&](const auto& edge)
+            {return edge.EdgeId!=strictTargetLine.MachiningEdgeId||!edge.bSourceSkinMembership;}),
+            "native line provenance uses the stricter original target tolerance instead of the looser 0.01 mm witness tolerance");
+
         const auto triangle=Polygon({{0,0,0},{0,5,5},{0,10,0}});
         const auto triangleResult=work.Run(AllMachining(triangle),section);
         check(triangleResult.bSuccess&&SkinCount(triangleResult,R::ESkinRelation::PartialOnSkin)==2
@@ -402,6 +557,36 @@ int MachiningEdgeAnalysisAudit(const fs::path& directory)
             &&std::all_of(cylinderResult.Edges.begin(),cylinderResult.Edges.end(),[](const auto& edge)
                 {return edge.bSkinRelationValid&&edge.bConvexityValid;}),
             "a parametric same-face seam stays in source topology and is excluded from physical edge enum pairs");
+
+        // A periodic inner wall owns a reversed material face but its stored
+        // wire/coedges still belong to the unflipped support frame. Mixing
+        // those frames makes WireExplorer stop at the twice-used seam.
+        TopoDS_Face reversedCylinder;
+        const auto cylinderShape=BRepPrimAPI_MakeCylinder(2,5).Shape();
+        for(TopExp_Explorer it(cylinderShape,TopAbs_FACE);it.More();it.Next())
+            if(BRepAdaptor_Surface(TopoDS::Face(it.Current())).GetType()==GeomAbs_Cylinder)
+                reversedCylinder=TopoDS::Face(it.Current().Oriented(TopAbs_REVERSED));
+        const auto reversedCylinderClass=AllMachining(reversedCylinder);
+        const auto cylinderBytes=G::Persistence::Serialize(reversedCylinderClass.SplitGeometry);
+        const auto reversedCylinderResult=work.Run(reversedCylinderClass,section);
+        std::multiset<std::pair<std::uint64_t,bool>> originalCylinderUses,analyzedCylinderUses;
+        for(const auto& wire:reversedCylinderClass.SplitGeometry.Wires)
+            for(const auto& use:wire.Coedges)
+                originalCylinderUses.emplace(use.EdgeId,use.Orientation==G::ETopologyOrientation::Reversed);
+        bool cylinderWiresOrdered=true;
+        for(const auto& face:reversedCylinderResult.Faces)for(const auto& wire:face.Wires)
+        {
+            cylinderWiresOrdered=cylinderWiresOrdered&&wire.bOrdered;
+            for(const auto& group:wire.Groups)for(const auto& use:group.SourceUses)
+                analyzedCylinderUses.emplace(use.EdgeId,use.bReversed);
+        }
+        check(!reversedCylinder.IsNull()&&reversedCylinderClass.SplitGeometry.Faces.front().Orientation==G::ETopologyOrientation::Reversed
+            &&reversedCylinderResult.bSuccess&&reversedCylinderResult.bComplete&&cylinderWiresOrdered
+            &&originalCylinderUses.size()==4&&analyzedCylinderUses==originalCylinderUses
+            &&std::count_if(reversedCylinderResult.ExcludedEdges.begin(),reversedCylinderResult.ExcludedEdges.end(),[](const auto& edge)
+                {return edge.ConvexityReason=="parametric-same-face-seam";})==1
+            &&cylinderBytes==G::Persistence::Serialize(reversedCylinderClass.SplitGeometry),
+            "reversed periodic cylinder keeps all four support-oriented coedges including both seam uses without changing CAD");
 
         const auto shared=BRepBuilderAPI_MakeEdge(gp_Pnt(0,0,0),gp_Pnt(10,0,0)).Edge();
         BRep_Builder nonManifoldBuilder;TopoDS_Compound nonManifold;nonManifoldBuilder.MakeCompound(nonManifold);

@@ -58,6 +58,10 @@
 #include <GProp_GProps.hxx>
 #include <OpenCascadeResourceImport/GeometryFeatureAnalysisService.h>
 #include <OpenCascadeResourceImport/CurveEditingService.h>
+#include <OpenCascadeResourceImport/CadDocumentImportService.h>
+#include <Geom2dAPI_ProjectPointOnCurve.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <IntentToolpath/IntentToolpath.h>
 #include <IntentToolpath/EditableToolpathInternal.h>
 #include <bcrypt.h>
@@ -75,6 +79,7 @@
 #include <future>
 #include <GeometryServices/RigidMotionCollisionService.h>
 #include <Geom_BSplineSurface.hxx>
+#include <GeomAPI.hxx>
 #include <OpenCascadeResourceImport/CadBRepImportService.h>
 #include <OpenCascadeResourceImport/SectionPlateService.h>
 #include <OpenCascadeResourceImport/SectionPlateEditingService.h>
@@ -301,13 +306,13 @@ namespace five_axis_tests
     }
     // Machining tests explicitly prepare their setup. Import itself creates
     // only the independent workpiece, as in the product workflow.
-    Map AddSetup(Scene& scene,Map ids)
+    Map AddSetup(Scene& scene,Map ids,const Text& machineType="HeadHead")
     {
         const auto setup=Invoke(&scene,"CamSetup","Manage",{{"commandId",iCAX::Data::to_string(iCAX::Data::GenerateNewUUID())},
-            {"expected",Read(scene).at("expected")},{"placementId",ids.at("placementId")},{"action",Text("create")},{"name",Text("测试装夹")}});
+            {"expected",Read(scene).at("expected")},{"placementId",ids.at("placementId")},{"action",Text("create")},{"name",Text("测试装夹")},{"machineType",machineType}});
         ids["setupId"]=setup.at("setupId");ids["placementId"]=setup.at("placementId");return ids;
     }
-    Map Imported(Scene& scene,const File& file){return AddSetup(scene,ImportedWorkpiece(scene,file));}
+    Map Imported(Scene& scene,const File& file,const Text& machineType="HeadHead"){return AddSetup(scene,ImportedWorkpiece(scene,file),machineType);}
     Map PlacementRequest(Scene& scene,const Map& ids)
     {
         return {{"commandId",iCAX::Data::to_string(iCAX::Data::GenerateNewUUID())}, {"expected",Read(scene).at("expected")},
@@ -765,6 +770,10 @@ TEST(FiveAxisDomain, PickingAndPlacementAcceptSdkIntegers)
 #include "RapidCollisionDiskCacheTests.inc"
 #include "FixtureLibraryDomainTests.inc"
 #include "HeadInstanceDomainTests.inc"
+#include "HeadPreviewDomainTests.inc"
+#include "HeadScopeDomainTests.inc"
+#include "OperationDomainTests.inc"
+#include "HeadMachineCompatibilityDomainTests.inc"
 #include "FullHeadCollisionTests.inc"
 #include "FixtureJoineryTests.inc"
 #include "FixtureSurfaceTests.inc"
@@ -970,6 +979,12 @@ TEST(FiveAxisBridge, DISABLED_Serve)
                     {"generatedDataPresent",!setup->GetGeneratedToolpaths().empty()},{"rapidDataPresent",!setup->GetGeneratedRapidPaths().empty()}};
             }
             else if(action=="prepare-axis-test"){PrepareOrderPart(*scene);result=ReadStateProjection(*scene);}
+            else if(action=="new-project"){
+                const auto store=scene->FixtureLibraryStore;
+                auto created=std::make_unique<Scene>(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),false,true,true);
+                created->FixtureLibraryStore=store;InitializeScene(*created);BindFixtureLibraryStore(*created,store);BindBuiltinHeadSources(*created,InstalledHeadSources());
+                scene=std::move(created);machineHost=std::make_unique<AssetPlanHost>(scene->Project);result=ReadStateProjection(*scene);
+            }
             else if(action=="invoke")
             {
                 const auto method=request.at("method").To<Text>();const auto dot=method.find('.');
@@ -1027,6 +1042,9 @@ TEST(FiveAxisBridge, DISABLED_Serve)
                 if(request.contains("replayJournal")&&request.at("replayJournal").To<bool>())reopened->Database().ReplayOperationLog(path+".log","ICAX_FIVE_AXIS_CAM_QSAVE",1);
                 if(!request.contains("readBeforeAwake")||!request.at("readBeforeAwake").To<bool>())InitializeScene(*reopened);
                 else (void)ReadStateProjection(*reopened);
+                // Match initial/new-project fixtures: the installed manifest
+                // supplies this catalog; it is not persisted in an archive.
+                BindBuiltinHeadSources(*reopened,InstalledHeadSources());
                 scene=std::move(reopened);machineHost=std::make_unique<AssetPlanHost>(scene->Project);
                 result={{"projectId",iCAX::Data::to_string(scene->Project)},{"sceneId",iCAX::Data::to_string(scene->GetSceneID())}};
             }
@@ -1078,7 +1096,7 @@ TEST(FiveAxisBridge, DISABLED_Serve)
                 file.Save(saved,info,scene->Database(),scene->Resources());std::filesystem::remove(source.Path);
                 auto reopened=std::make_unique<Scene>(scene->Project,scene->GetSceneID(),false,true,true);
                 reopened->FixtureLibraryStore=scene->FixtureLibraryStore;
-                file.Open(saved,reopened->Database(),reopened->Resources());InitializeScene(*reopened);scene=std::move(reopened);result=ReadStateProjection(*scene);
+                file.Open(saved,reopened->Database(),reopened->Resources());InitializeScene(*reopened);BindBuiltinHeadSources(*reopened,InstalledHeadSources());scene=std::move(reopened);result=ReadStateProjection(*scene);
             }
             else throw std::invalid_argument("Unknown test action");
             response={{"id",requestID},{"ok",true},{"result",result}};

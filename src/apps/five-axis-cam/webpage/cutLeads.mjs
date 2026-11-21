@@ -1,4 +1,5 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import {toolpathLayerColor,syncToolpathLayerMaterials} from './toolpathLayers.mjs';
 import { escapeText as esc, escapeAttr as attr } from '../../_shared/workbench/utils/format.mjs';
 import { activeTool, workspaceState } from './workspaceModel.mjs';
@@ -201,11 +202,11 @@ export function disposeLeadOverlay(view){
 function updateLeadOverlay(view){
   const preview=currentLeadPreview(view);
   const compensated=currentCompensation(view),editing=isLeadTool(view)&&view.fiveAxisLeadsOpen;
-  const v=view.viewport;if(view.fiveLeadOverlay?.preview===preview&&view.fiveLeadOverlay?.viewport===v&&view.fiveLeadOverlay?.compensated===compensated&&view.fiveLeadOverlay?.editing===editing){syncToolpathLayerMaterials(view,view.fiveLeadOverlay.group);return;}
+  const v=view.viewport,frameKey=JSON.stringify((view.scene?.domain?.placements||[]).map(p=>[p.id,placementWorldMatrix(view,p).elements]));if(view.fiveLeadOverlay?.preview===preview&&view.fiveLeadOverlay?.viewport===v&&view.fiveLeadOverlay?.compensated===compensated&&view.fiveLeadOverlay?.editing===editing&&view.fiveLeadOverlay.frameKey===frameKey){syncToolpathLayerMaterials(view,view.fiveLeadOverlay.group);return;}
   disposeLeadOverlay(view);if(!v||!preview)return;const root=new THREE.Group();root.name='cut-leads';
   for(const item of preview.items){const placement=view.scene.domain.placements.find(p=>p.id===item.placementId);if(!placement)continue;
     if(!editing&&compensated.some(c=>c.intentId===item.intentId))continue;
-    const group=new THREE.Group(),source=v.sceneObjects?.get(placement.id);if(source){source.updateWorldMatrix(true,false);group.matrix.copy(source.matrixWorld);}else group.matrix.set(...placement.transform);group.matrixAutoUpdate=false;group.userData.toolpathLayerId=item.intentId;root.add(group);
+    const group=new THREE.Group(),source=v.sceneObjects?.get(placement.id);if(source){source.updateWorldMatrix(true,false);group.matrix.copy(source.matrixWorld);}else group.matrix.copy(placementWorldMatrix(view,placement));group.matrixAutoUpdate=false;group.userData.toolpathLayerId=item.intentId;root.add(group);
     if(item.closure?.points?.length){
       const isGap=item.closure.kind==='Gap',geometry=new THREE.BufferGeometry().setFromPoints(item.closure.points.map(p=>new THREE.Vector3(...p)));
       const material=isGap?new THREE.LineDashedMaterial({color:0x86929c,dashSize:.4,gapSize:.35,depthTest:false}):new THREE.LineBasicMaterial({color:0xef4141,depthTest:false});
@@ -217,5 +218,5 @@ function updateLeadOverlay(view){
       const p=lead.role==='LeadIn'?lead.points[0]:lead.points.at(-1),pointGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...p)]);
       const marker=new THREE.Points(pointGeometry,new THREE.PointsMaterial({color:line.material.color,size:7,sizeAttenuation:false,depthTest:false}));marker.renderOrder=46;marker.raycast=()=>{};group.add(marker);
     }
-  }v.scene.add(root);view.fiveLeadOverlay={group:root,preview,viewport:v,compensated,editing};syncToolpathLayerMaterials(view,root);
+  }v.scene.add(root);view.fiveLeadOverlay={group:root,preview,viewport:v,compensated,editing,frameKey};syncToolpathLayerMaterials(view,root);
 }

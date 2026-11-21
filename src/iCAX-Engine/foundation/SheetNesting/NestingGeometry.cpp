@@ -1,8 +1,10 @@
 #include "NestingInternal.h"
+#include "NestingAxisSafety.h"
 #include <clipper2/clipper.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 namespace iCAX::SheetNesting
 {
@@ -19,7 +21,7 @@ namespace
     bool Finite(Point p) { return std::isfinite(p.X) && std::isfinite(p.Y); }
     std::vector<Point> Ring(const std::vector<Point>& source, double tolerance = 0)
     {
-        auto result = source;
+        auto result = Detail::MaterialRing(source);
         if (result.size() > 1 && Distance(result.front(), result.back()) <= tolerance) result.pop_back();
         return result;
     }
@@ -32,6 +34,37 @@ namespace
             result += (static_cast<long double>(ring[i].X) - origin.X) * (static_cast<long double>(ring[i + 1].Y) - origin.Y)
                 - (static_cast<long double>(ring[i].Y) - origin.Y) * (static_cast<long double>(ring[i + 1].X) - origin.X);
         return static_cast<double>(result / 2);
+    }
+    // A separating projection certifies disjoint original material before the
+    // fixed-precision clipping path. In particular, rounding two touching
+    // oblique edges independently must not manufacture a thin intersection.
+    // This is only an early separation certificate: concave rings and holes
+    // still use the topology calculation whenever no such axis is found.
+    bool SeparatedOnEdges(const std::vector<Point>& edges,
+        const std::vector<Point>& a, const std::vector<Point>& b, double gap)
+    {
+        for (std::size_t i = 0; i < edges.size(); ++i)
+        {
+            const auto origin = edges[i], end = edges[(i + 1) % edges.size()];
+            const long double nx = -(static_cast<long double>(end.Y) - origin.Y);
+            const long double ny = static_cast<long double>(end.X) - origin.X;
+            if (nx == 0 && ny == 0) continue;
+            const auto range = [&](const std::vector<Point>& ring)
+            {
+                long double low = std::numeric_limits<long double>::infinity(), high = -low;
+                for (const auto q : ring)
+                {
+                    const auto projected = nx * (static_cast<long double>(q.X) - origin.X)
+                        + ny * (static_cast<long double>(q.Y) - origin.Y);
+                    low = std::min(low, projected); high = std::max(high, projected);
+                }
+                return std::pair(low, high);
+            };
+            const auto [al, ah] = range(a); const auto [bl, bh] = range(b);
+            const long double required = static_cast<long double>(gap) * std::hypot(nx, ny);
+            if (ah + required <= bl || bh + required <= al) return true;
+        }
+        return false;
     }
     double PointSegmentDistance(Point p, Point a, Point b)
     {
@@ -68,22 +101,49 @@ namespace
     bool SimpleRing(const std::vector<Point>& ring, double tolerance, std::string& error)
     {
         if (ring.size() < 3) { error = "polygon ring needs at least three vertices"; return false; }
-        for (std::size_t i = 0; i < ring.size(); ++i)
+        if (!AxisSafety::ArithmeticSupported())
+        { error = "polygon topology requires supported exact arithmetic"; return false; }
+        std::vector<AxisSafety::Vector> points;
+        points.reserve(ring.size());
+        for (const auto point : ring)
         {
-            const auto p = ring[i], q = ring[(i + 1) % ring.size()];
-            if (!Finite(p) || std::abs(p.X) > CoordinateLimit || std::abs(p.Y) > CoordinateLimit)
+            if (!Finite(point) || std::abs(point.X) > CoordinateLimit || std::abs(point.Y) > CoordinateLimit)
             { error = "polygon coordinates must be finite and within 1e7 mm"; return false; }
-            if (Distance(p, q) <= tolerance) { error = "polygon has a degenerate edge"; return false; }
-            const auto previous = ring[(i + ring.size() - 1) % ring.size()];
-            if (PointSegmentDistance(q, previous, p) <= tolerance)
-            { error = "polygon has a reversing or overlapping adjacent edge"; return false; }
-            for (std::size_t j = i + 1; j < ring.size(); ++j)
+            points.push_back({AxisSafety::Number(point.X), AxisSafety::Number(point.Y)});
+        }
+        try
+        {
+            for (std::size_t i = 0; i < ring.size(); ++i)
             {
-                if (j == i + 1 || (i == 0 && j + 1 == ring.size())) continue;
-                if (SegmentDistance(p, q, ring[j], ring[(j + 1) % ring.size()]) <= tolerance)
-                { error = "polygon ring self-intersects or touches itself"; return false; }
+                const auto next = (i + 1) % ring.size(), previous = (i + ring.size() - 1) % ring.size();
+                const auto p = ring[i], q = ring[next];
+                if (p.X == q.X && p.Y == q.Y) { error = "polygon has a degenerate edge"; return false; }
+                const auto& a = points[i]; const auto& b = points[next];
+                if (AxisSafety::OrientationSign(points[previous], a, b, true) == 0 &&
+                    AxisSafety::ProjectionSign(points[previous], a, b, a, true) > 0)
+                { error = "polygon has a reversing or overlapping adjacent edge"; return false; }
+                for (std::size_t j = i + 1; j < ring.size(); ++j)
+                {
+                    if (j == next || (i == 0 && j + 1 == ring.size())) continue;
+                    const auto end = (j + 1) % ring.size();
+                    const auto r = ring[j], s = ring[end];
+                    // Strict source-coordinate bounds preserve every nonzero gap and short edge.
+                    if (std::max(p.X, q.X) < std::min(r.X, s.X) || std::max(r.X, s.X) < std::min(p.X, q.X) ||
+                        std::max(p.Y, q.Y) < std::min(r.Y, s.Y) || std::max(r.Y, s.Y) < std::min(p.Y, q.Y)) continue;
+                    const auto& c = points[j]; const auto& d = points[end];
+                    const int ac = AxisSafety::OrientationSign(a, b, c, true), ad = AxisSafety::OrientationSign(a, b, d, true);
+                    const int ca = AxisSafety::OrientationSign(c, d, a, true), cb = AxisSafety::OrientationSign(c, d, b, true);
+                    if ((ac * ad < 0 && ca * cb < 0) ||
+                        (ac == 0 && AxisSafety::Between(c, a, b, true)) ||
+                        (ad == 0 && AxisSafety::Between(d, a, b, true)) ||
+                        (ca == 0 && AxisSafety::Between(a, c, d, true)) ||
+                        (cb == 0 && AxisSafety::Between(b, c, d, true)))
+                    { error = "polygon ring self-intersects or touches itself"; return false; }
+                }
             }
         }
+        catch (const AxisSafety::ArithmeticUncertainty&)
+        { error = "polygon topology could not be certified by exact arithmetic"; return false; }
         if (std::abs(SignedArea(ring)) <= tolerance * tolerance)
         { error = "polygon ring has zero area"; return false; }
         return true;
@@ -96,12 +156,147 @@ namespace
                 result = std::min(result, SegmentDistance(a[i], a[(i + 1) % a.size()], b[j], b[(j + 1) % b.size()]));
         return result;
     }
+    struct TopologyRing
+    {
+        std::vector<Point> Points;
+        std::vector<AxisSafety::EdgeBounds> Edges;
+        AxisSafety::EdgeBounds Bounds;
+        std::unique_ptr<AxisSafety::EdgeIndex> Index;
+        double Scale=1;
+        explicit TopologyRing(std::vector<Point> points,bool filtered):Points(std::move(points))
+        {
+            if(!filtered||Points.empty())return;
+            Bounds={{Points.front().X,Points.front().X},{Points.front().Y,Points.front().Y},true};
+            Edges.reserve(Points.size());
+            for(std::size_t i=0;i<Points.size();++i)
+            {
+                const auto p=Points[i],q=Points[(i+1)%Points.size()];
+                const bool supported=Finite(p)&&Finite(q)&&std::abs(p.X)<=CoordinateLimit&&std::abs(p.Y)<=CoordinateLimit&&
+                    std::abs(q.X)<=CoordinateLimit&&std::abs(q.Y)<=CoordinateLimit;
+                Edges.push_back({{std::min(p.X,q.X),std::max(p.X,q.X)},
+                    {std::min(p.Y,q.Y),std::max(p.Y,q.Y)},supported});
+                Bounds.Valid=Bounds.Valid&&supported;
+                Bounds.X.Low=std::min(Bounds.X.Low,p.X);Bounds.X.High=std::max(Bounds.X.High,p.X);
+                Bounds.Y.Low=std::min(Bounds.Y.Low,p.Y);Bounds.Y.High=std::max(Bounds.Y.High,p.Y);
+                Scale=std::max({Scale,std::abs(p.X),std::abs(p.Y)});
+            }
+            // This object stays at a fixed address. The index references this
+            // exact edge vector; no query handle refers to a moved local ring.
+            // Invalid coordinates must reach SimpleRing's existing diagnostic,
+            // never the ordering predicate used to construct an index.
+            if(Bounds.Valid)Index=std::make_unique<AxisSafety::EdgeIndex>(Edges);
+        }
+    };
+    double TopologyPadding(const TopologyRing& a,const TopologyRing& b,double tolerance)
+    {
+        // Source coordinates are bounded by 1e7. Retain a generous outward
+        // allowance for subtraction/projection/hypot rounding in the original
+        // floating distance predicate. Near-threshold pairs use that predicate.
+        return std::nextafter(tolerance+512*std::numeric_limits<double>::epsilon()*std::max(a.Scale,b.Scale),
+            std::numeric_limits<double>::infinity());
+    }
+    bool TopologyBoundsClear(const TopologyRing& a,const TopologyRing& b,double tolerance)
+    {
+        return AxisSafety::ArithmeticSupported()&&AxisSafety::BoundsClear(a.Bounds,b.Bounds,TopologyPadding(a,b,tolerance));
+    }
+    bool RingWithinTolerance(const TopologyRing& a,const TopologyRing& b,double tolerance,bool filtered)
+    {
+        if(!filtered||!AxisSafety::ArithmeticSupported()||!a.Bounds.Valid||!b.Bounds.Valid||!b.Index)
+            return RingDistance(a.Points,b.Points)<=tolerance;
+        const auto padding=TopologyPadding(a,b,tolerance);
+        if(!std::isfinite(padding))return RingDistance(a.Points,b.Points)<=tolerance;
+        if(AxisSafety::BoundsClear(a.Bounds,b.Bounds,padding))return false;
+        for(std::size_t i=0;i<a.Points.size();++i)
+            for(const auto j:b.Index->Query(a.Edges[i],padding))
+                if(SegmentDistance(a.Points[i],a.Points[(i+1)%a.Points.size()],
+                    b.Points[j],b.Points[(j+1)%b.Points.size()])<=tolerance)return true;
+        return false;
+    }
+    bool RingsBelowClearance(const TopologyRing& a,const TopologyRing& b,double gap,double tolerance,bool filtered)
+    {
+        const auto reference=[&]{return RingDistance(a.Points,b.Points)+tolerance<gap;};
+        if(!filtered||!AxisSafety::ArithmeticSupported()||!a.Bounds.Valid||!b.Bounds.Valid||!b.Index||
+            !std::isfinite(gap)||!std::isfinite(tolerance)||tolerance<0)
+            return reference();
+        // Use the larger full gap for conservative source-coordinate queries.
+        // Never rewrite the leaf predicate as distance < gap - tolerance:
+        // the original addition and strict comparison define boundary cases.
+        const auto padding=TopologyPadding(a,b,gap);
+        if(!std::isfinite(padding))return reference();
+        if(AxisSafety::BoundsClear(a.Bounds,b.Bounds,padding))return false;
+        const auto boundaryAllowance=TopologyPadding(a,b,0)+16*std::numeric_limits<double>::epsilon()*
+            std::max(std::abs(gap),std::abs(tolerance));
+        for(std::size_t i=0;i<a.Points.size();++i)
+            for(const auto j:b.Index->Query(a.Edges[i],padding))
+            {
+                const double comparison=SegmentDistance(a.Points[i],a.Points[(i+1)%a.Points.size()],
+                    b.Points[j],b.Points[(j+1)%b.Points.size()])+tolerance;
+                // Retain the complete original scan around the declared
+                // boundary, including its rounding and minimum ordering.
+                if(std::abs(comparison-gap)<=boundaryAllowance)return reference();
+                if(comparison<gap)return true;
+            }
+        return false;
+    }
     std::vector<std::vector<Point>> WorldRings(const Shape& shape, Pose pose)
     {
         std::vector<std::vector<Point>> rings{ Ring(shape.Outer) };
         for (const auto& h : shape.Holes) rings.push_back(Ring(h));
         for (auto& ring : rings) for (auto& p : ring) p = Detail::Transform(p, pose);
         return rings;
+    }
+    bool ShareStraightBoundary(const std::vector<std::vector<Point>>& a,
+        const std::vector<std::vector<Point>>& b, double tolerance,
+        const std::vector<bool>& aAllowed, const std::vector<bool>& bAllowed)
+    {
+        // Common-edge permission concerns coincident lines, not merely lines
+        // closer than the machining/validation tolerance. Permit only floating
+        // point transformation roundoff, capped by the declared tolerance.
+        for (std::size_t r = 0; r < a.size(); ++r)
+        {
+            if (!aAllowed.empty() && (r >= aAllowed.size() || !aAllowed[r])) continue;
+            const auto& ar = a[r];
+            for (std::size_t i = 0; i < ar.size(); ++i)
+            {
+                const auto p = ar[i], q = ar[(i + 1) % ar.size()];
+                const long double dx = static_cast<long double>(q.X) - p.X;
+                const long double dy = static_cast<long double>(q.Y) - p.Y;
+                const long double length = std::hypot(dx, dy);
+                if (length <= tolerance) continue;
+                for (std::size_t s = 0; s < b.size(); ++s)
+                {
+                    if (!bAllowed.empty() && (s >= bAllowed.size() || !bAllowed[s])) continue;
+                    const auto& br = b[s];
+                    for (std::size_t j = 0; j < br.size(); ++j)
+                    {
+                        const auto u = br[j], v = br[(j + 1) % br.size()];
+                        const long double scale = std::max({1.L, length,
+                            std::abs(static_cast<long double>(p.X)), std::abs(static_cast<long double>(p.Y)),
+                            std::abs(static_cast<long double>(q.X)), std::abs(static_cast<long double>(q.Y)),
+                            std::abs(static_cast<long double>(u.X)), std::abs(static_cast<long double>(u.Y)),
+                            std::abs(static_cast<long double>(v.X)), std::abs(static_cast<long double>(v.Y))});
+                        const long double collinearTolerance = std::min(static_cast<long double>(tolerance),
+                            64 * std::numeric_limits<double>::epsilon() * scale);
+                        const auto distance = [&](Point point)
+                        {
+                            return std::abs(dx * (static_cast<long double>(point.Y) - p.Y)
+                                - dy * (static_cast<long double>(point.X) - p.X)) / length;
+                        };
+                        if (distance(u) > collinearTolerance || distance(v) > collinearTolerance) continue;
+                        const auto projection = [&](Point point)
+                        {
+                            return (dx * (static_cast<long double>(point.X) - p.X)
+                                + dy * (static_cast<long double>(point.Y) - p.Y)) / length;
+                        };
+                        const long double first = projection(u), second = projection(v);
+                        const long double overlap = std::min(length, std::max(first, second))
+                            - std::max(0.L, std::min(first, second));
+                        if (overlap > tolerance) return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
     Clipper2Lib::PathsD Paths(const std::vector<std::vector<Point>>& rings)
     {
@@ -168,8 +363,28 @@ namespace
 }
 namespace Detail
 {
+    std::vector<Point> MaterialRing(const std::vector<Point>& source)
+    {
+        std::vector<Point> result;
+        result.reserve(source.size());
+        for (const auto point : source)
+            if (result.empty() || point.X != result.back().X || point.Y != result.back().Y)
+                result.push_back(point);
+        if (result.size() > 1 && result.front().X == result.back().X && result.front().Y == result.back().Y)
+            result.pop_back();
+        return result;
+    }
+    Shape ReflectedShape(const Shape& source)
+    {
+        Shape reflected=source;
+        reflected.Center.Y=-reflected.Center.Y;
+        for(auto& point:reflected.Outer)point.Y=-point.Y;
+        for(auto& ring:reflected.Holes)for(auto& point:ring)point.Y=-point.Y;
+        return reflected;
+    }
     Point Transform(Point p, Pose pose)
     {
+        if(pose.Mirrored)p.Y=-p.Y;
         const double degrees=NormalizeAngle(pose.AngleDegrees);
         // Exact quarter turns are exact coordinate permutations. Avoid introducing
         // a spurious cos(90) component into dimensions used by tight row/hole fits.
@@ -179,6 +394,25 @@ namespace Detail
         if(degrees==270)return {p.Y+pose.X,-p.X+pose.Y};
         const double a = degrees * Pi / 180, c = std::cos(a), s = std::sin(a);
         return { c * p.X - s * p.Y + pose.X, s * p.X + c * p.Y + pose.Y };
+    }
+    Point InverseTransform(Point p,Pose pose)
+    {
+        auto local=Transform({p.X-pose.X,p.Y-pose.Y},{0,0,-pose.AngleDegrees});
+        if(pose.Mirrored)local.Y=-local.Y;
+        return local;
+    }
+    Pose ComposePose(Pose parent,Pose child)
+    {
+        const auto origin=Transform({child.X,child.Y},parent);
+        return {origin.X,origin.Y,NormalizeAngle(parent.AngleDegrees+
+            (parent.Mirrored?-child.AngleDegrees:child.AngleDegrees)),parent.Mirrored!=child.Mirrored};
+    }
+    Pose InversePose(Pose pose)
+    {
+        Pose inverse{0,0,NormalizeAngle(pose.Mirrored?pose.AngleDegrees:-pose.AngleDegrees),pose.Mirrored};
+        const auto origin=Transform({-pose.X,-pose.Y},inverse);
+        inverse.X=origin.X;inverse.Y=origin.Y;
+        return inverse;
     }
     double NormalizeAngle(double degrees)
     {
@@ -194,6 +428,11 @@ namespace Detail
             return std::min(delta, 360 - delta) <= tolerance; };
         if (part.AllowedAnglesDegrees.empty()) return near(0);
         return std::any_of(part.AllowedAnglesDegrees.begin(), part.AllowedAnglesDegrees.end(), near);
+    }
+    bool PoseAllowed(const Part& part,Pose pose,double tolerance)
+    {
+        return std::isfinite(pose.X)&&std::isfinite(pose.Y)&&(!pose.Mirrored||part.AllowMirror)&&
+            AngleAllowed(part,pose.AngleDegrees,tolerance);
     }
     std::vector<double> CandidateAngles(const Part& part, double tolerance)
     {
@@ -224,6 +463,26 @@ namespace Detail
             for (int turn = 0; turn < 4; ++turn) add(-edges[i].second + turn * 90);
         return angles;
     }
+    std::vector<Pose> CandidateOrientations(const Part& part,double tolerance,OrientationProposalPolicy policy)
+    {
+        const auto angles=CandidateAngles(part,tolerance);
+        const bool reflectedProposals=part.AllowMirror&&policy==OrientationProposalPolicy::AllowedReflections;
+        std::vector<Pose> orientations;orientations.reserve(angles.size()*(reflectedProposals?2:1));
+        for(const auto angle:angles)
+        {
+            orientations.push_back({0,0,angle,false});
+            if(reflectedProposals)
+            {
+                // Reflection negates every source edge's direction. Free-angle
+                // alignment must therefore negate the original sampled turn;
+                // explicit allowed rotations still constrain the final angle.
+                const auto reflectedAngle=part.FreeRotation?NormalizeAngle(-angle):angle;
+                const Pose reflected{0,0,reflectedAngle,true};
+                if(PoseAllowed(part,reflected,tolerance))orientations.push_back(reflected);
+            }
+        }
+        return orientations;
+    }
     Rect Bounds(const Shape& shape, Pose pose)
     {
         if (shape.Radius > 0)
@@ -241,7 +500,7 @@ namespace Detail
         for (const auto& h : shape.Holes) area -= std::abs(SignedArea(Ring(h)));
         return area;
     }
-    bool ShapeValid(const Shape& shape, double tolerance, std::string& error)
+    static bool ShapeValidImpl(const Shape& shape, double tolerance, std::string& error,bool filtered)
     {
         error.clear();
         if (!std::isfinite(tolerance) || tolerance < MinimumTolerance)
@@ -251,29 +510,50 @@ namespace Detail
         if (shape.Radius > 0)
         {
             if (!shape.Outer.empty() || !shape.Holes.empty()) { error = "circle and polygon representations are mutually exclusive"; return false; }
+            if (!shape.CommonEdgeRings.empty()) { error = "a circle cannot declare polygon common-edge rings"; return false; }
             if (!Finite(shape.Center) || shape.Radius <= tolerance || std::abs(shape.Center.X) + shape.Radius > CoordinateLimit
                 || std::abs(shape.Center.Y) + shape.Radius > CoordinateLimit)
             { error = "circle must be nondegenerate and within 1e7 mm"; return false; }
             return true;
         }
-        const auto outer = Ring(shape.Outer, tolerance);
-        if (!SimpleRing(outer, tolerance, error)) return false;
-        std::vector<std::vector<Point>> holes;
+        if (!shape.CommonEdgeRings.empty() && shape.CommonEdgeRings.size() != 1 + shape.Holes.size())
+        { error = "common-edge ring flags must match the outer ring and every hole"; return false; }
+        TopologyRing outer(MaterialRing(shape.Outer),filtered);
+        if (!SimpleRing(outer.Points, tolerance, error)) return false;
+        std::vector<std::unique_ptr<TopologyRing>> holes;holes.reserve(shape.Holes.size());
         for (const auto& h : shape.Holes)
         {
-            auto hole = Ring(h, tolerance);
-            if (!SimpleRing(hole, tolerance, error)) return false;
-            if (PointInRing(hole.front(), outer, tolerance) != 1 || RingDistance(hole, outer) <= tolerance)
+            auto hole=std::make_unique<TopologyRing>(MaterialRing(h),filtered);
+            if (!SimpleRing(hole->Points, tolerance, error)) return false;
+            if (PointInRing(hole->Points.front(), outer.Points, tolerance) != 1 || RingWithinTolerance(*hole,outer,tolerance,filtered))
             { error = "hole must lie strictly inside the outer ring"; return false; }
             for (const auto& other : holes)
-                if (RingDistance(hole, other) <= tolerance || PointInRing(hole.front(), other, tolerance) >= 0
-                    || PointInRing(other.front(), hole, tolerance) >= 0)
+            {
+                if(filtered&&TopologyBoundsClear(*hole,*other,tolerance))continue;
+                if (RingWithinTolerance(*hole,*other,tolerance,filtered) || PointInRing(hole->Points.front(),other->Points,tolerance)>=0
+                    || PointInRing(other->Points.front(),hole->Points,tolerance)>=0)
                 { error = "holes must be disjoint and cannot nest"; return false; }
+            }
             holes.push_back(std::move(hole));
         }
         return true;
     }
-    bool ShapesConflict(const Shape& a, Pose pa, const Shape& b, Pose pb, double gap, double tolerance)
+    bool ShapeValid(const Shape& shape,double tolerance,std::string& error)
+    {return ShapeValidImpl(shape,tolerance,error,true);}
+    // Independent exhaustive topology reference for differential tests. The
+    // production filter never replaces the existing narrow-phase predicates.
+    bool ShapeValidReference(const Shape& shape,double tolerance,std::string& error)
+    {return ShapeValidImpl(shape,tolerance,error,false);}
+    bool ShapesHaveCommonEdge(const Shape& a, Pose pa, const Shape& b, Pose pb, double tolerance)
+    {
+        if (a.Radius > 0 || b.Radius > 0 || !std::isfinite(pa.X) || !std::isfinite(pa.Y)
+            || !std::isfinite(pa.AngleDegrees) || !std::isfinite(pb.X) || !std::isfinite(pb.Y)
+            || !std::isfinite(pb.AngleDegrees)) return false;
+        return ShareStraightBoundary(WorldRings(a, pa), WorldRings(b, pb), tolerance,
+            a.CommonEdgeRings, b.CommonEdgeRings);
+    }
+    static bool ShapesConflictImpl(const Shape& a, Pose pa, const Shape& b, Pose pb, double gap, double tolerance,
+        bool allowCommonEdge,bool filtered)
     {
         if (!std::isfinite(pa.X) || !std::isfinite(pa.Y) || !std::isfinite(pa.AngleDegrees)
             || !std::isfinite(pb.X) || !std::isfinite(pb.Y) || !std::isfinite(pb.AngleDegrees)) return true;
@@ -285,17 +565,44 @@ namespace Detail
         if (a.Radius > 0) return CirclePolygonConflict(Transform(a.Center, pa), a.Radius, WorldRings(b, pb), gap, tolerance);
         if (b.Radius > 0) return CirclePolygonConflict(Transform(b.Center, pb), b.Radius, WorldRings(a, pa), gap, tolerance);
         const auto ar = WorldRings(a, pa), br = WorldRings(b, pb);
+        const double requiredGap = allowCommonEdge && ShareStraightBoundary(ar, br, tolerance,
+            a.CommonEdgeRings, b.CommonEdgeRings) ? 0 : gap;
         try
         {
             const auto overlap = Clipper2Lib::Intersect(Paths(ar), Paths(br), Clipper2Lib::FillRule::EvenOdd, 8);
-            if (std::abs(Clipper2Lib::Area(overlap)) > tolerance * tolerance) return true;
+            if (std::abs(Clipper2Lib::Area(overlap)) > tolerance * tolerance)
+            {
+                if (SeparatedOnEdges(ar.front(), ar.front(), br.front(), requiredGap)
+                    || SeparatedOnEdges(br.front(), ar.front(), br.front(), requiredGap)) return false;
+                return true;
+            }
         }
         catch (...) { return true; } // Failed topology calculation is never accepted as a fit.
-        if (gap > tolerance)
-            for (const auto& x : ar) for (const auto& y : br)
-                if (RingDistance(x, y) + tolerance < gap) return true;
+        if (requiredGap > tolerance)
+        {
+            if(!filtered)
+            {
+                for(const auto& x:ar)for(const auto& y:br)
+                    if(RingDistance(x,y)+tolerance<requiredGap)return true;
+            }
+            else
+            {
+                std::vector<std::unique_ptr<TopologyRing>> preparedB;preparedB.reserve(br.size());
+                for(const auto& y:br)preparedB.push_back(std::make_unique<TopologyRing>(y,true));
+                for(const auto& x:ar)
+                {
+                    const TopologyRing preparedA(x,true);
+                    for(const auto& y:preparedB)
+                        if(RingsBelowClearance(preparedA,*y,requiredGap,tolerance,true))return true;
+                }
+            }
+        }
         return false;
     }
+    bool ShapesConflict(const Shape& a,Pose pa,const Shape& b,Pose pb,double gap,double tolerance,bool allowCommonEdge)
+    {return ShapesConflictImpl(a,pa,b,pb,gap,tolerance,allowCommonEdge,true);}
+    bool ShapesConflictReference(const Shape& a,Pose pa,const Shape& b,Pose pb,double gap,double tolerance,bool allowCommonEdge)
+    {return ShapesConflictImpl(a,pa,b,pb,gap,tolerance,allowCommonEdge,false);}
     bool InsideSheet(const Shape& shape, Pose pose, double width, double height, double margin, double tolerance)
     {
         if (!std::isfinite(pose.X) || !std::isfinite(pose.Y) || !std::isfinite(pose.AngleDegrees)) return false;

@@ -1,5 +1,6 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 import {machineForward} from './machineKinematics.mjs';
+import {hasHeadWorkspacePreview,headWorkspaceSelection} from './headWorkspaceSelection.mjs';
 
 export const headStructures=[['HH','双摆头'],['HW','摆头＋转台'],['WW','双转台／摇篮'],['H','单摆头'],['W','单转台'],['','无旋转轴']];
 const matrix=a=>new THREE.Matrix4().set(...a),row=m=>[0,4,8,12,1,5,9,13,2,6,10,14,3,7,11,15].map(i=>m.elements[i]);
@@ -27,7 +28,13 @@ export function changeHeadStructure(d,model,kind){
  // A retained virtual axis must not occupy a newly assigned physical index.
  const all=new Set();for(const a of d.axes){while(all.has(a.index))a.index++;all.add(a.index);}
 }
-export const previewAxes=view=>view.fiveHeadEditor?.draft?.axes||[];
+export function headPreviewDraft(view){
+ if(!hasHeadWorkspacePreview(view))return view.fiveHeadEditor?.draft;
+ const selection=headWorkspaceSelection(view),parameters=selection.head?.instance?.parameters;
+ if(!parameters)return null;
+ return selection.draft??={...structuredClone(parameters),tcp:parameters.tcp.map(String),beam:parameters.beam.map(String),gaugeOrigin:parameters.gaugeOrigin.map(String),lengthMm:String(parameters.lengthMm),axes:parameters.axes.map(axisDraft)};
+}
+export const previewAxes=view=>headPreviewDraft(view)?.axes||[];
 export function draftHeadMotion(head,draft){
  if(!draft)return head.motion;
  const source=head.instance?.model||{...head,assembly:head.sourceAssembly||head.assembly},physical=source.assembly?.nodes||[],axes=draft.axes.map(axisInput),nodes=[],headNodes=[];

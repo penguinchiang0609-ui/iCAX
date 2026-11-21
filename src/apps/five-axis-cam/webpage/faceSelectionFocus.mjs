@@ -7,7 +7,7 @@ export function faceFocusShortcut(event,view,mount){
   if(view.fiveAxisArea==='toolpath'&&view.fiveAxisExtractionOpen&&['extract','manual-extract'].includes(activeTool(view))){
     const state=currentDraft(view,'extract').extraction;return state?.selectedFace!=null?`five.extraction.focus-face.${state.selectedFace}`:null;
   }
-  return view.fiveAxisArea==='workpiece'&&activeTool(view)==='fixture'&&view.fiveFixtureDesignOpen&&view.fixtureDesignSelectedFace!=null?`five.fixture.design.focus-face:${view.fixtureDesignSelectedFace}`:null;
+  return view.fiveAxisArea==='operation'&&activeTool(view)==='fixture'&&view.fiveFixtureDesignOpen&&view.fixtureDesignSelectedFace!=null?`five.fixture.design.focus-face:${view.fixtureDesignSelectedFace}`:null;
 }
 
 export function focusSelectedFace(view,source,ranges){

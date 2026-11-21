@@ -2,6 +2,7 @@ import { refreshMachiningState } from './domainActions.mjs';
 import {applyRapidDefaultStrategy,renderRapidSafety} from './rapidDefaultStrategy.mjs';
 import { saveCommittedCutEdit } from './cutEditPersistence.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix,setupWorldFrame} from './setupWorldFrame.mjs';
 import { escapeText as esc } from '../../_shared/workbench/utils/format.mjs';
 import { activeTool, workspaceState, selectTool } from './workspaceModel.mjs';
 import { button } from './workspaceControls.mjs';
@@ -160,7 +161,7 @@ export function updateGeneratedPreview(view){
   const selection=workspaceState(view),selected=selection.selectedIntentIds||[selection.selectedIntentId],placements=view.scene.domain.placements;
   const compensated=new Set(currentCompensation(view).map(item=>item.intentId));
   const manual=activeTool(view)==='manual-order'&&view.fiveOrder?.open,unifiedClear=rapidUnifiedCollisionClear(view);
-  const key=JSON.stringify([result.revision,result.status,result.operations.map(op=>op.intentId),[...compensated],result.ordering,result.orderDraft,result.transitions,view.fiveCamPage,activeTool(view)==='rapid'?view.fiveRapid?.id:null,manual,placements.map(p=>p.transform),selected,viewport.id,unifiedClear]);
+  const key=JSON.stringify([result.revision,result.status,result.operations.map(op=>op.intentId),[...compensated],result.ordering,result.orderDraft,result.transitions,view.fiveCamPage,activeTool(view)==='rapid'?view.fiveRapid?.id:null,manual,placements.map(p=>placementWorldMatrix(view,p).elements),selected,viewport.id,unifiedClear]);
   if(view.fiveGeneratedPreview?.key===key&&view.fiveCutAnnotations&&viewport.specificationLabels.length===result.operations.length){syncToolpathLayerMaterials(view,view.fiveGeneratedPreview.group);return;}disposeGeneratedPreview(view);
   const group=new THREE.Group();group.name='five-generated-paths';const stale=result.status==='Stale',annotations=[];
   const line=(points,transform,color,rapid=false,marking=false,outdated=false)=>{
@@ -171,7 +172,7 @@ export function updateGeneratedPreview(view){
   };
   for(const op of result.operations){
     const outdated=op.status?op.status==='Stale':stale;
-    const placement=placements.find(p=>p.id===op.placementId);if(!placement)continue;const matrix=new THREE.Matrix4().set(...placement.transform);
+    const placement=placements.find(p=>p.id===op.placementId);if(!placement)continue;const matrix=placementWorldMatrix(view,placement);
     if(!compensated.has(op.intentId))for(const part of op.parts){
       const color=toolpathLayerColor(view,op.intentId);
       line(part.points,matrix,color,false,op.machiningKind==='Mark',outdated).userData.generatedIntentId=op.intentId;
@@ -181,16 +182,16 @@ export function updateGeneratedPreview(view){
     const point=new THREE.Vector3(...cutStart).applyMatrix4(matrix).toArray();
     annotations.push({id:`path-order-${op.intentId}`,kind:'label',start:point,end:point,label:op.order,color:selected.includes(op.intentId)?sceneColors.selected:outdated||(result.orderDraft&&!result.orderDraft.includes(op.intentId))?sceneColors.stale:sceneColors.reference,pickThrough:!manual});
   }
-  const placement=placements.find(p=>p.id===result.operations[0].placementId);if(placement){const matrix=new THREE.Matrix4().set(...placement.transform);for(const t of result.transitions){
-    if(result.orderPreview){line(t.points,new THREE.Matrix4(),sceneColors.reference,true).name='five-order-preview-link';continue;}
+  const placement=placements.find(p=>p.id===result.operations[0].placementId);if(placement){const matrix=placementWorldMatrix(view,placement),setupFrame=setupWorldFrame(view,placement.setupId);for(const t of result.transitions){
+    if(result.orderPreview){line(t.points,setupFrame,sceneColors.reference,true).name='five-order-preview-link';continue;}
     const chosen=activeTool(view)==='rapid'&&view.fiveRapid?.id===`${t.from}/${t.to}`;
     // Geometry is visible independently of its later collision report.
     // A direct order connector is not generated motion geometry.
     if(!hasRapidGeometry(t))continue;
-    const unverified=t.geometryStatus!=='Generated'||t.validation!=='Clear'&&!unifiedClear,rapid=line(t.points,new THREE.Matrix4(),t.validation==='Collision'?sceneColors.error:unverified?sceneColors.rapidUnverified:chosen?sceneColors.selected:sceneColors.reference,true);
+    const unverified=t.geometryStatus!=='Generated'||t.validation!=='Clear'&&!unifiedClear,rapid=line(t.points,t.frame==='Setup'?setupFrame:matrix,t.validation==='Collision'?sceneColors.error:unverified?sceneColors.rapidUnverified:chosen?sceneColors.selected:sceneColors.reference,true);
     Object.assign(rapid.userData,{generatedRapid:true,rapidTransitionId:`${t.from}/${t.to}`,rapidCollision:t.validation==='Collision',rapidUnverified:unverified});
     const failed=Number(t.failedSegment);if(t.validation==='Collision'&&Number.isInteger(failed)&&t.points[failed+1])
-      line(t.points.slice(failed,failed+2),t.frame==='Setup'?new THREE.Matrix4():matrix,sceneColors.error);
+      line(t.points.slice(failed,failed+2),t.frame==='Setup'?setupFrame:matrix,sceneColors.error);
   }}
   viewport.scene.add(group);viewport.setSpecificationAnnotations(annotations);
   for(let i=0;i<viewport.specificationLabels.length;++i){const element=viewport.specificationLabels[i].element,op=result.operations[i];

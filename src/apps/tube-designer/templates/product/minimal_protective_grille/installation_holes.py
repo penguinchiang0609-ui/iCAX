@@ -24,13 +24,17 @@ def plan(parameters, members):
     if count != int(count) or int(count) not in (2, 3, 4, 5):
         raise ValueError('安装孔每侧组数只能选择 2、3、4、5')
     count = int(count)
-    height = _number(parameters, 'height')
+    spatial = parameters.get('layoutStyle', 'planar') == 'five_face'
+    installation_uprights = [m for m in members if m['role'] in ('frame.left', 'frame.right')]
+    bottom_z = min((m['start'][2] for m in installation_uprights), default=0.) if spatial else 0.
+    height = (max((m['end'][2] for m in installation_uprights), default=0.)-bottom_z
+              if spatial else _number(parameters, 'height'))
     top = _number(parameters, 'installHoleTopOffset')
     bottom = _number(parameters, 'installHoleBottomOffset')
     span = height-top-bottom
     if span <= EPS:
         raise ValueError('安装孔上下端距之和必须小于成品高度')
-    centers = [bottom + span*i/(count-1) for i in range(count)]
+    centers = [bottom_z + bottom + span*i/(count-1) for i in range(count)]
     groups = []
     for side, label in (('left', '左'), ('right', '右')):
         uprights = [m for m in members if m['role'] == 'frame.'+side]
@@ -39,6 +43,8 @@ def plan(parameters, members):
             if len(hosts) != 1:
                 raise ValueError(f'{label}侧第 {index} 组安装孔落在把手开槽缺口或无实体处，请调整组数或上下端距')
             host = hosts[0]
+            if math.dist(host['start'][:2], host['end'][:2]) > EPS:
+                raise ValueError('安装孔接收构件必须为真实竖向安装边框')
             groups.append(dict(side=side, index=index, memberKey=host['key'],
-                               station=z-host['start'][2], point=[host['start'][0], 0., z]))
+                               station=z-host['start'][2], point=[host['start'][0], host['start'][1], z]))
     return dict(enabled=True, countPerSide=count, centers=centers, groups=groups)

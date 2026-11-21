@@ -6,6 +6,7 @@
 #include "Database/IRepository.h"
 #include "Database/IMetaRegistry.h"
 #include "Resources/ResourceLibrary.h"
+#include <tuple>
 
 namespace
 {
@@ -77,6 +78,15 @@ namespace
                 ToProjectReference(_Dependency));
         }
         return _Record;
+    }
+
+    bool SameResourceContent(const CProjectResourceRecord& left, const CProjectResourceRecord& right)
+    {
+        // Resource presentation metadata may change without changing bytes.
+        return std::tie(left.Reference, left.ResourceTypeID, left.nSchemaVersion, left.Persistence,
+            left.Dependencies, left.Body) == std::tie(right.Reference, right.ResourceTypeID, right.nSchemaVersion,
+            right.Persistence, right.Dependencies, right.Body)
+            && (left.Persistence != EProjectResourcePersistence::External || left.Source == right.Source);
     }
 
     iCAX::Resource::CResourcePersistentPayload ToRuntimeResource(
@@ -553,4 +563,68 @@ iCAX::ProjectFile::CProjectFile::Open(
     auto _Prepared = PrepareOpen(Path_);
     Restore(_Prepared, Database_, Resources_);
     return _Prepared.Result();
+}
+
+void iCAX::ProjectFile::CProjectResourceCheckpoint::Save(
+    const std::filesystem::path& Path_, const CProjectDocumentInfo& Identity_,
+    const iCAX::Resource::CResourceLibrary& Resources_)
+{
+    CProjectDocument document;
+    document.Info = Identity_;
+    if (std::filesystem::exists(Path_))
+    {
+        document = CProjectFileCodec::Read(Path_).Document;
+        if (document.Info != Identity_ || !document.Entities.empty() || !document.Components.empty())
+            throw std::runtime_error("Resource checkpoint does not belong to this project journal");
+    }
+    std::vector<iCAX::Resource::CResourceReference> roots;
+    for (const auto& info : Resources_.GetManifest(true))
+        for (const auto version : Resources_.GetVersions(info.Key.Source))
+        {
+            const auto entry = Resources_.GetInfo(info.Key.Source, version);
+            if (entry && entry->IsPersistent()) roots.push_back({info.Key.Source, version});
+        }
+    const auto reachable = Resources_.CollectReachable(roots);
+    if (!reachable.IsComplete()) throw std::runtime_error("Journal resource dependency is missing");
+    for (const auto& info : reachable.Resources)
+    {
+        auto record = ToProjectResource(Resources_.SerializePersistentVersion({info.Key.Source, info.nVersion}));
+        const auto previous = document.FindResource(record.Reference);
+        if (previous)
+        {
+            if (!SameResourceContent(*previous, record)) throw std::runtime_error("Immutable journal resource version changed");
+            *previous = std::move(record);
+        }
+        else document.Resources.push_back(std::move(record));
+    }
+    document.Canonicalize();
+    RequireValidProjectDocument(document);
+    CProjectFileCodec::WriteAtomic(Path_, std::move(document), EProjectFileEncoding::Binary);
+}
+
+void iCAX::ProjectFile::CProjectResourceCheckpoint::Restore(
+    const std::filesystem::path& Path_, const CProjectDocumentInfo& Identity_,
+    iCAX::Resource::CResourceLibrary& Resources_)
+{
+    const auto document = CProjectFileCodec::Read(Path_).Document;
+    if (document.Info != Identity_ || !document.Entities.empty() || !document.Components.empty())
+        throw std::runtime_error("Resource checkpoint does not belong to this project journal");
+    // Validate every overlapping immutable version before installing any
+    // new one, so a mismatched sidecar never changes the restored archive.
+    for (const auto& record : document.Resources)
+    {
+        const auto reference = ToRuntimeReference(record.Reference);
+        if (Resources_.Contains(reference.URL, reference.nVersion)
+            && !SameResourceContent(ToProjectResource(Resources_.SerializePersistentVersion(reference)), record))
+            throw std::runtime_error("Resource checkpoint conflicts with the project archive");
+    }
+    for (const auto index : ResourceRestoreOrder(document))
+    {
+        const auto& record = document.Resources[index];
+        const auto reference = ToRuntimeReference(record.Reference);
+        if (!Resources_.Contains(reference.URL, reference.nVersion)
+            || Resources_.GetVersion(reference.URL) < reference.nVersion
+            || ToProjectResource(Resources_.SerializePersistentVersion(reference)) != record)
+            Resources_.RestorePersistentVersion(ToRuntimeResource(record));
+    }
 }

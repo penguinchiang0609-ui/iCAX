@@ -30,7 +30,12 @@ export function buildPlayback(setup, placements) {
       if(!(seededFirst&&previousDirection.distanceToSquared(axis)<1e-28))rotation = new THREE.Quaternion().setFromUnitVectors(previousDirection, axis).multiply(rotation).normalize();
       seededFirst=false;
       const previous = frames.at(-1), distance = previous ? position.distanceTo(previous.position) : 0;
-      const disconnected = !!previous && i === 0 && (breakBefore || distance > 1e-4);
+      // Separate paths do not author an extra rotary move between their
+      // endpoints. An edited endpoint must not invent an unchecked connection.
+      const pathBoundary=previous&&(previous.intentId!==info.intentId||(previous.role==='Rapid')!==tcp);
+      const directionGap=pathBoundary&&axis.distanceToSquared(previous.direction)>1e-12;
+      const disconnected = !!previous && i === 0 && (breakBefore || distance > 1e-4 || directionGap);
+      if(previous&&i===0&&directionGap)previous.rapidFailure='切割与空移端点姿态不连续，请调整对应端点。';
       const duration = previous && !disconnected ? Math.max(distance / 50, rotation.angleTo(previous.rotation), .001) : 0;
       frames.push({ ...info, position, target, direction: axis, rotation: rotation.clone(), breakBefore: disconnected, duration });
       previousDirection = axis;

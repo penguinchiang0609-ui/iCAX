@@ -80,6 +80,18 @@ namespace iCAX::TubeDesigner
         double InitialPredecessorRotationRadians = 0.0;
     };
 
+    struct SNestingPairTableCacheStatistics final
+    {
+        std::uint64_t Hits = 0;
+        std::uint64_t Builds = 0;
+        std::size_t RetainedEntries = 0;
+        std::size_t RetainedBytes = 0;
+    };
+
+    // Process-local observability for regression/benchmarking. Cache state is
+    // deliberately absent from saved plans and deterministic nesting results.
+    _TUBE_DESIGNER_EXP SNestingPairTableCacheStatistics GetNestingPairTableCacheStatistics();
+
     // Shared geometry-to-solver boundary. Tilted knife planes do not imply that
     // the source BRep has planar ends; only proven section symmetry permits roll.
     _TUBE_DESIGNER_EXP std::vector<SNestingVariant> BuildKnifePlaneNestingVariants(
@@ -102,6 +114,19 @@ namespace iCAX::TubeDesigner
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap NormalizeNestingSettings(
         const iCAX::Data::ObjectMap& Settings_);
 
+    enum class ENestingOptimizationMode { Time, Utilization };
+
+    struct SNestingSearchOptions final
+    {
+        ENestingOptimizationMode Mode = ENestingOptimizationMode::Time;
+        std::uint32_t SearchTimeSeconds = 5;
+    };
+
+    // Shared by saved settings and direct native requests. Legacy projects use
+    // time priority/five seconds; utilization without a duration uses sixty.
+    _TUBE_DESIGNER_EXP SNestingSearchOptions ReadNestingSearchOptions(
+        const iCAX::Data::ObjectMap& Parameters_);
+
     // Uses foundation/TubeNesting. Never mutates the scene or consumes inventory.
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap SolveManufacturingNesting(
         const std::vector<SNestingPart>& Parts_,
@@ -114,6 +139,13 @@ namespace iCAX::TubeDesigner
         const std::vector<SNestingPart>& Parts_,
         const std::vector<SNestingStock>& Stocks_,
         double PartGap_, std::size_t MaximumConcurrency_);
+
+    // One shared soft search deadline across all profiles, strict priorities,
+    // inventory phases and shortage-subset calls; never one full budget each.
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap SolveManufacturingNesting(
+        const std::vector<SNestingPart>& Parts_,
+        const std::vector<SNestingStock>& Stocks_, double PartGap_,
+        const SNestingSearchOptions& SearchOptions_, std::size_t MaximumConcurrency_ = 0);
 
     // Row-major 4x4 rigid transform stored on every solved placement.
     _TUBE_DESIGNER_EXP iCAX::Data::VariantArray MakeNestingPlacementTransform(

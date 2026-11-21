@@ -144,6 +144,9 @@ int main()
         }
         constexpr std::size_t high=150000000000ull;
         std::size_t callbacks=0;auto options=Budget(high,1800);options.Cancel=[&]{++callbacks;return false;};
+        // The late-cancellation pulse below belongs to constructor recovery.
+        // Keep automatic refinement callbacks outside that measured sequence.
+        options.EnableBasicCompaction=false;
         std::cout<<"C6-p3 repair explicit budget="<<high<<" time=1800 seconds; all 97 originals required\n"<<std::flush;
         const auto solved=Solve(original,options);
         std::cout<<"C6-p3 repair checks="<<solved.Output.Stats.PlacementAttempts<<" seconds="<<solved.Output.Stats.ElapsedSeconds
@@ -159,12 +162,14 @@ int main()
         for(const auto& p:original.Parts)++counts[{int(p.Geometry.Outer[1].X),int(p.Geometry.Outer[2].Y)}];
         for(const auto& [dim,count]:counts)anonymous.Parts.push_back(Box("opaque-"+std::to_string(104729*(anonymous.Parts.size()+1)),dim.first,dim.second,count));
         std::reverse(anonymous.Parts.begin(),anonymous.Parts.end());
-        const auto anonymized=Solve(anonymous,Budget(high,1800));Complete(anonymous,anonymized,high);
+        auto anonymousOptions=Budget(high,1800);anonymousOptions.EnableBasicCompaction=false;
+        const auto anonymized=Solve(anonymous,anonymousOptions);Complete(anonymous,anonymized,high);
         Require(Signature(original,solved)==Signature(anonymous,anonymized),"opaque IDs, shuffled inputs and merged copies must keep the same geometry");
         Require(solved.Output.Stats.PlacementAttempts==anonymized.Output.Stats.PlacementAttempts,"same dimension inventory must consume the same exact checks");
         std::cout<<"C6-p3 opaque checks="<<anonymized.Output.Stats.PlacementAttempts<<" seconds="<<anonymized.Output.Stats.ElapsedSeconds<<'\n'<<std::flush;
         Require(callbacks>100,"late cancellation target exists");
         std::size_t lateCalls=0;auto late=Budget(high,1800);late.Cancel=[&]{return ++lateCalls==callbacks-100;};
+        late.EnableBasicCompaction=false;
         const auto cancelled=Solve(original,late);Untouched(original,cancelled,high);
         Require(cancelled.Output.State==Status::Cancelled&&lateCalls==callbacks-100,"rollout or final reconstruction cancellation remains latched");
         std::cout<<"RectangleBlockRepairTests passed\n";return 0;

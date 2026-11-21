@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>特征排样真实过程</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><h1>特征排样真实过程</h1><p id="run-summary">选择原生过程记录，逐事件查看特征、配对、阵列及搜索。</p></div>
+      <label class="file-button">打开过程文件<input id="file-input" type="file" accept=".json,.trace.json"></label>
+    </header>
+    <div id="notice" class="notice" hidden></div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <section class="transport" aria-label="过程播放">
+      <div class="transport-buttons">
+        <button id="first" title="第一条记录">最初</button><button id="previous">上一步</button>
+        <button id="play">播放</button><button id="next">下一步</button><button id="last">最后</button>
+        <label>每秒步数<select id="speed"><option value="1">1</option><option value="2" selected>2</option><option value="5">5</option><option value="10">10</option></select></label>
+        <label id="playback-mode-control" hidden>查看<select id="playback-mode"><option value="placements">逐件放置</option><option value="events">全部事件</option></select></label>
+        <strong id="step-label">尚未载入</strong><button id="final-result" class="push-right" disabled>最终原始结果</button>
+      </div>
+      <input id="timeline" type="range" min="0" max="0" value="0" aria-label="真实事件时间线" disabled>
+      <nav id="stages" class="stages" aria-label="构造阶段"></nav>
+    </section>
+    <div class="workspace">
+      <aside class="event-panel">
+        <div class="panel-heading"><h2 id="list-title">过程记录</h2><span id="list-count"></span></div>
+        <input id="event-search" type="search" placeholder="筛选零件、候选编号或原因" aria-label="筛选记录">
+        <label class="reject-filter"><input id="rejected-only" type="checkbox">只看被拒绝的试放</label>
+        <div id="event-list" class="event-list"><p class="empty">尚未载入记录。</p></div>
+        <div class="list-pagination"><button id="list-before">前一页</button><span id="list-range"></span><button id="list-after">后一页</button></div>
+      </aside>
+      <section class="drawing-panel">
+        <div class="panel-heading"><div><h2 id="drawing-title">原始几何</h2><p id="drawing-caption"></p></div><span id="stage-label" class="stage-label"></span></div>
+        <div class="display-controls" aria-label="几何显示">
+          <label><input id="show-original" type="checkbox" checked>原始轮廓</label>
+          <label><input id="show-carrier" type="checkbox" checked>基体</label>
+          <label><input id="show-recess" type="checkbox" checked>凹特征</label>
+          <label><input id="show-protrusion" type="checkbox" checked>凸特征</label>
+          <label><input id="show-mouths" type="checkbox" checked>接口</label>
+          <label>基体<select id="carrier-choice"><option value="0">0</option></select></label>
+        </div>
+        <div id="canvas" class="canvas"><p class="empty">这里显示原生记录中的几何与位姿。</p></div>
+        <div class="legend"><span class="original-key">原件</span><span class="carrier-key">基体</span><span class="recess-key">凹</span><span class="protrusion-key">凸</span><span class="rejected-key">拒绝试放</span></div>
+        <p id="state-warning" class="state-warning" hidden></p>
+        <dl id="metrics" class="metrics"></dl>
+        <div class="reason"><h3>本次事件</h3><p id="reason">等待真实记录。</p><div id="parent-path"></div></div>
+        <details><summary>当前事件原始字段</summary><pre id="event-json"></pre></details>
+      </section>
+    </div>
+    <details class="evidence"><summary>记录边界、预算与输入审计</summary><pre id="evidence-json"></pre></details>
+    <footer>时间线逐条使用原生已记录事件。候选状态按父状态与新增原件恢复。材料统计仅采用原件轮廓，基体、凹凸和接口属于可选分析叠加。方向键切换步骤，空格播放。</footer>
+  </main>
+  <script id="trace-data" type="application/json">null</script>
+  <script src="viewer.js" defer></script>
+</body>
+</html>

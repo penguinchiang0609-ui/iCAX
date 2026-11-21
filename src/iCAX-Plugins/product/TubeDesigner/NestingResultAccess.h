@@ -39,7 +39,7 @@ namespace iCAX::TubeDesigner::NestingResultAccess
         ObjectMap summary{{ "ready", !result.empty() },
             { "revision", Text(task, "revision") },
             { "planCount", static_cast<unsigned long long>(Array(result, "plans").size()) }};
-        for (const auto* field : { "status", "metrics", "proof", "diagnostics", "unplaced" })
+        for (const auto* field : { "status", "metrics", "proof", "diagnostics", "unplaced", "search" })
             if (const auto found = result.find(field); found != result.end())
                 summary.emplace(field, found->second);
         return summary;

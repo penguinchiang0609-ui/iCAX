@@ -200,6 +200,19 @@ class Tools:
                 self.geometry.append({"key":next_key,"operator":"boolean","inputs":[root,tool],
                                       "arguments":{"operation":"intersect","target":root,"tools":[tool]}})
                 root=next_key
+            excluded=recipe.get("subtractRegions",[])
+            if not isinstance(excluded,list):raise ValueError("section subtract regions must be a list")
+            if excluded:
+                tools=[self.solid(key+".exclude."+str(index),region) for index,region in enumerate(excluded)]
+                arguments={"operation":"subtract","target":root,"tools":tools}
+                if "keepConnectedTo" in recipe:
+                    arguments["keepConnectedTo"]=vector(recipe["keepConnectedTo"],"section witness")
+                next_key=key+".retained"
+                self.geometry.append({"key":next_key,"operator":"boolean","inputs":[root,*tools],
+                                      "arguments":arguments})
+                root=next_key
+            elif "keepConnectedTo" in recipe:
+                raise ValueError("section witness requires an actual subtract region")
             return root
         if "center" in recipe:
             center=vector(recipe["center"],"region center");x=vector(recipe["xAxis"],"region xAxis");y=vector(recipe["yAxis"],"region yAxis")

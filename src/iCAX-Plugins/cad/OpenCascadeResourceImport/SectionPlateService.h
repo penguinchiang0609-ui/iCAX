@@ -62,10 +62,14 @@ struct SectionPlateJoint {
     std::vector<std::array<double,2>> Boundary;
 };
 struct SectionPlate {
+    // Computational BRep; Build leaves all display triangulations empty.
+    // The product may create render data only after Build has completed.
     GeometryData::BRepModel Geometry;
     // Exact local-mm boundaries retained from the validated extrusion cap.
     // Rounded supports expose these without rebuilding an already known prism.
     GeometryData::Tube::CPlanarRegion2 ExactProfile;
+    // Terminal preview polylines only. Manufacturing and later edits use
+    // ExactProfile; these chords must never feed geometric calculations.
     std::vector<std::array<double,2>> Outline;
     std::vector<std::vector<std::array<double,2>>> Holes;
     // Only automatic ventilation openings are editable; manufacturing and
@@ -99,13 +103,13 @@ struct SectionPlate {
     bool Connection=false;
     double MaximumUnsupportedSpan=0,MaximumEndOverhang=0;
 };
-// Neutral planar solids and mesh-based clearance; product owns IDs, recipes,
+// BRep plate construction and curve/surface clearance; product owns IDs, recipes,
 // resources, confirmation, transactions, and manufacturing qualification.
 class _OPEN_CASCADE_RESOURCE_IMPORT_EXP ISectionPlateService : public Services::IService {
 public:
     // Editable face suggestions from the lower envelope in Transform's frame.
-    // Visibility is sampled on trimmed triangles, with partial-patch refinement;
-    // Build still owns full-thickness clearance and actual bearing contacts.
+    // Visibility uses trimmed BRep patches and exact occluding volumes;
+    // Build owns full-thickness clearance and actual bearing contacts.
     virtual std::vector<std::uint64_t> FindLowerEnvelopeFaces(const SectionPlateInput&,const std::function<bool()>&)const=0;
     virtual std::vector<SupportStation> SuggestStations(const SectionPlateInput&,double spacing)const=0;
     virtual std::vector<SectionPlate> Build(const SectionPlateInput&,const std::function<bool()>&) const=0;

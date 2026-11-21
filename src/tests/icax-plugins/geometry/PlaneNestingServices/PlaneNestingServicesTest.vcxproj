@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{D4C6FCDE-BAC2-45FD-BA9D-F3D6257CE137}</ProjectGuid><RootNamespace>PlaneNestingServicesTest</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries><UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup>
+    <ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><PrecompiledHeader>NotUsing</PrecompiledHeader><LanguageStandard>stdcpp20</LanguageStandard><AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions><PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ICAXSourceRoot)iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="PlaneNestingServiceTests.cpp" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"><Project>{DFCC3994-1C4F-4423-8CA7-3C1E1CBDB847}</Project></ProjectReference>
+    <ProjectReference Include="..\..\..\..\iCAX-Plugins\geometry\PlaneNestingServices\PlaneNestingServices.vcxproj"><Project>{A5CE0EB5-552A-4203-AD0D-6E5353A3C514}</Project><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(ICAXSourceRoot)iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" />
+</Project>

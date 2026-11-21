@@ -1,4 +1,5 @@
 #include "SheetNesting.h"
+#include "NestingExecution.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -22,18 +23,71 @@ int main()
 {
     try
     {
-        Problem p;p.Parts={Box("block",80,20,2)};p.Stocks={{"stock",200,100,1,1,""}};
-        auto compact=LayoutOf(p,{At("block",0,0,0),At("block",1,0,20)});
-        auto low=LayoutOf(p,{At("block",0,0,0),At("block",1,90,0)});Check(p,compact);Check(p,low);
+        Problem p;p.Parts={Box("block",40,40,2)};p.Stocks={{"stock",200,100,1,1,""}};
+        auto compact=LayoutOf(p,{At("block",0,0,0),At("block",1,40,0)});
+        auto low=LayoutOf(p,{At("block",0,0,0),At("block",1,0,50)});Check(p,compact);Check(p,low);
         const auto a=EvaluateRemnants(p,compact),b=EvaluateRemnants(p,low);
         Require(a.Measured&&b.Measured,"remnant metric unavailable");
         Require(std::abs(a.LastSheetRegularArea-12000)<.1&&std::abs(b.LastSheetRegularArea-16000)<.1,"largest regular rectangles differ from occupied area");
         StrategyRegistry registry;
         registry.Register("compact",[compact]{return std::make_unique<Supplied>(compact);});
         registry.Register("regular-remnant",[low]{return std::make_unique<Supplied>(low);});
-        auto best=RunPortfolio(p,{},registry);
-        Require(best.Jobs[best.BestJob].StrategyID=="regular-remnant","default objective must value the larger regular remnant");
-        std::cout<<"PASS a larger regular remnant can beat a smaller occupied envelope\n";
+        PortfolioOptions selection;selection.PerJob.EnableBasicCompaction=false;
+        auto best=RunPortfolio(p,selection,registry);
+        Require(Options{}.Ranking==RankingPolicy::Utilization&&PortfolioOptions{}.Ranking==RankingPolicy::Utilization&&
+            best.Jobs[best.BestJob].StrategyID=="compact",
+            "default utilization must prefer the tighter complete layout over a larger remnant reward");
+        const auto& compactJob=*std::find_if(best.Jobs.begin(),best.Jobs.end(),[](const auto& job){return job.StrategyID=="compact";});
+        const auto utilization=Detail::Quality(compactJob,p,RankingPolicy::Utilization);
+        Require(std::abs(std::get<4>(utilization)+.16)<1e-10&&std::get<5>(utilization)==-.4&&
+            std::get<8>(utilization)==8000&&std::get<9>(utilization)==3200,
+            "utilization must charge the full-width used section including lateral blanks");
+        selection.Ranking=RankingPolicy::RegularRemnant;
+        const auto old=RunPortfolio(p,selection,registry);
+        Require(old.Jobs[old.BestJob].StrategyID=="regular-remnant","explicit remnant policy changed unexpectedly");
+        std::cout<<"PASS default utilization beats a conflicting remnant reward; explicit policy stays opt-in\n";
+        {
+            Problem fixedWidth;fixedWidth.Parts={Box("bar",80,20,2)};fixedWidth.Stocks={{"sheet",200,100,1}};
+            const auto broad=LayoutOf(fixedWidth,{At("bar",0,0,0),At("bar",1,90,0)});
+            const auto narrow=LayoutOf(fixedWidth,{At("bar",0,0,0),At("bar",1,0,20)});
+            StrategyRegistry columns;columns.Register("broad-low",[broad]{return std::make_unique<Supplied>(broad);});
+            columns.Register("narrow-tall",[narrow]{return std::make_unique<Supplied>(narrow);});
+            PortfolioOptions o;o.PerJob.EnableBasicCompaction=false;const auto chosen=RunPortfolio(fixedWidth,o,columns);
+            Require(chosen.Jobs[chosen.BestJob].StrategyID=="broad-low",
+                "cropping away lateral stock blanks rewarded a narrow tall column with worse real section utilization");
+            std::cout<<"PASS fixed-width utilization rejects misleading denser narrow columns\n";
+        }
+        {
+            Problem differentStocks;differentStocks.Parts={Box("square",20,20,2)};
+            differentStocks.Stocks={{"large",100,100,1},{"small",40,40,2}};
+            Result large;large.State=Status::Complete;large.Layouts={{"large",0,100,100,{At("square",0,0,0),At("square",1,20,0)},800}};
+            Result small;small.State=Status::Complete;small.Layouts={{"small",0,40,40,{At("square",0,0,0)},400},
+                {"small",1,40,40,{At("square",1,0,0)},400}};
+            Check(differentStocks,large);Check(differentStocks,small);
+            StrategyRegistry stockChoices;stockChoices.Register("one-large",[large]{return std::make_unique<Supplied>(large);});
+            stockChoices.Register("two-small",[small]{return std::make_unique<Supplied>(small);});
+            PortfolioOptions o;o.PerJob.EnableBasicCompaction=false;
+            auto chosen=RunPortfolio(differentStocks,o,stockChoices);
+            Require(chosen.Jobs[chosen.BestJob].StrategyID=="two-small",
+                "physical sheet count displaced the better actual stock-area utilization");
+            Result partial=small;partial.State=Status::Partial;partial.Layouts.resize(1);partial.Remaining={{"square",1}};
+            JobResult assessedPartial;assessedPartial.Output=partial;Detail::AssessCandidate(differentStocks,assessedPartial);
+            JobResult assessedComplete;assessedComplete.Output=large;Detail::AssessCandidate(differentStocks,assessedComplete);
+            Require(assessedPartial.Checked.Valid&&Detail::Quality(assessedComplete,differentStocks,RankingPolicy::Utilization)<
+                Detail::Quality(assessedPartial,differentStocks,RankingPolicy::Utilization),
+                "an apparently dense partial layout displaced complete original demand");
+            std::cout<<"PASS utilization uses stock area rather than board count and never rewards omitted demand\n";
+        }
+        {
+            auto frame=Box("net-frame",10,10);frame.Geometry.Holes={{{1,1},{1,9},{9,9},{9,1}}};
+            Problem holed;holed.Parts={frame};holed.Stocks={{"sheet",20,20,1}};
+            JobResult actual;actual.Output=LayoutOf(holed,{At("net-frame",0,0,0)});Detail::AssessCandidate(holed,actual);
+            const auto key=Detail::Quality(actual,holed,RankingPolicy::Utilization);
+            Require(actual.Checked.Complete&&std::abs(std::get<4>(key)+.09)<1e-10&&std::abs(std::get<5>(key)+.18)<1e-10&&
+                std::get<8>(key)==200&&std::get<9>(key)==100,
+                "a hole or enclosing box was counted as original material in utilization");
+            std::cout<<"PASS default utilization subtracts holes from real material\n";
+        }
         p.Parts={Box("block",40,96)};p.Stocks={{"stock",200,100,1,1,""}};p.PartGap=3;p.EdgeMargin=2;
         auto gap=LayoutOf(p,{At("block",0,2,2)});Check(p,gap);auto measure=EvaluateRemnants(p,gap);
         Require(measure.Measured&&std::abs(measure.LastSheetRegularArea-153*96)<.2,"gap and board margin must be accounted once");

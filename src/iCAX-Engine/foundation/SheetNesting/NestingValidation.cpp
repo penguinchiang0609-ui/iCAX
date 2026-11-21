@@ -96,7 +96,8 @@ namespace iCAX::SheetNesting
                 if (!std::isfinite(pose.X) || !std::isfinite(pose.Y) || !std::isfinite(pose.AngleDegrees))
                 { fail("Non-finite placement: " + part.ID); continue; }
                 if (part.Material != stock.Material) fail("Material mismatch: " + part.ID);
-                if (!Detail::AngleAllowed(part, pose.AngleDegrees, problem.Tolerance)) fail("Forbidden angle: " + part.ID);
+                if (!Detail::PoseAllowed(part, pose, problem.Tolerance))
+                    fail(pose.Mirrored&&!part.AllowMirror?"Forbidden mirrored placement: " + part.ID:"Forbidden angle: " + part.ID);
                 if (!Detail::InsideSheet(part.Geometry, pose, stock.Width, stock.Height, problem.EdgeMargin, problem.Tolerance))
                     fail("Part outside usable sheet: " + part.ID);
                 const auto box = bounds[i];
@@ -107,7 +108,7 @@ namespace iCAX::SheetNesting
                 {
                     const auto other = parts.find(layout.Placements[j].PartID);
                     if (other != parts.end() && Detail::ShapesConflict(part.Geometry, pose, other->second->Geometry,
-                        layout.Placements[j].Transform, problem.PartGap, problem.Tolerance))
+                        layout.Placements[j].Transform, problem.PartGap, problem.Tolerance, problem.AllowCommonEdges))
                         fail("Overlap or insufficient gap: " + part.ID + " / " + other->first);
                 }
             }

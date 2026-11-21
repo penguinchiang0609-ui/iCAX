@@ -295,7 +295,7 @@ namespace {
             const auto result=task.MachinePlanWorker.Result();
             if(task.Cancelled->load())task.Status="Cancelled";
             else if(task.Sequence!=runtime.Sequence)task.Status="Superseded";
-            else{if(task.MachinePlanInput->PlacementPreview&&task.MachinePlanInput->InputKey!=MachinePlanKey(scene,task.SetupID,CaptureMachine(scene,Require<CFiveAxisSetupComponent>(scene.Database(),task.SetupID)->GetMachineSetup())))throw std::runtime_error("CAM_MACHINE_PLAN_SUPERSEDED");auto report=*result;MachinePlanningProgress(task.MachinePlanProgress,"Saving",task.MachinePlanInput->Trajectory->Frames.size(),task.MachinePlanInput->Trajectory->Frames.size());
+            else{if(task.MachinePlanInput->PlacementPreview&&task.MachinePlanInput->InputKey!=MachinePlanKey(scene,task.SetupID,CaptureSetupMachine(scene,*Require<CFiveAxisSetupComponent>(scene.Database(),task.SetupID))))throw std::runtime_error("CAM_MACHINE_PLAN_SUPERSEDED");auto report=*result;MachinePlanningProgress(task.MachinePlanProgress,"Saving",task.MachinePlanInput->Trajectory->Frames.size(),task.MachinePlanInput->Trajectory->Frames.size());
                 if(!task.MachinePlanInput->PlacementPreview)PublishMachinePlan(scene,task.SetupID,*task.MachinePlanInput,report);report.erase("inputKey");task.MachinePlanModel=std::make_shared<const Map>(std::move(report));
                 task.Result={{"setupId",iCAX::Data::to_string(task.SetupID)},{"status",task.MachinePlanModel->at("status")},{"playbackAllowed",task.MachinePlanModel->at("playbackAllowed")}};task.Status="Completed";}
         }catch(const iCAX::Tasks::TaskCanceledException&){task.Status="Cancelled";}
@@ -324,7 +324,8 @@ Map PlanMachineMotion(Scene& scene,const Map& request){
         auto unchanged=configuration;unchanged["placement"]=current.at("placement");
         if(unchanged!=current)throw std::invalid_argument("CAM_MACHINE_PREVIEW_PLACEMENT_ONLY: 摆放检查只能整体移动工件与工装，不能修改刀具、标定或检测范围。");
         auto candidate=CaptureMachine(scene,configuration);
-        ValidateMachinePlacement(scene,task.SetupID,candidate,task.MachinePlanInput->Machine.Placement);
+        ValidateMachinePlacement(scene,task.SetupID,candidate,RigidMatrix(current.at("placement").To<Array>()));
+        candidate.Placement=Motion::Multiply(candidate.Placement,RigidMatrix(OperationAssemblyTransform(scene,task.SetupID)));
         auto preview=std::make_shared<MachinePlanSnapshot>(*task.MachinePlanInput);preview->PlacementPreview=true;
         if(request.contains("previewMaximumSeconds")){const auto seconds=FiniteNumber(request.at("previewMaximumSeconds"),"CAM_MACHINE_PREVIEW_BUDGET_INVALID");if(seconds<=0||seconds>600)throw std::invalid_argument("CAM_MACHINE_PREVIEW_BUDGET_INVALID");preview->PreviewMaximumSeconds=seconds;}
         preview->Machine=std::move(candidate);preview->State=MachineSnapshotState(preview->Machine);

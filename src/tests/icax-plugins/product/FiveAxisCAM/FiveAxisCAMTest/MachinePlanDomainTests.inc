@@ -2,16 +2,29 @@ namespace {
     struct ProductPlanMachine {ID Machine,X,Y,Tool,Support;Map Configuration,Post;};
     auto PlanAttach(const auto& entity,const Text& name,const Map& fields){const auto component=entity->AddComponent(name);for(const auto& [key,value]:fields){Text error;if(!component->SetProperty(key,value,error))throw std::runtime_error(error);}return component;}
     Array PlanBox(double x,double y,double z,double size=.001){return {Map{{"enabled",true},{"name",Text("Authored test collision box")},{"pose",Array{x,y,z,0.,0.,0.}},{"geometry",Map{{"type",Text("box")},{"size",Array{size,size,size}}}}}};}
-    ProductPlanMachine CreateProductPlanMachine(Scene& scene){
+    ProductPlanMachine CreateProductPlanMachine(Scene& scene,bool declaredFixedHead=false){
         ProductPlanMachine m;m.Machine=iCAX::Data::GenerateNewUUID();m.X=iCAX::Data::GenerateNewUUID();m.Y=iCAX::Data::GenerateNewUUID();m.Tool=iCAX::Data::GenerateNewUUID();m.Support=iCAX::Data::GenerateNewUUID();
         const auto root=scene.Database().CreateEntity(m.Machine);PlanAttach(root,"CMachineInstanceComponent",{{"Name",Text("Native axis-plan acceptance gantry")}});PlanAttach(root,"CTransformComponent",{});
         const auto part=[&](ID id,ID parent,const Text& name,Array colliders,Array axis={},double position=0){const auto entity=scene.Database().CreateEntity(id);PlanAttach(entity,"CTransformComponent",{{"ParentEntityID",parent}});PlanAttach(entity,"CMachineElementComponent",{{"MachineID",m.Machine},{"Name",name},{"ElementKind",Text("part")},{"RestPose",Array{0.,0.,0.,0.,0.,0.}}});PlanAttach(entity,"CMachineCollisionComponent",{{"Collisions",colliders}});
             if(!axis.empty()){const auto joint=PlanAttach(entity,"CMachineJointComponent",{{"JointName",name},{"JointType",Text("prismatic")},{"Axis",axis},{"LowerLimit",-200.},{"UpperLimit",200.},{"VelocityLimit",100.}});Text error;if(!joint->SetProperty("Position",position,error))throw std::runtime_error(error);}return entity;};
         part(m.X,m.Machine,"X",PlanBox(0,1,0),{1.,0.,0.});part(m.Y,m.X,"Y",PlanBox(0,2,0),{0.,1.,0.});part(m.Tool,m.Y,"Z tool",PlanBox(0,0,.01),{0.,0.,1.},30);part(m.Support,m.Machine,"Work support",PlanBox(0,0,-5.095,10));
+        const auto zAxis=m.Tool;
+        if(declaredFixedHead){
+            // A tool boundary must declare a real fixed nozzle, rather than
+            // treating the external Z slide as an undeclared cutting head.
+            File nozzle(BRepPrimAPI_MakeBox(.1,.1,.1).Shape());const auto imported=Wait(scene,Invoke(&scene,"CamHead","Import",ImportTestHead(scene,nozzle)));
+            if(imported.at("status").To<Text>()!="Completed")throw std::runtime_error("Declared fixture nozzle import failed");
+            const auto visual=Head(scene).at("previewRef").To<Map>();const auto definition=Text("native-declared-fixed-head");
+            const auto instance=root->GetComponent("CMachineInstanceComponent");Text declarationError;if(!instance->SetProperty("MachineDefinitionID",definition,declarationError))throw std::runtime_error("Fixture machine definition missing: "+declarationError);
+            m.Tool=iCAX::Data::GenerateNewUUID();const auto nozzlePart=part(m.Tool,zAxis,"Declared fixed nozzle",PlanBox(0,0,.01));
+            PlanAttach(nozzlePart,"CMachineLinkComponent",{{"LinkName",Text("Declared fixed nozzle")}});
+            PlanAttach(nozzlePart,"CRenderInstanceComponent",{{"GeometryResourceID",visual.at("url")},{"GeometryResourceVersion",static_cast<UInt>(std::stoull(visual.at("version").To<Text>()))},{"GeometryKind",UInt(1)}});
+            BindBuiltinHeadSources(scene,Array{Map{{"id",definition},{"kind",Text("3+2")},{"headRoot",Text("Declared fixed nozzle")},{"headAxes",Array{}},{"workpieceAxes",Array{}}}});
+        }
         const auto text=[](ID id){return iCAX::Data::to_string(id);};const Array identity{1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.};
         m.Configuration={{"machineId",text(m.Machine)},{"toolId",text(m.Tool)},{"supportId",text(m.Support)},{"placement",identity},{"tcp",Array{0.,0.,0.}},{"beam",Array{0.,0.,-1.}},{"toolCollisionRepresentation",Text("Boxes")}};
         auto configure=GenerateRequest(scene);configure["configuration"]=m.Configuration;Invoke(&scene,"CamSimulation","ConfigureMachine",configure);
-        Array axes;for(const auto& [id,word]:std::vector<std::pair<ID,Text>>{{m.X,"X"},{m.Y,"Y"},{m.Tool,"Z"}})axes.emplace_back(Map{{"jointId",text(id)},{"word",word},{"sign",1.},{"offset",0.},{"maxAcceleration",200.},{"maxJerk",1000.}});
+        Array axes;for(const auto& [id,word]:std::vector<std::pair<ID,Text>>{{m.X,"X"},{m.Y,"Y"},{zAxis,"Z"}})axes.emplace_back(Map{{"jointId",text(id)},{"word",word},{"sign",1.},{"offset",0.},{"maxAcceleration",200.},{"maxJerk",1000.}});
         m.Post={{"name",Text("Uncalibrated native plan JSON")},{"format",Text("JointJSON")},{"extension",Text("json")},{"axes",axes},{"header",Text("G90\nG93")},{"footer",Text("M30")},{"processOn",Text("M3")},{"processOff",Text("M5")},{"motion",Text("G1 {axes} F{feed}")},{"cutFeedMmMin",600.},{"travelFeedMmMin",1200.}};
         Invoke(&scene,"CamSimulation","ConfigureMachinePost",{{"expected",Read(scene).at("expected")},{"machineId",text(m.Machine)},{"postprocessor",m.Post}});return m;
     }

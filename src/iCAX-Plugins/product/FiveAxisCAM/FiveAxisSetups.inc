@@ -20,11 +20,12 @@ namespace {
         if(!p||p->GetSetupID()!=setupID){plan["status"]=Text("Stale");return plan;}
         const auto w=Require<CFiveAxisWorkpieceComponent>(scene.Database(),p->GetWorkpieceID());
         if(plan.at("geometryRef").To<Map>()!=WireRef(w->GetGeometryRef())||plan.at("placementTransform").To<Array>()!=p->GetTransform())plan["status"]=Text("Stale");
+        if(plan.contains("machineStatus")&&String(plan,"machineStatus")=="Qualified"&&(plan.contains("assemblyTransform")?plan.at("assemblyTransform").To<Array>():Identity())!=OperationAssemblyTransform(scene,setupID))plan["machineStatus"]=Text("Stale");
         return plan;
     }
 }
 Map ManageSetups(Scene& scene,const Map& request) {
-    CutFields(request,{"commandId","expected","placementId","action","name"});
+    CutFields(request,{"commandId","expected","placementId","action","name","machineType"});
     const auto runtime=Runtime(scene);const auto commandID=iCAX::Data::to_string(Identifier(request,"commandId"));
     const auto payload=Text("ManageSetups:")+iCAX::Data::VariantSerializer::Serialize(request);
     if(const auto it=runtime->Receipts.find(commandID);it!=runtime->Receipts.end()){
@@ -40,27 +41,28 @@ Map ManageSetups(Scene& scene,const Map& request) {
     ID nextPlacement=id,nextSetup=setupID;
     std::vector<ID> ownedCuts,ownedFixtures;
     if(action=="create"){
+        const auto machineType=RequiredOperationMachineType(request);
         if(!w->GetEnabled())throw std::invalid_argument("CAM_WORKPIECE_DISABLED");
         if(s)RequireSetupWorkpieceEnabled(scene,setupID);
-        nextSetup=iCAX::Data::GenerateNewUUID();nextPlacement=s?iCAX::Data::GenerateNewUUID():id;
+        nextSetup=iCAX::Data::GenerateNewUUID();nextPlacement=iCAX::Data::GenerateNewUUID();
         auto name=String(request,"name");if(name.empty())throw std::invalid_argument("CAM_SETUP_NAME_REQUIRED");
         const auto defaultFixtures=PrepareDefaultFixtures(scene);
         const auto profile=s?s->GetPlanningProfileData():StoredRef(DefaultPlanningProfile(scene));
         const auto insertion=SetupInsertionSequence(scene,p->GetWorkpieceID());
         const auto nextPlan=iCAX::Data::GenerateNewUUID();
+        const auto head=PrepareOperationHead(scene,p->GetWorkpieceID(),machineType);const auto headID=String(head,"instanceId").empty()?ID():Identifier(head,"instanceId");
         const std::vector<Map> commands{{{"kind",Text("CreatePlan")},{"commandId",Identifier(request,"commandId")},{"planId",nextPlan},{"name",name}}};
         CommitIntentHostCommands(scene,commands,[&](auto& tx,const auto&){
             ShiftSetupSequences(scene,tx,insertion);
             tx.CreateEntity(nextSetup);tx.AttachComponent(nextSetup,CFiveAxisSetupComponent::S_ClassName,
-                {{"JobID",jobID},{"Name",name},{"Sequence",insertion},{"IntentPlanID",nextPlan},{"PlanningProfileData",profile},{"RapidSettings",s?s->GetRapidSettings():Map()},{"HeadInstanceID",s?s->GetHeadInstanceID():ID()}});
-            if(s){tx.CreateEntity(nextPlacement);tx.AttachComponent(nextPlacement,CFiveAxisPlacementComponent::S_ClassName,
+                {{"JobID",jobID},{"Name",name},{"Sequence",insertion},{"IntentPlanID",nextPlan},{"PlanningProfileData",profile},{"RapidSettings",s?s->GetRapidSettings():Map()},{"HeadInstanceID",headID},{"HeadAssignment",head.at("assignment")},{"MachineTypeAssignment",Map{{"mode",Text("Type")},{"machineType",machineType}}}});
+            tx.CreateEntity(nextPlacement);tx.AttachComponent(nextPlacement,CFiveAxisPlacementComponent::S_ClassName,
                 {{"SetupID",nextSetup},{"WorkpieceID",p->GetWorkpieceID()},{"Transform",p->GetTransform()}});
             tx.AttachComponent(nextPlacement,iCAX::Transform::CTransformComponent::S_ClassName,{});
             const auto preview=ReadWireRef(WireRef(w->GetPreviewRef()));
             tx.AttachComponent(nextPlacement,iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName,
                 {{"GeometryResourceID",preview.URL},{"GeometryResourceVersion",static_cast<UInt>(preview.nVersion)}});
-            }else tx.ModifyComponent(id,CFiveAxisPlacementComponent::S_ClassName,{{"SetupID",nextSetup},{"RegistrationData",Map()},{"RegistrationMethod",Text()},{"ApplicationMode",Text("Pending")},{"InputRevision",Next(p->GetInputRevision())}});
-            tx.ModifyComponent(jobID,CFiveAxisJobComponent::S_ClassName,{{"DefaultSetupID",nextSetup},{"ActiveSetupID",nextSetup},{"DefaultPlacementID",nextPlacement},{"ActivePlacementID",nextPlacement}});
+            tx.ModifyComponent(jobID,CFiveAxisJobComponent::S_ClassName,{{"HeadInstances",head.at("instances")},{"DefaultSetupID",nextSetup},{"ActiveSetupID",nextSetup},{"DefaultPlacementID",nextPlacement},{"ActivePlacementID",nextPlacement}});
             AttachLibraryFixtures(tx,nextSetup,defaultFixtures);
         },"新增装夹",{nextSetup});
         ProjectPlacement(scene,nextPlacement,p->GetTransform());
@@ -115,8 +117,6 @@ Map SetSetupSequence(Scene& scene,const Map& request) {
         ids.push_back(*parsed);
     }
     if(!remaining.empty())throw std::invalid_argument("CAM_SETUP_SEQUENCE_INCOMPLETE");
-    UInt previousWorkpieceOrder=0;
-    for(const auto& setupID:ids)for(const auto& e:db.FilterEntities([](auto){return true;}))if(const auto p=Component<CFiveAxisPlacementComponent>(e);p&&p->GetSetupID()==setupID){const auto order=Require<CFiveAxisWorkpieceComponent>(db,p->GetWorkpieceID())->GetListOrder();if(order<previousWorkpieceOrder)throw std::invalid_argument("CAM_SETUP_SEQUENCE_WORKPIECE_GROUP: 装夹姿态只能在所属工件内排序。");previousWorkpieceOrder=order;}
     Transaction(db,"调整装夹工序顺序",[&](auto& tx){
         for(size_t i=0;i<ids.size();++i)tx.ModifyComponent(ids[i],CFiveAxisSetupComponent::S_ClassName,{{"Sequence",static_cast<UInt>(i+1)}});
         tx.ModifyComponent(jobID,CFiveAxisJobComponent::S_ClassName,{{"InputRevision",Next(job->GetInputRevision())}});
@@ -149,7 +149,7 @@ Map SetRegistrationPlan(Scene& scene,const Map& request) {
     if(minimumDistance<.001||condition<.001)throw std::invalid_argument("CAM_LOCATING_COLLINEAR: 三点不能重合或共线，请重新选择分散的特征点。");
     Map plan{{"status",Text("Prepared")},{"machineStatus",Text("Unmeasured")},{"placementId",iCAX::Data::to_string(id)},
         {"setupId",iCAX::Data::to_string(p->GetSetupID())},{"unit",Text("mm")},{"coordinateFrame",Text("Setup")},
-        {"geometryRef",WireRef(object.GeometryRef)},{"placementTransform",p->GetTransform()},{"points",points},
+        {"geometryRef",WireRef(object.GeometryRef)},{"placementTransform",p->GetTransform()},{"assemblyTransform",OperationAssemblyTransform(scene,p->GetSetupID())},{"points",points},
         {"minimumDistanceMm",minimumDistance},{"conditionRatio",condition}};
     if(request.contains("measuredPoints")){
         using Request=iCAX::Geometry::SRigidRegistrationRequest;

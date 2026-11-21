@@ -18,6 +18,8 @@ struct ContactPrecisionResult {
 };
 // Optional, conservative whole-layout micro-translation refinement. Original
 // result is returned unchanged whenever refinement cannot be validated.
+// Multiple physical sheets and positive nominal gaps are supported. A bounded
+// extra clearance repairs floating-point contact poses without changing parts.
 ContactPrecisionResult RefineContactPrecision(const Problem&,const Result&,const ContactPrecisionOptions&);
 // Optional precision stage; never registered in the default strategy pool.
 PostProcessStage MakeContactPrecisionStage(ContactPrecisionOptions options={});

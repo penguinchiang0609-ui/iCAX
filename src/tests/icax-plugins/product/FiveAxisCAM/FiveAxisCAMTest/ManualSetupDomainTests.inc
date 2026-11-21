@@ -7,13 +7,13 @@ TEST(FiveAxisManualSetups, ImportHasNoSetupOrPlanAndLastRemovalKeepsOnlyWorkpiec
     EXPECT_TRUE(initial.at("activeSetupId").To<Text>().empty());
     EXPECT_TRUE(scene.Database().FilterEntities([](auto e){return e->HasComponent("CEditablePlanComponent");}).empty());
     Map request{{"commandId",iCAX::Data::to_string(iCAX::Data::GenerateNewUUID())},{"expected",initial.at("expected")},
-        {"placementId",ids.at("placementId")},{"action",Text("create")},{"name",Text("装夹 1")}};
+        {"placementId",ids.at("placementId")},{"action",Text("create")},{"name",Text("装夹 1")},{"machineType",Text("HeadHead")}};
     const auto added=Invoke(&scene,"CamSetup","Manage",request),withSetup=Read(scene);
-    EXPECT_EQ(1u,withSetup.at("setups").To<Array>().size());EXPECT_EQ(ids.at("placementId"),added.at("placementId"));
+    EXPECT_EQ(1u,withSetup.at("setups").To<Array>().size());EXPECT_NE(ids.at("placementId"),added.at("placementId"));EXPECT_EQ(2u,withSetup.at("placements").To<Array>().size());
     EXPECT_EQ(initial.at("workpieces"),withSetup.at("workpieces"));
     ASSERT_TRUE(scene.Database().Undo());EXPECT_TRUE(Read(scene).at("setups").To<Array>().empty());
     ASSERT_TRUE(scene.Database().Redo());EXPECT_EQ(withSetup.at("placements"),Read(scene).at("placements"));
-    request["commandId"]=iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());request["expected"]=Read(scene).at("expected");request["action"]=Text("remove");request.erase("name");
+    request["commandId"]=iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());request["expected"]=Read(scene).at("expected");request["placementId"]=added.at("placementId");request["action"]=Text("remove");request.erase("name");
     const auto removed=Invoke(&scene,"CamSetup","Manage",request),after=Read(scene);
     EXPECT_TRUE(removed.at("setupId").To<Text>().empty());EXPECT_TRUE(after.at("setups").To<Array>().empty());
     EXPECT_EQ(initial.at("workpieces"),after.at("workpieces"));EXPECT_EQ(1u,after.at("placements").To<Array>().size());

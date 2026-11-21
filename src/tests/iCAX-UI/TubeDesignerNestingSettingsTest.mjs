@@ -355,6 +355,44 @@ await test("Failed project save keeps the committed settings and the user's draf
   assert.equal(harness.view.tubeDesignerNestingSettingsSaving, false);
 });
 
+await test("Legacy settings default to time priority and strategy choices persist independently of gap", async () => {
+  const harness = createHarness();
+  harness.view.scene.tubeDesigner.nestingSettings = { version: 2, stocks: [], parameters: { partGap: 2.5 } };
+  assert.deepEqual(getNestingParameters(harness.view), { partGap: 2.5, optimizationMode: "time", searchTimeSeconds: 5 });
+  await harness.open("parameters");
+  await harness.act("parameters-change", { dataset: { field: "optimizationMode" }, value: "utilization" });
+  assert.equal(harness.view.tubeDesignerNestingParameterDraft.searchTimeSeconds, "60");
+  await harness.act("parameters-change", { dataset: { field: "searchTimeSeconds" }, value: "120" });
+  await harness.act("parameters-change", { dataset: { field: "optimizationMode" }, value: "time" });
+  assert.equal(harness.view.tubeDesignerNestingParameterDraft.searchTimeSeconds, "120", "Mode switch preserves custom time");
+  await harness.act("parameters-change", { dataset: { field: "optimizationMode" }, value: "utilization" });
+  await harness.act("parameters-save");
+  assert.deepEqual(harness.saves[0].parameters, { partGap: 2.5, optimizationMode: "utilization", searchTimeSeconds: 120 });
+  await harness.open("parameters");
+  assert.deepEqual(harness.view.tubeDesignerNestingParameterDraft,
+    { partGap: "2.5", optimizationMode: "utilization", searchTimeSeconds: "120" });
+  await harness.act("parameters-change", { dataset: { field: "searchTimeSeconds" }, value: "1" });
+  await harness.act("settings-cancel");
+  assert.equal(getNestingParameters(harness.view).searchTimeSeconds, 120);
+});
+
+await test("Search duration and optimization mode reject invalid saves", async () => {
+  for (const value of ["", " ", "0", "-1", "1.5", "3601", "Infinity", "NaN", "9e99"]) {
+    const harness = createHarness();
+    await harness.open("parameters");
+    await harness.act("parameters-change", { dataset: { field: "searchTimeSeconds" }, value });
+    const result = await harness.act("parameters-save");
+    assert.equal(result.result, false);
+    assert.match(harness.view.tubeDesignerNestingSettingsError, /1 至 3600/);
+    assert.equal(harness.saves.length, 0);
+  }
+  const harness = createHarness();
+  await harness.open("parameters");
+  await harness.act("parameters-change", { dataset: { field: "optimizationMode" }, value: "unknown" });
+  assert.equal((await harness.act("parameters-save")).result, false);
+  assert.equal(harness.saves.length, 0);
+});
+
 if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
 else delete globalThis.localStorage;
 console.log(`TubeDesigner nesting settings tests passed (${completed.length} cases)`);

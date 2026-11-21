@@ -1,8 +1,9 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {operationAssemblyMatrix} from './operationAssembly.mjs';
 
 // CAD/CAM work in setup coordinates. Physical support and registration are
 // display parents only inside machine simulation.
-export function setupWorldFrame(view,setupId){
+export function setupReferenceWorldFrame(view,setupId){
   if(view.fiveAxisArea!=='simulation')return new THREE.Matrix4();
   const configuration=view.scene?.domain?.setups?.find(s=>s.id===setupId)?.machineSetup;
   if(!configuration?.supportId)return new THREE.Matrix4();
@@ -17,7 +18,7 @@ export function setupWorldFrame(view,setupId){
       if(part.setupId!==setupId||!part.transform)continue;
       const world=viewport?.transformPayloads?.get(part.id)?.localToWorld;
       if(!world)continue;
-      const local=new THREE.Matrix4().set(...part.transform),frame=new THREE.Matrix4().fromArray(world);
+       const local=operationAssemblyMatrix(view,setupId).multiply(new THREE.Matrix4().set(...part.transform)),frame=new THREE.Matrix4().fromArray(world);
       if(!frame.elements.every(Number.isFinite)||!local.elements.every(Number.isFinite)||Math.abs(local.determinant())<1e-12)continue;
       frame.multiply(local.invert());
       if(Math.abs(frame.determinant())>=1e-12)return frame;
@@ -28,6 +29,11 @@ export function setupWorldFrame(view,setupId){
   return support.multiply(new THREE.Matrix4().set(...configuration.placement));
 }
 
+export function setupWorldFrame(view,setupId){return setupReferenceWorldFrame(view,setupId).multiply(operationAssemblyMatrix(view,setupId));}
+
 export function setupTransformToWorld(view,setupId,matrix){
   return setupWorldFrame(view,setupId).multiply(matrix);
 }
+export function placementWorldMatrix(view,placement){return setupTransformToWorld(view,placement?.setupId,new THREE.Matrix4().set(...placement.transform));}
+export function activeSetupWorldFrame(view){return setupWorldFrame(view,view.scene?.domain?.activeSetupId);}
+export function applySetupDisplayFrame(view,object){object.updateMatrix();object.matrix.premultiply(activeSetupWorldFrame(view));object.matrixAutoUpdate=false;object.matrixWorldNeedsUpdate=true;return object;}

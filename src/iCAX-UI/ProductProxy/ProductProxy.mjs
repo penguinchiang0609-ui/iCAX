@@ -70,8 +70,9 @@ export class ProductProxy {
     return { ...response, projectProxy, sceneProxy: projectProxy?.getMainScene() ?? null };
   }
 
-  async closeProjectCatalog(catalogId) {
-    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.closeProjectCatalog, { catalogId });
+  async closeProjectCatalog(catalogId, { discardChanges = false } = {}) {
+    if (typeof discardChanges !== "boolean") throw new TypeError("discardChanges must be a boolean");
+    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.closeProjectCatalog, { catalogId, discardChanges });
     if (response?.productChannelId) {
       this.updateState({ ...this.state, ...response });
     }

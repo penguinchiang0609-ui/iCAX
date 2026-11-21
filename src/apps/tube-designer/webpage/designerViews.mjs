@@ -1785,7 +1785,10 @@ function renderParametricProfileParameters(profile, prefix, disabled, context) {
   if (profile?.profileForm !== "parametric") return "";
   const selector = context.template.parameters.find(field => isProductProfileField(field) && productProfileRole(field) === prefix);
   const bindings = productProfileParameterBindings(context.template, selector, profile)
-    .filter(binding => parameterVisible(binding.field, context.values));
+    .filter(binding => parameterVisible(binding.field, context.values))
+    // Resource bindings may drive dimensions that the product explicitly owns
+    // in scene annotations. Do not duplicate those controls in the sidebar.
+    .filter(binding => applyTemplateFieldDisplay(context.template, [binding.field], "right")[0]?.uiDisplay?.category !== "specifications");
   if (!bindings.length) return "";
   const unit = bindings[0].field.unit;
   return `<div class="tube-designer-parametric-profile-parameters" data-profile-parameter-scope>

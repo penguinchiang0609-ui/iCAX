@@ -39,7 +39,7 @@ export async function fixtureLibraryCommand(context,view,action,ops){
   if(action==='choose'){s.choosing=true;s.open=false;}else if(!choosing){s.open=true;}
   if(s.open)closeFixtureChooser(context,view);
   if(s.open||s.choosing){selectTool(view,'fixture');}view.fixtureDesignPicking=false;
-  if(view.fiveAxisArea!=='workpiece')await context.actions?.selectRibbonTab?.('workpiece');
+  if(view.fiveAxisArea!=='operation')await context.actions?.selectRibbonTab?.('operation');
   const refresh=async()=>{const result=await context.sceneProxy.invoke('CamFixture.LibraryList',{}, {timeoutMs:120000});if(alive()){s.entries=result.entries;s.defaultId=result.defaultId;s.preferencesRevision=result.preferencesRevision;}};
   // The file picker owns interaction until a file is chosen. Native import
   // progress starts afterwards so it cannot mask the file picker controls.

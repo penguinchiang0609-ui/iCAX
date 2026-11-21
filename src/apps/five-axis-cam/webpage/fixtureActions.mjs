@@ -131,6 +131,7 @@ const messages = {
 };
 const errorText = error => Object.entries(messages).find(([key]) => error.message?.includes(key))?.[1] ?? error.message ?? String(error);
 const current = (context,view) => !view.disposed && context.isCurrentProject?.() !== false;
+const inOperationArea=view=>view.fiveAxisArea==='operation'||view.activeAreaId==='operation';
 async function invoke(context,method,request) {
   try { return await context.sceneProxy.invoke(method,request,fixtureTaskRequestOptions); }
   catch (error) {
@@ -156,6 +157,7 @@ async function waitTask(context, view, task, ops) {
 }
 export async function fixtureCommand(context, view, action, ops) {
   if(action.startsWith('light-'))return;
+  if(view.fiveFixtureDesignRequest&&!['cancel','design.cancel','design.close'].includes(action))return;
   // Selecting a plate is local inspection, so it must keep keyboard focus
   // instead of entering the request state used by model mutations.
   if(action.startsWith('part-select:')){if(!view.fixtureRequest)return fixturePlateCommand(context,view,action,ops);return;}
@@ -163,9 +165,15 @@ export async function fixtureCommand(context, view, action, ops) {
   if(action!=='cancel'&&view.fiveFixtureEditRequest)await view.fiveFixtureEditRequest;
   if(['cancel','design.cancel','design.close'].includes(action))return runFixtureCommand(context,view,action,ops);
   if(view.fixtureRequest)return;
+  const opensOperation=action==='generate'||action.startsWith('edit:')||action.startsWith('focus.')||action.startsWith('select:');
+  if(opensOperation&&(view.fiveAxisArea||view.activeAreaId)&&!inOperationArea(view)){
+    if(view.pending||!current(context,view))return;
+    await context.actions?.selectRibbonTab?.('operation');
+    if(!inOperationArea(view)||!current(context,view)||view.fixtureRequest)return;
+  }
   const request=Promise.resolve().then(()=>runFixtureCommand(context,view,action,ops));
   view.fixtureRequest=request;
-  try{return await request;}finally{view.fixtureRequest=null;if(current(context,view))ops.renderProject(context,view);}
+  try{return await request;}finally{if(view.fixtureRequest===request){view.fixtureRequest=null;if(current(context,view))ops.renderProject(context,view);}}
 }
 async function runFixtureCommand(context, view, action, ops) {
   if(action.startsWith('part-'))return fixturePlateCommand(context,view,action,ops);
@@ -188,27 +196,28 @@ async function runFixtureCommand(context, view, action, ops) {
   }
   if(action.startsWith('move-mode:')){view.fiveFixtureMoveMode=action.slice(10);ops.renderProject(context,view);return;}
   if(action.startsWith('library.'))return fixtureLibraryCommand(context,view,action.slice(8),ops);
-  const showFixtures=async()=>{
+  const showFixtures=()=>{
+    if((view.fiveAxisArea||view.activeAreaId)&&!inOperationArea(view)||!current(context,view))return false;
     closeFixtureChooser(context,view);
     if(view.fiveFixtureLibrary)view.fiveFixtureLibrary.open=false;
     selectTool(view,'fixture');
     view.fiveAxisRegistrationOpen=false;view.fiveAxisRegistrationPick=null;view.fiveAxisExtractionPick=null;
     view.fiveAxisStartOpen=false;if(!view.fiveStart?.request)view.fiveStart=null;
-    if(view.activeAreaId!=='workpiece')await context.actions?.selectRibbonTab?.('workpiece');
+    return true;
   };
   if(action==='generate'){
     if(view.pending)return;
-    await showFixtures();if(!view.fiveFixtureDesignOpen){view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureEditingUnit=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.fiveFixtureNewUnit=true;}view.fiveFixtureDesignOpen=true;view.fiveFixtureDesignPage='parameters';view.error='';
+    if(!showFixtures())return;if(!view.fiveFixtureDesignOpen){view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureEditingUnit=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.fiveFixtureNewUnit=true;}view.fiveFixtureDesignOpen=true;view.fiveFixtureDesignPage='parameters';view.error='';
     ops.renderProject(context,view);return;
   }
   if(action.startsWith('edit:')){
     if(view.pending)return;const id=action.slice(5),unit=fixtures(view).find(u=>u.id===id);if(unit?.kind!=='Generated'||unit.locked||unit.enabled===false)return;
     await loadFixtureUnitDetails(context,view,unit,{supportFaces:true});if(!current(context,view))return;
-    await showFixtures();state(view).selected=id;view.fiveFixtureEditingUnit=id;view.fiveFixtureNewUnit=false;view.fiveFixtureDesignOpen=true;view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.error='';ops.renderProject(context,view);return;
+    if(!showFixtures())return;state(view).selected=id;view.fiveFixtureEditingUnit=id;view.fiveFixtureNewUnit=false;view.fiveFixtureDesignOpen=true;view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.error='';ops.renderProject(context,view);return;
   }
   if(action.startsWith('focus.')) {
     if(view.pending)return;
-    await showFixtures();if(action==='focus.design'&&!view.fiveFixtureDesignOpen){view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureEditingUnit=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.fiveFixtureNewUnit=true;}view.fiveFixtureDesignOpen=action==='focus.design';view.fiveFixtureDesignPage='parameters';view.error='';
+    if(!showFixtures())return;if(action==='focus.design'&&!view.fiveFixtureDesignOpen){view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;view.fiveFixtureEditingUnit=null;view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;view.fiveFixtureNewUnit=true;}view.fiveFixtureDesignOpen=action==='focus.design';view.fiveFixtureDesignPage='parameters';view.error='';
     if(action==='focus.check'){selectTool(view,'translate');view.fiveSetupCheckOpen=true;}
     ops.renderProject(context,view);
     const key=action==='focus.check'?'fixture-check':'fixture-design';
@@ -223,7 +232,7 @@ async function runFixtureCommand(context, view, action, ops) {
   }
   if (action.startsWith('select:')) {
     if (!fixtures(view).some(f => f.id === action.slice(7))) return;
-    state(view).selected = action.slice(7);view.fiveFixtureDesignOpen=false;await showFixtures();
+    if(!showFixtures())return;state(view).selected = action.slice(7);view.fiveFixtureDesignOpen=false;
     ops.renderProject(context,view); return;
   }
   if (view.pending || !current(context,view)) return;
@@ -272,7 +281,7 @@ async function runFixtureCommand(context, view, action, ops) {
 }
 export function fixturePicked(context, view, userData, _hit, _event, _hits, ops) {
   if(designPick(context,view,userData,_hit,_event,_hits,ops))return true;
-  if(view.fiveAxisArea!=='workpiece'||['registration','align'].includes(activeTool(view)))return false;
+  if(view.fiveAxisArea!=='operation'||['registration','align'].includes(activeTool(view)))return false;
   const id=String(userData?.objectId ?? ''),unit=fixtures(view).find(f=>f.partIds.includes(id));
   if(unit) {
     const editing=unit.kind==='Generated'&&state(view).selected===unit.id&&unit.partIds.includes(view.fiveFixtureSelectedPart);
@@ -285,7 +294,7 @@ export function fixturePicked(context, view, userData, _hit, _event, _hits, ops)
 }
 export function highlightFixture(view) {
   highlightDesign(view);
-  const id=view.fiveAxisArea==='workpiece'&&activeTool(view)==='fixture'&&!view.fiveFixtureDesignOpen?selectedFixture(view)?.id:'';
+  const id=view.fiveAxisArea==='operation'&&activeTool(view)==='fixture'&&!view.fiveFixtureDesignOpen?selectedFixture(view)?.id:'';
   const parts=selectedFixture(view)?.partIds||[],part=view.fiveFixtureSelectedPart;
   const focus=parts.includes(part)&&view.scene.domain.fixtures.some(f=>f.id===part&&f.enabled!==false&&f.visible!==false);
   view.viewport?.setEmphasizedObjectIds?.(id?(focus?[part]:parts):[],{visual:{color:focus?0x22c4aa:0x568ac4,emissive:focus?0x145448:0x183048,emissiveIntensity:focus?0.3:0.1},dimOthers:id&&focus?0.14:undefined});

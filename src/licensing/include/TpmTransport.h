@@ -1,6 +1,6 @@
 #pragma once
 #include "TpmEvidence.h"
-#include <tbs.h>
+#include "TpmStatus.h"
 
 namespace tube::license::tpm {
 inline void U16(Bytes& b, std::uint16_t v) { b.push_back(static_cast<unsigned char>(v >> 8)); b.push_back(static_cast<unsigned char>(v)); }
@@ -15,7 +15,7 @@ class Context final {
 public:
     Context() {
         TBS_CONTEXT_PARAMS2 p{}; p.version = 2; p.includeTpm20 = 1;
-        Require(Tbsi_Context_Create(reinterpret_cast<TBS_CONTEXT_PARAMS*>(&p), &handle_) == 0, "Cannot open TPM 2.0");
+        CheckStatus(Tbsi_Context_Create(reinterpret_cast<TBS_CONTEXT_PARAMS*>(&p), &handle_), "无法连接 TPM 2.0");
     }
     Context(const Context&) = delete;
     ~Context() { if (handle_) Tbsip_Context_Close(handle_); }
@@ -27,7 +27,7 @@ public:
         Bytes result(16384); UINT32 size = static_cast<UINT32>(result.size());
         const auto status = Tbsip_Submit_Command(handle_, 0, TBS_COMMAND_PRIORITY_NORMAL,
             command.data(), static_cast<UINT32>(command.size()), result.data(), &size);
-        Require(status == 0, "TPM transport failed");
+        CheckStatus(status, "TPM 命令传输失败");
         Require(size >= 10 && size <= result.size(), "Invalid TPM response size"); result.resize(size);
         Reader r(result); r.Take(2); Require(r.U32() == size, "TPM response size mismatch");
         const auto rc = r.U32();

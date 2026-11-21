@@ -1,5 +1,6 @@
 import { toolAxisErrorText } from './toolAxisErrors.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import { escapeAttr as attr, escapeText as esc } from '../../_shared/workbench/utils/format.mjs';
 import { createToolAxisPointGlyph } from './toolAxisDisplay.mjs';
 import { sceneColors } from './scenePalette.mjs';
@@ -120,7 +121,7 @@ export function addAxisInfluenceGlyphs(view,d,root,direction){
   }
 }
 export function axisInfluenceAtPointer(view,d,event){
-  if(!available(view,d)||!d.influence.picking)return null;const vp=view.viewport,box=vp.renderer.domElement.getBoundingClientRect(),cut=view.scene.intentToolpaths.find(c=>c.id===d.id),p=view.scene.domain.placements.find(p=>p.id===cut.placementId),matrix=new THREE.Matrix4().set(...p.transform);let best=13,index=-1;
+  if(!available(view,d)||!d.influence.picking)return null;const vp=view.viewport,box=vp.renderer.domElement.getBoundingClientRect(),cut=view.scene.intentToolpaths.find(c=>c.id===d.id),p=view.scene.domain.placements.find(p=>p.id===cut.placementId),matrix=placementWorldMatrix(view,p);let best=13,index=-1;
   for(let i=0;i<d.influence.stations.length;i++){const s=d.influence.stations[i];if(s.owner)continue;
     const q=new THREE.Vector3(...s.point).applyMatrix4(matrix).project(vp.camera);if(q.z<-1||q.z>1)continue;
     const glyph=view.fiveAxisPointPreview?.group.children.find(g=>g.userData.influenceStation===s),direction=glyph?.userData.toolAxisSamples[0].direction||s.direction;

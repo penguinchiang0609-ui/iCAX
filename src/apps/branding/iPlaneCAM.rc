@@ -1,0 +1,7 @@
+#define ICAX_APPLICATION_ICON "branding/icax.ico"
+#define ICAX_APPLICATION_NAME "iPlaneCAM\0"
+#define ICAX_APPLICATION_FILENAME "iPlaneCAM.exe\0"
+#define ICAX_APPLICATION_VERSION 0,1,0,0
+#define ICAX_APPLICATION_FILE_VERSION "0.1.0.0\0"
+#define ICAX_APPLICATION_PRODUCT_VERSION "0.1.0\0"
+#include "../../iCAX-Application/Application/Application.rc"

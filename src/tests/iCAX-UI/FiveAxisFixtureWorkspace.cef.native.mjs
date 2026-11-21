@@ -19,7 +19,7 @@ try{
   const created=await page.evaluate(p=>__icaxAppShell.createProject({projectName:'独立装夹工作页',projectPath:p,productId:'icax.five-axis-cam'}),resolve(output,'fixture-workspace.i5cam'));
   await page.waitForFunction(id=>window.__icaxWorkbench?.currentProjectId===id&&__icaxAppShell.getState().activeProjectId===id,created.activeProjectId);
   await page.evaluate(async base=>{const {getProjectView}=await import(base+'apps/_shared/workbench/state/projectViewStore.mjs');window.fixture={view:getProjectView(__icaxAppShell.getState().activeProjectId)};},base);await idle();
-  assert.deepEqual((await page.locator('[data-tab-id]').allTextContents()).map(s=>s.trim()),['工件','装夹','CAM','孪生','帮助']);
+  assert.deepEqual((await page.locator('[data-tab-id]').allTextContents()).map(s=>s.trim()),['工件','工序','刀路','孪生','帮助']);
   await tab('fixture');assert.match(await page.locator('.five-fixture-editor').innerText(),/请先导入工件/);
   await page.locator('[data-five-command="five.area.workpiece"]').click();await idle();
   const cover=resolve('TestData/FA/刀路/刀路/整理测试刀路/多槽圆盖-3-7b202.igs');

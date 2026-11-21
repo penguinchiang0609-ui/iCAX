@@ -65,6 +65,12 @@ namespace iCAX::FiveAxisCAM
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap QueryPlaybackCollision(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ImportHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap PreviewHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap AssignHead(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadHeadAssignments(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageOperations(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap AssignMachineType(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
+    FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ReadMachineTypeAssignments(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ManageHeadInstance(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap HeadConfigurationLibrary(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);
     FIVE_AXIS_CAM_API iCAX::Data::ObjectMap ConfigureRapids(iCAX::Project::ISceneContext&, const iCAX::Data::ObjectMap&);

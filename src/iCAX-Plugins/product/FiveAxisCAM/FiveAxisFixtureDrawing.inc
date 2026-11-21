@@ -1,12 +1,17 @@
 // PDF is a scaled assembly illustration; DXF carries the 1:1 cutting geometry.
 namespace {
-struct FixtureDXFBoundary {Array Vertices;std::optional<std::array<double,3>> Circle;};
+struct FixtureDXFBoundary {Array Vertices;std::optional<std::array<double,3>> Circle;std::vector<iCAX::GeometryData::NURBS2> Splines;};
 FixtureDXFBoundary FixtureExactDXFBoundary(const iCAX::GeometryData::Tube::SRegionLoop2& loop){
     using namespace iCAX::GeometryData;FixtureDXFBoundary result;bool circles=true;double sweep=0;const Circle2* basis=nullptr;
+    const bool spline=std::any_of(loop.Curves.begin(),loop.Curves.end(),[](const auto& edge){const auto& c=edge.Segment.Curve;return !std::holds_alternative<Segment2>(c)&&!std::holds_alternative<Circle2>(c)&&!std::holds_alternative<Arc2>(c);});
+    if(spline){for(const auto& edge:loop.Curves)result.Splines.push_back(iCAX::Geometry::BoundedPlanarSpline(edge.Segment));
+        // DXF has no shared BRep vertices. Certify the actual exported endpoints
+        // rather than assuming that topological closure implies curve closure.
+        for(size_t i=0;i<result.Splines.size();++i){const auto& a=result.Splines[i].Poles.back();const auto& b=result.Splines[(i+1)%result.Splines.size()].Poles.front();if(std::hypot(a.X-b.X,a.Y-b.Y)>1e-6)throw std::runtime_error("CAM_FIXTURE_DXF_OPEN_PROFILE");}return result;}
     for(const auto& edge:loop.Curves){const auto& segment=edge.Segment;const auto* line=std::get_if<Segment2>(&segment.Curve);
         if(line){const double t=segment.Range.Reversed?segment.Range.Last:segment.Range.First;result.Vertices.emplace_back(Array{line->Start.X+(line->End.X-line->Start.X)*t,line->Start.Y+(line->End.Y-line->Start.Y)*t,0.});circles=false;continue;}
         const auto* circle=std::get_if<Circle2>(&segment.Curve);if(const auto* arc=std::get_if<Arc2>(&segment.Curve))circle=&arc->Basis;
-        if(!circle)throw std::invalid_argument("CAM_FIXTURE_DXF_EXACT_CURVE_UNSUPPORTED: 下料轮廓须使用精确直线或圆弧。");
+        if(!circle)throw std::invalid_argument("CAM_FIXTURE_DXF_EXACT_CURVE_UNSUPPORTED");
         if(!basis)basis=circle;else circles&=circle->Placement.Location.X==basis->Placement.Location.X&&circle->Placement.Location.Y==basis->Placement.Location.Y&&circle->Radius==basis->Radius;
         const auto& p=circle->Placement;const double first=segment.Range.Reversed?segment.Range.Last:segment.Range.First,delta=(segment.Range.Last-segment.Range.First)*(segment.Range.Reversed?-1:1),hand=p.XDirection.X*p.YDirection.Y-p.XDirection.Y*p.YDirection.X;sweep+=std::abs(delta);
         const auto count=static_cast<size_t>(std::max(1.,std::ceil(std::abs(delta)/std::numbers::pi)));const double step=delta/count;
@@ -62,7 +67,7 @@ Text FixtureAssemblyPDF(const Array& parts,bool interlocked) {
             stream<<"q 1 1 1 rg "<<lx-1<<' '<<ly-3<<' '<<width+2<<" 14 re f Q\n";text(lx,ly,10,number);labels.push_back({lx,ly-3,width,14});
         }}
         text(40,70,11,"Blank width: "+std::to_string(x1-x0)+" | height: "+std::to_string(y1-y0));
-        text(40,50,10,String(p,"role")=="Support"?"Nominal conformal contact. Full-thickness mesh envelope; verify fit before use.":(String(p,"role")=="Connection"?"Connection clearance: ":"Base clearance: ")+std::to_string(p.at("minimumDistance").To<double>())+" mm - mesh allowance deducted");
+        text(40,50,10,String(p,"role")=="Support"?"Nominal conformal contact. Full-thickness BRep envelope; verify fit before use.":(String(p,"role")=="Connection"?"Connection clearance: ":"Base clearance: ")+std::to_string(p.at("minimumDistance").To<double>())+" mm");
         const auto data=stream.str();int content=static_cast<int>(objects.size())+1;objects.push_back("<< /Length "+std::to_string(data.size())+" >>\nstream\n"+data+"endstream");
         int page=static_cast<int>(objects.size())+1;objects.push_back("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents "+std::to_string(content)+" 0 R >>");pages.push_back(page);
     }
@@ -77,16 +82,25 @@ void VerifyFixtureDXF(const iCAX::CAD::ICadDocumentImportService& reader,const s
     const auto document=reader.Load(file).Document;
     auto units=document.Header.find("$INSUNITS");if(units==document.Header.end()||units->second.empty()||units->second.front().Value!="4")throw std::runtime_error("CAM_FIXTURE_DXF_UNITS_FAILED");
     auto section=document.Sections.find("ENTITIES");if(section==document.Sections.end())throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");
-    unsigned outlines=0,inner=0;const auto holes=FixtureDXFHoles(part);const auto outside=FixtureDXFOuter(part);
-    for(const auto& entity:section->second){bool outer=false,hole=false,closed=false;std::vector<double> xs,ys,bulges;
-        double radius=0;for(const auto& group:entity.Values){if(group.Code==8&&group.Value=="CUT_OUTER")outer=true;if(group.Code==8&&group.Value=="CUT_INNER")hole=true;if(group.Code==70)closed=(std::stoi(group.Value)&1)!=0;if(group.Code==10){xs.push_back(std::stod(group.Value));bulges.push_back(0.);}if(group.Code==20)ys.push_back(std::stod(group.Value));if(group.Code==40)radius=std::stod(group.Value);if(group.Code==42&&!bulges.empty())bulges.back()=std::stod(group.Value);}
-        if(!outer&&!hole)continue;if(hole&&inner>=holes.size())throw std::runtime_error("CAM_FIXTURE_DXF_INNER_FAILED");
-        const auto& boundary=outer?outside:holes[inner++];if(outer)++outlines;
+    const auto holes=FixtureDXFHoles(part);const auto outside=FixtureDXFOuter(part);
+    struct Expected {const FixtureDXFBoundary* Boundary;const iCAX::GeometryData::NURBS2* Spline;const char* Layer;};std::vector<Expected> expectedEntities;
+    const auto append=[&](const FixtureDXFBoundary& boundary,const char* layer){if(boundary.Splines.empty())expectedEntities.push_back({&boundary,nullptr,layer});else for(const auto& spline:boundary.Splines)expectedEntities.push_back({&boundary,&spline,layer});};
+    append(outside,"CUT_OUTER");for(const auto& hole:holes)append(hole,"CUT_INNER");size_t ordinal=0;
+    const auto sameNumber=[](double a,double b,double tolerance){return std::isfinite(a)&&std::isfinite(b)&&std::abs(a-b)<=tolerance;};
+    for(const auto& entity:section->second){Text layer;bool closed=false;std::vector<double> xs,ys,bulges,knots,weights,zs;int flags=0,degree=0,knotCount=0,poleCount=0;std::array<double,3> normal{0,0,1};
+        double radius=0;for(const auto& group:entity.Values){if(group.Code==8)layer=group.Value;if(group.Code==70){flags=std::stoi(group.Value);closed=(flags&1)!=0;}if(group.Code==10){xs.push_back(std::stod(group.Value));bulges.push_back(0.);}if(group.Code==20)ys.push_back(std::stod(group.Value));if(group.Code==30)zs.push_back(std::stod(group.Value));if(group.Code==40){radius=std::stod(group.Value);knots.push_back(radius);}if(group.Code==41)weights.push_back(std::stod(group.Value));if(group.Code==42&&!bulges.empty())bulges.back()=std::stod(group.Value);if(group.Code==71)degree=std::stoi(group.Value);if(group.Code==72)knotCount=std::stoi(group.Value);if(group.Code==73)poleCount=std::stoi(group.Value);if(group.Code==210)normal[0]=std::stod(group.Value);if(group.Code==220)normal[1]=std::stod(group.Value);if(group.Code==230)normal[2]=std::stod(group.Value);}
+        if(layer!="CUT_OUTER"&&layer!="CUT_INNER")continue;if(ordinal>=expectedEntities.size())throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");
+        const auto& expectedEntity=expectedEntities[ordinal++];if(layer!=expectedEntity.Layer)throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");const auto& boundary=*expectedEntity.Boundary;
+        if(expectedEntity.Spline){const auto& s=*expectedEntity.Spline;std::vector<double> expectedKnots;for(size_t i=0;i<s.Knots.size();++i)for(int j=0;j<s.Multiplicities[i];++j)expectedKnots.push_back(s.Knots[i]);
+            if(entity.Type!="SPLINE"||flags!=12||degree!=s.Degree||poleCount!=s.Poles.size()||knotCount!=expectedKnots.size()||knots.size()!=expectedKnots.size()||weights.size()!=s.Weights.size()||xs.size()!=s.Poles.size()||ys.size()!=xs.size()||zs.size()!=xs.size()||!sameNumber(normal[0],0,1e-12)||!sameNumber(normal[1],0,1e-12)||!sameNumber(normal[2],1,1e-12))throw std::runtime_error("CAM_FIXTURE_DXF_SPLINE_FAILED");
+            for(size_t i=0;i<knots.size();++i)if(!sameNumber(knots[i],expectedKnots[i],1e-12))throw std::runtime_error("CAM_FIXTURE_DXF_DIMENSION_FAILED");
+            for(size_t i=0;i<xs.size();++i)if(!sameNumber(xs[i],s.Poles[i].X,1e-9)||!sameNumber(ys[i],s.Poles[i].Y,1e-9)||!sameNumber(zs[i],0,1e-12)||!sameNumber(weights[i],s.Weights[i],1e-12))throw std::runtime_error("CAM_FIXTURE_DXF_DIMENSION_FAILED");continue;
+        }
         if(boundary.Circle){const auto circle=*boundary.Circle;if(entity.Type!="CIRCLE"||xs.size()!=1||ys.size()!=1||std::abs(xs[0]-circle[0])>1e-9||std::abs(ys[0]-circle[1])>1e-9||std::abs(radius-circle[2])>1e-9)throw std::runtime_error("CAM_FIXTURE_DXF_DIMENSION_FAILED");continue;}
         const auto& expected=boundary.Vertices;
         if(entity.Type!="LWPOLYLINE"||!closed||xs.size()!=expected.size()||ys.size()!=expected.size())throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");
         for(size_t i=0;i<expected.size();++i){auto p=expected[i].To<Array>();if(std::abs(xs[i]-p[0].To<double>())>1e-6||std::abs(ys[i]-p[1].To<double>())>1e-6||std::abs(bulges[i]-(p.size()>2?p[2].To<double>():0.))>1e-12)throw std::runtime_error("CAM_FIXTURE_DXF_DIMENSION_FAILED");}
     }
-    if(outlines!=1||inner!=holes.size())throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");
+    if(ordinal!=expectedEntities.size())throw std::runtime_error("CAM_FIXTURE_DXF_OUTLINE_FAILED");
 }
 }

@@ -1,4 +1,5 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {activeSetupWorldFrame,applySetupDisplayFrame} from './setupWorldFrame.mjs';
 import {escapeText as esc,escapeAttr as attr} from '../../_shared/workbench/utils/format.mjs';
 import {button} from './workspaceControls.mjs';
 import {playbackPose} from './trajectoryPlayback.mjs';
@@ -56,10 +57,10 @@ function fadeObject(s,object,opacity){
 export function disposeCollisionDiagnostics(s){disposeTree(s.collisionDiagnosticOverlay);s.collisionDiagnosticOverlay=null;s.collisionDiagnosticKey=null;restoreMaterials(s);}
 function paintRepairedHead(view,s){
  const boxes=collisionHeadBoxes(s.collisionReport),pose=playbackPose(s.frames,s.cursor);if(!pose||!boxes.length)return false;
- const key=JSON.stringify(['AppliedLocalRepair',s.collisionKey,s.cursor,boxes]);if(s.collisionDiagnosticKey===key)return true;disposeCollisionDiagnostics(s);s.collisionDiagnosticKey=key;
+ const key=JSON.stringify(['AppliedLocalRepair',s.collisionKey,s.cursor,boxes]);if(s.collisionDiagnosticKey===key){applySetupDisplayFrame(view,s.collisionDiagnosticOverlay);return true;}disposeCollisionDiagnostics(s);s.collisionDiagnosticKey=key;
  const group=new THREE.Group();group.name='five-collision-diagnostics';group.userData={kind:'AppliedLocalRepair',poseSource:'GeneratedPathPose',cursor:s.cursor};group.position.copy(pose.position);group.quaternion.copy(pose.rotation);
  for(const box of boxes){const geometry=new THREE.BoxGeometry(...box.halfExtents.map(n=>n*2)),wire=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x71b9ae,transparent:true,opacity:.4,depthTest:false,depthWrite:false}));geometry.dispose();wire.name=`collision-head-box-${box.index}`;wire.userData.headBoxIndex=Number(box.index);wire.position.fromArray(box.center);wire.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(...box.axes.map(a=>new THREE.Vector3(...a))));wire.renderOrder=150;wire.raycast=()=>{};group.add(wire);}
- view.viewport.scene.add(group);s.collisionDiagnosticOverlay=group;return true;
+ applySetupDisplayFrame(view,group);view.viewport.scene.add(group);s.collisionDiagnosticOverlay=group;return true;
 }
 function marker(view,position,color,name){
  const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshBasicMaterial({color,depthTest:false,depthWrite:false}));mesh.name=name;mesh.position.fromArray(position);mesh.renderOrder=154;mesh.raycast=()=>{};
@@ -68,7 +69,7 @@ function marker(view,position,color,name){
 export function paintCollisionDiagnostics(view,s){
  const d=collisionDiagnosis(view,s);if(!view.viewport||!d){if(view.viewport&&!s.checking&&!s.repairing&&s.repairResult?.changed&&s.collisionReport?.validity==='Current'&&paintRepairedHead(view,s))return;if(s.collisionDiagnosticOverlay)disposeCollisionDiagnostics(s);return;}
  const key=JSON.stringify([s.collisionKey,d.index,d.fraction,d.boxes,d.witness,s.collisionDetailXray,s.group?.uuid,view.viewport.sceneObjects?.get(d.obstacle.id)?.uuid]);
- if(s.collisionDiagnosticKey===key)return;disposeCollisionDiagnostics(s);s.collisionDiagnosticKey=key;
+ if(s.collisionDiagnosticKey===key){applySetupDisplayFrame(view,s.collisionDiagnosticOverlay);return;}disposeCollisionDiagnostics(s);s.collisionDiagnosticKey=key;
  const group=new THREE.Group();group.name='five-collision-diagnostics';group.userData={segmentIndex:d.index,representation:'BoxCompoundMesh',poseSource:'NativeCollisionWitness',headBoxIndex:d.boxIndex};
  const head=new THREE.Group();head.name='collision-detection-boxes';head.position.copy(d.pose.position);head.quaternion.copy(d.pose.rotation);group.add(head);
  for(const box of d.boxes){const selected=Number(box.index)===d.boxIndex,geometry=new THREE.BoxGeometry(...box.halfExtents.map(n=>n*2)),orientation=new THREE.Matrix4().makeBasis(...box.axes.map(a=>new THREE.Vector3(...a))),container=new THREE.Group();container.position.fromArray(box.center);container.quaternion.setFromRotationMatrix(orientation);container.userData={headBoxIndex:Number(box.index),source:box.source};container.name=`collision-head-box-${box.index}`;head.add(container);
@@ -76,7 +77,7 @@ export function paintCollisionDiagnostics(view,s){
   if(selected){const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:0xff4545,depthTest:false,transparent:true,opacity:.22,depthWrite:false,side:THREE.DoubleSide}));mesh.renderOrder=149;container.add(mesh);}else geometry.dispose();
  }
  if(d.witness){const w=d.witness;group.add(marker(view,w.headPoint,0xff4f4f,'collision-head-witness'),marker(view,w.obstaclePoint,0xffd05a,'collision-obstacle-witness'));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...w.headPoint),new THREE.Vector3(...w.obstaclePoint)]),new THREE.LineDashedMaterial({color:0xffd05a,depthTest:false,depthWrite:false,dashSize:1,gapSize:.5}));line.name='collision-witness-link';line.renderOrder=153;line.computeLineDistances();group.add(line);}
- group.traverse(o=>{o.raycast=()=>{};});view.viewport.scene.add(group);s.collisionDiagnosticOverlay=group;
+ group.traverse(o=>{o.raycast=()=>{};});applySetupDisplayFrame(view,group);view.viewport.scene.add(group);s.collisionDiagnosticOverlay=group;
  // The visible head is a reference shape. Its material is restored on leaving
  // this diagnosis, and source geometry/materials are never disposed here.
  fadeObject(s,s.group,.45);if(s.collisionDetailXray)fadeObject(s,view.viewport.sceneObjects?.get(d.obstacle.id),.22);
@@ -85,11 +86,11 @@ export function focusCollisionDiagnosis(view,s){
  const d=collisionDiagnosis(view,s),vp=view.viewport;if(!vp?.setCameraState||!d)return false;
  paintCollisionDiagnostics(view,s);const bounds=new THREE.Box3().setFromObject(s.collisionDiagnosticOverlay);if(bounds.isEmpty())bounds.expandByPoint(d.pose.position);
  const sphere=bounds.getBoundingSphere(new THREE.Sphere()),camera=vp.getCameraState(),rect=vp.renderer.domElement.getBoundingClientRect(),aspect=Math.max(.2,rect.width/Math.max(1,rect.height)),fov=Number(vp.perspectiveFov||vp.camera?.fov||45)*Math.PI/180;
- const radius=Math.max(35,Math.max(6,sphere.radius)/Math.sin(fov/2)/Math.min(1,aspect)*1.18),center=d?.witness?new THREE.Vector3(...d.witness.headPoint).lerp(new THREE.Vector3(...d.witness.obstaclePoint),.5).lerp(sphere.center,.45):sphere.center;
+ const radius=Math.max(35,Math.max(6,sphere.radius)/Math.sin(fov/2)/Math.min(1,aspect)*1.18),center=d?.witness?new THREE.Vector3(...d.witness.headPoint).lerp(new THREE.Vector3(...d.witness.obstaclePoint),.5).applyMatrix4(activeSetupWorldFrame(view)).lerp(sphere.center,.45):sphere.center;
  vp.setCameraState({...camera,target:{x:center.x,y:center.y,z:center.z},radius});return true;
 }
 
-const stages={Preparing:'读取当前碰撞及衔接',CheckingKeypoints:'先检查关键点姿态',Searching:'搜索局部修正',SearchingAngles:'优先在角度容差内调整 IJK',SearchingPosition:'沿原 IJK 方向尝试位置与角度组合',RebuildingRapids:'重新规划必要的相邻空移',Verifying:'验证本处修正及连接边界',Applying:'保存通过局部验证的修复'};
+const stages={CheckingLimits:'先验证切割头限位',CheckingCollision:'在限位通过后验证碰撞',Preparing:'读取当前碰撞及衔接',CheckingKeypoints:'先检查关键点姿态',Searching:'搜索局部修正',SearchingAngles:'优先在角度容差内调整 IJK',SearchingPosition:'沿原 IJK 方向尝试位置与角度组合',RebuildingRapids:'重新规划必要的相邻空移',Verifying:'验证本处修正及连接边界',Applying:'保存通过局部验证的修复'};
 export function collisionRepairActivity(s){
  const p=s.repairTask?.repairProgress||{},stage=s.repairCancelRequested?'正在停止自动修复':stages[p.stage]||'正在准备自动修复',completed=integer(p.completedIssueCount),total=integer(p.totalIssueCount),candidates=integer(p.candidateCount);
  const checked=integer(p.completedSegmentCount),segments=integer(p.totalSegmentCount);
@@ -104,6 +105,7 @@ export function renderCollisionRepair(view,s){
  if(s.repairing){const a=collisionRepairActivity(s);return `<section class="five-collision-repair" data-five-key="collision-repair" aria-live="polite"><strong data-five-repair-stage>${esc(a.stage)}</strong><p data-five-repair-detail>${esc(a.detail)}</p><div class="five-repair-progress"><span data-five-repair-count>${esc(a.count)}</span><span data-five-repair-candidates>${esc(a.candidates)}</span></div></section>`;}
  const selected=collisionDiagnosis(view,s),result=s.repairResult,canRepair=selected&&(selected.segment.status==='Collision'||selected.segment.reason==='CAM_HEAD_LIMIT_NO_SOLUTION');
  const angle=s.repairDeviationDraft??String(s.repairDeviationDeg??15),distance=s.repairTranslationDraft??String(s.repairTranslationMm??5);
+ const scope=s.repairScope?.pathKind,title=scope?`自动修复全部${scope==='Rapid'?'空移':'切割'}刀路`:'自动修复本条刀路';
  const outcome=result?.changed?'关键点修正已保存，请复检本条':result?collisionRepairFailure(result):'';
- return `<section class="five-collision-repair" data-five-key="collision-repair"><h4>自动修正当前问题</h4><p>优先调整 IJK；必要时沿原 IJK 方向移动 XYZ，也可两者配合。候选必须通过碰撞与限位检查。</p><label>角度容差（°）<input type="text" inputmode="decimal" value="${attr(angle)}" data-five-simulation-field="repair-deviation" aria-label="自动修复最大调姿角" ${view.pending?'readonly':''}></label><label>位置容差（mm）<input type="text" inputmode="decimal" value="${attr(distance)}" data-five-simulation-field="repair-position" aria-label="自动修正位置容差" ${view.pending?'readonly':''}></label>${button('five.simulation.collision-repair','自动修正',view.pending||s.checking||!canRepair?'disabled':'class="five-primary"')}${outcome?`<p role="status">${esc(outcome)}</p>`:''}</section>`;
+ return `<section class="five-collision-repair" data-five-key="collision-repair"><h4>${title}</h4><p>先修复超限，再修复碰撞。优先调整 IJK；必要时沿原 IJK 方向移动 XYZ，始终保持在本次输入的容差内。</p><label>角度容差（°）<input type="text" inputmode="decimal" value="${attr(angle)}" data-five-simulation-field="repair-deviation" aria-label="自动修复最大调姿角" ${view.pending?'readonly':''}></label><label>位置容差（mm）<input type="text" inputmode="decimal" value="${attr(distance)}" data-five-simulation-field="repair-position" aria-label="自动修正位置容差" ${view.pending?'readonly':''}></label>${button(scope?'five.simulation.collision-repair-scope':'five.simulation.collision-repair-path',scope?'开始自动修复':'自动修复本条',view.pending||s.checking||(!scope&&!s.collisionPathHasFrame)?'disabled':'class="five-primary"')}${outcome?`<p role="status">${esc(outcome)}</p>`:''}</section>`;
 }

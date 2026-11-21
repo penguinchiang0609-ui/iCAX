@@ -11,15 +11,18 @@ std::shared_ptr<CollisionRepairResult> CalculateRapidKeyposeRepair(const Collisi
     struct Point{std::size_t Index;RepairMath::Vector Position,Direction;Array Directions;};std::vector<Point> points;
     for(const auto& value:input.RepairLocations){const auto location=value.To<Map>();const auto index=static_cast<std::size_t>(Integer(location,"rapidPointIndex"));
         if(index>=positions.size()||!polyline&&index&&index+1<positions.size())throw std::invalid_argument("CAM_REPAIR_EDITABLE_KEYPOSE_REQUIRED");
-        const auto direction=RegistrationPoint(axes[index]);auto choices=RepairDirections(direction,input.MaximumDegrees*std::numbers::pi/180);choices.insert(choices.begin(),GenPoint(direction));
-        points.push_back({index,RegistrationPoint(positions[index]),direction,std::move(choices)});}
+        auto position=RegistrationPoint(positions[index]),direction=RegistrationPoint(axes[index]);
+        for(const auto& origin:input.RepairOrigins){const auto p=origin.To<Map>();if(String(p,"from")==from&&String(p,"to")==to&&Integer(p,"rapidPointIndex")==index){position=RegistrationPoint(p.at("position"));direction=RepairMath::Unit(RegistrationPoint(p.at("direction")));break;}}
+        result->RepairOrigins.emplace_back(Map{{"from",from},{"to",to},{"rapidPointIndex",std::to_string(index)},{"position",GenPoint(position)},{"direction",GenPoint(direction)}});
+        auto choices=RepairDirections(direction,input.MaximumDegrees*std::numbers::pi/180);choices.insert(choices.begin(),GenPoint(direction));
+        points.push_back({index,position,direction,std::move(choices)});}
     std::set<std::size_t> targets;for(const auto& point:points)targets.insert(point.Index);
     const auto unresolved=[&](const Text& reason){result->Unresolved=Array{Map{{"reason",reason},{"from",from},{"to",to},{"index",std::to_string(input.Selected)}}};return result;};
-    for(const auto& value:input.Report.at("keyposeChecks").To<Array>()){const auto row=value.To<Map>(),location=row.at("location").To<Map>();
+    if(input.RepairPhase!="Limits")for(const auto& value:input.Report.at("keyposeChecks").To<Array>()){const auto row=value.To<Map>(),location=row.at("location").To<Map>();
         if(String(location,"role")!="Rapid"||String(location,"from")!=from||String(location,"to")!=to)continue;
         const auto index=static_cast<std::size_t>(Integer(location,"rapidPointIndex"));if(targets.contains(index))continue;
         const bool adjacent=std::any_of(points.begin(),points.end(),[&](const auto& p){return polyline?(p.Index&&index+1==p.Index||index==p.Index+1):true;});
-        if(adjacent&&String(row,"status")!="Clear")return unresolved("CAM_REPAIR_NEIGHBOR_KEYPOINT_NOT_CLEAR");}
+        if(adjacent&&String(row,"status")!="Clear"&&(input.RepairPhase=="All"||String(row,"reason")=="CAM_HEAD_LIMIT_NO_SOLUTION"))return unresolved("CAM_REPAIR_NEIGHBOR_KEYPOINT_NOT_CLEAR");}
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(120);bool incomplete=false;
     const auto stop=[&]{return cancelled->load()||std::chrono::steady_clock::now()>=deadline;};
     const auto attempt=[&](unsigned mask,std::size_t direction,double distance){
@@ -47,11 +50,21 @@ std::shared_ptr<CollisionRepairResult> CalculateRapidKeyposeRepair(const Collisi
             for(auto j=a;j<b;++j)rows.insert(j);for(auto key:candidate.KinematicKeyframes)if(key>=a&&key<=b)keys.insert(key);}
         candidate.FullSegmentCount=poses.size()-1;for(const auto index:rows){candidate.SegmentIndices.push_back(index);candidate.Query.Segments.push_back({frames[index],frames[index+1],clearance,true});}
         for(const auto index:keys){candidate.KeypointFrames.push_back(index);candidate.KeypointSegments.push_back({frames[index],frames[index],clearance,true});}
-        candidate.ConfigureFullHead(candidate);RepairProgress(progress,"Verifying",result->Candidates,input.MaximumDegrees);
+        if(input.RepairPhase=="Limits"){
+            candidate.Query.Segments.clear();candidate.SegmentIndices.clear();candidate.KeypointFrames.clear();candidate.KeypointSegments.clear();
+            for(const auto index:selected){candidate.KeypointFrames.push_back(index);candidate.KeypointSegments.push_back({frames[index],frames[index],clearance,true});}
+        }
+        candidate.ConfigureFullHead(candidate);RepairProgress(progress,"CheckingLimits",result->Candidates,input.MaximumDegrees);
+        if(!candidate.CheckHeadLimits(stop)){incomplete|=candidate.HeadLimitsUnverified;return false;}
+        if(stop()){incomplete=true;return false;}
+        if(input.RepairPhase!="Limits"){
+        RepairProgress(progress,"CheckingCollision",result->Candidates,input.MaximumDegrees);
         const auto checkedKeys=candidate.CheckFullHead(candidate.KeypointSegments,true,{},stop,{},{});
         if(stop()||checkedKeys.Segments.size()!=candidate.KeypointSegments.size()){incomplete=true;return false;}
-        for(const auto& row:checkedKeys.Segments)if(row.Status!="Clear"){if(row.Status=="Unchecked"&&row.Reason!="CAM_HEAD_LIMIT_NO_SOLUTION")incomplete=true;return false;}
-        const auto checked=candidate.CheckFullHead(candidate.Query.Segments,false,{},stop,{},{});if(stop()||checked.Segments.size()!=candidate.Query.Segments.size()){incomplete=true;return false;}for(const auto& row:checked.Segments)if(row.Status!="Clear"){if(row.Status=="Unchecked")incomplete=true;return false;}
+        for(std::size_t i=0;i<checkedKeys.Segments.size();++i){const auto& row=checkedKeys.Segments[i];if(input.RepairPhase=="Collision"&&!selected.contains(candidate.KeypointFrames[i]))continue;
+        if(row.Status!="Clear"){if(row.Status=="Unchecked"&&row.Reason!="CAM_HEAD_LIMIT_NO_SOLUTION")incomplete=true;return false;}}
+        const auto checked=candidate.CheckFullHead(candidate.Query.Segments,false,{},stop,{},{});if(stop()||checked.Segments.size()!=candidate.Query.Segments.size()){incomplete=true;return false;}for(const auto& value:candidate.InterpolationChecks){const auto row=value.To<Map>();if(input.RepairPhase=="Collision"&&String(row,"status")=="Skipped")continue;if(String(row,"status")!="Clear"){if(String(row,"status")=="Unchecked")incomplete=true;return false;}}
+        }
         Array p,a;for(const auto& pose:poses){p.emplace_back(GenPoint(pose.Point));a.emplace_back(GenPoint(pose.Direction));}
         Map output{{"points",p},{"directions",a},{"frame",Text("Setup")},{"referencePoint",Text("ToolTip")},{"planningMethod",Text("Manual")},{"geometryStatus",Text("Draft")},{"validation",Text("Unchecked")},{"lengthMm",calculated.Length},{"estimatedSeconds",calculated.EstimatedSeconds}};AppendRapidDefinition(output,calculated);
         result->Overrides[pair]=Map{{"from",from},{"to",to},{"policy",original.at("policy")},{"manualPath",ManualRapidPath(manual)},{"result",output}};result->Solved=true;result->Verified=true;

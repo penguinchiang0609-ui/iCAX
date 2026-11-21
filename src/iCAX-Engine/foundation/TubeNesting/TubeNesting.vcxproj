@@ -56,6 +56,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="TubeNesting.h" />
+    <ClInclude Include="TubePatternMaster.inc" />
+    <ClInclude Include="TubeVerifiedPatternCache.inc" />
+    <ClInclude Include="TubeVerifiedPatternRecipe.inc" />
+    <ClInclude Include="TubeCachedPatternConstruction.inc" />
+    <ClInclude Include="TubeAdaptiveNeighborhood.inc" />
+    <ClInclude Include="TubeLargeBarRepair.inc" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PairPoseTable.cpp" />

@@ -30,6 +30,27 @@ def region(x=0):
             "polygon":[[-10,-10],[10,-10],[10,10],[-10,10]],"vector":[0,0,300]}
 
 class AssemblyStructuralMachiningTests(unittest.TestCase):
+    def test_receiver_observation_keeps_only_real_retained_component_after_local_cut(self):
+        witness=[3.,4.,150.]
+        data=process({'receivers':[{'section':region(), 'keepRegions':[region(2)],
+                                  'subtractRegions':[region(10)], 'keepConnectedTo':witness}]})
+        before=deepcopy(data)
+        answer=RUNTIME.evaluate('structural-stock-fit',data,{})
+        self.assertTrue(answer['applicable'],answer['reason'])
+        nodes={node['key']:node for node in answer['geometry']}
+        retained=nodes['receiver.0.retained']
+        self.assertEqual(retained['arguments']['operation'],'subtract')
+        self.assertEqual(retained['arguments']['target'],'receiver.0.limited.0')
+        self.assertEqual(retained['arguments']['keepConnectedTo'],witness)
+        self.assertEqual(answer['operations'][0]['tools'],['receiver.0.retained'])
+        self.assertEqual(data,before)
+        for invalid in ({'section':region(),'keepConnectedTo':witness},
+                        {'section':region(),'subtractRegions':'all'},
+                        {'section':region(),'subtractRegions':[region(10)],'keepConnectedTo':[0,0]}):
+            failed=RUNTIME.evaluate('structural-stock-fit',process({'receivers':[invalid]}),{})
+            self.assertFalse(failed['applicable'])
+            self.assertEqual(failed['geometry'],[])
+
     def test_profile_dependency_revision_invalidates_repeated_stock_execution(self):
         data=process({"receivers":[{"placement":region()["placement"],
             "contours":[{"kind":"circle","center":[0,0],"radius":5}],

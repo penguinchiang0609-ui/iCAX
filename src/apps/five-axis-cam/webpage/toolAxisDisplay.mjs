@@ -1,15 +1,17 @@
+import {camPathKind} from './workspaceModel.mjs';
 import {supportsToolAxis} from './toolAxisEligibility.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 import { escapeAttr as attr } from '../../_shared/workbench/utils/format.mjs';
 import { sceneColors } from './scenePalette.mjs';
 import { sameToolAxisAnchor } from './toolAxisAnchors.mjs';
 import {camMachinePlayback} from './machinePlaybackContext.mjs';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 
 const alive=(context,view)=>!view.disposed&&context.isCurrentProject?.()!==false;
 const state=view=>view.fiveToolAxisDisplay??={visible:true,key:'',loading:false,data:null,error:'',cache:new Map(),failed:new Map(),request:null};
 const cuts=view=>(view.scene?.intentToolpaths||[]).filter(c=>c.enabled!==false&&supportsToolAxis(c));
 const sampleKey=(view,c)=>JSON.stringify([view.scene?.domain?.expected?.epoch,c.id,c.poseRef,c.processRef,c.featureRef,c.curveRef,c.sourceState,c.start,c.reversed]);
-const geometryKey=(view,rows)=>JSON.stringify([view.viewport?.id,rows.map(c=>[c.id,sampleKey(view,c)]),(view.scene?.domain?.placements||[]).map(p=>[p.id,p.transform])]);
+const geometryKey=(view,rows)=>JSON.stringify([view.viewport?.id,rows.map(c=>[c.id,sampleKey(view,c)]),(view.scene?.domain?.placements||[]).map(p=>[p.id,placementWorldMatrix(view,p).elements])]);
 const errorText=error=>/SOURCE_NOT_CURRENT|SOURCE_CHANGED/.test(error)?'工件已改变，请重新提取刀路。':error;
 
 export function renderToolAxisDisplayControl(view){
@@ -142,14 +144,14 @@ function rebuild(view,d,rows,key){
   const group=new THREE.Group();group.name='five-axis-all-tool-axes';
   const placements=new Map((view.scene?.domain?.placements||[]).map(p=>[p.id,p]));
   for(const row of rows){const data=d.cache.get(sampleKey(view,row)),placement=placements.get(row.placementId);if(!data||!placement)continue;
-    const cut=new THREE.Group();cut.name=`tool-axes-${row.id}`;cut.userData.intentId=row.id;cut.userData.placementId=row.placementId;cut.matrixAutoUpdate=false;cut.matrix.set(...placement.transform);
+    const cut=new THREE.Group();cut.name=`tool-axes-${row.id}`;cut.userData.intentId=row.id;cut.userData.placementId=row.placementId;cut.matrixAutoUpdate=false;cut.matrix.copy(placementWorldMatrix(view,placement));
     const visible={...data,samples:data.samples.filter(s=>s.keypointIds.length)};
     const visibility=sampleVisibility(view,visible,cut);cut.add(glyphMesh(view,visible,'normal',visibility),glyphMesh(view,visible,'axis',visibility));group.add(cut);
   }
   view.viewport.scene.add(group);d.group=group;d.overlayKey=key;
 }
 export function syncToolAxisDisplay(context,view,ops){
-  const d=state(view);if(!alive(context,view)||view.fiveAxisArea!=='toolpath'||camMachinePlayback(view)||view.fiveCamPage==='rapid'||!d.visible||!view.viewport){removeOverlay(d);return;}
+  const d=state(view);if(!alive(context,view)||view.fiveAxisArea!=='toolpath'||camMachinePlayback(view)||camPathKind(view)==='rapid'||!d.visible||!view.viewport){removeOverlay(d);return;}
   // An epoch change cannot reuse old pose data or complete an old async read.
   const epoch=view.scene?.domain?.expected?.epoch;if(d.epoch!==epoch){d.epoch=epoch;d.cache.clear();d.failed.clear();d.request=null;d.loading=false;d.error='';removeOverlay(d);}
   const rows=cuts(view),snapshot=geometryKey(view,rows);d.key=snapshot;

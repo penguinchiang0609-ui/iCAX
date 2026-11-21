@@ -18,8 +18,12 @@ class MinimalProtectiveGrilleManufacturingTests(unittest.TestCase):
         with _profile_validation_scope(self.descriptor):
             return self._execute(**changes)
 
+    def values(self, **changes):
+        return {**self.defaults, 'layoutStyle': 'planar',
+                'frameProfileType': 'rect', 'innerProfileType': 'rect', **changes}
+
     def _execute(self, **changes):
-        values = {**self.defaults, **changes}
+        values = self.values(**changes)
         before = deepcopy(values)
         layout = self.template.layout(values)
         design = self.template.display(values)
@@ -144,14 +148,14 @@ class MinimalProtectiveGrilleManufacturingTests(unittest.TestCase):
                     frameCornerRadius=2, innerWidth=20, innerDepth=10,
                     maleCornerType=corner, maleCornerSize=0.5)
                 with self.assertRaisesRegex(ValueError, "端角尺寸"):
-                    self.template.manufacturing({**self.defaults, "jointMode": "male_female_half_hole",
-                        "maleCornerType": corner, "maleCornerSize": 2})
+                    self.template.manufacturing(self.values(jointMode="male_female_half_hole",
+                        maleCornerType=corner, maleCornerSize=2))
 
     def test_profile_snapshots_do_not_reject_corner_crossing_openings(self):
         changes = dict(jointMode="male_female_half_hole", frameWidth=40, frameDepth=30,
                        frameCornerRadius=2, innerWidth=20, innerDepth=10)
         for radius in (2, 12):
-            source_values = {**self.defaults, **changes, "frameCornerRadius": radius}
+            source_values = self.values(**{**changes, "frameCornerRadius": radius})
             profile = next(member["profile"] for member in self.template.layout(source_values)["members"]
                            if member["role"] == "frame.left")
             profile_values = deepcopy(profile._profile_data['_familyParameters'])
@@ -164,14 +168,14 @@ class MinimalProtectiveGrilleManufacturingTests(unittest.TestCase):
                 "depth": profile.depth, "wallThickness": profile.wall, "contours": coherent_contours}
             override = {"frame": snapshot}
             with self.subTest(radius=radius), _profile_validation_scope(self.descriptor):
-                values = {**self.defaults, **changes, "tubeDesignerProfileOverrides": override}
+                values = self.values(**changes, tubeDesignerProfileOverrides=override)
                 actual_profile = next(member["profile"] for member in self.template.layout(values)["members"]
                                       if member["role"] == "frame.left")
                 self.assertEqual(actual_profile.radius, 0.0)
                 self.execute(**changes, tubeDesignerProfileOverrides=override)
 
     def test_false_wall_metadata_cannot_authorize_a_snapshot_cut(self):
-        values = {**self.defaults, "frameWidth": 40, "frameDepth": 30, "frameCornerRadius": 2}
+        values = self.values(frameWidth=40, frameDepth=30, frameCornerRadius=2)
         profile = self.template.layout(values)["members"][0]["profile"]
         snapshot = {"schema": "icax.imported-tube-profile", "schemaVersion": 1,
             "kind": "profile-package", "profileForm": "parametric", "sectionKind": "rect",

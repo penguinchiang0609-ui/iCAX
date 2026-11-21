@@ -43,9 +43,10 @@ namespace {
             for(const auto& p:ca){const double v=PlacementMath::Dot(axis,p);al=std::min(al,v);ah=std::max(ah,v);}for(const auto& p:cb){const double v=PlacementMath::Dot(axis,p);bl=std::min(bl,v);bh=std::max(bh,v);}gap=std::max(gap,std::max(bl-ah,al-bh));}return gap;
     }
     std::vector<PlacementBox> PlacementAssemblyBoxes(Scene& scene,const ID& id){
+        const auto assembly=RigidMatrix(OperationAssemblyTransform(scene,id));
         std::vector<PlacementBox> boxes;
         const auto append=[&](const ID& entity,const Map& geometry,const Array& transform){
-            const auto mesh=CollisionMeshFor(scene,geometry);PlacementBox box{{1e100,1e100,1e100},{-1e100,-1e100,-1e100},RigidMatrix(transform),iCAX::Data::to_string(entity)};
+            const auto mesh=CollisionMeshFor(scene,geometry);PlacementBox box{{1e100,1e100,1e100},{-1e100,-1e100,-1e100},Motion::Multiply(assembly,RigidMatrix(transform)),iCAX::Data::to_string(entity)};
             if(!mesh||mesh->Vertices.empty())throw std::invalid_argument("CAM_MACHINE_MOUNT_GEOMETRY_REQUIRED");
             for(const auto& p:mesh->Vertices)for(int k=0;k<3;++k){box.Min[k]=std::min(box.Min[k],p[k]);box.Max[k]=std::max(box.Max[k],p[k]);}boxes.push_back(box);
         };

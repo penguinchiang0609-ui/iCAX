@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="TubeDesignerTest.vcxproj" />
+  <PropertyGroup>
+    <ProjectName>MinimalGrilleFiveFaceBridge</ProjectName>
+    <ProjectGuid>{DF824915-5148-4122-A03C-4AC978A88C38}</ProjectGuid>
+    <RootNamespace>MinimalGrilleFiveFaceBridge</RootNamespace>
+    <TargetName>MinimalGrilleFiveFaceBridge</TargetName>
+    <TargetPath>$(OutDir)MinimalGrilleFiveFaceBridge.exe</TargetPath>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalDependencies>SDO.lib;ProjectContext.lib;Task.lib;Data.lib;Database.lib;ApplicationContext.lib;TemplateRuntime.lib;Resources.lib;RenderInteraction.lib;OpenCascadeResourceImport.lib;TubeDesigner.lib;Services.lib;ProjectFile.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ClCompile Remove="@(ClCompile)" />
+    <ClCompile Include="MinimalGrilleFiveFaceBridge.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <DisableSpecificWarnings>4715;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemGroup>
+</Project>

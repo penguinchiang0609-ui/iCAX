@@ -123,8 +123,9 @@ namespace iCAX::SheetNesting::Detail
                     // visibly concave. Keep same-direction irregular groups as normal
                     // candidates: reserving their inventory can obstruct odd leftovers.
                     const double firstAngle = pattern.Members.front().Transform.AngleDegrees;
+                    const bool firstMirrored = pattern.Members.front().Transform.Mirrored;
                     if (std::none_of(pattern.Members.begin(), pattern.Members.end(), [&](const Member& member)
-                        { return std::abs(std::remainder(member.Transform.AngleDegrees - firstAngle, 360.)) > problem.Tolerance; })) continue;
+                        { return member.Transform.Mirrored!=firstMirrored||std::abs(std::remainder(member.Transform.AngleDegrees - firstAngle, 360.)) > problem.Tolerance; })) continue;
                 }
                 double separate = 0, perimeter = 0;
                 for (const auto& member : pattern.Members)
@@ -166,7 +167,7 @@ namespace iCAX::SheetNesting::Detail
             if (stop()) return false;
             ++result.Stats.PlacementAttempts;
             const auto& part = problem.Parts[partIndex];
-            if (part.Material != problem.Stocks[bin.StockIndex].Material || !AngleAllowed(part, pose.AngleDegrees, problem.Tolerance) ||
+            if (part.Material != problem.Stocks[bin.StockIndex].Material || !PoseAllowed(part, pose, problem.Tolerance) ||
                 !InsideSheet(part.Geometry, pose, bin.Output.Width, bin.Output.Height, problem.EdgeMargin, problem.Tolerance)) return false;
             if (batches == PatternBatchMode::Disabled)
             {
@@ -211,16 +212,16 @@ namespace iCAX::SheetNesting::Detail
             for (std::size_t i = 0; i < pattern.Members.size(); ++i)
             {
                 const auto& member = pattern.Members[i];
-                Pose pose{member.Transform.X + x, member.Transform.Y + y, member.Transform.AngleDegrees};
+                const Pose pose=ComposePose({x,y,0},member.Transform);
                 if (!canPlace(bin, member.PartIndex, pose)) return false;
                 for (std::size_t j = 0; j < i; ++j)
                 {
                     const auto& other = pattern.Members[j];
-                    const Pose otherPose{other.Transform.X + x, other.Transform.Y + y, other.Transform.AngleDegrees};
+                    const Pose otherPose=ComposePose({x,y,0},other.Transform);
                     if (ShapesConflict(problem.Parts[member.PartIndex].Geometry,
-                        batches == PatternBatchMode::Disabled ? member.Transform : pose,
+                        pose,
                         problem.Parts[other.PartIndex].Geometry,
-                        batches == PatternBatchMode::Disabled ? other.Transform : otherPose, problem.PartGap, problem.Tolerance)) return false;
+                        otherPose, problem.PartGap, problem.Tolerance)) return false;
                 }
             }
             return true;
@@ -337,8 +338,7 @@ namespace iCAX::SheetNesting::Detail
             {
                 const auto& part = problem.Parts[member.PartIndex];
                 bin.Output.Placements.push_back({part.ID, consumed[member.PartIndex]++,
-                    {member.Transform.X + box.X + problem.EdgeMargin, member.Transform.Y + box.Y + problem.EdgeMargin,
-                        NormalizeAngle(member.Transform.AngleDegrees)}, nextGroup, false});
+                    ComposePose({box.X+problem.EdgeMargin,box.Y+problem.EdgeMargin,0},member.Transform),nextGroup,false});
                 bin.Output.MaterialArea += Area(part.Geometry);
             }
             if (pattern.Members.size() > 1) ++result.Stats.CombinationGroups;
@@ -438,7 +438,7 @@ namespace iCAX::SheetNesting::Detail
                             }
                             if(!better)continue;
                         }
-                        const Pose pose{slot.Domain.X+fit->Box.X+member.Transform.X,slot.Domain.Y+fit->Box.Y+member.Transform.Y,member.Transform.AngleDegrees};
+                        const Pose pose=ComposePose({slot.Domain.X+fit->Box.X,slot.Domain.Y+fit->Box.Y,0},member.Transform);
                         if(insideDomain(member.PartIndex,pose)&&canPlace(bin,member.PartIndex,pose))holeBest=std::tuple(std::get<0>(rank),std::get<1>(rank),std::get<2>(rank),hi,pi,fit->Box);
                     }
                 }
@@ -446,7 +446,7 @@ namespace iCAX::SheetNesting::Detail
                 {
                     const auto& slot=bin.HoleSlots[std::get<3>(*holeBest)];const auto& pattern=patterns[std::get<4>(*holeBest)];
                     const auto member=pattern.Members[0];const auto& part=problem.Parts[member.PartIndex];const auto box=std::get<5>(*holeBest);
-                    const Pose pose{slot.Domain.X+box.X+member.Transform.X,slot.Domain.Y+box.Y+member.Transform.Y,member.Transform.AngleDegrees};
+                    const Pose pose=ComposePose({slot.Domain.X+box.X,slot.Domain.Y+box.Y,0},member.Transform);
                     bin.Output.Placements.push_back({part.ID,consumed[member.PartIndex]++,pose,nextGroup++,true});
                     bin.Output.MaterialArea+=Area(part.Geometry);++result.Stats.GapFilledParts;
                     return true;

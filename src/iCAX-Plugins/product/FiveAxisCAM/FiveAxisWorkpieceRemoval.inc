@@ -32,10 +32,16 @@ Map RemoveWorkpiece(Scene& scene,const Map& request)
         if(const auto f=Component<CFiveAxisFixtureComponent>(entity);f&&ownedSetups.contains(f->GetSetupID()))fixtures.push_back(entity->GetID());
         if(const auto u=Component<CFiveAxisFixtureUnitComponent>(entity);u&&ownedSetups.contains(u->GetSetupID()))fixtures.push_back(entity->GetID());
     }
-    std::sort(remaining.begin(),remaining.end(),[](const auto& a,const auto& b){return a.Order<b.Order;});
-    const auto next=std::find_if(remaining.begin(),remaining.end(),[&](const auto& p){return p.Order>workpiece->GetListOrder();});
-    const auto nextPlacement=remaining.empty()?ID():(next==remaining.end()?remaining.back().Placement:next->Placement);
-    const auto nextSetup=remaining.empty()?ID():(next==remaining.end()?remaining.back().Setup:next->Setup);
+    std::sort(remaining.begin(),remaining.end(),[](const auto& a,const auto& b){if(a.Order!=b.Order)return a.Order<b.Order;if(a.Setup.is_nil()!=b.Setup.is_nil())return !a.Setup.is_nil();return iCAX::Data::to_string(a.Placement)<iCAX::Data::to_string(b.Placement);});
+    auto next=std::find_if(remaining.begin(),remaining.end(),[&](const auto& p){return p.Order>workpiece->GetListOrder();});
+    if(!remaining.empty()){
+        const auto order=next==remaining.end()?remaining.back().Order:next->Order;
+        next=std::find_if(remaining.begin(),remaining.end(),[&](const auto& p){return p.Order==order;});
+        const auto preferred=std::find_if(next,remaining.end(),[&](const auto& p){return p.Order==order&&p.Setup.is_nil()==setupID.is_nil();});
+        if(preferred!=remaining.end())next=preferred;
+    }
+    const auto nextPlacement=remaining.empty()?ID():next->Placement;
+    const auto nextSetup=remaining.empty()?ID():next->Setup;
     std::vector<Map> commands;std::set<ID> retiredPlans;
     for(const auto& owned:ownedSetups)
     {

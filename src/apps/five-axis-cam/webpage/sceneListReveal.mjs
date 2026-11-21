@@ -16,12 +16,13 @@ export function revealSceneCut(context,view,ops){
 }
 
 export function revealSceneWorkpiece(context,view,ops,{unitId=null}={}){
-  if(view.disposed||context.isCurrentProject?.()===false||view.fiveAxisArea!=='workpiece')return;
+  if(view.disposed||context.isCurrentProject?.()===false||!['workpiece','operation'].includes(view.fiveAxisArea))return;
   const placement=view.scene?.domain?.placements?.find(p=>p.id===view.scene.activePlacementId);if(!placement)return;
   const collapsed=view.fivePreparationCollapsed;let changed=false;
   if(collapsed){changed=collapsed.delete(`workpiece:${placement.workpieceId}`);if(unitId)changed=collapsed.delete(`setup:${placement.id}`)||changed;}
   if(changed)ops.renderProject(context,view);
   if(unitId)revealSceneListSelection(context.mount,`fixture-${unitId}`);
+  else if(view.fiveAxisArea==='operation')revealSceneListSelection(context.mount,`setup-${placement.id}`);
   else if(!revealSceneListSelection(context.mount,`workpiece-${placement.id}`)){
     if(preparationKind(view)==='setup')revealSceneListSelection(context.mount,`prep-setup-${placement.id}`,':scope > .five-preparation-node');
     else revealSceneListSelection(context.mount,`prep-workpiece-${placement.workpieceId}`,'.five-preparation-root');

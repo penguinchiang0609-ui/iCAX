@@ -1,0 +1,26 @@
+[package]
+name = "icax-sparrow-backend"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MPL-2.0"
+
+[lib]
+name = "icax_sparrow_backend"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "icax-sparrow-run"
+path = "src/main.rs"
+
+[dependencies]
+sparrow = { path = "../../../../third_party/sparrow" }
+jagua-rs = { features = ["spp"], git = "https://github.com/JeroenGar/jagua-rs.git", rev = "a7bd8e9a85ceca57dbc61e4188a06f7e1facb461" }
+rand = { version = "0.9", features = ["small_rng"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+panic = "unwind"

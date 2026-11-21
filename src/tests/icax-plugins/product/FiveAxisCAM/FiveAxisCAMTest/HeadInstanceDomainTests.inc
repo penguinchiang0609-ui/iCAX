@@ -4,10 +4,18 @@ namespace head_instance_tests {
     Map InstanceAction(Scene& scene,const Text& action){return Invoke(&scene,"CamHead","Instance",Command(scene,action));}
     void SelectAB(Scene& scene){const auto sources=InstalledHeadSources();BindBuiltinHeadSources(scene,sources);for(const auto& v:sources){const auto source=v.To<Map>();if(source.contains("kind")&&source.at("kind").To<Text>()=="AB"){SelectInstalledHead(scene,source);return;}}throw std::runtime_error("Missing AB fixture");}
     void Apply(Scene& scene,const Map& parameters){auto r=Command(scene,"configure");r["parameters"]=parameters;Invoke(&scene,"CamHead","Instance",r);}
+    void SelectSource(Scene& scene,const Text& kind){const auto sources=InstalledHeadSources();BindBuiltinHeadSources(scene,sources);for(const auto& value:sources){const auto source=value.To<Map>();if(source.contains("kind")&&source.at("kind").To<Text>()==kind){SelectInstalledHead(scene,source);return;}}throw std::runtime_error("Missing declared head kind "+kind);}
+    void DeclareWorkpieceAxes(Scene& scene,int count){
+        auto parameters=Instance(scene).at("parameters").To<Map>();Array axes;const auto nodeCount=Head(scene).at("assembly").To<Map>().at("nodes").To<Array>().size();
+        Array origin;for(const auto value:iCAX::CAM::Motion::Identity())origin.emplace_back(value);
+        for(int index=0;index<count;++index)axes.emplace_back(Map{{"index",static_cast<UInt>(nodeCount+index)},{"name","Work "+std::to_string(index+1)},{"target",Text("Workpiece")},
+            {"velocityDegS",60.},{"origin",origin},{"axis",index?Array{0.,0.,1.}:Array{1.,0.,0.}},{"zeroOffsetDeg",0.},{"sign",1.},{"lowerDeg",-180.},{"upperDeg",180.}});
+        for(const auto& axis:parameters.at("axes").To<Array>())axes.emplace_back(axis);parameters["axes"]=axes;Apply(scene,parameters);
+    }
 }
 TEST(FiveAxisHeadMotion, WorkpieceBUsesTheSameNativeRelativeFKAndIKWithoutAMachineInstance){
     using namespace head_instance_tests;namespace M=iCAX::CAM::Motion;namespace K=iCAX::GeometryServices::MachineKinematics;
-    Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);PrepareOrderPart(scene);SelectAB(scene);const auto cad=Read(scene).at("workpieces");
+    Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);PrepareOrderPart(scene,true,"HeadTable");SelectSource(scene,"4+1");DeclareWorkpieceAxes(scene,1);const auto cad=Read(scene).at("workpieces");
     auto p=Instance(scene).at("parameters").To<Map>();auto axes=p.at("axes").To<Array>();ASSERT_EQ(2u,axes.size());
     auto work=axes.front().To<Map>();work["name"]=Text("B");work["target"]=Text("Workpiece");Array identity;for(auto x:M::Identity())identity.emplace_back(x);work["origin"]=identity;work["axis"]=Array{1.,0.,0.};work["zeroOffsetDeg"]=7.;work["sign"]=-1.;axes[0]=work;
     auto head=axes.back().To<Map>();head["name"]=Text("A");axes[1]=head;p["axes"]=axes;Apply(scene,p);
@@ -32,10 +40,11 @@ TEST(FiveAxisHeadMotion, WorkpieceBUsesTheSameNativeRelativeFKAndIKWithoutAMachi
     K::Request request;request.TaskDefinition=task;request.Goal.PositionMm=pose.PositionMm;request.Goal.Direction=pose.Direction;request.Seeds={seed};request.MaxSeeds=8;request.MaxCandidates=2;request.MaxTimeMs=10000;
     const auto solved=service->InverseCandidates(built,request);ASSERT_EQ(K::Status::Solved,solved.State)<<solved.Diagnostic;ASSERT_FALSE(solved.Candidates.empty());EXPECT_LT(solved.Candidates.front().PositionErrorMm,.01);EXPECT_LT(solved.Candidates.front().DirectionErrorRad,1e-4);
     work["name"]=Text("C");axes[0]=work;p["axes"]=axes;Apply(scene,p);const auto renamed=ReadMachineSimulation(scene,{{"setupId",state.at("activeSetupId")}});
-    EXPECT_EQ(snapshot.at("nodes"),renamed.at("nodes"));EXPECT_EQ(snapshot.at("positions"),renamed.at("positions"));EXPECT_EQ(cad,Read(scene).at("workpieces"));
+    const auto physical=[](const Variant& value){auto nodes=value.To<Array>();for(auto& item:nodes){auto node=item.To<Map>();node.erase("name");item=node;}return nodes;};
+    EXPECT_EQ(physical(snapshot.at("nodes")),physical(renamed.at("nodes")));EXPECT_EQ(snapshot.at("positions"),renamed.at("positions"));EXPECT_EQ(cad,Read(scene).at("workpieces"));
 }
 TEST(FiveAxisHeadMotion, WorkpieceCradleIsSerialAndTravelsWithConfigurationAndProject){
-    using namespace head_instance_tests;namespace M=iCAX::CAM::Motion;Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);scene.FixtureLibraryStore=TestFixtureLibraryStore();PrepareOrderPart(scene);SelectAB(scene);
+    using namespace head_instance_tests;namespace M=iCAX::CAM::Motion;Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);scene.FixtureLibraryStore=TestFixtureLibraryStore();PrepareOrderPart(scene,true,"TableTable");SelectSource(scene,"3+2");DeclareWorkpieceAxes(scene,2);
     auto p=Instance(scene).at("parameters").To<Map>();auto axes=p.at("axes").To<Array>();Array identity;for(auto x:M::Identity())identity.emplace_back(x);
     for(int i=0;i<2;++i){auto a=axes[i].To<Map>();a["target"]=Text("Workpiece");a["name"]=Text(i?"B":"A");a["origin"]=identity;a["axis"]=i?Array{0.,0.,1.}:Array{1.,0.,0.};axes[i]=a;}p["axes"]=axes;Apply(scene,p);
     const auto motion=Head(scene).at("motion").To<Map>();const auto nodes=motion.at("nodes").To<Array>();const auto inner=nodes.at(motion.at("support").To<int>()).To<Map>().at("parent").To<int>(),outer=nodes[inner].To<Map>().at("parent").To<int>();
@@ -46,26 +55,20 @@ TEST(FiveAxisHeadMotion, WorkpieceCradleIsSerialAndTravelsWithConfigurationAndPr
     iCAX::ProjectFile::CProjectFile file({.Magic="ICAX_FIVE_AXIS_CAM",.ProductID="icax.five-axis-cam",.CurrentFormatVersion="0.1",.nCurrentFormatRevision=1});Scene reopened(scene.Project,scene.GetSceneID(),false,true);file.Open(path,reopened.Database(),reopened.Resources());InitializeScene(reopened);EXPECT_EQ(expected,Head(reopened));std::filesystem::remove(path);
     ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(savedMotion,Head(scene).at("motion"));ASSERT_TRUE(scene.Database().Redo());EXPECT_EQ(expected,Head(scene));
 }
-TEST(FiveAxisHeadMotion, StandaloneHeadPlansAndPersistsThroughTheProductionMotionPlanner){
+TEST(FiveAxisHeadMotion, GeneratedGeometrySurvivesRejectedReplacementOfAPhysicalABHeadByWorkpieceOnlyAxes){
     using namespace head_instance_tests;Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);PrepareProductPlanPaths(scene);SelectAB(scene);
     auto parameters=Instance(scene).at("parameters").To<Map>();auto work=parameters.at("axes").To<Array>().front().To<Map>();
-    Array identity;for(auto x:iCAX::CAM::Motion::Identity())identity.emplace_back(x);work["origin"]=identity;work["axis"]=Array{1.,0.,0.};work["name"]=Text("B");work["target"]=Text("Workpiece");work["zeroOffsetDeg"]=20.;parameters["axes"]=Array{work};Apply(scene,parameters);
-    const auto cuts=Generated(scene);const auto cad=Read(scene).at("workpieces");
-    const auto task=WaitMachinePlan(scene,Invoke(&scene,"CamSimulation","PlanMachine",GenerateRequest(scene)));
-    ASSERT_EQ("Completed",task.at("status").To<Text>())<<iCAX::Data::VariantSerializer::Serialize(task);
-    const auto plan=task.at("result").To<Map>();ASSERT_EQ("Ready",plan.at("status").To<Text>())<<iCAX::Data::VariantSerializer::Serialize(plan);
-    EXPECT_TRUE(plan.at("independentHead").To<bool>());EXPECT_TRUE(plan.at("playbackAllowed").To<bool>());EXPECT_EQ("Clear",plan.at("collisionStatus").To<Text>());EXPECT_GT(plan.at("frames").To<Array>().size(),2u);
-    const auto live=ReadMachineSimulation(scene,{{"setupId",Read(scene).at("activeSetupId")}});const auto nodes=live.at("nodes").To<Array>(),frames=plan.at("frames").To<Array>();const auto workIndex=nodes.at(live.at("support").To<int>()).To<Map>().at("parent").To<int>();
-    EXPECT_NEAR(0.,frames.front().To<Map>().at("joints").To<Array>()[workIndex].To<double>(),1e-9);
-    EXPECT_NEAR(20.*std::numbers::pi/180,frames.back().To<Map>().at("joints").To<Array>()[workIndex].To<double>(),1e-4);
-    EXPECT_EQ("Current",ProductMachinePlan(scene).at("validity").To<Text>());EXPECT_EQ(cuts,Generated(scene));EXPECT_EQ(cad,Read(scene).at("workpieces"));
-    auto p=Instance(scene).at("parameters").To<Map>();p["tcp"]=Array{0.,0.,-222.};Apply(scene,p);EXPECT_EQ("Stale",ProductMachinePlan(scene).at("validity").To<Text>());
-    ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ("Current",ProductMachinePlan(scene).at("validity").To<Text>());
+    Array identity;for(auto x:iCAX::CAM::Motion::Identity())identity.emplace_back(x);work["origin"]=identity;work["axis"]=Array{1.,0.,0.};work["name"]=Text("B");work["target"]=Text("Workpiece");work["zeroOffsetDeg"]=20.;parameters["axes"]=Array{work};
+    const auto before=Read(scene);const auto cuts=Generated(scene);const auto undo=scene.Database().GetUndoArray();
+    EXPECT_THROW(Apply(scene,parameters),std::exception);EXPECT_EQ(before,Read(scene));EXPECT_EQ(cuts,Generated(scene));EXPECT_EQ(undo,scene.Database().GetUndoArray());
 }
 TEST(FiveAxisHeadInstance, SharedSetupReferencesCloneIsolationAndUndo){
     using namespace head_instance_tests;const auto project=iCAX::Data::GenerateNewUUID();Scene scene(project,project,true,true);PrepareOrderPart(scene);SelectAB(scene);
     const auto first=Read(scene);const auto id=Instance(scene).at("id");ASSERT_EQ(1u,first.at("headInstances").To<Array>().size());
-    auto create=GenerateRequest(scene);create.erase("setupId");create["placementId"]=first.at("placements").To<Array>().front().To<Map>().at("id");create["action"]=Text("create");create["name"]=Text("第二位姿");Invoke(&scene,"CamSetup","Manage",create);
+    auto create=GenerateRequest(scene);create.erase("setupId");create["placementId"]=first.at("placements").To<Array>().front().To<Map>().at("id");create["action"]=Text("create");create["name"]=Text("第二位姿");create["machineType"]=Text("HeadHead");Invoke(&scene,"CamSetup","Manage",create);
+    // New poses inherit defaults. Explicitly share this instance to retain the
+    // shared calibration/clone coverage independently of creation semantics.
+    auto share=Command(scene,"select");share["instanceId"]=id;Invoke(&scene,"CamHead","Instance",share);
     const auto shared=Read(scene);ASSERT_EQ(2u,shared.at("setups").To<Array>().size());for(const auto& s:shared.at("setups").To<Array>())EXPECT_EQ(id,s.To<Map>().at("headInstanceId"));
     auto parameters=Instance(scene).at("parameters").To<Map>();parameters["tcp"]=Array{2.,3.,-225.};Apply(scene,parameters);
     for(const auto& s:Read(scene).at("setups").To<Array>())EXPECT_EQ((Array{2.,3.,-225.}),s.To<Map>().at("headModel").To<Map>().at("tcpLocalPosition").To<Array>());
@@ -92,10 +95,10 @@ TEST(FiveAxisHeadInstance, GaugeZeroSignAndLimitsCompileTheSameEffectiveChain){
     for(const double bad:{-1.,1.5,99999.}){auto q=Instance(scene).at("parameters").To<Map>();auto aa=q.at("axes").To<Array>();auto a=aa.front().To<Map>();a["index"]=bad;aa[0]=a;q["axes"]=aa;EXPECT_THROW(Apply(scene,q),std::exception);EXPECT_EQ(before.at("headInstances"),Read(scene).at("headInstances"));}
 }
 TEST(FiveAxisHeadInstance, ProfileCopiesTravelWithoutSourceOrLibraryAndKeepIndependentEdits){
-    using namespace head_instance_tests;auto store=TestFixtureLibraryStore();Scene source;source.FixtureLibraryStore=store;PrepareOrderPart(source);File body(BRepPrimAPI_MakeBox(10,20,30).Shape());ASSERT_EQ("Completed",Wait(source,Invoke(&source,"CamHead","Import",ImportTestHead(source,body))).at("status").To<Text>());
+    using namespace head_instance_tests;auto store=TestFixtureLibraryStore();Scene source;source.FixtureLibraryStore=store;PrepareOrderPart(source,true,"TableTable");File body(BRepPrimAPI_MakeBox(10,20,30).Shape());ASSERT_EQ("Completed",Wait(source,Invoke(&source,"CamHead","Import",ImportTestHead(source,body))).at("status").To<Text>());
     auto p=Instance(source).at("parameters").To<Map>();p["tcp"]=Array{1.,2.,3.};Apply(source,p);
     auto save=Command(source,"save");save["name"]=Text("客户甲刀头");const auto saved=Invoke(&source,"CamHead","Configurations",save);EXPECT_EQ(saved,Invoke(&source,"CamHead","Configurations",save));
-    std::filesystem::remove(body.Path);Scene target;target.FixtureLibraryStore=store;PrepareOrderPart(target);auto load=Command(target,"use");load["entryId"]=saved.at("id");Invoke(&target,"CamHead","Configurations",load);
+    std::filesystem::remove(body.Path);Scene target;target.FixtureLibraryStore=store;PrepareOrderPart(target,true,"TableTable");auto load=Command(target,"use");load["entryId"]=saved.at("id");Invoke(&target,"CamHead","Configurations",load);
     const auto original=Head(target);EXPECT_NE(Instance(source).at("id"),Instance(target).at("id"));EXPECT_EQ((Array{1.,2.,3.}),original.at("tcpLocalPosition").To<Array>());
     auto edit=Instance(target).at("parameters").To<Map>();edit["tcp"]=Array{4.,5.,6.};Apply(target,edit);EXPECT_EQ((Array{1.,2.,3.}),Head(source).at("tcpLocalPosition").To<Array>());
     auto remove=Command(source,"delete");remove["entryId"]=saved.at("id");remove["revision"]=saved.at("revision");Invoke(&source,"CamHead","Configurations",remove);EXPECT_EQ((Array{4.,5.,6.}),Head(target).at("tcpLocalPosition").To<Array>());
@@ -104,21 +107,22 @@ TEST(FiveAxisHeadInstance, ProfileCopiesTravelWithoutSourceOrLibraryAndKeepIndep
     EXPECT_EQ(Head(target),Head(reopened));EXPECT_EQ(Read(target).at("headInstances"),Read(reopened).at("headInstances"));const auto ref=Head(reopened).at("previewRef").To<Map>();EXPECT_TRUE(reopened.Resources().Get<iCAX::Resource::CFlatBufferResource>(ref.at("url").To<Text>(),std::stoull(ref.at("version").To<Text>())));std::filesystem::remove(path);
 }
 TEST(FiveAxisHeadInstance, ReferencedDeletionLockedUsersAndStaleEditsAreRejected){
-    using namespace head_instance_tests;Scene scene;PrepareOrderPart(scene);File body(BRepPrimAPI_MakeBox(10,20,30).Shape());ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamHead","Import",ImportTestHead(scene,body))).at("status").To<Text>());
+    using namespace head_instance_tests;Scene scene;PrepareOrderPart(scene,true,"TableTable");File body(BRepPrimAPI_MakeBox(10,20,30).Shape());ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamHead","Import",ImportTestHead(scene,body))).at("status").To<Text>());
     const auto before=Read(scene);auto remove=Command(scene,"delete");remove["instanceId"]=Instance(scene).at("id");EXPECT_THROW(Invoke(&scene,"CamHead","Instance",remove),std::exception);
     auto stale=Command(scene,"rename");stale["name"]=Text("旧请求");auto rename=Command(scene,"rename");rename["name"]=Text("短名称");Invoke(&scene,"CamHead","Instance",rename);EXPECT_EQ(Text("短名称"),Instance(scene).at("name").To<Text>());EXPECT_THROW(Invoke(&scene,"CamHead","Instance",stale),std::exception);
     const auto setupID=ID::from_string(Read(scene).at("activeSetupId").To<Text>()).value();const auto setup=std::dynamic_pointer_cast<CFiveAxisSetupComponent>(scene.Database().GetEntity(setupID)->GetComponent(CFiveAxisSetupComponent::S_ClassName));ASSERT_TRUE(setup->SetProperty("Locked",true));EXPECT_THROW(InstanceAction(scene,"clone"),std::exception);ASSERT_TRUE(setup->SetProperty("Locked",false));
     auto deselect=Command(scene,"select");deselect["instanceId"]=Text{};Invoke(&scene,"CamHead","Instance",deselect);remove=Command(scene,"delete");remove["instanceId"]=before.at("headInstances").To<Array>().front().To<Map>().at("id");Invoke(&scene,"CamHead","Instance",remove);EXPECT_TRUE(Read(scene).at("headInstances").To<Array>().empty());ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(1u,Read(scene).at("headInstances").To<Array>().size());
 }
 TEST(FiveAxisHeadInstance, BoundGaugeAndMachineEditsShareOneTCPAndRespectLockedReferences){
-    using namespace head_instance_tests;Scene scene;PrepareOrderPart(scene);const auto machine=CreateProductPlanMachine(scene);const auto cad=Read(scene).at("workpieces");
+    using namespace head_instance_tests;Scene scene;PrepareOrderPart(scene,true,"TableTable");const auto machine=CreateProductPlanMachine(scene,true);const auto cad=Read(scene).at("workpieces");
     const auto id=Instance(scene).at("id");EXPECT_EQ(iCAX::Data::to_string(machine.Machine),Instance(scene).at("binding").To<Map>().at("machineId").To<Text>());
     auto p=Instance(scene).at("parameters").To<Map>();p["tcpMode"]=Text("Gauge");p["gaugeOrigin"]=Array{2.,3.,4.};p["beam"]=Array{0.,0.,-2.};p["lengthMm"]=5.;Apply(scene,p);
     EXPECT_EQ((Array{2.,3.,-1.}),Head(scene).at("tcpLocalPosition").To<Array>());
     auto configuration=Invoke(&scene,"CamSimulation","ReadMachine",{{"setupId",Read(scene).at("activeSetupId")}}).at("configuration").To<Map>();
     EXPECT_EQ(id,configuration.at("headInstanceId"));EXPECT_EQ(Head(scene).at("tcpLocalPosition"),configuration.at("tcp"));EXPECT_EQ((Array{0.,0.,-1.}),configuration.at("beam").To<Array>());
     EXPECT_THROW(InstanceAction(scene,"clone"),std::exception);
-    auto create=GenerateRequest(scene);create.erase("setupId");create["placementId"]=Read(scene).at("placements").To<Array>().front().To<Map>().at("id");create["action"]=Text("create");create["name"]=Text("共用绑定刀头");Invoke(&scene,"CamSetup","Manage",create);
+    auto create=GenerateRequest(scene);create.erase("setupId");create["placementId"]=Read(scene).at("placements").To<Array>().front().To<Map>().at("id");create["action"]=Text("create");create["name"]=Text("共用绑定刀头");create["machineType"]=Text("TableTable");Invoke(&scene,"CamSetup","Manage",create);
+    auto share=Command(scene,"select");share["instanceId"]=id;Invoke(&scene,"CamHead","Instance",share);
     const auto active=Read(scene).at("activeSetupId").To<Text>();ID other;
     for(const auto& value:Read(scene).at("setups").To<Array>()){const auto s=value.To<Map>();EXPECT_EQ(id,s.at("headInstanceId"));if(s.at("id").To<Text>()!=active)other=*ID::from_string(s.at("id").To<Text>());}
     const auto locked=std::dynamic_pointer_cast<CFiveAxisSetupComponent>(scene.Database().GetEntity(other)->GetComponent(CFiveAxisSetupComponent::S_ClassName));ASSERT_TRUE(locked->SetProperty("Locked",true));

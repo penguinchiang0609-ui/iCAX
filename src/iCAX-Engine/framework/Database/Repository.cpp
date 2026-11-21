@@ -984,6 +984,11 @@ bool iCAX::Database::CRepository::FlushOperationLog()
     return m_pOperationLog && m_pOperationLog->Flush();
 }
 
+void iCAX::Database::CRepository::SetOperationLogCheckpoint(std::function<void()> Checkpoint_)
+{
+    m_OperationLogCheckpoint = std::move(Checkpoint_);
+}
+
 void iCAX::Database::CRepository::ReplayOperationLog(
     IN const std::string& strPath_,
     IN const std::string& strMagic_,
@@ -1758,6 +1763,11 @@ void iCAX::Database::CRepository::TriggerRepositoryChanging(IN const RepositoryE
         return;
     }
 
+    // Core persistence validation must run before an unbatched mutation.
+    // Observer callbacks below deliberately cannot reject an operation.
+    if (nType_ != RepositoryEventArgs::kBatchChanged && HasOperationLog() && m_OperationLogCheckpoint)
+        m_OperationLogCheckpoint();
+
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
         if (auto _Observer = _Ite->lock())
@@ -1857,6 +1867,13 @@ void iCAX::Database::CRepository::EndOperationBatch()
     {
         return;
     }
+
+    // Keep the builder and all rollback facts alive until the owner's
+    // checkpoint succeeds. This also protects Undo/Redo replay while its
+    // journal is open; archive/log replay has no append journal attached.
+    if (m_nOperationBatchKind != EOperationBatchKind::LoadBaseline
+        && HasOperationLog() && m_OperationLogCheckpoint)
+        m_OperationLogCheckpoint();
 
     const bool _ProfileStage = m_strOperationBatchName == "Add independent nesting parts"
         && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;

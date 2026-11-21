@@ -15,6 +15,9 @@ std::shared_ptr<CollisionRepairResult> CalculateKeyposeRepair(const CollisionRep
         const auto direction=GenVec(field.At(segment-originalValue.Geometry.Segments.begin(),a.Parameter));
         if(control.empty())control={{"id",iCAX::Data::to_string(iCAX::Data::GenerateNewUUID())},{"kind",Text("Control")},{"set",Text("active")},{"boundaryPolicy",Text("Duplicate")},{"anchor",anchor},{"direction",GenPoint(direction)},{"transition",Text("ArcLength")}};
         points.push_back({control,direction,control.contains("positionOffset")?RegistrationPoint(control.at("positionOffset")):RepairMath::Vector{}});
+        for(const auto& origin:input.RepairOrigins){const auto p=origin.To<Map>();if(String(p,"intentId")==originalCut.IDText&&p.contains("anchor")&&IntentSameNativeAnchor(p.at("anchor").To<Map>(),anchor)){
+            points.back().Direction=RepairMath::Unit(RegistrationPoint(p.at("direction")));points.back().Offset=RegistrationPoint(p.at("positionOffset"));break;}}
+        result->RepairOrigins.emplace_back(Map{{"intentId",originalCut.IDText},{"anchor",anchor},{"direction",GenPoint(points.back().Direction)},{"positionOffset",GenPoint(points.back().Offset)}});
     }
     if(points.empty())throw std::invalid_argument("CAM_REPAIR_EDITABLE_KEYPOSE_REQUIRED");
     const auto unresolved=[&](const Text& reason){result->Unresolved=Array{Map{{"reason",reason},{"intentId",originalCut.IDText},{"index",std::to_string(input.Selected)}}};return result;};
@@ -32,10 +35,10 @@ std::shared_ptr<CollisionRepairResult> CalculateKeyposeRepair(const CollisionRep
     if(editsSeam)for(const auto& [frame,location]:input.Collision.KeyposeLocations)
         if(String(location,"intentId")==originalCut.IDText&&String(location,"role")!="Rapid"&&location.contains("anchor")&&seam(location.at("anchor").To<Map>()))targetFrames.insert(frame);
     const auto& originalKeys=input.Collision.KinematicKeyframes;
-    for(const auto frame:targetFrames){const auto found=std::find(originalKeys.begin(),originalKeys.end(),frame);if(found==originalKeys.end())throw std::runtime_error("CAM_REPAIR_KEYPOSE_SAMPLE_MISSING");
+    if(input.RepairPhase!="Limits")for(const auto frame:targetFrames){const auto found=std::find(originalKeys.begin(),originalKeys.end(),frame);if(found==originalKeys.end())throw std::runtime_error("CAM_REPAIR_KEYPOSE_SAMPLE_MISSING");
         for(const auto neighbor:{found==originalKeys.begin()?frame:*std::prev(found),std::next(found)==originalKeys.end()?frame:*std::next(found)})if(!targetFrames.contains(neighbor))
             for(const auto& value:input.Report.at("keyposeChecks").To<Array>()){const auto row=value.To<Map>(),location=row.at("location").To<Map>();
-                if(String(location,"intentId")==originalCut.IDText&&String(location,"role")!="Rapid"&&Integer(row,"frameIndex")==neighbor&&String(row,"status")!="Clear")return unresolved("CAM_REPAIR_NEIGHBOR_KEYPOINT_NOT_CLEAR");}
+                if(String(location,"intentId")==originalCut.IDText&&String(location,"role")!="Rapid"&&Integer(row,"frameIndex")==neighbor&&String(row,"status")!="Clear"&&(input.RepairPhase=="All"||String(row,"reason")=="CAM_HEAD_LIMIT_NO_SOLUTION"))return unresolved("CAM_REPAIR_NEIGHBOR_KEYPOINT_NOT_CLEAR");}
     }
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(120);bool incomplete=false;
     std::vector<Array> orientations;for(const auto& point:points){auto values=RepairDirections(point.Direction,input.MaximumDegrees*std::numbers::pi/180);values.insert(values.begin(),GenPoint(point.Direction));orientations.push_back(std::move(values));}
@@ -44,7 +47,7 @@ std::shared_ptr<CollisionRepairResult> CalculateKeyposeRepair(const CollisionRep
         Array edits;for(std::size_t i=0;i<points.size();++i)if(mask&(1u<<i)){
             auto control=points[i].Control;control["direction"]=orientations[i].at(std::min(directionIndex,orientations[i].size()-1));
             if(control.contains("driver")){incomplete=true;return false;}
-            if(distance>0)control["positionOffset"]=GenPoint(RepairMath::Add(points[i].Offset,RepairMath::Scale(points[i].Direction,distance)));edits.emplace_back(std::move(control));
+            control["positionOffset"]=GenPoint(RepairMath::Add(points[i].Offset,RepairMath::Scale(points[i].Direction,distance)));edits.emplace_back(std::move(control));
         }
         ++result->Candidates;RepairProgress(progress,distance==0?"SearchingAngles":"SearchingPosition",result->Candidates,input.MaximumDegrees);
         auto generation=input.Generation;auto& cut=generation.Cuts.at(0);auto& v=cut.IntentPath.Value;
@@ -81,12 +84,23 @@ std::shared_ptr<CollisionRepairResult> CalculateKeyposeRepair(const CollisionRep
             const auto position=RepairMath::Add(RapidTransform(cut.Transform,GenPoint(offsets.At(index,anchor.Parameter)),false),RepairMath::Scale(axis,RegistrationNumber(input.Settings.at("followHeightMm"))));
             if(RepairMath::Length(RepairMath::Sub(RegistrationPoint(oldMotion.Frames[i].To<Map>().at("position")),position))>1e-8||RepairMath::Length(RepairMath::Sub(old.Axis,axis))>1e-9){incomplete=true;return false;}
         }
+        if(input.RepairPhase=="Limits"){
+            candidate.Query.Segments.clear();candidate.SegmentIndices.clear();candidate.KeypointFrames.clear();candidate.KeypointSegments.clear();
+            for(const auto i:selected){const auto pose=i<all.size()?all[i].Start:all.back().End;candidate.KeypointFrames.push_back(i);candidate.KeypointSegments.push_back({pose,pose,0,true});}
+        }
         candidate.ConfigureFullHead(candidate);const auto stop=[&]{return cancelled->load()||std::chrono::steady_clock::now()>=deadline;};
+        RepairProgress(progress,"CheckingLimits",result->Candidates,input.MaximumDegrees);
+        if(!candidate.CheckHeadLimits(stop)){incomplete|=candidate.HeadLimitsUnverified;return false;}
+        if(stop()){incomplete=true;return false;}
+        if(input.RepairPhase!="Limits"){
+        RepairProgress(progress,"CheckingCollision",result->Candidates,input.MaximumDegrees);
         const auto checkedKeys=candidate.CheckFullHead(candidate.KeypointSegments,true,{},stop,{},{});
-        for(const auto& row:checkedKeys.Segments)if(row.Status!="Clear"){if(row.Reason.find("BUDGET")!=Text::npos||row.Reason=="CAM_HEAD_SWEEP_UNRESOLVED")incomplete=true;return false;}
+        for(std::size_t i=0;i<checkedKeys.Segments.size();++i){const auto& row=checkedKeys.Segments[i];if(input.RepairPhase=="Collision"&&!selected.contains(candidate.KeypointFrames[i]))continue;
+        if(row.Status!="Clear"){if(row.Reason.find("BUDGET")!=Text::npos||row.Reason=="CAM_HEAD_SWEEP_UNRESOLVED")incomplete=true;return false;}}
         RepairProgress(progress,"Verifying",result->Candidates,input.MaximumDegrees);
         const auto checked=candidate.CheckFullHead(candidate.Query.Segments,false,{},stop,{},{});
-        for(const auto& row:checked.Segments)if(row.Status!="Clear"){if(row.Status=="Unchecked")incomplete=true;return false;}
+        for(const auto& value:candidate.InterpolationChecks){const auto row=value.To<Map>();if(input.RepairPhase=="Collision"&&String(row,"status")=="Skipped")continue;if(String(row,"status")!="Clear"){if(String(row,"status")=="Unchecked")incomplete=true;return false;}}
+        }
         result->Solved=true;result->Verified=true;result->PoseEdits[originalCut.IDText]=Map{{"controls",edits}};
         result->Adjustments=Array{Map{{"intentId",originalCut.IDText},{"changedPointCount",std::to_string(edits.size())},{"translationMm",distance}}};return true;
     };
@@ -100,6 +114,9 @@ std::shared_ptr<CollisionRepairResult> CalculateKeyposeRepair(const CollisionRep
 #include "FiveAxisRapidKeyposeRepair.inc"
 Map StartKeyposeRepair(Scene& scene,SceneRuntime& runtime,const Map& request,ImportTask task){
     auto input=std::make_shared<CollisionRepairSnapshot>();input->KeyposeRepair=true;
+    if(request.contains("toleranceOrigins"))input->RepairOrigins=request.at("toleranceOrigins").To<Array>();
+    input->RepairPhase=request.contains("repairPhase")?String(request,"repairPhase"):Text("All");
+    if(input->RepairPhase!="All"&&input->RepairPhase!="Limits"&&input->RepairPhase!="Collision")throw std::invalid_argument("CAM_REPAIR_PHASE_INVALID");
     input->MaximumDegrees=request.contains("maxDeviationDeg")?RegistrationNumber(request.at("maxDeviationDeg")):15.;
     input->MaximumTranslationMm=request.contains("maxTranslationMm")?RegistrationNumber(request.at("maxTranslationMm")):0.;
     if(!std::isfinite(input->MaximumDegrees)||input->MaximumDegrees<0||input->MaximumDegrees>180||!std::isfinite(input->MaximumTranslationMm)||input->MaximumTranslationMm<0)throw std::invalid_argument("CAM_REPAIR_TOLERANCE_INVALID");
@@ -113,6 +130,7 @@ Map StartKeyposeRepair(Scene& scene,SceneRuntime& runtime,const Map& request,Imp
         const auto& keys=input->Collision.KinematicKeyframes;const auto b=std::upper_bound(keys.begin(),keys.end(),index);if(b!=keys.end()&&b!=keys.begin())input->RepairLocations={input->Collision.KeyposeLocations.at(*std::prev(b)),input->Collision.KeyposeLocations.at(*b)};
     }
     if(String(chosen,"status")!="Collision"&&String(chosen,"reason")!="CAM_HEAD_LIMIT_NO_SOLUTION")throw std::invalid_argument("CAM_REPAIR_SELECT_ISSUE");input->Selected=static_cast<std::size_t>(Integer(chosen,"index"));
+    if(input->RepairPhase=="Limits"&&String(chosen,"reason")!="CAM_HEAD_LIMIT_NO_SOLUTION"||input->RepairPhase=="Collision"&&String(chosen,"status")!="Collision")throw std::invalid_argument("CAM_REPAIR_PHASE_ISSUE_MISMATCH");
     if(input->RepairLocations.empty()||input->RepairLocations.size()>2)throw std::invalid_argument("CAM_REPAIR_EDITABLE_KEYPOSE_REQUIRED");
     const auto first=input->RepairLocations.front().To<Map>();const auto id=ID::from_string(String(first,"intentId")).value();RequireCutUnlocked(scene,id);
     const auto geometry=GeneratedGeometryState(scene,task.SetupID);input->Operations=geometry.at("operations").To<Array>();input->Transitions=geometry.at("transitions").To<Array>();
@@ -156,5 +174,6 @@ void FinishKeyposeRepair(Scene& scene,SceneRuntime& runtime,ImportTask& task){
             task.Status="Completed";task.Result={{"status",Text("Repaired")},{"changed",true},{"verification",Text("VerifiedCandidate")},{"geometryDeferred",true},{"changedIntentIds",Array{id}},{"changedRapidCount",Text("0")},{"adjustments",result->Adjustments},{"candidateCount",std::to_string(result->Candidates)}};
         }
     }catch(const iCAX::Tasks::TaskCanceledException&){task.Status="Cancelled";}catch(const std::exception& error){task.Status=task.Cancelled->load()?"Cancelled":"Failed";task.Error=error.what();}
+    if(task.Status=="Completed"&&!task.Result.empty()){task.Result["repairPhase"]=task.RepairInput->RepairPhase;if(task.RepairInput->RepairPhase!="All"&&task.Result.at("changed").To<bool>())task.Result["verification"]=task.RepairInput->RepairPhase=="Limits"?Text("KeyposeLimitsVerified"):Text("LocalTargetsVerified");task.Result["toleranceOrigins"]=task.RepairWorker.Result()->RepairOrigins;}
     task.RepairWorker={};task.RepairInput.reset();
 }

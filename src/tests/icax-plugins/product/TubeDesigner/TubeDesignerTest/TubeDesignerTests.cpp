@@ -765,6 +765,25 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, KnownManufacturingAxisMatchesInfe
     }
 }
 
+TEST(TubeDesignerFinalGeometryMeasurementTest, ReportsExactNormalizationTransformForLaterAssemblyCuts)
+{
+    const auto outer = BRepPrimAPI_MakeBox(gp_Pnt(100,200,300),20,10,500).Shape();
+    const auto bore = BRepPrimAPI_MakeBox(gp_Pnt(101,201,299),18,8,502).Shape();
+    const auto source = BRepAlgoAPI_Cut(outer,bore).Shape();
+    for (const gp_Dir& hint : {gp_Dir(0,0,1),gp_Dir(0,0,-1),gp_Dir(1,0,0)}) {
+        gp_Trsf sourceToPart;
+        const auto normalized = NormalizeLinearPartForManufacturing(source,hint,sourceToPart);
+        const auto restored = BRepBuilderAPI_Transform(normalized,sourceToPart.Inverted(),true).Shape();
+        GProp_GProps expected, actual, common;
+        BRepGProp::VolumeProperties(source,expected);
+        BRepGProp::VolumeProperties(restored,actual);
+        const auto intersection = BRepAlgoAPI_Common(source,restored).Shape();
+        BRepGProp::VolumeProperties(intersection,common);
+        EXPECT_NEAR(actual.Mass(),expected.Mass(),1.e-6);
+        EXPECT_NEAR(common.Mass(),expected.Mass(),1.e-6);
+    }
+}
+
 TEST(TubeDesignerFinalGeometryMeasurementTest, ExtractsPlanarTrapezoidEndProjections)
 {
     BRepBuilderAPI_MakePolygon _Polygon;

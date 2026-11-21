@@ -8,10 +8,33 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GCPnts_UniformAbscissa.hxx>
 #include <NCollection_Array1.hxx>
+#include <Geom2dConvert.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <Geom2d_TrimmedCurve.hxx>
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <queue>
+
+iCAX::GeometryData::NURBS2 iCAX::Geometry::BoundedPlanarSpline(const iCAX::GeometryData::CurveSegment2& segment)
+{
+    const auto curve=iCAX::OpenCascade::BuildOpenCascadeCurve2(segment.Curve);
+    double first=segment.Range.First,last=segment.Range.Last;
+    if(const auto* line=std::get_if<iCAX::GeometryData::Segment2>(&segment.Curve)){
+        const double length=std::hypot(line->End.X-line->Start.X,line->End.Y-line->Start.Y);first*=length;last*=length;
+    }
+    if(curve.IsNull()||!std::isfinite(first)||!std::isfinite(last)||first>=last)throw std::invalid_argument("CURVE_TRIM_INVALID_SOURCE");
+    occ::handle<Geom2d_BSplineCurve> spline;
+    if(const auto basis=occ::down_cast<Geom2d_BSplineCurve>(curve);!basis.IsNull()){
+        spline=occ::down_cast<Geom2d_BSplineCurve>(basis->Copy());spline->Segment(first,last);
+    }else spline=Geom2dConvert::CurveToBSplineCurve(new Geom2d_TrimmedCurve(curve,first,last));
+    if(spline.IsNull()||spline->IsPeriodic())throw std::invalid_argument("CURVE_TRIM_INVALID_RESULT");
+    if(segment.Range.Reversed)spline->Reverse();
+    iCAX::GeometryData::NURBS2 result;result.Degree=spline->Degree();
+    for(int i=1;i<=spline->NbPoles();++i){const auto p=spline->Pole(i);result.Poles.push_back({p.X(),p.Y()});result.Weights.push_back(spline->Weight(i));}
+    for(int i=1;i<=spline->NbKnots();++i){result.Knots.push_back(spline->Knot(i));result.Multiplicities.push_back(spline->Multiplicity(i));}
+    return result;
+}
 
 namespace
 {

@@ -2,28 +2,30 @@
 import { processDraftDefaults } from './processPolicyDraft.mjs';
 import { buildCutTree } from './cutTreeModel.mjs';
 export const AREAS = Object.freeze([
-  { id: 'workpiece', title: '工件', hint: '工件 → 装夹 → 夹具单元' },
-  { id: 'toolpath', title: 'CAM', hint: '刀路提取 → 工艺 → 生成 → 轨迹仿真与输出' },
+  { id: 'workpiece', title: '工件', hint: '工件管理 · 自身坐标系 · 缩放' },
+  { id: 'operation', title: '工序', hint: '引用工件 · 机型 · 装夹姿态 · 夹具与支撑' },
+  { id: 'toolpath', title: '刀路', hint: '刀路提取 → 工艺 → 生成 → 轨迹仿真与输出' },
   { id: 'simulation', title: '孪生', hint: '真实机型与装夹 · 数字孪生仿真' },
   { id: 'help', title: '帮助', hint: '操作说明、日志与诊断' },
 ]);
 export const normalizeArea = id => AREAS.some(area => area.id === id) ? id : 'workpiece';
-export const DEFAULT_TOOLS = Object.freeze({ workpiece: 'select', toolpath: 'select', simulation: 'machine-instances', help: 'manual' });
+export const DEFAULT_TOOLS = Object.freeze({ workpiece: 'select', operation: 'machine-type', toolpath: 'select', simulation: 'machine-instances', help: 'manual' });
 export const preparationKind = view => view.fivePreparationKind || 'workpiece';
-export const geometryEditing = view => view.fiveAxisArea==='workpiece'&&preparationKind(view)==='workpiece';
+export const geometryEditing = view => view.fiveAxisArea==='workpiece';
 export const geometryTools = Object.freeze(['scale','align']);
 export const TOOLS = Object.freeze(Object.fromEntries([
   ['process', 'toolpath', '切割参数', '所选刀路', '设置当前刀路的切割工艺参数。', '保存后重新生成受影响的刀路。'],
   ['order', 'toolpath', '加工顺序', '当前位姿的刀路', '查看并调整加工顺序。', '只有明确执行排序操作才修改顺序。'],
   ['select', 'workpiece', '选择', '当前工件', '选择场景中的对象。', '退出平移、旋转与缩放。'],
-  ['translate', 'workpiece', '平移', '当前工件', '按编程坐标系平移工件。', '确认后保存位置，并使后续加工结果过期。'],
-  ['rotate', 'workpiece', '旋转', '当前工件', '绕指定中心和坐标轴旋转工件。', '确认后保存姿态，并使后续加工结果过期。'],
+  ['machine-type', 'operation', '机型', '当前工序', '设置刀头侧和工件侧的转轴分配，支持分层默认与独立指定。', '本工序保存实际机型，真实机床由孪生页管理。'],
+  ['translate', 'operation', '平移', '当前工序的工件', '按装夹坐标系平移当前工序的工件。', '保存当前工序的安装位置，工件自身坐标系保持不变。'],
+  ['rotate', 'operation', '旋转', '当前工序的工件', '绕指定中心和坐标轴旋转当前工序的工件。', '保存当前工序的装夹姿态，工件自身坐标系保持不变。'],
   ['scale', 'workpiece', '缩放', '当前工件', '拖动任意轴端方块或中心方块，等比缩放工件。', 'XYZ 使用同一比例缩放精确几何；确认后需重新提取刀路。'],
   ['align', 'workpiece', '自身坐标系重置', '当前工件', '选择基准面、Z 正方向、X 正方向和原点。', '确认后以对齐结果重设工件自身坐标系，位置和旋转归零；取消恢复原状态。'],
   ['rough', 'workpiece', '工件坐标系', '当前工件', '利用模型上的点、直线或面建立编程坐标系。', '确定原点、OX 方向和 OXY 平面；改变坐标后需重新生成与验证。'],
-  ['fine', 'workpiece', '实测校准', '模型点与实测点', '把现场测得的坐标与模型特征点逐一配对，校准工件摆放。', '检查点组与残差后才能应用；已有有效实测校准时，不在现场重复应用同一变换。'],
-  ['setup', 'workpiece', '装夹管理', '当前工件的装夹', '同一几何可建立多个装夹，各自保存姿态、工装和刀路。', '新增装夹从当前姿态开始，不复制刀路或工装。'],
-  ['fixture', 'workpiece', '工装管理', '当前装夹', '导入工装、设计夹具、调整位置并检查静态间隙。', '隐藏工装仍参与检查；位置变更后重新检查。'],
+  ['fine', 'operation', '实测校准', '模型点与实测点', '把现场测得的坐标与模型特征点逐一配对，校准本工序工件摆放。', '检查点组与残差后才能应用；已有有效实测校准时，不在现场重复应用同一变换。'],
+  ['setup', 'operation', '工序管理', '当前工序', '每道工序引用一个工件，各自保存姿态、工装和刀路。', '新增工序独立引用工件，不复制刀路或工装。'],
+  ['fixture', 'operation', '工装管理', '当前工序', '导入工装、设计夹具、调整位置并检查静态间隙。', '隐藏工装仍参与检查；位置变更后重新检查。'],
   ['extract', 'toolpath', '添加刀路', '加工面与边界', '选面识别、选边成环或选择加工区域，预览后添加刀路。', '确认候选后产生切割定义，尚未产生机床运动。'],
   ['manual-extract', 'toolpath', '手动选面', '加工面与边界', '补充自动识别遗漏的加工面，也可使用已有拓扑选择。', '确认所选边界后建立切割定义。'],
   ['split', 'toolpath', '打断刀路', '刀路', '在指定位置分段，便于分段加工。', '保留来源关系；标准孔在确认打断时自动转为轮廓。'],
@@ -48,9 +50,9 @@ export const TOOLS = Object.freeze(Object.fromEntries([
   ['machine-simulation', 'simulation', '作业', '真实机型与当前装夹', '按实际轴运动驱动完整机床、切割头、工件和夹具。', '实机模型、运动链、行程和标定齐全后才能运行；未配置不生成仿真通过结论。'],
   ['machine-definitions', 'simulation', '机床定义', '机床资源库', '导入、启用、禁用和删除机床定义。', '定义用于创建实例，实例保存各自的参数。'],
   ['machine-instances', 'simulation', '机床实例', '机械结构与控制', '调整实例行程、点动轴和配置后置。', '后置随实例保存，作业直接继承。'],
-  ['registration', 'workpiece', '三点定位', '供现场测量的模型特征点', '选择三个现场容易找到的点，随加工交付供执行端配对实测坐标。', '这是待测量的定位计划；选完模型点不代表已完成定位。现场用对应实测点求机床变换；这里不输入实测坐标。'],
+  ['registration', 'operation', '三点定位', '供现场测量的模型特征点', '选择三个现场容易找到的点，随加工交付供执行端配对实测坐标。', '这是待测量的定位计划；选完模型点不代表已完成定位。现场用对应实测点求机床变换；这里不输入实测坐标。'],
   ['export', 'toolpath', '导出', '已验证的加工计划', '检查设备与定位资格，生成程序并重放实际输出文件。', '完整计划、有效报告与文件重放均通过才可交付。'],
-  ['settings', 'toolpath', '空移策略', '机床、切割头与规划默认值', '配置设备和规划基础参数，供工程引用。', '局部修正留在对应刀路操作中；设备或配置改变后需重新验证。'],
+  ['settings', 'toolpath', '生成参数', '空移生成策略', '设置空移方式、退刀距离和安全高度等生成参数。', '设置用于后续生成，各空移段可单独调整。'],
   ['manual', 'help', '操作说明', '编程流程', '按对象理解各菜单的作用。', '参数目前仅为会话草稿，应用和计算能力待接入。'],
   ['diagnostics', 'help', '导出诊断包', '当前工程的诊断信息', '收集问题上下文以便排查。', '诊断导出能力待接入。'],
   ['logs', 'help', '日志', '运行记录', '查看导入、生成与验证过程中的操作记录。', '普通操作记录保留在公共日志区，问题修正从对应操作进入。'],
@@ -71,29 +73,40 @@ export function workspaceState(view) {
   return ui;
 }
 export function activeTool(view, area = view.fiveAxisArea) { return workspaceState(view).tools[normalizeArea(area)]; }
-export function switchCamPage(view,page) {
-  if((view.fiveCamPage||'cutting')===page)return;
-  const wasRapid=view.fiveCamPage==='rapid';
+export const camPathKind=view=>view.fiveCamPage==='rapid'||view.fiveCamPage==='collision'&&view.fiveCamCollisionPathKind==='rapid'?'rapid':'cutting';
+export const collisionDetailKind=view=>['cutting','rapid','all'].includes(view.fiveCollisionDetails)?view.fiveCollisionDetails:'cutting';
+export function switchCamPathKind(view,kind){
+  const wasRapid=camPathKind(view)==='rapid';
+  if(wasRapid===(kind==='rapid'))return;
   const ui=workspaceState(view),key=view.scene?.domain?.activeSetupId||'';
   const memory=view.fiveCamSelections??=new Map();
-  if(page==='rapid'){
+  if(kind==='rapid'){
     memory.set(key,Object.fromEntries(['selectedIntentIds','selectedIntentId','selectedGroupIds','selectedGroupId','cutSelectionAnchor'].map(k=>[k,structuredClone(ui[k])])));
     Object.assign(ui,{selectedIntentIds:[],selectedIntentId:'',selectedGroupIds:[],selectedGroupId:'',cutSelectionAnchor:''});
-  }else if(wasRapid){
+  }else{
     if(view.fiveRapid?.id)view.fiveRapidSelectedId=view.fiveRapid.id;
     if(view.fiveRapid)view.fiveRapid.id='';
     const saved=memory.get(key);
     if(saved)Object.assign(ui,structuredClone(saved));
     ui.selectionSnapshot=null;workspaceState(view);
   }
+  view.fiveCamCollisionPathKind=kind;
   view.fivePreferredCutSelection=[...(ui.selectedIntentIds||[])];
+}
+export function switchCamPage(view,page) {
+  if((view.fiveCamPage||'cutting')===page)return;
+  if(page==='collision')view.fiveCollisionDetails??=camPathKind(view);
+  const kind=page==='collision'?(collisionDetailKind(view)==='all'?camPathKind(view):collisionDetailKind(view)):page==='rapid'?'rapid':'cutting';
+  switchCamPathKind(view,kind);
+  view.fiveCamCollisionPathKind=kind;
   view.fiveCamPage=page;
 }
 export function selectTool(view, id) {
   const item = TOOLS[id];
   if (!item) return false;
   const state = workspaceState(view); state.tools[item.area] = id;
-  if(item.area==='workpiece')view.fivePreparationKind=id==='fixture'?'unit':['translate','rotate','fine','setup','registration'].includes(id)?'setup':'workpiece';
+  if(item.area==='workpiece')view.fivePreparationKind='workpiece';
+  if(item.area==='operation')view.fivePreparationKind=id==='fixture'?'unit':'setup';
   if (['machine-simulation', 'export'].includes(id)) state.dock = 'issues';
   return true;
 }

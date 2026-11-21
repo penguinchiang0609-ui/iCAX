@@ -8,6 +8,29 @@ namespace keypose_tests {
         BindBuiltinHeadSources(scene,sources);SelectInstalledHead(scene,sources.front().To<Map>());
     }
 }
+TEST(FiveAxisFullHeadCollision, LimitsPrecedeGeometryAndPathKindsKeepIndependentReports){
+    Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);PrepareOrderPart(scene);keypose_tests::SelectHead(scene);GenerateAxis(scene);
+    const auto ids=OrderedIDs(Generated(scene));const double angle=122.*std::numbers::pi/180.;
+    for(const auto& id:ids)Invoke(&scene,"CamCut","SetToolAxis",AxisRequest(scene,id,"Fixed",{std::sin(angle),0.,std::cos(angle)}));
+    collision_repair_tests::GenerateRepairAxis(scene);const auto cad=Read(scene).at("workpieces");
+    auto request=GenerateRequest(scene);request["pathKind"]=Text("Cutting");
+    const auto checked=Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",request));ASSERT_EQ("Completed",checked.at("status").To<Text>())<<iCAX::Data::VariantSerializer::Serialize(checked);
+    const auto cuts=SimulationReport(scene);EXPECT_EQ("Cutting",cuts.at("checkedPathKind").To<Text>());
+    EXPECT_EQ("0",cuts.at("distanceQueries").To<Text>());
+    ASSERT_FALSE(cuts.at("keyposeChecks").To<Array>().empty());
+    for(const auto& value:cuts.at("keyposeChecks").To<Array>()){const auto row=value.To<Map>();EXPECT_NE("Rapid",row.at("location").To<Map>().at("role").To<Text>());EXPECT_EQ("CAM_HEAD_LIMIT_NO_SOLUTION",row.at("reason").To<Text>());EXPECT_FALSE(row.contains("witness"));}
+    for(const auto& value:cuts.at("interpolationChecks").To<Array>())EXPECT_EQ("Skipped",value.To<Map>().at("status").To<Text>());
+    // A failed cutting check is not a prerequisite for ordinary rapid generation.
+    auto generate=GenerateRequest(scene);generate["safe"]=false;generate["geometryRevision"]=Generated(scene).at("revision");
+    const auto generated=Wait(scene,Invoke(&scene,"CamRapid","Generate",generate));ASSERT_EQ("Completed",generated.at("status").To<Text>())<<iCAX::Data::VariantSerializer::Serialize(generated);
+    request=GenerateRequest(scene);request["pathKind"]=Text("Cutting");ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",request)).at("status").To<Text>());
+    const auto cutRows=SimulationReport(scene).at("keyposeChecks");const auto before=Generated(scene);
+    request=GenerateRequest(scene);request["pathKind"]=Text("Rapid");ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",request)).at("status").To<Text>());
+    const auto both=SimulationReport(scene);EXPECT_EQ("Rapid",both.at("checkedPathKind").To<Text>());Array retained;bool rapid=false;
+    for(const auto& value:both.at("keyposeChecks").To<Array>()){const auto row=value.To<Map>();if(row.at("location").To<Map>().at("role").To<Text>()=="Rapid")rapid=true;else retained.push_back(value);}
+    EXPECT_TRUE(rapid);EXPECT_EQ(cutRows,Variant(retained));EXPECT_EQ(before,Generated(scene));EXPECT_EQ(cad,Read(scene).at("workpieces"));
+}
+
 TEST(FiveAxisTaskProgressPDO, SelectedHeadKeyposeLocationsSurviveProgressSerialization){
     Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true,true);
     PrepareOrderPart(scene);keypose_tests::SelectHead(scene);GenerateAxis(scene);
@@ -21,6 +44,22 @@ TEST(FiveAxisTaskProgressPDO, SelectedHeadKeyposeLocationsSurviveProgressSeriali
     EXPECT_TRUE(port.at("operationId").Is<Text>());EXPECT_TRUE(port.at("portId").Is<Text>());
     EXPECT_EQ("Completed",QueryTaskOnce(scene,receipt).at("status").To<Text>());
     EXPECT_FALSE(scene.PDOHub().HasSlot(PDOIDOf(receipt,"progressPDO")));
+}
+TEST(FiveAxisFullHeadCollision, LimitRepairDoesNotTryToSolveCollisionBeforeLimitStageCompletes){
+    Scene scene(iCAX::Data::GenerateNewUUID(),iCAX::Data::GenerateNewUUID(),true,true);PrepareOrderPart(scene);keypose_tests::SelectHead(scene);GenerateAxis(scene);
+    const auto id=OrderedIDs(Generated(scene)).front();const auto points=Invoke(&scene,"CamCut","ListToolAxisPoints",{{"expected",Read(scene).at("expected")},{"intentId",id}}).at("points").To<Array>();
+    const auto anchor=points.front().To<Map>().at("anchor").To<Map>();const double angle=122.*std::numbers::pi/180.;
+    Invoke(&scene,"CamCut","EditToolAxisPoint",AxisPointRequest(scene,id,Text("start"),anchor,{std::sin(angle),0.,std::cos(angle)}));
+    File fixture(BRepPrimAPI_MakeBox(gp_Pnt(-20000,-20000,-20000),40000,40000,40000).Shape());auto import=GenerateRequest(scene);import["sourcePath"]=fixture.Utf8();ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamFixture","Import",import)).at("status").To<Text>());
+    collision_repair_tests::GenerateRepairAxis(scene);auto check=GenerateRequest(scene);check["intentId"]=id;ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",check)).at("status").To<Text>());
+    Map issue;for(const auto& value:SimulationReport(scene).at("keyposeChecks").To<Array>()){const auto row=value.To<Map>();if(row.at("reason").To<Text>()=="CAM_HEAD_LIMIT_NO_SOLUTION"){issue=row;break;}}
+    ASSERT_FALSE(issue.empty());const auto history=scene.Database().GetUndoArray().size();const auto before=AxisPointRead(scene,id,anchor);
+    auto request=GenerateRequest(scene);request["keyposeFrameIndex"]=issue.at("frameIndex");request["repairPhase"]=Text("Limits");request["maxDeviationDeg"]=15.;request["maxTranslationMm"]=0.;
+    const auto fixed=collision_repair_tests::WaitRepair(scene,Invoke(&scene,"CamSimulation","AutoRepairCollision",request));ASSERT_EQ("Completed",fixed.at("status").To<Text>());const auto result=fixed.at("result").To<Map>();ASSERT_TRUE(result.at("changed").To<bool>())<<iCAX::Data::VariantSerializer::Serialize(result);
+    EXPECT_EQ("Limits",result.at("repairPhase").To<Text>());ASSERT_FALSE(result.at("toleranceOrigins").To<Array>().empty());EXPECT_EQ(history+1,scene.Database().GetUndoArray().size());
+    collision_repair_tests::GenerateRepairAxis(scene);check=GenerateRequest(scene);check["intentId"]=id;ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamSimulation","CheckCollision",check)).at("status").To<Text>());
+    bool collision=false;for(const auto& value:SimulationReport(scene).at("keyposeChecks").To<Array>()){const auto row=value.To<Map>();EXPECT_NE("CAM_HEAD_LIMIT_NO_SOLUTION",row.at("reason").To<Text>());collision|=row.at("status").To<Text>()=="Collision";}EXPECT_TRUE(collision);
+    ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(before.at("direction"),AxisPointRead(scene,id,anchor).at("direction"));ASSERT_TRUE(scene.Database().Redo());
 }
 TEST(FiveAxisFullHeadCollision, YokeOnlyContactUsesSelectedAssemblyAndHonorsDisabledBoxesAndUndo){
     using namespace head_instance_tests;namespace R=iCAX::GeometryServices::RigidMotion;

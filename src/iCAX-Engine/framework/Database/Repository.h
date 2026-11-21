@@ -151,6 +151,7 @@ namespace iCAX
             virtual bool HasOperationLog() const override;
             bool IsWriteInProgress() const override;
             bool FlushOperationLog() override;
+            void SetOperationLogCheckpoint(std::function<void()> Checkpoint_) override;
 
             /*
             * @brief 回放操作日志
@@ -500,6 +501,7 @@ namespace iCAX
             std::unique_ptr<CRepositoryTransaction> m_pCurrentTransaction;
             std::unique_ptr<CRepositoryUndoRedoHistory> m_pHistory;
             std::unique_ptr<COperationBatchJournal> m_pOperationLog;
+            std::function<void()> m_OperationLogCheckpoint;
             std::vector<RepositoryEventRecord> m_OperationBatchEventRecords;
 
         private:

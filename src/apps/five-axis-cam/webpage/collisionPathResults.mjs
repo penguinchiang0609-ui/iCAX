@@ -1,5 +1,5 @@
 import {buildPlayback} from './trajectoryPlayback.mjs';
-import {workspaceState} from './workspaceModel.mjs';
+import {workspaceState,camPathKind} from './workspaceModel.mjs';
 
 const cache=new WeakMap();
 export function retainUnaffectedCollisions(setup,ids){
@@ -14,7 +14,7 @@ export function retainUnaffectedCollisions(setup,ids){
 }
 export const collisionPathKey=frame=>frame?.role==='Rapid'?`rapid:${frame.from}/${frame.to}`:frame?.intentId?`cut:${frame.intentId}`:'';
 export function selectedCollisionPath(view){
-  return view.fiveCamPage==='rapid'?`rapid:${view.fiveRapid?.id||view.fiveRapidSelectedId||''}`:`cut:${workspaceState(view).selectedIntentId||''}`;
+  return camPathKind(view)==='rapid'?`rapid:${view.fiveRapid?.id||view.fiveRapidSelectedId||''}`:`cut:${workspaceState(view).selectedIntentId||''}`;
 }
 // A report must still describe the exact generated trajectory before it can
 // mark either list. Rapid ownership is the connection pair, not its next cut.
@@ -33,7 +33,7 @@ export function collisionPathResults(view){
   result.report=report;
   for(const segment of report.segments||[]){
     const index=Number(segment.index);if(!['Collision','Unchecked'].includes(segment.status)||!Number.isInteger(index)||index<0||!result.frames[index])continue;
-    const path=collisionPathKey(result.frames[index]);if(!path)continue;
+    const path=collisionPathKey(result.frames[index]);if(!path||collisionPathKey(result.frames[index+1])!==path)continue;
     if(!result.paths.has(path))result.paths.set(path,[]);result.paths.get(path).push(segment);
   }
   return result;
@@ -49,7 +49,12 @@ export function collisionPathStatus(results,path){
   if(issues.some(row=>row.status==='Collision'))return '检测到碰撞';
   if(issues.some(row=>row.reason==='CAM_HEAD_LIMIT_NO_SOLUTION'))return '超出切割头限位';
   if(issues.length)return '';
-  const indices=results.frames.flatMap((frame,index)=>index+1<results.frames.length&&collisionPathKey(frame)===path?[index]:[]);
+  const indices=results.frames.flatMap((frame,index)=>index+1<results.frames.length&&collisionPathKey(frame)===path&&collisionPathKey(results.frames[index+1])===path?[index]:[]);
   const rows=new Map(results.report.segments.map(row=>[Number(row.index),row]));
   return indices.length&&indices.every(index=>rows.get(index)?.status==='Clear')?'碰撞与限位检测通过':'';
+}
+export function collisionPathBadge(results,path){
+  const status=collisionPathStatus(results,path);
+  if(status==='碰撞与限位检测通过')return '<span class="five-path-collision-pass" data-five-collision-pass role="img" aria-label="碰撞与超限检测通过" title="碰撞与超限检测通过"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="#2c9b57"/><path d="m5.5 10 3 3 6-6" fill="none" stroke="white" stroke-width="2"/></svg></span>';
+  return collisionPathWarning(results,path)||'<span class="five-path-unchecked" title="尚无有效检测结果">未检测</span>';
 }

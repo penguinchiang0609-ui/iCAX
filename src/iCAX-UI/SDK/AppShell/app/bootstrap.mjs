@@ -12,6 +12,12 @@ import {
 
 const root = document.getElementById("app");
 const startupScreen = createStartupScreen(document);
+const projectWorkspaceOwners = new WeakMap();
+const bottomDockOwners = new WeakMap();
+const bottomDockStates = new WeakMap();
+const bottomDockLogScroll = new WeakMap();
+const mountingBottomDocks = new WeakSet();
+const legacyBottomDockState = { height: 64, activeTabId: "logs" };
 let startupPromise = null;
 // The registered product list is authoritative. A URL must not bypass the
 // product chooser or select a product that the application did not enable.
@@ -442,6 +448,10 @@ const actions = {
     updateBottomDockLogs();
   },
 
+  refreshBottomDock() {
+    return refreshBottomDock();
+  },
+
   async withProjectProgress(projectId, progress, work) {
     const normalizedProjectId = String(projectId ?? "");
     if (!normalizedProjectId || typeof work !== "function") {
@@ -518,7 +528,7 @@ const actions = {
         // A task may have started while choosing a save path or waiting for a
         // preceding close; check the target again immediately before teardown.
         requireProjectReadyToClose(entry);
-        return entry.productProxy.closeProjectCatalog(catalog.catalogId);
+        return entry.productProxy.closeProjectCatalog(catalog.catalogId, { discardChanges: choice === "discard" });
       });
       state.productCloseQueues.set(entry.productProxy, close);
       let productState;
@@ -647,7 +657,7 @@ const actions = {
     if (context.isCurrentProject?.() === false) return state.activeRibbonTabId;
     closeRibbonCommandMenu();
     state.activeRibbonTabId = normalizedId;
-    if (await render() === false) {
+    if (await render({ preserveRibbon: true }) === false) {
       throw new Error(state.error || `Failed to mount ribbon tab: ${normalizedId}`);
     }
     return normalizedId;
@@ -674,7 +684,7 @@ const actions = {
         const existing=[...ribbon.querySelectorAll('[data-ribbon-input]')].find(node=>node.dataset.ribbonInput===input.dataset.ribbonInput&&node.type===input.type);
         if(existing){existing.disabled=input.disabled;if(existing!==active)existing.value=input.value;input.replaceWith(existing);}
       }
-      ribbon.replaceWith(next);
+      patchProductRibbon(ribbon,next);
     }
     positionScrollableRibbonMenu(root.querySelector('.ribbon-commands.has-ribbon-alerts .ribbon-command-menu-toggle[aria-expanded="true"]'));
     refreshProjectSaveControl();
@@ -781,7 +791,10 @@ root.addEventListener("click", (event) => {
   }
 
   const action = target.dataset.action;
-  if (action === "refresh") {
+  if (action === "select-bottom-dock-tab") {
+    closeRibbonCommandMenu();
+    selectBottomDockTab(target.dataset.bottomDockTab);
+  } else if (action === "refresh") {
     runAction(() => actions.refresh());
   } else if (action === "select-product") {
     runAction(() => actions.selectProduct(target.dataset.productId));
@@ -874,6 +887,17 @@ root.addEventListener("click", (event) => {
 });
 
 root.addEventListener("keydown", (event) => {
+  const dockTab = event.target.closest?.("[data-bottom-dock-tab]");
+  if (dockTab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = [...dockTab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+    const index = tabs.indexOf(dockTab);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    selectBottomDockTab(tabs[next]?.dataset.bottomDockTab);
+    tabs[next]?.focus({ preventScroll: true });
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && !event.altKey && ["s", "o"].includes(event.key.toLowerCase())) {
     event.preventDefault();
     const opening = event.key.toLowerCase() === "o";
@@ -1070,7 +1094,30 @@ function rememberNewProjectDraft() {
   });
 }
 
-function render() {
+function patchProductRibbon(ribbon,next) {
+  const tabs=ribbon.querySelector('.ribbon-tabs'),nextTabs=next.querySelector('.ribbon-tabs');
+  const buttons=[...(tabs?.querySelectorAll(':scope > .ribbon-tab[data-tab-id]')??[])];
+  const nextButtons=[...(nextTabs?.querySelectorAll(':scope > .ribbon-tab[data-tab-id]')??[])];
+  if(!tabs||!nextTabs||buttons.length!==nextButtons.length||!buttons.every((button,index)=>button.dataset.tabId===nextButtons[index].dataset.tabId)){
+    ribbon.replaceWith(next);return next;
+  }
+  // Both readback refreshes and a completed page transition can arrive
+  // between pointerdown and pointerup. Keep the tabs connected in both cases.
+  buttons.forEach((button,index)=>{
+    const replacement=nextButtons[index];
+    for(const attribute of [...button.attributes])if(!replacement.hasAttribute(attribute.name))button.removeAttribute(attribute.name);
+    for(const attribute of replacement.attributes)if(button.getAttribute(attribute.name)!==attribute.value)button.setAttribute(attribute.name,attribute.value);
+    if(button.textContent!==replacement.textContent)button.textContent=replacement.textContent;
+  });
+  for(const child of [...tabs.children])if(!buttons.includes(child))child.remove();
+  for(const child of [...nextTabs.children])if(!nextButtons.includes(child))tabs.append(child);
+  ribbon.className=next.className;
+  for(const child of [...ribbon.children])if(child!==tabs)child.remove();
+  for(const child of [...next.children])if(child!==nextTabs)ribbon.append(child);
+  return ribbon;
+}
+
+function render({preserveRibbon=false}={}) {
   document.title = getApplicationTitle();
   hideToolbarTooltip();
   if (!state.activeProjectState) {
@@ -1081,17 +1128,70 @@ function render() {
       </div>
     `;
   } else {
-    root.innerHTML = `
+    // Save primitive identity values as well as proxies: readback can update a
+    // proxy's channel in place, and that must create a different surface.
+    const owner = {
+      productProxy: state.activeProductProxy,
+      projectProxy: state.activeProjectProxy,
+      sceneProxy: state.activeSceneProxy,
+      productId: state.activeProductState?.productId,
+      projectId: state.activeProjectState.projectId,
+      sceneId: state.activeSceneState?.sceneId ?? state.activeSceneProxy?.sceneId,
+      productChannelId: state.activeProductProxy?.productChannelId,
+      sceneChannelId: state.activeSceneProxy?.sceneChannelId,
+    };
+    const dockDefinition = getActiveBottomDockDefinition();
+    const dockState = getBottomDockState(dockDefinition);
+    state.bottomDockHeight = dockState.height;
+    const markup = `
       <div class="workbench" style="--bottom-dock-height:${escapeAttr(state.bottomDockHeight)}px">
         ${renderTitleBar()}
         ${renderProductRibbon()}
         ${renderProjectWorkspace()}
-        ${renderBottomDock()}
+        ${renderBottomDock(dockDefinition)}
         ${state.startCenterOpen ? renderStartCenter({ overlay: true }) : ""}
         ${renderProjectProgress()}
         ${renderGlobalProgress()}
       </div>
     `;
+    const workbench=root.querySelector(':scope > .workbench');
+    const workspace=workbench?.querySelector(':scope > main.workspace');
+    const previousOwner=workspace&&projectWorkspaceOwners.get(workspace);
+    const preserveWorkspace=workspace?.querySelector(':scope > [data-product-surface="project"]')
+      && previousOwner&&Object.entries(owner).every(([key,value])=>previousOwner[key]===value);
+    const ribbon=preserveRibbon?workbench?.querySelector(':scope > .product-ribbon'):null;
+    const dock=workbench?.querySelector(':scope > .bottom-dock');
+    const previousDock= dock && bottomDockOwners.get(dock);
+    const preserveDock=previousDock && previousDock.definitionKey === bottomDockDefinitionKey(dockDefinition)
+      && Object.entries(owner).every(([key,value])=>previousDock.owner[key]===value);
+    if(workbench&&(preserveWorkspace||ribbon||preserveDock)){
+      const template=document.createElement('template');template.innerHTML=markup;
+      const next=template.content.firstElementChild,nextRibbon=next.querySelector(':scope > .product-ribbon'),nextWorkspace=next.querySelector(':scope > main.workspace'),nextDock=next.querySelector(':scope > .bottom-dock');
+      const nextChildren=[...next.children];
+      const liveRibbon=ribbon?patchProductRibbon(ribbon,nextRibbon):null;
+      const liveWorkspace=preserveWorkspace?workspace:null;
+      const liveDock=preserveDock?dock:null;
+      workbench.style.cssText=next.style.cssText;
+      for(const child of [...root.children])if(child!==workbench)child.remove();
+      for(const child of [...workbench.children])if(child!==liveRibbon&&child!==liveWorkspace&&child!==liveDock)child.remove();
+      // Insert the shell around retained nodes. Moving an existing workspace
+      // through a fragment or append() would still blur its focused editors.
+      let anchor=liveRibbon??liveWorkspace??liveDock;
+      for(const child of nextChildren){
+        if(child===nextRibbon&&liveRibbon){anchor=liveWorkspace??liveDock;continue;}
+        if(child===nextWorkspace&&liveWorkspace){anchor=liveDock;continue;}
+        if(child===nextDock&&liveDock){anchor=null;continue;}
+        workbench.insertBefore(child,anchor);
+      }
+    }else root.innerHTML=markup;
+    const mountedWorkspace=root.querySelector(':scope > .workbench > main.workspace');
+    if(mountedWorkspace)projectWorkspaceOwners.set(mountedWorkspace,owner);
+    const mountedDock=root.querySelector(':scope > .workbench > .bottom-dock');
+    if(mountedDock) {
+      bottomDockOwners.set(mountedDock,{owner,definitionKey:bottomDockDefinitionKey(dockDefinition)});
+      synchronizeBottomDockTabs(mountedDock,dockDefinition);
+      updateBottomDockLogs();
+    }
   }
 
   if (state.newProjectDialogOpen) {
@@ -1559,7 +1659,60 @@ function renderProjectWorkspace() {
   `;
 }
 
-function renderBottomDock() {
+function getActiveBottomDockDefinition() {
+  const value = getActiveProductModule()?.getBottomDockDefinition?.(buildProductContext(null));
+  const panels = [], seen = new Set(["logs"]);
+  for (const entry of value?.panels ?? []) {
+    const id = String(entry?.id ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);panels.push({ id, title: String(entry.title ?? id) });
+  }
+  if (!panels.length) return null;
+  const minimum = Number(value.minHeight);
+  const minHeight = Number.isFinite(minimum) ? Math.max(64, Math.min(360, minimum)) : 72;
+  const initial = Number(value.initialHeight);
+  return {
+    panels,
+    defaultTabId: panels.some(panel => panel.id === value.defaultTabId) || value.defaultTabId === "logs"
+      ? value.defaultTabId : panels[0].id,
+    minHeight,
+    initialHeight: Number.isFinite(initial) ? Math.max(minHeight, Math.min(360, initial)) : Math.max(minHeight, 96),
+  };
+}
+
+function bottomDockDefinitionKey(definition) {
+  return definition ? JSON.stringify(definition.panels.map(panel => panel.id)) : "logs";
+}
+
+function getBottomDockState(definition = getActiveBottomDockDefinition()) {
+  if (!definition) return legacyBottomDockState;
+  const owner = state.activeSceneProxy ?? state.activeProjectProxy ?? state;
+  let dock = bottomDockStates.get(owner);
+  if (!dock) {
+    dock = { height: definition.initialHeight, activeTabId: definition.defaultTabId };
+    bottomDockStates.set(owner, dock);
+  }
+  if (dock.activeTabId !== "logs" && !definition.panels.some(panel => panel.id === dock.activeTabId)) {
+    dock.activeTabId = definition.defaultTabId;
+  }
+  return dock;
+}
+
+function bottomDockElementId(kind, id) {
+  return `icax-bottom-${kind}-${encodeURIComponent(id)}`;
+}
+
+function renderBottomDock(definition = getActiveBottomDockDefinition()) {
+  if (definition) {
+    const active = getBottomDockState(definition).activeTabId;
+    const panels = [...definition.panels, { id: "logs", title: "日志" }];
+    return `<footer class="bottom-dock has-product-panels" aria-label="底部面板">
+      <div class="bottom-resize-handle" data-bottom-dock-resize data-no-window-drag title="拖拽调整底部面板高度"></div>
+      <div class="bottom-dock-tabs" role="tablist" aria-label="底部面板">${panels.map(panel =>
+        `<button type="button" role="tab" data-action="select-bottom-dock-tab" data-bottom-dock-tab="${escapeAttr(panel.id)}" id="${escapeAttr(bottomDockElementId("tab",panel.id))}" aria-controls="${escapeAttr(bottomDockElementId("panel",panel.id))}" aria-selected="${active===panel.id}" tabindex="${active===panel.id?0:-1}">${escapeText(panel.title)}</button>`).join("")}</div>
+      ${panels.map(panel => `<section class="bottom-dock-panel" data-bottom-dock-panel="${escapeAttr(panel.id)}" role="tabpanel" id="${escapeAttr(bottomDockElementId("panel",panel.id))}" aria-labelledby="${escapeAttr(bottomDockElementId("tab",panel.id))}"${active===panel.id?"":" hidden"}>${panel.id==="logs"?`<div class="log-list">${renderLogRows()}</div>`:""}</section>`).join("")}
+    </footer>`;
+  }
   return `
     <footer class="bottom-dock">
       <div class="bottom-resize-handle"
@@ -1570,6 +1723,77 @@ function renderBottomDock() {
       <div class="log-list">${renderLogRows()}</div>
     </footer>
   `;
+}
+
+function synchronizeBottomDockTabs(dock, definition) {
+  if (!definition) return;
+  const active = getBottomDockState(definition).activeTabId;
+  const titles = new Map([...definition.panels, { id: "logs", title: "日志" }].map(panel => [panel.id,panel.title]));
+  for (const tab of dock.querySelectorAll("[data-bottom-dock-tab]")) {
+    const selected = tab.dataset.bottomDockTab === active;
+    tab.setAttribute("aria-selected", String(selected));tab.tabIndex=selected?0:-1;
+    if (tab.textContent !== titles.get(tab.dataset.bottomDockTab)) tab.textContent=titles.get(tab.dataset.bottomDockTab);
+  }
+  const logList = dock.querySelector(".log-list");
+  const logPanel = logList?.closest("[data-bottom-dock-panel]");
+  if (logPanel && !logPanel.hidden) bottomDockLogScroll.set(logList,logList.scrollTop);
+  for (const panel of dock.querySelectorAll("[data-bottom-dock-panel]")) panel.hidden=panel.dataset.bottomDockPanel!==active;
+  if (logPanel && !logPanel.hidden) logList.scrollTop=bottomDockLogScroll.get(logList)??0;
+}
+
+function selectBottomDockTab(id) {
+  const definition=getActiveBottomDockDefinition();
+  if (!definition || id!=="logs"&&!definition.panels.some(panel=>panel.id===id)) return false;
+  const dock=root.querySelector(":scope > .workbench > .bottom-dock");
+  const record=dock&&bottomDockOwners.get(dock);
+  if(!record||record.owner.productProxy!==state.activeProductProxy
+    ||record.owner.projectProxy!==state.activeProjectProxy||record.owner.sceneProxy!==state.activeSceneProxy)return false;
+  getBottomDockState(definition).activeTabId=id;
+  synchronizeBottomDockTabs(dock,definition);
+  return true;
+}
+
+function mountBottomDockPanels(dock=root.querySelector(":scope > .workbench > .bottom-dock"),definition=getActiveBottomDockDefinition()) {
+  const module=getActiveProductModule();
+  if(!dock||!definition||typeof module?.mountBottomDockPanel!=="function"||mountingBottomDocks.has(dock))return Promise.resolve();
+  mountingBottomDocks.add(dock);
+  const projectMount=root.querySelector("[data-product-surface='project']"), operations=[];
+  try {
+    for(const panel of definition.panels){
+      const mount=[...dock.querySelectorAll("[data-bottom-dock-panel]")].find(node=>node.dataset.bottomDockPanel===panel.id);
+      if(!mount)continue;
+      const context={...buildProductContext(projectMount),projectMount,mount};
+      try {
+        const result=module.mountBottomDockPanel(context,panel.id);
+        if(result&&typeof result.then==="function")operations.push(Promise.resolve(result).catch(error=>{
+          if(context.isCurrentProject()&&mount.isConnected){pushLog("error",error?.message??String(error));updateBottomDockLogs();}
+        }));
+      }catch(error){
+        if(context.isCurrentProject()&&mount.isConnected){pushLog("error",error?.message??String(error));updateBottomDockLogs();}
+      }
+    }
+  }finally{mountingBottomDocks.delete(dock);}
+  return Promise.all(operations);
+}
+
+function refreshBottomDock() {
+  let dock=root.querySelector(":scope > .workbench > .bottom-dock");
+  if(!dock||!state.activeProjectState)return Promise.resolve();
+  const definition=getActiveBottomDockDefinition(), record=bottomDockOwners.get(dock);
+  const workspace=root.querySelector(":scope > .workbench > main.workspace");
+  const owner=workspace&&projectWorkspaceOwners.get(workspace);
+  // An inactive product cannot mount its editor into another project's dock.
+  if(!record||!owner||Object.entries(owner).some(([key,value])=>record.owner[key]!==value)
+    ||owner.projectProxy!==state.activeProjectProxy||owner.sceneProxy!==state.activeSceneProxy)return Promise.resolve();
+  if(record.definitionKey!==bottomDockDefinitionKey(definition)){
+    const template=document.createElement("template");template.innerHTML=renderBottomDock(definition);
+    const replacement=template.content.firstElementChild;dock.replaceWith(replacement);dock=replacement;
+    bottomDockOwners.set(dock,{owner,definitionKey:bottomDockDefinitionKey(definition)});
+  }
+  state.bottomDockHeight=getBottomDockState(definition).height;
+  root.querySelector(".workbench")?.style.setProperty("--bottom-dock-height",`${state.bottomDockHeight}px`);
+  synchronizeBottomDockTabs(dock,definition);
+  return mountBottomDockPanels(dock,definition);
 }
 
 function renderLogRows() {
@@ -1587,7 +1811,11 @@ function renderLogRows() {
 function updateBottomDockLogs() {
   const logList = root.querySelector(".log-list");
   if (logList) {
+    const hidden=Boolean(logList.closest("[hidden]"));
+    const scroll=hidden?(bottomDockLogScroll.get(logList)??0):logList.scrollTop;
     logList.innerHTML = renderLogRows();
+    if(!hidden)logList.scrollTop=scroll;
+    bottomDockLogScroll.set(logList,scroll);
   }
 }
 
@@ -1613,8 +1841,11 @@ function handleBottomDockResize(event) {
   }
 
   const delta = resize.startY - event.clientY;
-  const maxHeight = Math.max(96, Math.min(360, window.innerHeight - 220));
-  state.bottomDockHeight = Math.round(Math.max(48, Math.min(maxHeight, resize.startHeight + delta)));
+  const definition=getActiveBottomDockDefinition(), dockState=getBottomDockState(definition);
+  const minimum=definition?.minHeight??48;
+  const maxHeight = Math.max(minimum, Math.min(360, window.innerHeight - 220));
+  state.bottomDockHeight = Math.round(Math.max(minimum, Math.min(maxHeight, resize.startHeight + delta)));
+  dockState.height=state.bottomDockHeight;
   root.querySelector(".workbench")?.style.setProperty("--bottom-dock-height", `${state.bottomDockHeight}px`);
 }
 
@@ -1865,6 +2096,12 @@ function mountActiveProductSurface() {
   const sequence = ++state.productSurfaceMountSequence;
   const context = buildProductContext(mount);
   const operation = Promise.resolve(mountProductModule(module, context))
+    .then(async result => {
+      if(sequence===state.productSurfaceMountSequence&&context.isCurrentProject()&&mount.isConnected) {
+        await mountBottomDockPanels();
+      }
+      return result;
+    })
     .catch((error) => {
       if (sequence !== state.productSurfaceMountSequence || !context.isCurrentProject()) {
         return false;
@@ -1885,6 +2122,12 @@ function buildProductContext(mount = root.querySelector("[data-product-surface='
   const projectId = state.activeProjectState?.projectId;
   const productChannelId = productProxy?.productChannelId;
   const sceneChannelId = sceneProxy?.sceneChannelId;
+  const isCurrentProject = () => state.activeProductProxy === productProxy
+    && state.activeProjectProxy === projectProxy
+    && state.activeSceneProxy === sceneProxy
+    && state.activeProjectState?.projectId === projectId
+    && productProxy?.productChannelId === productChannelId
+    && sceneProxy?.sceneChannelId === sceneChannelId;
   return {
     product: state.activeProductState,
     appProxy: state.appProxy,
@@ -1897,12 +2140,21 @@ function buildProductContext(mount = root.querySelector("[data-product-surface='
     mode: "project",
     activeRibbonTabId: state.activeRibbonTabId,
     actions,
-    isCurrentProject: () => state.activeProductProxy === productProxy
-      && state.activeProjectProxy === projectProxy
-      && state.activeSceneProxy === sceneProxy
-      && state.activeProjectState?.projectId === projectId
-      && productProxy?.productChannelId === productChannelId
-      && sceneProxy?.sceneChannelId === sceneChannelId,
+    bottomDock: {
+      get activeTabId() {
+        if(!isCurrentProject())return "";
+        const owner=sceneProxy??projectProxy??state;
+        return bottomDockStates.get(owner)?.activeTabId??"logs";
+      },
+      getPanelMount(id) {
+        if(!isCurrentProject())return null;
+        return [...root.querySelectorAll(".bottom-dock [data-bottom-dock-panel]")]
+          .find(panel=>panel.dataset.bottomDockPanel===String(id))??null;
+      },
+      selectTab(id) { return isCurrentProject()?selectBottomDockTab(String(id)):false; },
+      refresh() { return isCurrentProject()?refreshBottomDock():Promise.resolve(); },
+    },
+    isCurrentProject,
   };
 }
 

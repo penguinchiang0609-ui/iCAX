@@ -126,6 +126,27 @@ int main()
         Problem p; p.Parts={MakePart("triangle",Triangle(100,100),2)}; p.Stocks={Sheet("sheet",100,100)};
         Valid(p,Manual(p,{At("triangle",0,0,0),At("triangle",1,100,100,180)}),true);
     });
+    Test("oblique separation survives fixed precision clipping",[] {
+        Shape a; a.Outer={{-2,-2},{2,-2},{-2,2}};
+        Shape b; b.Outer={{2.5,-2.5},{2.5,2.5},{-2.5,2.5}};
+        Problem p; p.Tolerance=1e-7; p.Parts={MakePart("a",a),MakePart("b",b)};
+        p.Stocks={Sheet("sheet",100,100)};
+        const double ax=std::nextafter(26./3.,std::numeric_limits<double>::infinity());
+        const double ay=74./3., bx=8.5, by=149./6.;
+        auto exact=Manual(p,{At("a",0,ax,ay,180),At("b",0,bx,by,180)});
+        Valid(p,exact,true);
+        std::reverse(exact.Layouts[0].Placements.begin(),exact.Layouts[0].Placements.end());
+        Valid(p,exact,true);
+        // An actual intrusion and a required positive clearance must still fail;
+        // the separation check does not expand the geometric tolerance.
+        Require(!Validate(p,Manual(p,{At("a",0,ax-1e-5,ay,180),At("b",0,bx,by,180)})).Valid,
+            "real oblique material overlap escaped validation");
+        p.PartGap=1e-4;
+        Require(!Validate(p,Manual(p,{At("a",0,ax,ay,180),At("b",0,bx,by,180)})).Valid,
+            "oblique contact escaped positive clearance");
+        p.PartGap=0;
+        Valid(p,Manual(p,{At("a",0,ax+1e-4,ay,180),At("b",0,bx,by,180)}),true);
+    });
     Test("parallelogram rule tiles four parts at eighty millimetre pitch",[] {
         Shape shape; shape.Outer={{0,0},{80,0},{100,40},{20,40}};
         Problem p; p.Parts={MakePart("parallelogram",shape,4)}; p.Stocks={Sheet("sheet",340,40)};
@@ -219,7 +240,8 @@ int main()
         registry.Register("fresh",[&] { ++creations; return std::make_unique<CustomStrategy>(CustomStrategy::Stateful); });
         auto p=SingleBox(); const auto a=RunJob({"a","fresh",p,Generous()},registry); const auto b=RunJob({"b","fresh",p,Generous()},registry);
         Require(creations==2,"factory must run once per job"); Require(a.Checked.Valid && b.Checked.Valid,"job results valid");
-        Require(a.Output.Diagnostics.back()=="local-run=1" && b.Output.Diagnostics.back()=="local-run=1","state was not shared");
+        Require(std::count(a.Output.Diagnostics.begin(),a.Output.Diagnostics.end(),"local-run=1")==1 &&
+            std::count(b.Output.Diagnostics.begin(),b.Output.Diagnostics.end(),"local-run=1")==1,"state was not shared");
         Require(a.ID=="a" && b.ID=="b","job identities retained");
     });
     Test("invalid failed and throwing strategies cannot win",[] {

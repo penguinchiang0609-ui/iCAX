@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/JeroenGar/sparrow",
+  "revision": "ab2aaef602755f1ed51b15406a2f0ef0950e18ce",
+  "license": "MPL-2.0",
+  "sourceChanges": [
+    "optimizer/separator.rs: poll the owning job terminator between complete worker rounds",
+    "optimizer/lbf.rs and optimizer/mod.rs: poll the owning job terminator between initial placement searches",
+    "optimizer/explore.rs: a one-instance job skips the two-instance exchange instead of panicking"
+  ],
+  "vendoredPaths": ["src", "Cargo.toml", "LICENSE", "README.md"],
+  "jaguaRepository": "https://github.com/JeroenGar/jagua-rs",
+  "jaguaRevision": "a7bd8e9a85ceca57dbc61e4188a06f7e1facb461",
+  "upstreamCargoLockTracked": false,
+  "integration": "optional SheetNestingSparrow strategy; job-local native JSON FFI",
+  "referenceLayoutCoordinatesUsed": false
+}

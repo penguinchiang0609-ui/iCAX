@@ -2,12 +2,16 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <list>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <numbers>
 #include <numeric>
 #include <optional>
@@ -517,6 +521,9 @@ namespace iCAX::TubeNesting
             return _Result;
         }
 
+#include "TubeAdaptiveNeighborhood.inc"
+#include "TubeLargeBarRepair.inc"
+
 #if ICAX_TUBE_NESTING_WITH_ORTOOLS
         struct ConstraintSolveResult final
         {
@@ -553,6 +560,13 @@ namespace iCAX::TubeNesting
         {
             using namespace operations_research::sat;
             ConstraintSolveResult _Result;
+            // Model construction is part of the neighborhood's budget too.
+            const auto _Started = std::chrono::steady_clock::now();
+            if (TimeBudgetMilliseconds_ == 0)
+            {
+                _Result.TimeLimit = true;
+                return _Result;
+            }
             const std::size_t _Count = GroupInstances_.size();
             if (_Count == 0)
             {
@@ -910,7 +924,6 @@ namespace iCAX::TubeNesting
             _Parameters.set_num_search_workers(static_cast<int>((std::max)(std::size_t{1}, _Workers)));
             _Parameters.set_random_seed(static_cast<std::int32_t>(Settings_.RandomSeed));
             _Parameters.set_log_search_progress(false);
-            const auto _Started = std::chrono::steady_clock::now();
             CpSolverResponse _BestResponse;
             bool _HasResponse = false;
             bool _AllOptimal = true;
@@ -932,7 +945,19 @@ namespace iCAX::TubeNesting
                 }
                 _Model.ClearObjective();
                 _Model.Minimize(_Objective);
-                const auto _Response = SolveWithParameters(_Model.Build(), _Parameters);
+                const auto& _Proto = _Model.Build();
+                const auto _AfterBuild = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - _Started).count());
+                if (_AfterBuild >= TimeBudgetMilliseconds_)
+                {
+                    _Result.TimeLimit = true;
+                    _AllOptimal = false;
+                    break;
+                }
+                _Parameters.set_max_time_in_seconds(
+                    static_cast<double>(TimeBudgetMilliseconds_ - _AfterBuild) / 1000.0);
+                const auto _Response = SolveWithParameters(_Proto, _Parameters);
                 _Result.Branches += static_cast<std::uint64_t>((std::max)(
                     std::int64_t{0}, _Response.num_branches()));
                 if (_Response.status() == CpSolverStatus::MODEL_INVALID)
@@ -1009,9 +1034,31 @@ namespace iCAX::TubeNesting
                         }
                     }
                 }
-                if (_Bar.Stock >= Stocks_.size() || _Bar.Placements.empty()
-                    || !PopulateRotations(
-                        _Bar, Instances_, Table_, Stocks_[_Bar.Stock]))
+                if (_Bar.Stock >= Stocks_.size() || _Bar.Placements.empty())
+                {
+                    _Result.ModelInvalid = true;
+                    _Result.Diagnostic = "CP-SAT returned an invalid stock route";
+                    return _Result;
+                }
+                // Score and materialize the same directions. A feasible CP
+                // response may stop before minimizing occupied length, while
+                // MeasurePlanScore optimizes directions for the fixed route.
+                std::vector<std::size_t> _Order;
+                _Order.reserve(_Bar.Placements.size());
+                for (const auto& _Placement : _Bar.Placements)
+                    _Order.push_back(_Placement.Instance);
+                const auto _Directions = OptimizeDirections(
+                    _Order, 0, _Order.size(), Instances_, Table_, Stocks_[_Bar.Stock]);
+                if (!_Directions.Feasible
+                    || _Directions.Occupied > UsableLength(Stocks_[_Bar.Stock]))
+                {
+                    _Result.ModelInvalid = true;
+                    _Result.Diagnostic = "CP-SAT returned an infeasible reconstructed route";
+                    return _Result;
+                }
+                for (std::size_t _Index = 0; _Index < _Bar.Placements.size(); ++_Index)
+                    _Bar.Placements[_Index].PartDirection = _Directions.Directions[_Index];
+                if (!PopulateRotations(_Bar, Instances_, Table_, Stocks_[_Bar.Stock]))
                 {
                     _Result.ModelInvalid = true;
                     _Result.Diagnostic = "CP-SAT returned a solution that could not be reconstructed";
@@ -1035,27 +1082,40 @@ namespace iCAX::TubeNesting
             WorkingPlan& Plan_, const std::vector<Instance>& Instances_,
             const PairTableSnapshot& Table_, const std::vector<StockType>& Stocks_,
             const PairTableSolverSettings& Settings_, std::mt19937& Random_,
-            std::uint64_t& Branches_, bool& TimeLimit_, std::string& Diagnostic_)
+            std::uint64_t& Branches_, bool& TimeLimit_, std::string& Diagnostic_,
+            AdaptiveNeighborhoodState* State_ = nullptr,
+            const std::uint64_t RemainingMilliseconds_ = (std::numeric_limits<std::uint64_t>::max)(),
+            bool* UsedConstraintBackend_ = nullptr)
         {
             if (Plan_.empty() || Settings_.ConstraintNeighborhoodPartLimit < 2) return false;
-            std::vector<std::size_t> _BarIndices(Plan_.size());
-            std::iota(_BarIndices.begin(), _BarIndices.end(), 0);
-            std::shuffle(_BarIndices.begin(), _BarIndices.end(), Random_);
+            AdaptiveNeighborhoodState _LocalState;
+            auto& _State = State_ ? *State_ : _LocalState;
+            const auto _Started = std::chrono::steady_clock::now();
+            const auto _Selection = SelectAdaptiveNeighborhood(
+                Plan_, Instances_, Table_, Stocks_, Settings_, Random_, _State, RemainingMilliseconds_);
+            const auto _Finish = [&](const bool Improved_, const bool TimedOut_) {
+                const auto _Elapsed = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - _Started).count());
+                RecordAdaptiveNeighborhoodOutcome(_State, Improved_, TimedOut_, _Elapsed);
+                return Improved_;
+            };
+            Diagnostic_ = _Selection.Diagnostic + "; parts=" + std::to_string(_Selection.PartCount)
+                + ", limit=" + std::to_string(_Selection.PartLimit);
+            if (_Selection.OversizedFallback)
+                return _Finish(ImproveLargeBarNeighborhood(Plan_, _Selection,
+                    Instances_, Table_, Stocks_, Settings_, _Selection.BudgetMilliseconds), false);
+            if (!_Selection.UseConstraintModel || _Selection.BudgetMilliseconds == 0)
+                return _Finish(false, false);
             std::vector<bool> _Released(Plan_.size(), false);
             std::vector<std::size_t> _Instances;
-            for (const auto _BarIndex : _BarIndices)
+            for (const auto _BarIndex : _Selection.BarIndices)
             {
-                const auto _Size = Plan_[_BarIndex].Placements.size();
-                if (_Size == 0 || _Size > Settings_.ConstraintNeighborhoodPartLimit) continue;
-                if (!_Instances.empty()
-                    && _Instances.size() + _Size > Settings_.ConstraintNeighborhoodPartLimit)
-                    continue;
                 _Released[_BarIndex] = true;
                 for (const auto& _Placement : Plan_[_BarIndex].Placements)
                     _Instances.push_back(_Placement.Instance);
-                if (_Instances.size() >= Settings_.ConstraintNeighborhoodPartLimit) break;
             }
-            if (_Instances.size() < 2) return false;
+            if (_Instances.size() < 2) return _Finish(false, false);
 
             std::vector<std::int64_t> _RemainingAvailability;
             _RemainingAvailability.reserve(Stocks_.size());
@@ -1073,31 +1133,42 @@ namespace iCAX::TubeNesting
                 }
                 _Fixed.push_back(Plan_[_Bar]);
                 const auto _Stock = Plan_[_Bar].Stock;
-                if (_Stock >= _RemainingAvailability.size()) return false;
+                if (_Stock >= _RemainingAvailability.size()) return _Finish(false, false);
                 if (_RemainingAvailability[_Stock] >= 0)
                 {
-                    if (_RemainingAvailability[_Stock] == 0) return false;
+                    if (_RemainingAvailability[_Stock] == 0) return _Finish(false, false);
                     --_RemainingAvailability[_Stock];
                 }
             }
+            const auto _SetupMilliseconds = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - _Started).count());
+            if (_SetupMilliseconds >= RemainingMilliseconds_) return _Finish(false, true);
+            const auto _SolveBudget = (std::min)(_Selection.BudgetMilliseconds,
+                RemainingMilliseconds_ - _SetupMilliseconds);
+            if (_SolveBudget == 0) return _Finish(false, true);
+            if (UsedConstraintBackend_) *UsedConstraintBackend_ = true;
             const auto _Solved = SolveConstraintModel(
                 _Instances, Instances_, Table_, Stocks_, Settings_,
-                Settings_.ConstraintNeighborhoodTimeBudgetMilliseconds, &_Hint,
+                _SolveBudget, &_Hint,
                 &_RemainingAvailability);
             Branches_ += _Solved.Branches;
             TimeLimit_ = TimeLimit_ || _Solved.TimeLimit;
-            if (!_Solved.Diagnostic.empty()) Diagnostic_ = _Solved.Diagnostic;
-            if (!_Solved.Plan) return false;
+            if (!_Solved.Diagnostic.empty()) Diagnostic_ += "; " + _Solved.Diagnostic;
+            if (!_Solved.Plan) return _Finish(false, _Solved.TimeLimit);
             WorkingPlan _Candidate = std::move(_Fixed);
             _Candidate.insert(_Candidate.end(),
                 _Solved.Plan->begin(), _Solved.Plan->end());
             const auto _Before = MeasurePlanScore(Plan_, Instances_, Table_, Stocks_);
             const auto _After = MeasurePlanScore(_Candidate, Instances_, Table_, Stocks_);
-            if (CompareScore(_After, _Before, Settings_.ObjectivePolicy) >= 0) return false;
+            if (CompareScore(_After, _Before, Settings_.ObjectivePolicy) >= 0)
+                return _Finish(false, _Solved.TimeLimit);
             Plan_ = std::move(_Candidate);
-            return true;
+            return _Finish(true, _Solved.TimeLimit);
         }
 #endif
+
+#include "TubePatternMaster.inc"
 
         [[nodiscard]] Length BestConnection(
             const std::size_t TypeA_, const std::size_t TypeB_,
@@ -1297,6 +1368,18 @@ namespace iCAX::TubeNesting
         {
             std::chrono::steady_clock::time_point Started = std::chrono::steady_clock::now();
             std::uint64_t LimitMilliseconds = 0;
+            [[nodiscard]] double ElapsedMilliseconds() const
+            {
+                return std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - Started).count();
+            }
+            [[nodiscard]] std::uint64_t RemainingBudget(const std::uint64_t Requested_) const
+            {
+                if (LimitMilliseconds == 0) return Requested_;
+                const auto _Elapsed = static_cast<std::uint64_t>(ElapsedMilliseconds());
+                if (_Elapsed >= LimitMilliseconds) return 0;
+                return (std::min)(Requested_, LimitMilliseconds - _Elapsed);
+            }
             [[nodiscard]] bool Expired() const
             {
                 return LimitMilliseconds > 0
@@ -1305,6 +1388,217 @@ namespace iCAX::TubeNesting
                         >= static_cast<std::int64_t>(LimitMilliseconds);
             }
         };
+
+        struct PatternOrder final
+        {
+            std::vector<std::size_t> Order;
+            std::size_t Patterns = 0;
+            std::size_t ReusedBars = 0;
+            std::optional<Length> Saving;
+        };
+
+        /**
+         * A constant saving on every allowed directed edge is exactly a bounded
+         * one-dimensional packing problem: weight(i)=L(i)-saving and capacity=
+         * usableLength-saving.  Check the table itself, including forbidden
+         * edges and both directions; profile names are not a proof of this form.
+         */
+        [[nodiscard]] std::optional<Length> ConstantSaving(
+            const std::vector<std::size_t>& Types_, const PairTableSnapshot& Table_,
+            const SearchClock& Clock_)
+        {
+            std::optional<Length> _Saving;
+            for (const auto _A : Types_)
+            {
+                if (Clock_.Expired()) return std::nullopt;
+                for (const auto _B : Types_)
+                    for (std::size_t _DA = 0; _DA < 2; ++_DA)
+                    {
+                        if (!Table_.Types[_A].DirectionAllowed[_DA]) continue;
+                        for (std::size_t _DB = 0; _DB < 2; ++_DB)
+                        {
+                            if (!Table_.Types[_B].DirectionAllowed[_DB]) continue;
+                            const auto& _Entry = Table_.At(_A, static_cast<Direction>(_DA),
+                                _B, static_cast<Direction>(_DB));
+                            if (!IsEntryUsable(_Entry)) return std::nullopt;
+                            if (_Saving && *_Saving != _Entry.NetSaving) return std::nullopt;
+                            _Saving = _Entry.NetSaving;
+                        }
+                    }
+            }
+            return _Saving;
+        }
+
+        [[nodiscard]] std::vector<std::size_t> FillOneDimensionalPattern(
+            const std::vector<std::size_t>& Types_,
+            const std::vector<std::vector<std::size_t>>& ByType_,
+            const std::vector<Length>& Weights_, const Length Capacity_,
+            std::uint64_t& RemainingWork_)
+        {
+            std::vector<std::size_t> _Pattern(Types_.size(), 0);
+            if (Capacity_ <= 0) return _Pattern;
+            Length _Divisor = 0;
+            for (const auto _Type : Types_)
+                if (!ByType_[_Type].empty())
+                    _Divisor = std::gcd(_Divisor, Weights_[_Type]);
+            if (_Divisor <= 0) return _Pattern;
+            const auto _Capacity = Capacity_ / _Divisor;
+            struct Chunk final { std::size_t TypeSlot, Count; Length Weight; };
+            std::vector<Chunk> _Chunks;
+            for (std::size_t _Slot = 0; _Slot < Types_.size(); ++_Slot)
+            {
+                const auto _Type = Types_[_Slot];
+                if (ByType_[_Type].empty()) continue;
+                const auto _Weight = Weights_[_Type] / _Divisor;
+                std::size_t _Count = (std::min)(ByType_[_Type].size(),
+                    static_cast<std::size_t>(_Capacity / _Weight));
+                for (std::size_t _Power = 1; _Count > 0; _Power *= 2)
+                {
+                    const auto _Take = (std::min)(_Power, _Count);
+                    _Chunks.push_back({_Slot, _Take, _Weight * static_cast<Length>(_Take)});
+                    _Count -= _Take;
+                }
+            }
+            // Quantization is exact (GCD only). Large relatively-prime lengths
+            // use the conservative greedy candidate instead of a rounded DP.
+            constexpr Length _MaximumCapacity = 32768;
+            const auto _Work = _Capacity <= _MaximumCapacity
+                ? static_cast<std::uint64_t>(_Capacity + 1) * _Chunks.size()
+                : (std::numeric_limits<std::uint64_t>::max)();
+            if (_Work <= RemainingWork_)
+            {
+                RemainingWork_ -= _Work;
+                std::vector<int> _ChunkAt(static_cast<std::size_t>(_Capacity) + 1, -1);
+                std::vector<Length> _Previous(_ChunkAt.size(), 0);
+                _ChunkAt[0] = -2;
+                Length _Best = 0;
+                for (std::size_t _Chunk = 0; _Chunk < _Chunks.size(); ++_Chunk)
+                {
+                    const auto _Weight = _Chunks[_Chunk].Weight;
+                    for (Length _Sum = _Capacity; _Sum >= _Weight; --_Sum)
+                    {
+                        if (_ChunkAt[static_cast<std::size_t>(_Sum)] != -1
+                            || _ChunkAt[static_cast<std::size_t>(_Sum - _Weight)] == -1)
+                            continue;
+                        _ChunkAt[static_cast<std::size_t>(_Sum)] = static_cast<int>(_Chunk);
+                        _Previous[static_cast<std::size_t>(_Sum)] = _Sum - _Weight;
+                        _Best = (std::max)(_Best, _Sum);
+                    }
+                }
+                for (Length _Sum = _Best; _Sum > 0;
+                    _Sum = _Previous[static_cast<std::size_t>(_Sum)])
+                {
+                    const auto& _Chunk = _Chunks[static_cast<std::size_t>(
+                        _ChunkAt[static_cast<std::size_t>(_Sum)])];
+                    _Pattern[_Chunk.TypeSlot] += _Chunk.Count;
+                }
+            }
+            else
+            {
+                Length _Remaining = Capacity_;
+                for (std::size_t _Slot = 0; _Slot < Types_.size(); ++_Slot)
+                {
+                    const auto _Type = Types_[_Slot];
+                    const auto _Take = (std::min)(ByType_[_Type].size(),
+                        static_cast<std::size_t>(_Remaining / Weights_[_Type]));
+                    _Pattern[_Slot] = _Take;
+                    _Remaining -= Weights_[_Type] * static_cast<Length>(_Take);
+                }
+            }
+            return _Pattern;
+        }
+
+        [[nodiscard]] PatternOrder BuildPatternOrder(
+            const std::vector<std::size_t>& GroupInstances_, const std::vector<Instance>& Instances_,
+            const PairTableSnapshot& Table_, const std::vector<StockType>& Stocks_,
+            const bool LongStockFirst_, SearchClock& Clock_)
+        {
+            PatternOrder _Result;
+            std::vector<std::vector<std::size_t>> _ByType(Table_.Types.size());
+            for (const auto _Instance : GroupInstances_)
+                _ByType[Instances_[_Instance].Type].push_back(_Instance);
+            std::vector<std::size_t> _Types;
+            for (std::size_t _Type = 0; _Type < _ByType.size(); ++_Type)
+                if (!_ByType[_Type].empty()) _Types.push_back(_Type);
+            const auto _Saving = ConstantSaving(_Types, Table_, Clock_);
+            if (!_Saving) return _Result;
+            _Result.Saving = _Saving;
+            std::vector<Length> _Weights(Table_.Types.size(), 0);
+            for (const auto _Type : _Types)
+            {
+                if (!TryAdd(Table_.Types[_Type].MaximumLength, -*_Saving, _Weights[_Type])
+                    || _Weights[_Type] <= 0)
+                    return _Result;
+            }
+            std::stable_sort(_Types.begin(), _Types.end(), [&](const auto A_, const auto B_)
+            {
+                return std::tie(_Weights[A_], Table_.Types[A_].ID)
+                    > std::tie(_Weights[B_], Table_.Types[B_].ID);
+            });
+            std::vector<std::size_t> _StockOrder;
+            std::vector<std::size_t> _StockRemaining;
+            for (std::size_t _Stock = 0; _Stock < Stocks_.size(); ++_Stock)
+            {
+                // These candidates deliberately have no model for an exposed
+                // irregular prefix or conditional setup limits. The ordinary
+                // decoder remains available for all such groups.
+                if (IsContinuation(Stocks_[_Stock]) || Stocks_[_Stock].MaxParts
+                    || Stocks_[_Stock].MaxDistinctOrders)
+                    continue;
+                _StockOrder.push_back(_Stock);
+            }
+            std::stable_sort(_StockOrder.begin(), _StockOrder.end(), [&](const auto A_, const auto B_)
+            {
+                return LongStockFirst_ ? UsableLength(Stocks_[A_]) > UsableLength(Stocks_[B_])
+                    : UsableLength(Stocks_[A_]) < UsableLength(Stocks_[B_]);
+            });
+            for (const auto& _Stock : Stocks_) _StockRemaining.push_back(_Stock.Quantity);
+            _Result.Order.reserve(GroupInstances_.size());
+            std::uint64_t _RemainingWork = 4'000'000;
+            while (_Result.Order.size() < GroupInstances_.size() && !Clock_.Expired())
+            {
+                bool _Added = false;
+                for (const auto _StockIndex : _StockOrder)
+                {
+                    const auto& _Stock = Stocks_[_StockIndex];
+                    if (_Stock.Quantity && !_StockRemaining[_StockIndex]) continue;
+                    Length _Capacity = 0;
+                    if (!TryAdd(UsableLength(_Stock), -*_Saving, _Capacity)) continue;
+                    const auto _Pattern = FillOneDimensionalPattern(
+                        _Types, _ByType, _Weights, _Capacity, _RemainingWork);
+                    std::size_t _Repeat = GroupInstances_.size();
+                    bool _NonEmpty = false;
+                    for (std::size_t _Slot = 0; _Slot < _Types.size(); ++_Slot)
+                        if (_Pattern[_Slot])
+                        {
+                            _NonEmpty = true;
+                            _Repeat = (std::min)(_Repeat,
+                                _ByType[_Types[_Slot]].size() / _Pattern[_Slot]);
+                        }
+                    if (!_NonEmpty) continue;
+                    if (_Stock.Quantity) _Repeat = (std::min)(_Repeat, _StockRemaining[_StockIndex]);
+                    ++_Result.Patterns;
+                    _Result.ReusedBars += _Repeat - 1;
+                    for (std::size_t _Copy = 0; _Copy < _Repeat; ++_Copy)
+                        for (std::size_t _Slot = 0; _Slot < _Types.size(); ++_Slot)
+                            for (std::size_t _Part = 0; _Part < _Pattern[_Slot]; ++_Part)
+                            {
+                                auto& _Remaining = _ByType[_Types[_Slot]];
+                                _Result.Order.push_back(_Remaining.back());
+                                _Remaining.pop_back();
+                            }
+                    if (_Stock.Quantity) _StockRemaining[_StockIndex] -= _Repeat;
+                    _Added = true;
+                    break;
+                }
+                if (!_Added) break;
+            }
+            // Stock choices above only construct an order. The shared decoder
+            // decides actual inventory, directions and every bar boundary.
+            for (const auto _Type : _Types)
+                for (const auto _Instance : _ByType[_Type]) _Result.Order.push_back(_Instance);
+            return _Result;
+        }
 
         struct GroupSolve final
         {
@@ -1318,15 +1612,102 @@ namespace iCAX::TubeNesting
             bool UsedLargeNeighborhood = false;
             bool UsedConstraintBackend = false;
             std::uint64_t Nodes = 0;
+            std::uint64_t RefinementRounds = 0;
+            ResultMetrics CacheMetrics;
             std::string ConstraintDiagnostic;
+            std::string PatternDiagnostic;
+            std::string PatternMasterDiagnostic;
+            std::string AdaptiveDiagnostic;
+            double FirstFeasibleMilliseconds = -1.0;
         };
 
         [[nodiscard]] GroupSolve SolveGroup(
             const std::vector<std::size_t>& GroupInstances_, const std::vector<Instance>& Instances_,
             const PairTableSnapshot& Table_, const std::vector<StockType>& Stocks_,
-            const PairTableSolverSettings& Settings_, std::mt19937& Random_, SearchClock& Clock_)
+            const PairTableSolverSettings& Settings_, std::mt19937& Random_, SearchClock& Clock_,
+            TubePatternCacheSession& CacheSession_,
+            const std::chrono::steady_clock::time_point CachePublicationDeadline_)
         {
             GroupSolve _Output;
+            std::vector<std::size_t> _BestOrder;
+            if (Settings_.ReuseVerifiedPatterns && Settings_.PatternMasterTimeBudgetMilliseconds > 0
+                && !Clock_.Expired())
+            {
+                const auto _RestoreBudget = (std::min)(std::uint64_t{250}, Clock_.RemainingBudget(
+                    (std::numeric_limits<std::uint64_t>::max)()) / 5);
+                const auto _RestoreDeadline = (std::min)(CachePublicationDeadline_,
+                    std::chrono::steady_clock::now() + std::chrono::milliseconds(_RestoreBudget));
+                if (auto _Seed = RestoreVerifiedTubePatternRecipe(GroupInstances_, Instances_, Table_,
+                    Stocks_, Settings_, CacheSession_, _RestoreDeadline, &_Output.CacheMetrics))
+                {
+                    _Output.Value = MeasurePlanScore(*_Seed, Instances_, Table_, Stocks_);
+                    _Output.Plan = std::move(*_Seed);
+                    _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                    for (const auto& _Bar : *_Output.Plan)
+                        for (const auto& _Placement : _Bar.Placements)
+                            _BestOrder.push_back(_Placement.Instance);
+                }
+            }
+            PatternOrder _EarlyPattern;
+            if (GroupInstances_.size() >= 32 && Stocks_.size() == 1
+                && Stocks_.front().Quantity == 0 && !IsContinuation(Stocks_.front())
+                && Stocks_.front().MaxParts == 0 && Stocks_.front().MaxDistinctOrders == 0
+                && !Clock_.Expired())
+            {
+                _EarlyPattern = BuildPatternOrder(
+                    GroupInstances_, Instances_, Table_, Stocks_, false, Clock_);
+                if (_EarlyPattern.Patterns && _EarlyPattern.Saving && !Clock_.Expired())
+                {
+                    Length _Capacity = 0, _TotalWeight = 0;
+                    bool _BoundValid = TryAdd(
+                        UsableLength(Stocks_.front()), -*_EarlyPattern.Saving, _Capacity)
+                        && _Capacity > 0;
+                    for (const auto _Instance : GroupInstances_)
+                    {
+                        Length _Weight = 0;
+                        _BoundValid = _BoundValid
+                            && TryAdd(Table_.Types[Instances_[_Instance].Type].MaximumLength,
+                                -*_EarlyPattern.Saving, _Weight)
+                            && _Weight > 0 && TryAdd(_TotalWeight, _Weight, _TotalWeight);
+                    }
+                    if (_BoundValid)
+                    {
+                        const auto _LowerBound = static_cast<std::size_t>(
+                            _TotalWeight / _Capacity + (_TotalWeight % _Capacity != 0));
+                        auto _Decoded = DecodeFixedOrder(
+                            _EarlyPattern.Order, Instances_, Table_, Stocks_, Settings_);
+                        if (_Decoded.Plan && (!_Output.Plan || CompareScore(
+                            _Decoded.Value, _Output.Value, Settings_.ObjectivePolicy) < 0))
+                        {
+                            _Output.Plan = *_Decoded.Plan;
+                            _Output.Value = _Decoded.Value;
+                            _Output.FixedOrderExact = _Decoded.Exact;
+                            _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                            _BestOrder = _EarlyPattern.Order;
+                        }
+                        if (_Decoded.Plan && _Decoded.Exact
+                            && _Decoded.Plan->size() == _LowerBound)
+                        {
+                            // For this one unrestricted stock specification,
+                            // every k-bar plan has identical nominal cost and
+                            // occupied=sum(L)-(N-k)*saving. Reaching the packing
+                            // length lower bound therefore proves all objective
+                            // levels of the full integer model, not only a split.
+                            _Output.Plan = std::move(_Decoded.Plan);
+                            _Output.Value = _Decoded.Value;
+                            _Output.GlobalExact = true;
+                            _Output.FixedOrderExact = true;
+                            if (_Output.FirstFeasibleMilliseconds < 0.0)
+                                _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                            _Output.PatternDiagnostic = "constant-saving packing lower bound reached: patterns="
+                                + std::to_string(_EarlyPattern.Patterns) + ", reused-bars="
+                                + std::to_string(_EarlyPattern.ReusedBars) + ", bars="
+                                + std::to_string(_LowerBound);
+                            return _Output;
+                        }
+                    }
+                }
+            }
             std::vector<std::vector<std::size_t>> _Orders;
             auto _Descending = GroupInstances_;
             std::stable_sort(_Descending.begin(), _Descending.end(), [&](const auto Left_, const auto Right_)
@@ -1344,7 +1725,6 @@ namespace iCAX::TubeNesting
                 std::shuffle(_Order.begin(), _Order.end(), Random_);
                 _Orders.push_back(std::move(_Order));
             }
-            std::vector<std::size_t> _BestOrder;
             for (auto& _Order : _Orders)
             {
                 if (Clock_.Expired()) { _Output.TimeLimit = true; break; }
@@ -1356,6 +1736,8 @@ namespace iCAX::TubeNesting
                     _Decoded.Value, _Output.Value, Settings_.ObjectivePolicy) < 0)
                 {
                     _Output.Plan = *_Decoded.Plan;
+                    if (_Output.FirstFeasibleMilliseconds < 0.0)
+                        _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
                     _Output.Value = _Decoded.Value;
                     _Output.FixedOrderExact = _Decoded.Exact;
                     _BestOrder = _Order;
@@ -1382,6 +1764,30 @@ namespace iCAX::TubeNesting
                 }
             }
 
+            if (!_Output.GlobalExact && !Clock_.Expired()
+                && GroupInstances_.size() > Settings_.ExactPartLimit
+                && Settings_.PatternMasterTimeBudgetMilliseconds > 0)
+            {
+                auto _Candidate = _Output.Plan.value_or(WorkingPlan{});
+                if (ImprovePatternMaster(_Candidate, GroupInstances_, Instances_, Table_, Stocks_, Settings_,
+                    Clock_.RemainingBudget(Settings_.PatternMasterTimeBudgetMilliseconds),
+                    _Output.Nodes, _Output.PatternMasterDiagnostic, &CacheSession_, &_Output.CacheMetrics))
+                {
+                    _Output.Plan = std::move(_Candidate);
+                    _Output.Value = MeasurePlanScore(*_Output.Plan, Instances_, Table_, Stocks_);
+                    _Output.FixedOrderExact = false;
+                    if (_Output.FirstFeasibleMilliseconds < 0.0)
+                        _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                    _BestOrder.clear();
+                    for (const auto& _Bar : *_Output.Plan)
+                        for (const auto& _Placement : _Bar.Placements)
+                            _BestOrder.push_back(_Placement.Instance);
+                }
+                if (_Output.PatternMasterDiagnostic.find("backend=CP-SAT") != std::string::npos)
+                    _Output.UsedConstraintBackend = true;
+            }
+            AdaptiveNeighborhoodState _AdaptiveState;
+
 #if ICAX_TUBE_NESTING_WITH_ORTOOLS
             if (Settings_.Constraint != ConstraintMode::Disabled
                 && GroupInstances_.size() <= Settings_.ExactPartLimit && !Clock_.Expired())
@@ -1389,7 +1795,7 @@ namespace iCAX::TubeNesting
                 const WorkingPlan* _Hint = _Output.Plan ? &*_Output.Plan : nullptr;
                 const auto _Constraint = SolveConstraintModel(
                     GroupInstances_, Instances_, Table_, Stocks_, Settings_,
-                    Settings_.ConstraintTimeBudgetMilliseconds, _Hint);
+                    Clock_.RemainingBudget(Settings_.ConstraintTimeBudgetMilliseconds), _Hint);
                 _Output.UsedConstraintBackend = true;
                 _Output.Nodes += _Constraint.Branches;
                 if (!_Constraint.Diagnostic.empty())
@@ -1421,6 +1827,8 @@ namespace iCAX::TubeNesting
                         Settings_.ObjectivePolicy) <= 0)
                     {
                         _Output.Plan = _CandidatePlan;
+                        if (_Output.FirstFeasibleMilliseconds < 0.0)
+                            _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
                         _Output.Value = _CandidateValue;
                         _Output.FixedOrderExact = _CandidateFixedExact;
                     }
@@ -1454,11 +1862,12 @@ namespace iCAX::TubeNesting
                     }
                     bool _NeighborhoodTimeLimit = false;
                     std::string _Diagnostic;
-                    _Output.UsedConstraintBackend = true;
                     _Output.UsedLargeNeighborhood = true;
                     if (ImproveConstraintNeighborhood(
                         *_Output.Plan, Instances_, Table_, Stocks_, Settings_, Random_,
-                        _Output.Nodes, _NeighborhoodTimeLimit, _Diagnostic))
+                        _Output.Nodes, _NeighborhoodTimeLimit, _Diagnostic, &_AdaptiveState,
+                        Clock_.RemainingBudget((std::numeric_limits<std::uint64_t>::max)()),
+                        &_Output.UsedConstraintBackend))
                     {
                         _Output.Value = MeasurePlanScore(
                             *_Output.Plan, Instances_, Table_, Stocks_);
@@ -1468,7 +1877,7 @@ namespace iCAX::TubeNesting
                             for (const auto& _Placement : _Bar.Placements)
                                 _BestOrder.push_back(_Placement.Instance);
                     }
-                    if (!_Diagnostic.empty()) _Output.ConstraintDiagnostic = _Diagnostic;
+                    if (!_Diagnostic.empty()) _Output.AdaptiveDiagnostic = _Diagnostic;
                 }
 #else
                 std::uint64_t _Evaluations = 0;
@@ -1480,10 +1889,53 @@ namespace iCAX::TubeNesting
                         _Output.TimeLimit = true;
                         break;
                     }
+                    const auto _RoundStarted = std::chrono::steady_clock::now();
+                    const auto _RecordDebugOutcome = [&](const bool Improved_) {
+                        if (Settings_.AdaptiveConstraintNeighborhoods)
+                            RecordAdaptiveNeighborhoodOutcome(_AdaptiveState, Improved_, false,
+                                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - _RoundStarted).count()));
+                    };
+                    if (Settings_.AdaptiveConstraintNeighborhoods)
+                    {
+                        const auto _Selection = SelectAdaptiveNeighborhood(*_Output.Plan,
+                            Instances_, Table_, Stocks_, Settings_, Random_, _AdaptiveState,
+                            Clock_.RemainingBudget((std::numeric_limits<std::uint64_t>::max)()));
+                        // Debug has no CP-SAT ABI. Oversized bars still receive
+                        // the same fully revalidated bounded moves as Release.
+                        _AdaptiveState.LastUsedConstraintModel = false;
+                        if (_Selection.OversizedFallback)
+                        {
+                            const auto _Started = std::chrono::steady_clock::now();
+                            const bool _Improved = ImproveLargeBarNeighborhood(*_Output.Plan,
+                                _Selection, Instances_, Table_, Stocks_, Settings_,
+                                _Selection.BudgetMilliseconds);
+                            RecordAdaptiveNeighborhoodOutcome(_AdaptiveState, _Improved, false,
+                                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - _Started).count()));
+                            _Output.AdaptiveDiagnostic = _Selection.Diagnostic;
+                            if (_Improved)
+                            {
+                                _Output.Value = MeasurePlanScore(*_Output.Plan, Instances_, Table_, Stocks_);
+                                _Output.FixedOrderExact = false;
+                                _BestOrder.clear();
+                                for (const auto& _Bar : *_Output.Plan)
+                                    for (const auto& _Placement : _Bar.Placements)
+                                        _BestOrder.push_back(_Placement.Instance);
+                            }
+                            continue;
+                        }
+                    }
+                    if (Clock_.Expired())
+                    {
+                        _Output.TimeLimit = true;
+                        break;
+                    }
                     auto _CandidateOrder = _BestOrder;
                     if (!ReorderLargeNeighborhood(
                         _CandidateOrder, Instances_, Table_, Random_, Settings_, _Evaluations))
                     {
+                        _RecordDebugOutcome(false);
                         if (_Evaluations >= Settings_.EvaluationLimit) break;
                         continue;
                     }
@@ -1491,17 +1943,102 @@ namespace iCAX::TubeNesting
                     const auto _Candidate = DecodeFixedOrder(
                         _CandidateOrder, Instances_, Table_, Stocks_, Settings_);
                     _Output.StateLimit = _Output.StateLimit || _Candidate.StateLimit;
-                    if (_Candidate.Plan && CompareScore(
-                        _Candidate.Value, _Output.Value, Settings_.ObjectivePolicy) < 0)
+                    const bool _Improved = _Candidate.Plan && CompareScore(
+                        _Candidate.Value, _Output.Value, Settings_.ObjectivePolicy) < 0;
+                    if (_Improved)
                     {
                         _Output.Plan = *_Candidate.Plan;
                         _Output.Value = _Candidate.Value;
                         _Output.FixedOrderExact = _Candidate.Exact;
                         _BestOrder = std::move(_CandidateOrder);
                     }
+                    _RecordDebugOutcome(_Improved);
                 }
                 _Output.Nodes += _Evaluations;
 #endif
+                if (_AdaptiveState.Round)
+                    _Output.AdaptiveDiagnostic += "; rounds=" + std::to_string(_AdaptiveState.Round)
+                        + ", visited-bar-signatures=" + std::to_string(_AdaptiveState.BarVisits.size())
+                        + ", stagnation=" + std::to_string(_AdaptiveState.Stagnation);
+            }
+
+            // Complete the existing search portfolio first. A pattern candidate
+            // can only replace its final incumbent after the same exact decoder
+            // and objective comparison, so adding this route does not discard a
+            // better result found by the original construction/local search.
+            if (!_Output.GlobalExact && !Clock_.Expired())
+            {
+                std::size_t _Patterns = 0, _ReusedBars = 0, _Accepted = 0;
+                std::vector<std::size_t> _PreviousPatternOrder;
+                std::mt19937 _PatternRandom(Settings_.RandomSeed ^ 0x50415454U);
+                AdaptiveNeighborhoodState _PortfolioAdaptiveState;
+                for (const bool _LongStockFirst : { false, true })
+                {
+                    if (Clock_.Expired()) break;
+                    if (_LongStockFirst && Stocks_.size() == 1) break;
+                    auto _Pattern = !_LongStockFirst && _EarlyPattern.Patterns
+                        ? std::move(_EarlyPattern) : BuildPatternOrder(
+                            GroupInstances_, Instances_, Table_, Stocks_, _LongStockFirst, Clock_);
+                    if (_Pattern.Patterns == 0 || _Pattern.Order == _PreviousPatternOrder) continue;
+                    _PreviousPatternOrder = _Pattern.Order;
+                    _Patterns += _Pattern.Patterns;
+                    _ReusedBars += _Pattern.ReusedBars;
+                    auto _Decoded = DecodeFixedOrder(
+                        _Pattern.Order, Instances_, Table_, Stocks_, Settings_);
+                    if (_Decoded.Plan && _Output.FirstFeasibleMilliseconds < 0.0)
+                        _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                    _Output.StateLimit = _Output.StateLimit || _Decoded.StateLimit;
+                    for (std::size_t _Pass = 0; _Decoded.Plan
+                        && _Pass < (std::min)(Settings_.LocalSearchPasses, std::size_t{2}); ++_Pass)
+                    {
+                        if (Clock_.Expired()) break;
+                        auto _Order = _Pattern.Order;
+                        ImproveOrderProxy(_Order, Instances_, Table_, _PatternRandom, Settings_);
+                        auto _Improved = DecodeFixedOrder(_Order, Instances_, Table_, Stocks_, Settings_);
+                        _Output.StateLimit = _Output.StateLimit || _Improved.StateLimit;
+                        if (_Improved.Plan && CompareScore(
+                            _Improved.Value, _Decoded.Value, Settings_.ObjectivePolicy) < 0)
+                        {
+                            _Pattern.Order = std::move(_Order);
+                            _Decoded = std::move(_Improved);
+                        }
+                    }
+#if ICAX_TUBE_NESTING_WITH_ORTOOLS
+                    if (_Decoded.Plan && Settings_.Constraint == ConstraintMode::HybridLargeNeighborhood
+                        && GroupInstances_.size() > Settings_.ExactPartLimit)
+                        for (std::size_t _Iteration = 0; _Iteration < (std::min)(
+                            Settings_.LargeNeighborhoodIterations, std::size_t{2}); ++_Iteration)
+                        {
+                            if (Clock_.Expired()) break;
+                            bool _TimeLimit = false;
+                            std::string _Diagnostic;
+                            _Output.UsedLargeNeighborhood = true;
+                            if (ImproveConstraintNeighborhood(
+                                *_Decoded.Plan, Instances_, Table_, Stocks_, Settings_, _PatternRandom,
+                                _Output.Nodes, _TimeLimit, _Diagnostic, &_PortfolioAdaptiveState,
+                                Clock_.RemainingBudget((std::numeric_limits<std::uint64_t>::max)()),
+                                &_Output.UsedConstraintBackend))
+                            {
+                                _Decoded.Value = MeasurePlanScore(
+                                    *_Decoded.Plan, Instances_, Table_, Stocks_);
+                                _Decoded.Exact = false;
+                            }
+                            if (!_Diagnostic.empty()) _Output.ConstraintDiagnostic = _Diagnostic;
+                        }
+#endif
+                    if (_Decoded.Plan && (!_Output.Plan || CompareScore(
+                        _Decoded.Value, _Output.Value, Settings_.ObjectivePolicy) < 0))
+                    {
+                        _Output.Plan = std::move(_Decoded.Plan);
+                        _Output.Value = _Decoded.Value;
+                        _Output.FixedOrderExact = _Decoded.Exact;
+                        ++_Accepted;
+                    }
+                }
+                if (_Patterns)
+                    _Output.PatternDiagnostic = "constant-saving packing candidates: patterns="
+                        + std::to_string(_Patterns) + ", reused-bars=" + std::to_string(_ReusedBars)
+                        + ", accepted=" + std::to_string(_Accepted);
             }
 
             if (Settings_.Constraint != ConstraintMode::Disabled
@@ -1541,6 +2078,8 @@ namespace iCAX::TubeNesting
                             _Decoded.Value, _Output.Value, Settings_.ObjectivePolicy) < 0))
                         {
                             _Output.Plan = *_Decoded.Plan;
+                            if (_Output.FirstFeasibleMilliseconds < 0.0)
+                                _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
                             _Output.Value = _Decoded.Value;
                             _Output.FixedOrderExact = true;
                         }
@@ -1563,6 +2102,132 @@ namespace iCAX::TubeNesting
                 _Output.GlobalExact = _Complete && _Output.Plan.has_value();
                 _Output.ProvenInfeasible = _Complete && !_Output.Plan.has_value();
             }
+            // Utilization priority keeps the incumbent alive across additional
+            // bounded searches. A larger time limit alone would otherwise stop
+            // after the fixed initial portfolio above.
+            if (Settings_.ContinueImprovementUntilTimeLimit && !_Output.GlobalExact
+                && !_Output.ProvenInfeasible && !Clock_.Expired())
+            {
+                std::mt19937 _RefinementRandom(Settings_.RandomSeed ^ 0x52454649U);
+                std::uint64_t _Accepted = 0;
+                const auto _Accept = [&](WorkingPlan Candidate_, const Score Value_, const bool FixedExact_) {
+                    if (_Output.Plan && CompareScore(Value_, _Output.Value, Settings_.ObjectivePolicy) >= 0)
+                        return false;
+                    _Output.Plan = std::move(Candidate_);
+                    _Output.Value = Value_;
+                    _Output.FixedOrderExact = FixedExact_;
+                    if (_Output.FirstFeasibleMilliseconds < 0.0)
+                        _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+                    _BestOrder.clear();
+                    for (const auto& _Bar : *_Output.Plan)
+                        for (const auto& _Placement : _Bar.Placements)
+                            _BestOrder.push_back(_Placement.Instance);
+                    ++_Accepted;
+                    return true;
+                };
+                while (!Clock_.Expired() && !_Output.GlobalExact)
+                {
+                    ++_Output.RefinementRounds;
+                    auto _RoundSettings = Settings_;
+                    _RoundSettings.RandomSeed = _RefinementRandom();
+                    _RoundSettings.PatternMasterSearchRound = static_cast<std::uint32_t>(
+                        _Output.RefinementRounds);
+                    if (_RoundSettings.PatternMasterTimeBudgetMilliseconds > 0)
+                    {
+                        auto _Candidate = _Output.Plan.value_or(WorkingPlan{});
+                        std::string _Diagnostic;
+                        if (ImprovePatternMaster(_Candidate, GroupInstances_, Instances_, Table_, Stocks_,
+                            _RoundSettings, Clock_.RemainingBudget(
+                                _RoundSettings.PatternMasterTimeBudgetMilliseconds), _Output.Nodes, _Diagnostic,
+                            &CacheSession_, &_Output.CacheMetrics))
+                        {
+                            const auto _Value = MeasurePlanScore(_Candidate, Instances_, Table_, Stocks_);
+                            _Accept(std::move(_Candidate), _Value, false);
+                        }
+                        if (!_Diagnostic.empty()) _Output.PatternMasterDiagnostic = _Diagnostic;
+                        if (_Diagnostic.find("backend=CP-SAT") != std::string::npos)
+                            _Output.UsedConstraintBackend = true;
+                    }
+                    if (Clock_.Expired()) break;
+#if ICAX_TUBE_NESTING_WITH_ORTOOLS
+                    if (_Output.Plan && Settings_.Constraint != ConstraintMode::Disabled)
+                    {
+                        if (GroupInstances_.size() <= Settings_.ExactPartLimit)
+                        {
+                            const auto _Solved = SolveConstraintModel(GroupInstances_, Instances_, Table_,
+                                Stocks_, _RoundSettings, Clock_.RemainingBudget(
+                                    Settings_.ConstraintTimeBudgetMilliseconds), &*_Output.Plan);
+                            _Output.UsedConstraintBackend = true;
+                            _Output.Nodes += _Solved.Branches;
+                            if (_Solved.Plan) _Accept(*_Solved.Plan, _Solved.Value, _Solved.Optimal);
+                            _Output.GlobalExact = _Solved.Optimal && _Solved.Plan.has_value();
+                            if (_Output.GlobalExact) _Output.FixedOrderExact = true;
+                        }
+                        else if (Settings_.Constraint == ConstraintMode::HybridLargeNeighborhood
+                            && Settings_.LargeNeighborhoodIterations > 0)
+                        {
+                            bool _TimedOut = false;
+                            std::string _Diagnostic;
+                            if (ImproveConstraintNeighborhood(*_Output.Plan, Instances_, Table_, Stocks_,
+                                _RoundSettings, _RefinementRandom, _Output.Nodes, _TimedOut, _Diagnostic,
+                                &_AdaptiveState, Clock_.RemainingBudget(
+                                    (std::numeric_limits<std::uint64_t>::max)()), &_Output.UsedConstraintBackend))
+                            {
+                                _Output.Value = MeasurePlanScore(*_Output.Plan, Instances_, Table_, Stocks_);
+                                _Output.FixedOrderExact = false;
+                                _BestOrder.clear();
+                                for (const auto& _Bar : *_Output.Plan)
+                                    for (const auto& _Placement : _Bar.Placements)
+                                        _BestOrder.push_back(_Placement.Instance);
+                                ++_Accepted;
+                            }
+                            _Output.UsedLargeNeighborhood = true;
+                            if (!_Diagnostic.empty()) _Output.AdaptiveDiagnostic = _Diagnostic;
+                        }
+                    }
+#else
+                    if (_Output.Plan && Settings_.AdaptiveConstraintNeighborhoods
+                        && Settings_.LargeNeighborhoodIterations > 0)
+                    {
+                        const auto _Selection = SelectAdaptiveNeighborhood(*_Output.Plan, Instances_, Table_,
+                            Stocks_, _RoundSettings, _RefinementRandom, _AdaptiveState,
+                            Clock_.RemainingBudget((std::numeric_limits<std::uint64_t>::max)()));
+                        _AdaptiveState.LastUsedConstraintModel = false;
+                        if (_Selection.OversizedFallback && ImproveLargeBarNeighborhood(*_Output.Plan,
+                            _Selection, Instances_, Table_, Stocks_, _RoundSettings, _Selection.BudgetMilliseconds))
+                        {
+                            _Output.Value = MeasurePlanScore(*_Output.Plan, Instances_, Table_, Stocks_);
+                            _Output.FixedOrderExact = false;
+                            _BestOrder.clear();
+                            for (const auto& _Bar : *_Output.Plan)
+                                for (const auto& _Placement : _Bar.Placements)
+                                    _BestOrder.push_back(_Placement.Instance);
+                            ++_Accepted;
+                        }
+                    }
+#endif
+                    if (Clock_.Expired() || _Output.GlobalExact) break;
+                    // Diversified full-order restarts also serve Debug and
+                    // fixed-prefix groups, where a count master is unavailable.
+                    auto _Order = _BestOrder.empty() ? GroupInstances_ : _BestOrder;
+                    std::shuffle(_Order.begin(), _Order.end(), _RefinementRandom);
+                    if (Settings_.LocalSearchPasses > 0)
+                        ImproveOrderProxy(_Order, Instances_, Table_, _RefinementRandom, _RoundSettings);
+                    if (Clock_.Expired()) break;
+                    auto _Decoded = DecodeFixedOrder(_Order, Instances_, Table_, Stocks_, _RoundSettings);
+                    if (_Decoded.Plan) _Accept(std::move(*_Decoded.Plan), _Decoded.Value, _Decoded.Exact);
+                }
+                _Output.AdaptiveDiagnostic += "; utilization refinement rounds="
+                    + std::to_string(_Output.RefinementRounds) + ", accepted=" + std::to_string(_Accepted);
+                _Output.TimeLimit = _Output.TimeLimit || Clock_.Expired();
+            }
+            if (_Output.Plan && _Output.FirstFeasibleMilliseconds < 0.0)
+                _Output.FirstFeasibleMilliseconds = Clock_.ElapsedMilliseconds();
+            if (_Output.Plan && !_Output.GlobalExact && Settings_.ReuseVerifiedPatterns
+                && Settings_.PatternMasterTimeBudgetMilliseconds > 0)
+                PublishVerifiedTubePatternRecipe(*_Output.Plan, GroupInstances_, Instances_, Table_, Stocks_,
+                    Settings_, CacheSession_, (std::min)(CachePublicationDeadline_,
+                        std::chrono::steady_clock::now() + std::chrono::milliseconds(50)), &_Output.CacheMetrics);
             return _Output;
         }
 
@@ -1759,6 +2424,8 @@ namespace iCAX::TubeNesting
         const PairTableSolverSettings& Settings_) const
     {
         SolveResult _Result;
+        SearchClock _Clock;
+        _Clock.LimitMilliseconds = Settings_.TimeBudgetMilliseconds;
         _Result.PairTableVersion = Table_.Version;
         ValidatePairTable(Table_, &_Result.Diagnostics);
         std::vector<StockType> _ResolvedStocks = Stocks_;
@@ -1791,6 +2458,16 @@ namespace iCAX::TubeNesting
             && (Settings_.ConstraintNeighborhoodPartLimit < 2
                 || Settings_.ConstraintNeighborhoodTimeBudgetMilliseconds == 0))
             _Result.Diagnostics.emplace_back("constraint neighborhoods require at least two parts and a time budget");
+        if (Settings_.PatternMasterTimeBudgetMilliseconds > 0
+            && (Settings_.PatternMasterMaximumPatterns == 0
+                || Settings_.PatternMasterConstructionRuns == 0))
+            _Result.Diagnostics.emplace_back("pattern optimization requires non-zero pattern and construction limits");
+        if (Settings_.ContinueImprovementUntilTimeLimit && Settings_.TimeBudgetMilliseconds == 0)
+            _Result.Diagnostics.emplace_back("continued improvement requires a finite time budget");
+        if (Settings_.AdaptiveConstraintNeighborhoods
+            && (Settings_.ConstraintNeighborhoodMaximumPartLimit < 2
+                || Settings_.ConstraintNeighborhoodMaximumTimeBudgetMilliseconds == 0))
+            _Result.Diagnostics.emplace_back("adaptive neighborhoods require a bounded part limit and time budget");
         if (!_Result.Diagnostics.empty())
         {
             _Result.Status = SolveStatus::InvalidInput;
@@ -1802,6 +2479,7 @@ namespace iCAX::TubeNesting
             _Result.Status = SolveStatus::Optimal;
             _Result.ExactSearchCompleted = true;
             _Result.ProvenScope = ProofScope::FullIntegerModel;
+            _Result.Metrics.FirstFeasibleMilliseconds = _Clock.ElapsedMilliseconds();
             return _Result;
         }
 
@@ -1873,9 +2551,8 @@ namespace iCAX::TubeNesting
             }
         }
 
-        SearchClock _Clock;
-        _Clock.LimitMilliseconds = Settings_.TimeBudgetMilliseconds;
         std::mt19937 _Random(Settings_.RandomSeed);
+        TubePatternCacheSession _PatternCacheSession;
         bool _AllFeasible = true;
         bool _AllGlobalExact = true;
         bool _AllFixedOrderExact = true;
@@ -1883,9 +2560,23 @@ namespace iCAX::TubeNesting
         bool _AnyUnprovenFailure = false;
         bool _UsedLargeNeighborhood = false;
         bool _UsedConstraintBackend = false;
+        double _FirstCompleteGroupMilliseconds = 0.0;
         std::map<std::string, std::size_t> _StockOrdinals;
+        std::size_t _RemainingGroups = _Groups.size();
         for (const auto& [_Compatibility, _GroupInstances] : _Groups)
         {
+            auto _GroupClock = _Clock;
+            if (Settings_.ContinueImprovementUntilTimeLimit)
+            {
+                const auto _Elapsed = static_cast<std::uint64_t>(_Clock.ElapsedMilliseconds());
+                const auto _Share = _Clock.RemainingBudget(
+                    (std::numeric_limits<std::uint64_t>::max)()) / _RemainingGroups;
+                // Preserve the global origin for first-incumbent measurements,
+                // and reserve search time for subsequent compatibility groups.
+                _GroupClock.LimitMilliseconds = (std::min)(_Clock.LimitMilliseconds,
+                    _Elapsed + (std::max)(std::uint64_t{1}, _Share));
+            }
+            --_RemainingGroups;
             std::vector<StockType> _GroupStocks;
             std::ranges::copy_if(_ResolvedStocks, std::back_inserter(_GroupStocks), [&](const auto& Stock_)
             {
@@ -1902,16 +2593,46 @@ namespace iCAX::TubeNesting
                     "compatibility group '" + _Compatibility + "' has no stock");
                 continue;
             }
+            const auto _CachePublicationDeadline = _GroupClock.LimitMilliseconds > 0
+                ? _GroupClock.Started + std::chrono::milliseconds(_GroupClock.LimitMilliseconds)
+                : (std::chrono::steady_clock::time_point::max)();
+            if (Settings_.ReuseVerifiedPatterns && Settings_.PatternMasterTimeBudgetMilliseconds > 0
+                && _GroupClock.LimitMilliseconds > 0
+                && std::ranges::none_of(_GroupStocks, [](const auto& Stock_) { return IsContinuation(Stock_); }))
+            {
+                const auto _Reserve = (std::min)(std::uint64_t{50}, _GroupClock.RemainingBudget(
+                    (std::numeric_limits<std::uint64_t>::max)()) / 10);
+                _GroupClock.LimitMilliseconds -= _Reserve;
+            }
             auto _Solved = SolveGroup(
                 _GroupInstances, _Instances, Table_, _GroupStocks,
-                Settings_, _Random, _Clock);
+                Settings_, _Random, _GroupClock, _PatternCacheSession, _CachePublicationDeadline);
             _Result.Metrics.SearchNodes += _Solved.Nodes;
+            _Result.Metrics.RefinementRounds += _Solved.RefinementRounds;
+            _Result.Metrics.PatternCacheHits += _Solved.CacheMetrics.PatternCacheHits;
+            _Result.Metrics.PatternCacheImported += _Solved.CacheMetrics.PatternCacheImported;
+            _Result.Metrics.PatternCacheStored += _Solved.CacheMetrics.PatternCacheStored;
+            _Result.Metrics.PatternCacheEvictions += _Solved.CacheMetrics.PatternCacheEvictions;
+            _Result.Metrics.PatternCacheConstructedPlans += _Solved.CacheMetrics.PatternCacheConstructedPlans;
+            _Result.Metrics.PatternCacheRecipeHits += _Solved.CacheMetrics.PatternCacheRecipeHits;
+            _Result.Metrics.PatternCacheRecipesRestored += _Solved.CacheMetrics.PatternCacheRecipesRestored;
             _UsedLargeNeighborhood = _UsedLargeNeighborhood || _Solved.UsedLargeNeighborhood;
             _UsedConstraintBackend = _UsedConstraintBackend || _Solved.UsedConstraintBackend;
+            if (_Solved.FirstFeasibleMilliseconds >= 0.0)
+                _FirstCompleteGroupMilliseconds = (std::max)(
+                    _FirstCompleteGroupMilliseconds, _Solved.FirstFeasibleMilliseconds);
             if (!_Solved.ConstraintDiagnostic.empty())
                 _Result.Diagnostics.push_back(
                     "compatibility group '" + _Compatibility + "': "
                     + _Solved.ConstraintDiagnostic);
+            if (!_Solved.PatternDiagnostic.empty())
+                _Result.Diagnostics.push_back(
+                    "compatibility group '" + _Compatibility + "': "
+                    + _Solved.PatternDiagnostic);
+            for (const auto* _Diagnostic : { &_Solved.PatternMasterDiagnostic, &_Solved.AdaptiveDiagnostic })
+                if (!_Diagnostic->empty())
+                    _Result.Diagnostics.push_back(
+                        "compatibility group '" + _Compatibility + "': " + *_Diagnostic);
             if (!_Solved.Plan)
             {
                 _AllFeasible = false;
@@ -1942,6 +2663,7 @@ namespace iCAX::TubeNesting
             _Result.Metrics.NetMaterialYield = static_cast<double>(_Result.Metrics.PartLength)
                 / static_cast<double>(_Consumed);
         _Result.FixedOrderSplitOptimal = _AllFeasible && _AllFixedOrderExact;
+        if (_AllFeasible) _Result.Metrics.FirstFeasibleMilliseconds = _FirstCompleteGroupMilliseconds;
         _Result.ExactSearchCompleted = (_AllFeasible && _AllGlobalExact)
             || _AnyProvenInfeasible;
         _Result.ProvenScope = _Result.ExactSearchCompleted
@@ -1955,7 +2677,7 @@ namespace iCAX::TubeNesting
                 "dynamic large-neighborhood optimization used immutable pair-table costs");
         if (_UsedConstraintBackend)
             _Result.Diagnostics.emplace_back(
-                "OR-Tools CP-SAT optimized the complete small model or released stock neighborhoods");
+                "OR-Tools CP-SAT optimized bounded instance models or the restricted type-count pattern master");
 #if !ICAX_TUBE_NESTING_WITH_ORTOOLS
         if (Settings_.Constraint != ConstraintMode::Disabled)
             _Result.Diagnostics.emplace_back(

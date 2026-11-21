@@ -2,10 +2,12 @@
 #include <OpenCascadeResourceImport/OpenCascadeTaskExecution.h>
 #include <exception>
 #include "ExtrudeRecognizesService.h"
+#include "SectionContourFitting.h"
 #include "SectionExactClassifier.h"
 #include "SectionProjectionMultiplicity.h"
 #include "SectionMaterialProjection.h"
 #include "SectionFaceSubset.h"
+#include "MachiningPenetrationStock.h"
 
 #include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
 #include "OpenCascadeResourceImport/OpenCascadeBRepReader.h"
@@ -3182,7 +3184,21 @@ namespace
                         TopTools_ListOfShape arguments,tools;arguments.Append(job.Argument);tools.Append(job.Tool);
                         BRepAlgoAPI_Common common;common.SetArguments(arguments);common.SetTools(tools);common.SetNonDestructive(true);common.Build();
                         job.Valid=common.IsDone();if(job.Valid){job.Shape=common.Shape();job.Valid=BRepCheck_Analyzer(job.Shape).IsValid();}
-                        if(job.Valid){GProp_GProps properties;BRepGProp::SurfaceProperties(job.Shape,properties,1e-9);job.Area=properties.Mass();}
+                        if(job.Valid) {
+                            GProp_GProps properties;
+                            BRepGProp::SurfaceProperties(job.Shape,properties,1e-9);
+                            job.Area=properties.Mass();
+                            if(job.Area<0) {
+                                // For an otherwise valid curved Boolean result,
+                                // recompute the area from its actual parameter trims.
+                                // The standard surface quadrature can have the wrong
+                                // sign when a narrow sliver meets a spline knot.
+                                job.Area=0;
+                                for(TopExp_Explorer it(job.Shape,TopAbs_FACE);it.More();it.Next())
+                                    job.Area+=iCAX::OpenCascade::integration_detail::RefinedArea(TopoDS::Face(it.Current()));
+                            }
+                            job.Valid=std::isfinite(job.Area)&&job.Area>=0;
+                        }
                     }catch(...){job.Error=std::current_exception();}
                     job.Evaluated=true;
                 });
@@ -3205,7 +3221,6 @@ namespace
                 continue;
             }
             hasMaterialFaceIntersection=hasMaterialFaceIntersection||TopExp_Explorer(intersection.Shape,TopAbs_FACE).More();
-            if(intersection.Area<0)throw std::runtime_error("Candidate/source-face intersection has negative material area: source-face="+std::to_string(region.SourceFaceId));
             const auto spatialArea=intersection.Area;
             double upper=spatialArea,lower=region.Spatial?0.0:spatialArea;
             if(region.PlanarAreaScale>0) {
@@ -4428,6 +4443,13 @@ namespace {
 SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     const iCAX::GeometryData::BRepModel& geometry,const SSectionWireOptions& options) const
 {
+    const auto finish = [&](SSectionWiresResult result)
+    {
+        if (result.bSuccess && options.bFitContourForPartition)
+            result.ContourFit = std::make_shared<SSectionContourFit>(
+                FitSectionContour(result, options.dConnectionTolerance));
+        return result;
+    };
     auto axial=ExtractAxialSectionWires(geometry,options);
     if(options.dConnectionTolerance>0&&options.dFaceParallelToleranceRadians>0
         &&options.dFaceParallelToleranceRadians<.5*kPi&&options.nCurveSampleCount>=8
@@ -4435,7 +4457,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         &&axial.bSuccess&&HasLocalizedSectionEvidence(geometry,axial,options)) {
         try {
             auto nominal=ExtractCertifiedNominalSection(geometry,options,axial);
-            if(nominal.bSuccess)return nominal;
+            if(nominal.bSuccess)return finish(std::move(nominal));
         } catch(const Standard_Failure&) {
             // A station without a complete source-supported perimeter cannot
             // establish a nominal stock reference. The projected evidence
@@ -4447,12 +4469,12 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     if(axial.bSuccess||axial.SideFaceIds.empty()
         ||options.dFaceParallelToleranceRadians<=0||options.dFaceParallelToleranceRadians>=0.5*kPi
         ||options.dConnectionTolerance<=0||options.nCurveSampleCount<8
-        ||options.dUTurnAngleToleranceRadians<=0||options.dUTurnAngleToleranceRadians>=0.5*kPi)return axial;
+        ||options.dUTurnAngleToleranceRadians<=0||options.dUTurnAngleToleranceRadians>=0.5*kPi)return finish(std::move(axial));
     try {
         auto recovered=RecoverMaterialSection(geometry,options,axial.SideFaceIds);
         if(recovered.bSuccess) {
             recovered.Diagnostics.insert(recovered.Diagnostics.begin(),axial.Diagnostics.begin(),axial.Diagnostics.end());
-            return recovered;
+            return finish(std::move(recovered));
         }
         axial.Diagnostics.insert(axial.Diagnostics.end(),recovered.Diagnostics.begin(),recovered.Diagnostics.end());
     } catch(const Standard_Failure& error) {
@@ -4460,7 +4482,18 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     } catch(const std::exception& error) {
         axial.Diagnostics.push_back(std::string("Material projection recovery failed: ")+error.what());
     }
-    return axial;
+    try {
+        auto nominal=ExtractCertifiedNominalSection(geometry,options,axial);
+        if(nominal.bSuccess) {
+            nominal.Diagnostics.insert(nominal.Diagnostics.begin(),axial.Diagnostics.begin(),axial.Diagnostics.end());
+            return finish(std::move(nominal));
+        }
+    } catch(const Standard_Failure& error) {
+        axial.Diagnostics.push_back(std::string("Nominal section recovery failed: ")+error.GetMessageString());
+    } catch(const std::exception& error) {
+        axial.Diagnostics.push_back(std::string("Nominal section recovery failed: ")+error.what());
+    }
+    return finish(std::move(axial));
 }
 
 namespace direction_detail
@@ -7404,6 +7437,34 @@ namespace
     }
 }
 
+TopoDS_Face BuildStockSectionFace(const SSectionWiresResult& section, double tolerance)
+{
+    if (std::ranges::count_if(section.Wires, [](const auto& wire) { return !wire.bInner; }) != 1)
+        return {};
+    for (const auto& wire : section.Wires)
+    {
+        if (!wire.bClosed || wire.Edges.empty())
+            return {};
+        std::optional<gp_Pnt2d> first, last;
+        for (const auto& edge : wire.Edges)
+        {
+            const auto curve = iCAX::OpenCascade::BuildOpenCascadeCurve2(edge.Curve);
+            if (curve.IsNull() || !std::isfinite(edge.Range.First) || !std::isfinite(edge.Range.Last) ||
+                edge.Range.Last <= edge.Range.First)
+                return {};
+            const auto start = curve->Value(edge.bReversed ? edge.Range.Last : edge.Range.First);
+            if (last && last->Distance(start) > tolerance)
+                return {};
+            if (!first)
+                first = start;
+            last = curve->Value(edge.bReversed ? edge.Range.First : edge.Range.Last);
+        }
+        if (last->Distance(*first) > tolerance)
+            return {};
+    }
+    return BuildSectionSupport(section).MaterialSection;
+}
+
 SSectionFaceClassificationResult ClassifySectionFaces(
     const iCAX::GeometryData::BRepModel& geometry, const SSectionWiresResult& section,
     const SFeatureToolpathOptions& options)
@@ -7517,6 +7578,7 @@ SSectionFaceClassificationResult ClassifySectionFaces(
     result.bSuccess = !faces.IsEmpty() && splitValid;
     return result;
 }
+
 
 SFeatureToolpathResult AnalyzeFeatureToolpaths(
     IN const iCAX::GeometryData::BRepModel& Geometry_,

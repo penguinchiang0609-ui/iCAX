@@ -6,6 +6,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TubeNesting.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubePatternMaster.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubeVerifiedPatternCache.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubeVerifiedPatternRecipe.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubeCachedPatternConstruction.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubeAdaptiveNeighborhood.inc"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="TubeLargeBarRepair.inc"><Filter>头文件</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PairPoseTable.cpp"><Filter>源文件</Filter></ClCompile>

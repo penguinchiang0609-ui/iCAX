@@ -4,7 +4,7 @@
   <ItemGroup><ProjectReference Remove="@(ProjectReference)" /></ItemGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalOptions>/wd4996 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/bigobj /wd4996 %(AdditionalOptions)</AdditionalOptions>
       <Optimization>MaxSpeed</Optimization><BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat><SupportJustMyCode>false</SupportJustMyCode>
     </ClCompile>

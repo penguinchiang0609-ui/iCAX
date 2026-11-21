@@ -45,7 +45,7 @@ TEST(FiveAxisFixtureDesign, CurvedSheetMeshClearanceRegenerationUndoAndEmbeddedR
     for(const auto& value:first.at("parts").To<Array>()){const auto p=value.To<Map>();if(p.at("role").To<Text>()=="Base")EXPECT_GE(p.at("minimumDistance").To<double>(),.2-1e-6);else{EXPECT_LE(p.at("minimumDistance").To<double>(),2*p.at("topRetreat").To<double>()+.001);EXPECT_FALSE(p.at("contactPoints").To<Array>().empty());}}
     EXPECT_EQ(first.at("supportCheck").To<Map>().at("status").To<Text>(),"Supported");
     AdoptPlates(scene,first);auto original=Read(scene);ASSERT_EQ(original.at("fixtures").To<Array>().size(),4u);
-    auto breakdown=Invoke(&scene,"CamFixture","Breakdown",FixtureRequest(scene));EXPECT_EQ(breakdown.at("parts").To<Array>().size(),4u);
+    auto breakdown=FixtureBreakdownDetails(scene,FixtureRequest(scene));EXPECT_EQ(breakdown.at("parts").To<Array>().size(),4u);
     recipe["thickness"]=6.;SetPlateRecipe(scene,recipe);EXPECT_THROW(Invoke(&scene,"CamFixture","Breakdown",FixtureRequest(scene)),std::exception);
     const auto second=GeneratePlates(scene);for(size_t i=0;i<4;++i)EXPECT_EQ(first.at("parts").To<Array>()[i].To<Map>().at("partId"),second.at("parts").To<Array>()[i].To<Map>().at("partId"));
     AdoptPlates(scene,second);EXPECT_EQ(Read(scene).at("fixtures").To<Array>().size(),4u);

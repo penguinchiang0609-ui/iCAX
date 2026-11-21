@@ -11,6 +11,9 @@ export function renderRibbonCommandIcon(iconName, fallback = "□") {
 }
 
 const RIBBON_ICON_SHAPES = Object.freeze({
+  eraser: `<path d="m4 14 9-10 7 6-9 10H8z"/><path class="accent" d="m8 10 7 6M12 20h9"/>`,
+  text: `<path d="M5 5h14M12 5v15M8 20h8M5 5v3m14-3v3"/>`,
+  image: `<rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="8" cy="9" r="1.5"/><path class="accent" d="m4 18 5-5 4 3 4-6 3 4"/>`,
   'cam-cut-path': `<path d="M4 8v12h16V8h-5"/><path class="accent" d="M7 2h6l-2 4H9ZM10 6v7m-3-3 3 3 3-3"/>`,
   'cam-rapid-path': `<circle cx="4" cy="19" r="2"/><path d="M4 15V5h16v9" stroke-dasharray="2 3"/><path class="accent" d="m16 13 4 4 4-4"/>`,
   'cam-cut-add': `<path d="M3 5h13v15H3ZM6 9h7v7H6Z"/><path class="accent" d="M19 2v7m-3.5-3.5h7"/>`,
@@ -66,6 +69,13 @@ const RIBBON_ICON_SHAPES = Object.freeze({
   "sketch-polyline": `<path d="m3 18 5-9 5 5 8-10"/><circle class="accent fill" cx="8" cy="9" r="1.5"/><circle class="accent fill" cx="13" cy="14" r="1.5"/>`,
   "sketch-rectangle": `<rect x="4" y="5" width="16" height="14" rx="1"/><path class="accent" d="M4 9V5h4"/>`,
   "sketch-circle": `<circle cx="12" cy="12" r="8"/><circle class="accent fill" cx="12" cy="12" r="1.5"/><path class="accent" d="M12 12h8"/>`,
+  "sketch-ellipse": `<ellipse cx="12" cy="12" rx="9" ry="6"/><circle class="accent fill" cx="12" cy="12" r="1.3"/><path class="accent" d="M12 12h9M12 12V6"/>`,
+  "sketch-ellipse-arc": `<path d="M3 14a9 6 0 1 1 15 2.5"/><circle class="accent fill" cx="3" cy="14" r="1.4"/><circle class="accent fill" cx="18" cy="16.5" r="1.4"/><path class="accent" d="M12 12h7M12 12V6"/>`,
+  "sketch-bezier": `<path d="M3 18C6 2 18 22 21 6"/><path d="m3 18 3-15M21 6l-3 15" stroke-dasharray="2 2"/><circle class="accent fill" cx="3" cy="18" r="1.5"/><circle class="accent fill" cx="21" cy="6" r="1.5"/><rect class="accent" x="4.5" y="1.5" width="3" height="3"/><rect class="accent" x="16.5" y="19.5" width="3" height="3"/>`,
+  "sketch-bspline": `<path d="M3 18c5-16 9 12 18-12"/><path d="m3 18 4-13 6 14 8-13" stroke-dasharray="2 2"/><circle class="accent fill" cx="3" cy="18" r="1.4"/><circle class="accent fill" cx="7" cy="5" r="1.4"/><circle class="accent fill" cx="13" cy="19" r="1.4"/><circle class="accent fill" cx="21" cy="6" r="1.4"/>`,
+  "sketch-triangle": `<path d="m12 3 9 17H3Z"/><circle class="accent fill" cx="12" cy="3" r="1.4"/><path class="accent" d="M3 20h18"/>`,
+  "sketch-polygon": `<path d="m7 3 10 0 5 9-5 9H7l-5-9Z"/><path class="accent" d="M12 12 22 12"/><circle class="accent fill" cx="12" cy="12" r="1.3"/>`,
+  "sketch-star": `<path d="m12 2 3 6 7 .9-5 4.8 1.3 7-6.3-3.3L5.7 21 7 13.7 2 8.9 9 8Z"/><circle class="accent fill" cx="12" cy="12" r="1.3"/>`,
   "sketch-arc": `<path d="M4 18C6 6 16 3 21 12"/><circle class="accent fill" cx="4" cy="18" r="1.5"/><circle class="accent fill" cx="21" cy="12" r="1.5"/>`,
   "sketch-spline": `<path d="M3 17C7 3 12 22 21 7"/><circle class="accent fill" cx="3" cy="17" r="1.5"/><circle class="accent fill" cx="21" cy="7" r="1.5"/>`,
   undo: `<path d="M9 7 4 11l5 4"/><path class="accent" d="M5 11h8c4 0 7 3 7 7"/>`,

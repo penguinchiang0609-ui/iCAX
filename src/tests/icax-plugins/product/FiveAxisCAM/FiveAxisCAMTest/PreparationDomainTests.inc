@@ -24,27 +24,22 @@ TEST(FiveAxisPreparation, RenameIsMetadataOnlyIdempotentUndoableAndValidatesName
     for(const auto& name:{Text(),Text("   "),Text("bad\nname"),Text(513,'a')}){request["commandId"]=iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());request["expected"]=Read(scene).at("expected");request["name"]=name;EXPECT_THROW(Invoke(&scene,"CamWorkpiece","Rename",request),std::exception);}
     EXPECT_THROW(Invoke(nullptr,"CamWorkpiece","Rename",request),std::exception);
 }
-TEST(FiveAxisPreparation, CopyTreeIsAtomicIndependentAndClearsQualification) {
+TEST(FiveAxisPreparation, CopySourceIsAtomicAndLeavesOperationsAndQualificationUnchanged) {
     Scene scene;PrepareOrderPart(scene);const auto state=Read(scene),first=state.at("placements").To<Array>().front().To<Map>();Map part{{"placementId",first.at("id")}};
     File support(BRepPrimAPI_MakeBox(10.,20.,5.).Shape());auto import=FixtureRequest(scene);import["sourcePath"]=support.Utf8();ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamFixture","Import",import)).at("status").To<Text>());
     const auto before=Read(scene);const auto sourceGraph=PreparationGraphShape(scene,before.at("activeSetupId"));auto request=ActivateRequest(scene,part);
     const auto copy=Invoke(&scene,"CamWorkpiece","Copy",request);EXPECT_EQ(copy,Invoke(&scene,"CamWorkpiece","Copy",request));
     const auto after=Read(scene);ASSERT_EQ(2u,after.at("workpieces").To<Array>().size());EXPECT_NE(copy.at("workpieceId"),first.at("workpieceId"));
-    const auto originalCuts=before.at("intentToolpaths").To<Array>();size_t copied=0;
-    for(const auto& v:after.at("intentToolpaths").To<Array>()){const auto c=v.To<Map>();if(c.at("setupId")!=copy.at("setupId"))continue;copied++;EXPECT_EQ(copy.at("placementId"),c.at("placementId"));EXPECT_EQ("Current",c.at("sourceState").To<Text>());}
-    EXPECT_EQ(originalCuts.size(),copied);
-    const auto copiedGraph=PreparationGraphShape(scene,copy.at("setupId"));EXPECT_EQ(sourceGraph.second,copiedGraph.second);
-    for(const auto& operation:copiedGraph.first)EXPECT_FALSE(sourceGraph.first.contains(operation));
+    EXPECT_TRUE(copy.at("setupId").To<Text>().empty());
+    for(const auto* key:{"intentToolpaths","setups","fixtureUnits","fixtures","operations"})EXPECT_EQ(before.at(key),after.at(key));
     EXPECT_EQ(sourceGraph,PreparationGraphShape(scene,before.at("activeSetupId")));
-    auto setup=SetupState(scene,copy.at("setupId"));EXPECT_FALSE(setup.at("locked").To<bool>());EXPECT_EQ("Missing",setup.at("registrationPlan").To<Map>().at("status").To<Text>());EXPECT_NE("Current",setup.at("generatedGeometry").To<Map>().at("status").To<Text>());
     for(const auto& v:before.at("intentToolpaths").To<Array>()){const auto c=v.To<Map>();auto existing=after.at("intentToolpaths").To<Array>();EXPECT_TRUE(std::find(existing.begin(),existing.end(),v)!=existing.end());}
-    ASSERT_EQ(2u,after.at("fixtureUnits").To<Array>().size());for(const auto& value:after.at("fixtureUnits").To<Array>()){const auto u=value.To<Map>();if(u.at("setupId")!=copy.at("setupId"))continue;for(const auto& id:u.at("partIds").To<Array>()){const auto fixture=scene.Database().GetEntity(*ID::from_string(id.To<Text>()))->GetComponent<CFiveAxisFixtureComponent>();EXPECT_EQ(*ID::from_string(u.at("id").To<Text>()),fixture->GetUnitID());}}
     ASSERT_TRUE(scene.Database().Undo());EXPECT_EQ(before.at("workpieces"),Read(scene).at("workpieces"));EXPECT_EQ(before.at("intentToolpaths"),Read(scene).at("intentToolpaths"));ASSERT_TRUE(scene.Database().Redo());EXPECT_EQ(after.at("fixtureUnits"),Read(scene).at("fixtureUnits"));
     auto invalid=request;invalid["commandId"]=iCAX::Data::to_string(iCAX::Data::GenerateNewUUID());EXPECT_THROW(Invoke(&scene,"CamWorkpiece","Copy",invalid),std::exception);
     EXPECT_THROW(Invoke(nullptr,"CamWorkpiece","Copy",request),std::exception);
 }
 TEST(FiveAxisPreparation, CopySetupAndFixtureKeepParentAndDoNotChangeSources) {
-    Scene scene;PrepareOrderPart(scene);const auto state=Read(scene),first=state.at("placements").To<Array>().front().To<Map>();Map part{{"placementId",first.at("id")}};
+    Scene scene;PrepareOrderPart(scene);const auto state=Read(scene);Map first;for(const auto& value:state.at("placements").To<Array>())if(value.To<Map>().at("id")==state.at("activePlacementId"))first=value.To<Map>();ASSERT_FALSE(first.empty());Map part{{"placementId",first.at("id")}};
     File support(BRepPrimAPI_MakeBox(10.,20.,5.).Shape());auto import=FixtureRequest(scene);import["sourcePath"]=support.Utf8();ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamFixture","Import",import)).at("status").To<Text>());
     const auto before=Read(scene);auto request=ActivateRequest(scene,part);const auto copy=Invoke(&scene,"CamSetup","Copy",request);
     EXPECT_EQ(first.at("workpieceId"),copy.at("workpieceId"));EXPECT_EQ(1u,Read(scene).at("workpieces").To<Array>().size());EXPECT_EQ(before.at("intentToolpaths").To<Array>().size()*2,Read(scene).at("intentToolpaths").To<Array>().size());

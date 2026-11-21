@@ -3,7 +3,7 @@ import {activeTool} from './workspaceModel.mjs';
 import {focusShortcutAllowed,focusWorldBounds} from './viewFocus.mjs';
 
 export function fixturePartFocusShortcut(event,view,mount){
-  return focusShortcutAllowed(event,view,mount)&&view.fiveAxisArea==='workpiece'&&activeTool(view)==='fixture'
+  return focusShortcutAllowed(event,view,mount)&&view.fiveAxisArea==='operation'&&activeTool(view)==='fixture'
     &&!view.fiveFixtureDesignOpen&&!view.fiveFixturePlate?.open&&!view.fiveFixtureBreakdown&&!!view.fiveFixtureSelectedPart;
 }
 export function focusFixturePart(view,partId=view.fiveFixtureSelectedPart){

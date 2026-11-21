@@ -14,6 +14,8 @@
 #include <Project/ProjectSDO.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <Resources/BinaryResource.h>
+#include <ProjectFile/ProjectFileStore.h>
+#include <Database/OperationLog.h>
 #include <SDO/SDOChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 #include <Data/Variant.h>
@@ -185,6 +187,7 @@ namespace
         std::error_code _Error;
         std::filesystem::remove(ProjectPath_, _Error);
         std::filesystem::remove(ProjectPath_.string() + ".log", _Error);
+        std::filesystem::remove(ProjectPath_.string() + ".log.resources", _Error);
     }
 
     iCAX::Coroutines::CCoroutine<std::thread::id> ResumeThreadAfterNextProductFrame()
@@ -995,3 +998,4 @@ TEST(ProductRuntimeSDOTest, UserResourceHistoryRestoresDeletedRecordsAndKeepsNat
 }
 
 #include "ProjectAutoSaveTests.inc"
+#include "ResourceJournalTests.inc"

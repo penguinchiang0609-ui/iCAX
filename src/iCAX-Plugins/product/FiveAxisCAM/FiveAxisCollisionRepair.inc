@@ -15,7 +15,8 @@ struct CollisionRepairSnapshot {
     double MaximumDegrees=15;
     double MaximumTranslationMm=0;
     bool KeyposeRepair=false;
-    Array RepairLocations;
+    Text RepairPhase="All";
+    Array RepairLocations,RepairOrigins;
     bool LocalDeviationAuthorized=false;
 };
 struct CollisionRepairResult {
@@ -28,6 +29,7 @@ struct CollisionRepairResult {
     std::size_t Candidates=0,Reused=0,ChangedRapids=0,DistanceQueries=0;
     std::size_t FixedEntryFrame=0,FixedExitFrame=0,TransportSteps=0;
     Text RepairKind;
+    Array RepairOrigins;
     Map Rejections;
     double MaximumAppliedDegrees=0,MaximumRotationCorrectionRad=0;
 };
@@ -634,7 +636,7 @@ namespace {
     }
 }
 Map AutoRepairCollision(Scene& scene,const Map& request){
-    CutFields(request,{"commandId","expected","setupId","segmentIndex","keyposeFrameIndex","intervalFirstFrameIndex","maxDeviationDeg","maxTranslationMm","localPoseDeviationAuthorized"});const auto runtime=Runtime(scene);
+    CutFields(request,{"commandId","expected","setupId","segmentIndex","keyposeFrameIndex","intervalFirstFrameIndex","maxDeviationDeg","maxTranslationMm","localPoseDeviationAuthorized","repairPhase","toleranceOrigins"});const auto runtime=Runtime(scene);
     const auto command=iCAX::Data::to_string(Identifier(request,"commandId")),payload=Text("AutoRepairCollision:")+iCAX::Data::VariantSerializer::Serialize(request);
     for(const auto& [_,prior]:runtime->Tasks)if(prior.CommandID==command){if(prior.Payload!=payload)throw std::invalid_argument("CAM_COMMAND_REUSED");return TaskState(scene,*runtime,prior);}
     if(runtime->Receipts.contains(command))throw std::invalid_argument("CAM_COMMAND_REUSED");CheckExpected(*runtime,request);CheckCapacity(*runtime);

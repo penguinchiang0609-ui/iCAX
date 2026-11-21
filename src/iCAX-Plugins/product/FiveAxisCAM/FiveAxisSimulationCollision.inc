@@ -3,7 +3,7 @@ struct SimulationCollisionSnapshot
 {
     iCAX::GeometryServices::RigidMotionCollisionQuery Query;
     Text InputKey,Scope;
-    Text SelectedIntent,SelectedFrom,SelectedTo;
+    Text SelectedIntent,SelectedFrom,SelectedTo,PathKind;
     Array Frames;
     std::size_t BaseHeadBoxCount=0;
     std::vector<Ref> Dependencies;
@@ -20,6 +20,8 @@ struct SimulationCollisionSnapshot
     bool PartialTrajectory=false;
     using FullCheck=std::function<iCAX::GeometryServices::RigidMotionCollisionResult(const std::vector<iCAX::GeometryServices::RigidMotionSegment>&,bool,std::optional<std::size_t>,const std::function<bool()>&,const std::function<void(std::size_t)>&,const std::function<void(std::size_t,const iCAX::GeometryServices::RigidMotionCollisionSegment&)>&)>;
     FullCheck CheckFullHead;
+    std::function<bool(const std::function<bool()>&)> CheckHeadLimits;
+    bool HeadLimitsUnverified=false;
     std::function<void(SimulationCollisionSnapshot&)> ConfigureFullHead;
     Map HeadCoverage;
     Map CutRevisions;
@@ -60,9 +62,11 @@ namespace
     constexpr unsigned SimulationCollisionRetryBudgetMs=20000;
     Text SimulationCollisionKey(Scene& scene,const ID& id,const Map* replacement=nullptr){
         const auto s=Require<CFiveAxisSetupComponent>(scene.Database(),id);
-        Map fields{{"algorithm",Text("HeadKeyposeIntervalsV12")},{"maxSegmentTimeMs",std::to_string(SimulationCollisionSegmentBudgetMs)},{"generation",GenerationInputKey(scene,id)},
+        Map fields{{"algorithm",Text("HeadLimitsThenCollisionV13")},{"maxSegmentTimeMs",std::to_string(SimulationCollisionSegmentBudgetMs)},{"generation",GenerationInputKey(scene,id)},
             {"geometry",GeneratedDataRevision(*s)},{"order",IntentCutOrderPolicy(scene,id)},{"rapids",RapidDataRevision(*s)},
             {"overrides",s->GetRapidOverrides()},{"settings",RapidSettings(*s)},{"head",HeadState(scene,*s)},{"obstacles",FixtureInputKey(scene,id)}};
+        const auto machineType=EffectiveMachineTypeValue(scene,id);if(!machineType.empty())fields["machineType"]=machineType;
+        const auto assembly=OperationAssemblyTransform(scene,id);if(assembly!=Identity())fields["assemblyTransform"]=assembly;
         if(replacement)for(const auto& [key,value]:*replacement)fields[key]=value;
         return iCAX::Data::VariantSerializer::Serialize(fields);
     }
@@ -283,8 +287,8 @@ namespace
                     {"rotationNumerics",Map{{"convention",Text("AxisAndScalarRollV1")},{"rollQuantumRad",CollisionRotation::RollQuantumRad},{"maximumStepCorrectionRad",CollisionRotation::MaximumStepCorrectionRad},{"maximumObservedStepCorrectionRad",input.MaximumRotationCorrectionRad}}},
                     {"status",Text(collisions?"Collision":unchecked?"Unchecked":"Clear")},{"collisionCount",std::to_string(collisions)},{"uncheckedCount",std::to_string(unchecked)},
                     {"segments",segments},{"frames",input.Frames},{"distanceQueries",std::to_string(calculated->DistanceQueries)},
-                    {"checkMode",Text(!input.SelectedIntent.empty()||!input.SelectedTo.empty()?"SelectedPath":resumed?"UncheckedOnly":"Full")},{"initialSegmentTimeMs",std::to_string(SimulationCollisionSegmentBudgetMs)},
-                    {"checkOrder",Text("KeypointsThenIntervals")},{"keypointCheckCount",std::to_string(input.KeypointFrames.size())},
+                    {"checkMode",Text(!input.PathKind.empty()?input.PathKind:!input.SelectedIntent.empty()||!input.SelectedTo.empty()?"SelectedPath":resumed?"UncheckedOnly":"Full")},{"initialSegmentTimeMs",std::to_string(SimulationCollisionSegmentBudgetMs)},
+                    {"checkOrder",Text("LimitsThenCollision")},{"collisionOrder",Text("KeypointsThenIntervals")},{"keypointCheckCount",std::to_string(input.KeypointFrames.size())},
                     {"parallelWorkers",std::to_string(input.ParallelWorkers)},
                     {"retrySegmentTimeMs",std::to_string(resumed?SimulationCollisionRetryBudgetMs:0)},{"maxSegmentTimeMs",std::to_string(std::max(input.Query.MaxSegmentTimeMs,input.PreviousMaxSegmentTimeMs))},
                     {"reusedSegmentCount",std::to_string(reused)},{"checkedSegmentCount",std::to_string(calculated->Segments.size())},{"retrySegmentCount",std::to_string(resumed?calculated->Segments.size():0)},
@@ -300,12 +304,13 @@ namespace
                     report["interpolationChecks"]=merge(input.PreviousInterpolationChecks,input.InterpolationChecks,"firstFrameIndex");
                     report["interpolationTaskCount"]=std::to_string(input.InterpolationChecks.size());
                 }
+                if(!input.PathKind.empty())report["checkedPathKind"]=input.PathKind;
                 if(!input.SelectedIntent.empty())report["checkedIntentId"]=input.SelectedIntent;
                 if(!input.SelectedTo.empty()){report["checkedFrom"]=input.SelectedFrom;report["checkedTo"]=input.SelectedTo;}
                 Array keypoints;UInt keypointCollisions=0,keypointUnchecked=0;
                 {std::lock_guard lock(task.CollisionProgress->Mutex);for(const auto& [index,value]:task.CollisionProgress->KeypointResults){auto row=CollisionSegmentState(index,value);row["frameIndex"]=std::to_string(input.KeypointFrames.at(index));keypoints.emplace_back(std::move(row));keypointCollisions+=value.Status=="Collision";keypointUnchecked+=value.Status=="Unchecked";}}
                 if(keypoints.size()!=input.KeypointFrames.size())throw std::runtime_error("CAM_COLLISION_KEYPOINT_RESULTS_INCOMPLETE");
-                report["keypoints"]=keypoints;report["keypointCollisionCount"]=std::to_string(keypointCollisions);report["keypointUncheckedCount"]=std::to_string(keypointUnchecked);report["keypointResultsCurrent"]=input.SelectedIntent.empty()&&input.SelectedTo.empty();
+                report["keypoints"]=keypoints;report["keypointCollisionCount"]=std::to_string(keypointCollisions);report["keypointUncheckedCount"]=std::to_string(keypointUnchecked);report["keypointResultsCurrent"]=input.SelectedIntent.empty()&&input.SelectedTo.empty()&&input.PathKind.empty();
                 const auto resource=EngineeringData(report);
                 Transaction(scene.Database(),"更新轨迹碰撞检查",[&](auto& tx){tx.ModifyComponent(task.SetupID,CFiveAxisSetupComponent::S_ClassName,{{"SimulationCheckData",StoredRef(resource)}});},false);
                 task.Result={{"status",report.at("status")},{"collisionCount",report.at("collisionCount")},{"uncheckedCount",report.at("uncheckedCount")},
@@ -375,7 +380,7 @@ Map QueryPlaybackCollision(Scene& scene,const Map& request){
     response["segments"]=segments;response["segmentCount"]=std::to_string(count);response["maxSegmentTimeMs"]=task.Result.at("maxSegmentTimeMs");return response;
 }
 Map CheckSimulationCollision(Scene& scene,const Map& request){
-    CutFields(request,{"commandId","expected","setupId","maxParallelTasks","intentId","from","to"});const auto runtime=Runtime(scene);
+    CutFields(request,{"commandId","expected","setupId","maxParallelTasks","intentId","from","to","pathKind"});const auto runtime=Runtime(scene);
     const auto command=iCAX::Data::to_string(Identifier(request,"commandId")),payload=Text("SimulationCollision:")+iCAX::Data::VariantSerializer::Serialize(request);
     for(const auto& [_,task]:runtime->Tasks)if(task.CommandID==command){if(task.Payload!=payload)throw std::invalid_argument("CAM_COMMAND_REUSED");return TaskState(scene,*runtime,task);}
     if(runtime->Receipts.contains(command))throw std::invalid_argument("CAM_COMMAND_REUSED");CheckExpected(*runtime,request);CheckCapacity(*runtime);
@@ -384,11 +389,13 @@ Map CheckSimulationCollision(Scene& scene,const Map& request){
     const auto hardware=std::max(1u,std::thread::hardware_concurrency());
     const auto requestedWorkers=request.contains("maxParallelTasks")?Integer(request,"maxParallelTasks"):UInt(std::min(4u,hardware>1?hardware-1:1u));
     if(!requestedWorkers||requestedWorkers>32)throw std::invalid_argument("CAM_COLLISION_PARALLEL_BUDGET_INVALID");
-    const bool scoped=request.contains("intentId")||request.contains("from")||request.contains("to");
+    const bool pathScope=request.contains("intentId")||request.contains("from")||request.contains("to"),scoped=pathScope||request.contains("pathKind");
+    if(request.contains("pathKind")&&(pathScope||(String(request,"pathKind")!="Cutting"&&String(request,"pathKind")!="Rapid")))throw std::invalid_argument("CAM_COLLISION_PATH_SCOPE_INVALID");
     auto captured=CaptureSimulationCollision(scene,task.SetupID,true,scoped,true);
     if(scoped){
         if(request.contains("intentId")&&(request.contains("from")||request.contains("to")))throw std::invalid_argument("CAM_COLLISION_PATH_SCOPE_INVALID");
-        if(request.contains("intentId"))captured->SelectedIntent=iCAX::Data::to_string(Identifier(request,"intentId"));
+        if(request.contains("pathKind"))captured->PathKind=String(request,"pathKind");
+        else if(request.contains("intentId"))captured->SelectedIntent=iCAX::Data::to_string(Identifier(request,"intentId"));
         else{captured->SelectedFrom=iCAX::Data::to_string(Identifier(request,"from"));captured->SelectedTo=iCAX::Data::to_string(Identifier(request,"to"));}
         const auto geometry=GeneratedGeometryState(scene,task.SetupID);const auto operations=geometry.at("operations").To<Array>();
         std::map<Text,Text> previous;bool ready=false;
@@ -397,8 +404,10 @@ Map CheckSimulationCollision(Scene& scene,const Map& request){
             if(id==captured->SelectedIntent){if(String(op,"status")!="Current")throw std::invalid_argument("CAM_COLLISION_SELECTED_PATH_PENDING");ready=true;}}
         if(!captured->SelectedTo.empty())for(const auto& value:geometry.at("transitions").To<Array>()){const auto t=value.To<Map>();
             if(String(t,"from")==captured->SelectedFrom&&String(t,"to")==captured->SelectedTo){ready=String(t,"geometryStatus")=="Generated"||String(t,"geometryStatus")=="Draft";}}
-        if(!ready)throw std::invalid_argument("CAM_COLLISION_SELECTED_PATH_PENDING");
-        const auto belongs=[&](const Variant& value){const auto frame=value.To<Map>();return String(frame,"role")=="Rapid"?
+        if(pathScope&&!ready)throw std::invalid_argument("CAM_COLLISION_SELECTED_PATH_PENDING");
+        const auto belongs=[&](const Variant& value){const auto frame=value.To<Map>();
+            if(!captured->PathKind.empty())return (String(frame,"role")=="Rapid")==(captured->PathKind=="Rapid");
+            return String(frame,"role")=="Rapid"?
             !captured->SelectedTo.empty()&&String(frame,"intentId")==captured->SelectedTo&&previous[captured->SelectedTo]==captured->SelectedFrom:
             !captured->SelectedIntent.empty()&&String(frame,"intentId")==captured->SelectedIntent;};
         const auto setup=Require<CFiveAxisSetupComponent>(scene.Database(),task.SetupID);Map prior;
@@ -414,7 +423,9 @@ Map CheckSimulationCollision(Scene& scene,const Map& request){
         }
         else for(std::size_t i=0;i<captured->FullSegmentCount;++i)captured->PreviousSegments.emplace_back(Map{{"index",std::to_string(i)},{"status",Text("Unchecked")},{"reason",Text("CAM_COLLISION_NOT_CHECKED")},{"fraction",0.},{"certifiedClearanceMm",0.}});
         const auto all=captured->Query.Segments;captured->Query.Segments.clear();captured->SegmentIndices.clear();
-        for(std::size_t i=0;i<all.size();++i)if(belongs(captured->Frames[i])){captured->Query.Segments.push_back(all[i]);captured->SegmentIndices.push_back(i);}
+        for(std::size_t i=0;i<all.size();++i){const auto a=captured->Frames[i].To<Map>(),b=captured->Frames[std::min(i+1,captured->Frames.size()-1)].To<Map>();
+            const bool samePath=String(a,"intentId")==String(b,"intentId")&&(String(a,"role")=="Rapid")== (String(b,"role")=="Rapid");
+            if(belongs(captured->Frames[i])&&samePath){captured->Query.Segments.push_back(all[i]);captured->SegmentIndices.push_back(i);}}
         if(captured->Query.Segments.empty())throw std::invalid_argument("CAM_COLLISION_PATH_NOT_FOUND");
         const auto frames=captured->KeypointFrames;const auto segments=captured->KeypointSegments;captured->KeypointFrames.clear();captured->KeypointSegments.clear();
         for(std::size_t i=0;i<frames.size();++i)if(belongs(captured->Frames[frames[i]])){captured->KeypointFrames.push_back(frames[i]);captured->KeypointSegments.push_back(segments[i]);}

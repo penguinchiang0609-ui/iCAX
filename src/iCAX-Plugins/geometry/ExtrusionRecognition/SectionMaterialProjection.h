@@ -119,12 +119,18 @@ inline TopoDS_Face ProjectSingleValuedFace(const TopoDS_Face& source,double tole
     BRep_Builder topology;TopTools_IndexedMapOfShape vertices;
     TopExp::MapShapes(source,TopAbs_VERTEX,vertices);
     TopTools_IndexedMapOfShape edges;TopExp::MapShapes(source,TopAbs_EDGE,edges);
-    struct SLift {Handle(Geom_Curve) Curve;double First=0,Last=0;};
-    std::vector<SLift> lifts(edges.Extent()+1);
+    struct SProjectedTrim {Handle(Geom_BSplineCurve) Curve;bool Collapsed=false;};
+    std::vector<SProjectedTrim> trims(edges.Extent()+1);
     std::vector<TopoDS_Vertex> projectedVertices(vertices.Extent()+1);
     std::vector<gp_Pnt> anchors(vertices.Extent()+1);
     std::vector<bool> anchored(vertices.Extent()+1,false);
     std::vector<double> endpointErrors(vertices.Extent()+1,0.0);
+    std::vector<int> parent(vertices.Extent()+1);
+    for(int i=1;i<=vertices.Extent();++i)parent[i]=i;
+    const auto root=[&](int vertex){
+        while(parent[vertex]!=vertex)vertex=parent[vertex];
+        return vertex;
+    };
     for(int index=1;index<=edges.Extent();++index) {
         const auto edge=TopoDS::Edge(edges(index).Oriented(TopAbs_FORWARD));
         if(BRep_Tool::Degenerated(edge))continue;
@@ -142,8 +148,23 @@ inline TopoDS_Face ProjectSingleValuedFace(const TopoDS_Face& source,double tole
             return fail("Lifted surface trim exceeds native representation precision");
         double curveFirst,curveLast;const auto curve=BRep_Tool::Curve(lifted,curveFirst,curveLast);
         if(curve.IsNull())return fail("Lifted surface trim has no finite 3D curve");
-        lifts[index]={curve,curveFirst,curveLast};
+        const auto spline=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(curve,curveFirst,curveLast));
+        const auto projected=Handle(Geom_BSplineCurve)::DownCast(spline->Copy());
+        for(int i=1;i<=projected->NbPoles();++i) {
+            const auto p=projected->Pole(i);
+            projected->SetPole(i,gp_Pnt(p.Y(),p.Z(),0));
+        }
+        bool collapsed=true;
+        const auto origin=projected->Value(projected->FirstParameter());
+        for(int i=1;i<=projected->NbPoles()&&collapsed;++i)
+            collapsed=projected->Weight(i)>0&&projected->Pole(i).Distance(origin)<=Precision::Confusion();
+        trims[index]={projected,collapsed};
         TopoDS_Vertex a,b;TopExp::Vertices(edge,a,b);
+        if(a.IsNull()||b.IsNull())return fail("Original trim has no finite endpoints");
+        // A generator can project to a point even when its full 3D trim
+        // encloses material on the source patch. Its projected vertex is
+        // shared by the neighboring trims, which still form a finite wire.
+        if(collapsed)parent[root(vertices.FindIndex(b))]=root(vertices.FindIndex(a));
         for(int end=0;end<2;++end) {
             const auto vertex=end?b:a;const auto p=curve->Value(end?curveLast:curveFirst);
             const gp_Pnt flat(p.Y(),p.Z(),0);const int at=vertices.FindIndex(vertex);
@@ -152,7 +173,13 @@ inline TopoDS_Face ProjectSingleValuedFace(const TopoDS_Face& source,double tole
         }
     }
     for(int i=1;i<=vertices.Extent();++i) {
-        if(!anchored[i])continue;
+        const int owner=root(i);
+        if(i==owner||!anchored[i])continue;
+        if(!anchored[owner]){anchors[owner]=anchors[i];anchored[owner]=true;}
+        endpointErrors[owner]=std::max(endpointErrors[owner],anchors[owner].Distance(anchors[i])+endpointErrors[i]);
+    }
+    for(int i=1;i<=vertices.Extent();++i) {
+        if(!anchored[i]||root(i)!=i)continue;
         const double precision=endpointErrors[i]+Precision::Confusion();
         if(precision>tolerance)return fail("Projected surface-trim endpoint disagreement="+std::to_string(precision));
         topology.MakeVertex(projectedVertices[i],anchors[i],precision);
@@ -163,14 +190,13 @@ inline TopoDS_Face ProjectSingleValuedFace(const TopoDS_Face& source,double tole
         BRepBuilderAPI_MakeWire wire;
         for(BRepTools_WireExplorer ei(TopoDS::Wire(wi.Current()),source);ei.More();ei.Next()) {
             const auto edge=ei.Current();if(BRep_Tool::Degenerated(edge))continue;
-            const auto& lift=lifts[edges.FindIndex(edge)];
-            if(lift.Curve.IsNull())return fail("A projected trim support is missing");
-            const auto spline=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(lift.Curve,lift.First,lift.Last));
-            auto projected=Handle(Geom_BSplineCurve)::DownCast(spline->Copy());
-            for(int i=1;i<=projected->NbPoles();++i){const auto p=projected->Pole(i);projected->SetPole(i,gp_Pnt(p.Y(),p.Z(),0));}
+            const auto& trim=trims[edges.FindIndex(edge)];
+            if(trim.Collapsed)continue;
+            const auto& projected=trim.Curve;
+            if(projected.IsNull())return fail("A projected trim support is missing");
             TopoDS_Vertex a,b;TopExp::Vertices(TopoDS::Edge(edge.Oriented(TopAbs_FORWARD)),a,b);
-            BRepBuilderAPI_MakeEdge make(projected,projectedVertices[vertices.FindIndex(a)],
-                projectedVertices[vertices.FindIndex(b)],projected->FirstParameter(),projected->LastParameter());
+            BRepBuilderAPI_MakeEdge make(projected,projectedVertices[root(vertices.FindIndex(a))],
+                projectedVertices[root(vertices.FindIndex(b))],projected->FirstParameter(),projected->LastParameter());
             if(!make.IsDone())return fail("Projected trim edge construction error="+std::to_string(make.Error()));
             auto piece=make.Edge();if(edge.Orientation()==TopAbs_REVERSED)piece.Reverse();wire.Add(piece);
         }
@@ -224,9 +250,10 @@ inline TopoDS_Shape UniteMaterialProjections(const std::vector<std::pair<std::ui
             patches.push_back(face);
         } else patches=SingleValuedMaterialPatches(face,tolerance);
         for(const auto& patch:patches) {
-            const auto projected=ProjectSingleValuedFace(patch,tolerance);
+            std::string reason;
+            const auto projected=ProjectSingleValuedFace(patch,tolerance,&reason);
             if(projected.IsNull()) {
-                diagnostics.push_back("No valid single-valued material footprint from face="+std::to_string(id));continue;
+                diagnostics.push_back("No valid single-valued material footprint from face="+std::to_string(id)+": "+reason);continue;
             }
             const double area=iCAX::OpenCascade::integration_detail::RefinedArea(projected);
             if(area>0)regions.emplace_back(area,projected);

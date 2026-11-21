@@ -56,6 +56,15 @@ std::shared_ptr<ImportResult> PrepareImportedHeadAssembly(
 Map PublishImportedHeadAssembly(Scene& scene,const ID& setupID,ImportResult& result)
 {
     const auto& description=*result.HeadDescription;auto& db=scene.Database();const auto setup=Require<CFiveAxisSetupComponent>(db,setupID);const auto job=Require<CFiveAxisJobComponent>(db,setup->GetJobID());
+    unsigned toolRotations=0;std::set<Text> toolAncestors;const auto* ancestor=&description.Elements.at(result.HeadTool);
+    for(;;){
+        if(!toolAncestors.insert(ancestor->ElementID).second)throw std::invalid_argument("CAM_HEAD_TREE_INVALID");
+        if(ancestor->JointToParent.bValid){const auto& type=ancestor->JointToParent.JointType;if(type=="revolute"||type=="continuous")++toolRotations;}
+        if(ancestor->ParentElementID.empty())break;
+        const auto parent=std::find_if(description.Elements.begin(),description.Elements.end(),[&](const auto& node){return node.ElementID==ancestor->ParentElementID;});
+        if(parent==description.Elements.end())throw std::invalid_argument("CAM_HEAD_TREE_INVALID");ancestor=&*parent;
+    }
+    RequireHeadCatalogFitsOperation(scene,setupID,toolRotations>2?Array{}:Array{Text(toolRotations==2?"HeadHead":toolRotations==1?"HeadTable":"TableTable")});
     auto document=std::make_shared<iCAX::Resource::CBinaryResource>();document->DisplayName=result.Import.DisplayName;const auto extension=std::filesystem::path(std::u8string(description.SourcePath.begin(),description.SourcePath.end())).extension().u8string();document->FileExtension.assign(extension.begin(),extension.end());document->Content=std::move(result.Import.SourceBytes);
     const auto sourceRef=Publish(scene,document,"resource.binary",description.ModelName);std::map<const iCAX::CAD::SCadBRepImportResult*,Ref> sources;
     Array nodes,axes;std::map<Text,int> indices;std::vector<std::size_t> order;

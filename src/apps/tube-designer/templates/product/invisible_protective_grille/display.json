@@ -1,0 +1,268 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "sectionGroups": {
+        "wire": {
+          "title": {
+            "zh-CN": "竖向线材"
+          },
+          "order": 10,
+          "defaultOpen": true
+        },
+        "clamp": {
+          "title": {
+            "zh-CN": "横向压条"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "groups": {
+        "overall": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "wire_layout": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "clamp_layout": {
+          "category": "specifications",
+          "order": 10,
+          "defaultOpen": true
+        },
+        "wire_profile": {
+          "category": "materials",
+          "order": 100,
+          "defaultOpen": true,
+          "sectionGroup": "wire"
+        },
+        "clamp_profile": {
+          "category": "materials",
+          "order": 110,
+          "defaultOpen": true,
+          "sectionGroup": "clamp"
+        }
+      },
+      "fields": {
+        "productCode": {
+          "order": 0,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "width": {
+          "order": 10,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "height": {
+          "order": 20,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "wireProfileType": {
+          "order": 100,
+          "category": "materials",
+          "sectionGroup": "wire",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "wireWidth": {
+          "order": 30,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "wireCenterSpacing": {
+          "order": 40,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "clampProfileType": {
+          "order": 110,
+          "category": "materials",
+          "sectionGroup": "clamp",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "clampWidth": {
+          "order": 120,
+          "category": "materials",
+          "sectionGroup": "clamp",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "clampDepth": {
+          "order": 130,
+          "category": "materials",
+          "sectionGroup": "clamp",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "clampCount": {
+          "order": 50,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "clampBottomOffset": {
+          "order": 60,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "clampTopOffset": {
+          "order": 70,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        }
+      }
+    },
+    "add": {
+      "fields": {}
+    },
+    "scene": {
+      "annotations": {
+        "width": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "成品宽"
+          },
+          "group": "overall",
+          "order": 10,
+          "editable": true
+        },
+        "height": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "成品高"
+          },
+          "group": "overall",
+          "order": 20,
+          "editable": true
+        },
+        "wireWidth": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "线径"
+          },
+          "group": "wire_layout",
+          "order": 30,
+          "editable": true
+        },
+        "wireCenterSpacing": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "竖线中心距"
+          },
+          "group": "wire_layout",
+          "order": 40,
+          "editable": true
+        },
+        "clampCount": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "中间夹条组数"
+          },
+          "group": "clamp_layout",
+          "order": 50,
+          "editable": true
+        },
+        "clampBottomOffset": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "首组夹条中心离底"
+          },
+          "group": "clamp_layout",
+          "order": 60,
+          "editable": true,
+          "visibleWhen": {
+            "op": "ne",
+            "parameter": "clampCount",
+            "value": 0
+          }
+        },
+        "clampTopOffset": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "末组夹条中心离顶"
+          },
+          "group": "clamp_layout",
+          "order": 70,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "clampCount",
+                "value": 0
+              },
+              {
+                "op": "ne",
+                "parameter": "clampCount",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "shared": {
+    "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "{width} × {height} mm · 线径 {wireWidth} · 中心距 {wireCenterSpacing} mm"
+        }
+      }
+    ]
+  }
+}

@@ -1462,6 +1462,8 @@ void iCAX::Product::CProductRuntime::SaveProjectFileSnapshot(
     IN iCAX::Project::CProject& Project_,
     IN const std::string& strProjectPath_)
 {
+    Project_.ValidateProjectFileSave(strProjectPath_, _GetQuickSaveLogMagic(m_Definition.ProjectFile),
+        m_Definition.ProjectFile.QuickSaveLogVersion);
     iCAX::ProjectFile::CProjectFile _ProjectFile(
         _MakeProjectFileDefinition(m_Definition));
     _ProjectFile.Save(
@@ -1503,6 +1505,11 @@ bool iCAX::Product::CProductRuntime::CloseProject(IN const iCAX::Data::uuid& Pro
 
 bool iCAX::Product::CProductRuntime::CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_)
 {
+    return CloseProjectCatalog(CatalogID_, false);
+}
+
+bool iCAX::Product::CProductRuntime::CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_, bool DiscardChanges_)
+{
     std::shared_ptr<iCAX::Project::CProjectCatalog> _pCatalog;
     {
         std::lock_guard<std::mutex> _Lock(m_ProjectCatalogMutex);
@@ -1512,7 +1519,38 @@ bool iCAX::Product::CProductRuntime::CloseProjectCatalog(IN const iCAX::Data::uu
             return false;
         }
         _pCatalog = _Iter->second;
-        m_ProjectCatalogs.erase(_Iter);
+    }
+
+    // Discard may be rejected by persistence (wrong journal generation or a
+    // real write failure). Keep the catalog/runtime addressable until this
+    // fallible work has succeeded, so a rejected close leaves a live tab.
+    if (DiscardChanges_ && _pCatalog)
+    {
+        std::vector<std::shared_ptr<iCAX::Project::CProject>> restart;
+        std::vector<std::shared_ptr<iCAX::Project::CProject>> staged;
+        try
+        {
+            for (const auto& id : _pCatalog->GetProjectIDs())
+            {
+                const auto runtime = FindProjectRuntime(id);
+                const auto project = runtime ? runtime->GetLocalProject() : nullptr;
+                if (!project) continue;
+                if (project->IsRunning()) { restart.push_back(project); project->Stop(); }
+                project->PrepareQuickSaveDiscard();
+                staged.push_back(project);
+            }
+        }
+        catch (...)
+        {
+            for (auto it = staged.rbegin(); it != staged.rend(); ++it) (*it)->CancelQuickSaveDiscard();
+            for (const auto& project : restart) project->Start();
+            throw;
+        }
+        for (const auto& project : staged) project->CommitQuickSaveDiscard();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_ProjectCatalogMutex);
+        m_ProjectCatalogs.erase(CatalogID_);
     }
 
     if (_pCatalog)
@@ -2161,7 +2199,10 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleClose
 {
     _RequireProductSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
-    (void)CloseProjectCatalog(_GetRequiredUUID(_Payload, "catalogId"));
+    const auto discard = _Payload.find("discardChanges");
+    if (discard != _Payload.end() && !discard->second.Is<bool>())
+        throw std::invalid_argument("discardChanges must be a boolean");
+    (void)CloseProjectCatalog(_GetRequiredUUID(_Payload, "catalogId"), discard != _Payload.end() && discard->second.To<bool>());
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 

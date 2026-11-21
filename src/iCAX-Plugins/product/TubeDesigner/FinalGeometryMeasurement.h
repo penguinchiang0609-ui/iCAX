@@ -8,6 +8,7 @@
 
 #include <TopoDS_Shape.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Trsf.hxx>
 
 namespace iCAX::TubeDesigner
 {
@@ -43,6 +44,12 @@ namespace iCAX::TubeDesigner
         IN const TopoDS_Shape& Shape_);
     _TUBE_DESIGNER_EXP TopoDS_Shape NormalizeLinearPartForManufacturing(
         IN const TopoDS_Shape& Shape_, IN const gp_Dir& KnownAxis_);
+    // Return the actual rigid transform used, so later finished cuts can be
+    // restored to assembly coordinates without reconstructing a guessed frame.
+    _TUBE_DESIGNER_EXP TopoDS_Shape NormalizeLinearPartForManufacturing(
+        IN const TopoDS_Shape& Shape_, OUT gp_Trsf& SourceToPart_);
+    _TUBE_DESIGNER_EXP TopoDS_Shape NormalizeLinearPartForManufacturing(
+        IN const TopoDS_Shape& Shape_, IN const gp_Dir& KnownAxis_, OUT gp_Trsf& SourceToPart_);
 
     /**
      * 从沿 +X 的最终 BRep 搜索不削掉成品的左右刀平面；真实端口不必平面。

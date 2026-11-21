@@ -124,7 +124,7 @@
         {
           "id": "6bfc0001-1101-4500-9000-000000000001",
           "name": "AC 双回转切割头",
-          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAC-3015/GAC-3015.urdf",
+          "sourcePath": "apps/five-axis-cam/resources/cutting-heads/AC/AC.urdf",
           "headRoot": "C 回转叉架",
           "headAxes": [
             "C",
@@ -136,7 +136,7 @@
         {
           "id": "6bfc0001-1101-4500-9000-000000000002",
           "name": "AB 双摆切割头",
-          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GAB-3015/GAB-3015.urdf",
+          "sourcePath": "apps/five-axis-cam/resources/cutting-heads/AB/AB.urdf",
           "headRoot": "AB 刀头安装座",
           "headAxes": [
             "B",
@@ -148,7 +148,7 @@
         {
           "id": "6bfc0001-1101-4500-9000-000000000003",
           "name": "BC 双回转切割头",
-          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GBC-3015/GBC-3015.urdf",
+          "sourcePath": "apps/five-axis-cam/resources/cutting-heads/BC/BC.urdf",
           "headRoot": "C 回转叉架",
           "headAxes": [
             "C",
@@ -160,7 +160,7 @@
         {
           "id": "6bfc0001-1101-4500-9000-000000000004",
           "name": "A 单摆切割头",
-          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GA-3015/GA-3015.urdf",
+          "sourcePath": "apps/five-axis-cam/resources/cutting-heads/A/A.urdf",
           "headRoot": "固定摆头叉架",
           "headAxes": [
             "A"
@@ -171,7 +171,7 @@
         {
           "id": "6bfc0001-1101-4500-9000-000000000005",
           "name": "固定切割头",
-          "sourcePath": "apps/five-axis-cam/resources/machines/gantry-heads/GF-3015/GF-3015.urdf",
+          "sourcePath": "apps/five-axis-cam/resources/cutting-heads/Fixed/Fixed.urdf",
           "headRoot": "固定激光切割头",
           "headAxes": [],
           "workpieceAxes": [],
@@ -295,8 +295,25 @@
   "userData": {
     "features": [
       {
+        "featureId": "machine-type-configurations",
+        "recordTypes": [
+          {
+            "recordType": "preferences",
+            "subjectTypes": ["product"],
+            "schemaVersion": 1,
+            "cardinality": "single"
+          }
+        ]
+      },
+      {
         "featureId": "head-configurations",
         "recordTypes": [
+          {
+            "recordType": "preferences",
+            "subjectTypes": ["product"],
+            "schemaVersion": 1,
+            "cardinality": "single"
+          },
           {
             "recordType": "configuration",
             "subjectTypes": [

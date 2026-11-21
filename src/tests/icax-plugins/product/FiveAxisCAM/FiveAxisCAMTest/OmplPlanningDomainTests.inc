@@ -99,7 +99,7 @@ TEST(MotionPlanningEvaluation,DISABLED_RealEggConnections)
     ASSERT_TRUE(state.at("fixtures").To<Array>().empty());const auto settings=activeSetup.at("rapidSettings").To<Map>();
     const auto followHeight=settings.at("followHeightMm").To<double>(),lift=settings.at("liftHeightMm").To<double>();
     const auto& ops=std::get<Array>(generated.at("operations").m_Value);ASSERT_EQ(480u,ops.size());
-    const auto& placements=std::get<Array>(state.at("placements").m_Value);ASSERT_EQ(1u,placements.size());const auto placement=placements.front().To<Map>();const auto transform=placement.at("transform").To<Array>();
+    const auto& placements=std::get<Array>(state.at("placements").m_Value);ASSERT_EQ(2u,placements.size());Map placement;for(const auto& value:placements)if(value.To<Map>().at("id")==state.at("activePlacementId"))placement=value.To<Map>();ASSERT_FALSE(placement.empty());const auto transform=placement.at("transform").To<Array>();
     const auto ref=state.at("workpieces").To<Array>().front().To<Map>().at("geometryRef").To<Map>();
     const auto brep=scene.Resources().Get<iCAX::GeometryData::BRepModel>(ref.at("url").To<Text>(),std::stoull(ref.at("version").To<Text>()));ASSERT_TRUE(brep);ASSERT_EQ(3996u,brep->Faces.size());
     const auto buildStart=Clock::now();const auto built=iCAX::OpenCascade::BuildOpenCascadeShape(*brep);ASSERT_TRUE(built.bOK);gp_Trsf placementTransform;

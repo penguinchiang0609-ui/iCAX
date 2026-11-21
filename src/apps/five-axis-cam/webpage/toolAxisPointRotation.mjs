@@ -4,6 +4,7 @@ import { toolAxisPointCommand, syncToolAxisPoints } from './toolAxisPoints.mjs';
 import { escapeAttr as attr, escapeText as esc } from '../../_shared/workbench/utils/format.mjs';
 import { syncToolAxisVectorFields, validateToolAxisAngles } from './toolAxisAngles.mjs';
 import {renderTransformTools,positionTransformHud,positionWorldTransformHud} from './transformHud.mjs';
+import {activeSetupWorldFrame,placementWorldMatrix} from './setupWorldFrame.mjs';
 
 const inputSelector='[data-five-point-angle]';
 const alive=(context,view)=>!view.disposed&&context.isCurrentProject?.()!==false;
@@ -32,6 +33,7 @@ function preview(view){
   if(!String(r.value).trim()||!Number.isFinite(Number(r.value)))throw Error('请输入有效旋转角度。');
   const q=rotation(p),axis=new THREE.Vector3(...(r.axis==='e'?r.rotationAxis:{x:[1,0,0],y:[0,1,0],z:[0,0,1]}[r.axis]));
   if(r.axis!=='e'&&r.space==='local')axis.applyQuaternion(q);
+  else axis.transformDirection(activeSetupWorldFrame(view).invert());
   const v=unit(r.baseValues);if(r.baseFrame==='Workpiece')v.applyQuaternion(q);
   v.applyAxisAngle(axis,(Number(r.value)%360)*Math.PI/180);
   if(d.frame==='Workpiece')v.applyQuaternion(q.invert());
@@ -75,7 +77,7 @@ export function disposeToolAxisPointRotation(view){
 }
 export function syncToolAxisPointRotation(context,view,ops){
   const d=view.fiveAxisPointEdit,cut=selected(view),vp=view.viewport;
-  if(activeTool(view)==='keypoint'&&(view.fiveAxisPointInsert||view.fiveAxisPointDelete))positionWorldTransformHud(context,vp,d&&row(d)?.setupPoint,'point');
+  if(activeTool(view)==='keypoint'&&(view.fiveAxisPointInsert||view.fiveAxisPointDelete)){const at=d&&row(d)?.setupPoint;positionWorldTransformHud(context,vp,at?new THREE.Vector3(...at).applyMatrix4(activeSetupWorldFrame(view)).toArray():at,'point');}
   if(view.fivePoseSelection?.active||!alive(context,view)||view.fiveAxisArea!=='toolpath'||activeTool(view)!=='keypoint'||!d?.axis||!cut||cut.id!==d.id||cut.locked||d.loading||d.stale||d.picking||d.influence?.picking||d.influenceLoading||view.fiveAxisPointInsert||view.fiveAxisPointDelete){disposeToolAxisPointRotation(view);return;}
   const p=placement(view,cut),point=row(d);if(!vp||!p||!point){disposeToolAxisPointRotation(view);return;}
   const previous=view.fivePointManipulator;
@@ -89,7 +91,8 @@ export function syncToolAxisPointRotation(context,view,ops){
   vp.setCameraNavigationEnabled(true);
   const position=d.positionValues?.every(x=>String(x).trim()&&Number.isFinite(Number(x)))?new THREE.Vector3(...d.positionValues.map(Number)):new THREE.Vector3(...point.setupPoint);
   if(d.positionValues&&d.frame==='Workpiece')position.applyMatrix4(new THREE.Matrix4().set(...p.transform));
-  vp.setTransformManipulator({mode:'rotate',space,screenRotate:true,activeAxis:d.rotation?.axis,position:position.toArray(),quaternion:rotation(p).toArray(),enabled:valid&&!view.pending&&!d.request,
+  position.applyMatrix4(activeSetupWorldFrame(view));
+  vp.setTransformManipulator({mode:'rotate',space,screenRotate:true,activeAxis:d.rotation?.axis,position:position.toArray(),quaternion:new THREE.Quaternion().setFromRotationMatrix(placementWorldMatrix(view,p)).toArray(),enabled:valid&&!view.pending&&!d.request,
     onPosition:point=>placeHud(context,point),
     onStart:({axis,direction})=>{
       if(!alive(context,view)||view.fiveAxisPointEdit!==d||d.request||view.pending)return;

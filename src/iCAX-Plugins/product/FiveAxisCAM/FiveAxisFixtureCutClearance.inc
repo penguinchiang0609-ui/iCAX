@@ -145,22 +145,44 @@ namespace {
             if(snapshot){const auto generated=CalculateGeneration(snapshot->Generation,offset,cancelled);result->CutClearance=PrepareFixtureCutKeepOuts(*snapshot,input,*generated,*bounds,cancelled);result->Dependencies=snapshot->Dependencies;}
             // Keep the plate coordinator on this worker: running it on the CAD
             // pool would force its nested plate jobs inline to avoid deadlock.
-            iCAX::OpenCascade::detail::SGeometryTaskBatch preparation;
-            preparation.Tasks.reserve(1);
-            preparation.Tasks.push_back(iCAX::Tasks::Run([&]{
-                const auto check=[cancelled]{return cancelled->load();};iCAX::GeometryServices::BRepDisplayOptions options;options.Deflection=result->DisplayDeflection;options.IsCancelled=check;
-                result->DisplayGeometry=display->RefineMesh(*input.Geometry,options);result->DisplayEdges=display->BuildEdges(*input.Geometry,options);
-            },iCAX::OpenCascade::detail::GeometryTaskScheduler()));
             result->Plates=service->Build(input,[cancelled]{return cancelled->load();});
-            preparation.Complete();
-            // Geometry preparation stays on the worker. The Scene publishes
-            // prepared values and must not rebuild every plate in QueryTask.
+            // All computational BReps are complete before display meshing.
+            // The workpiece uses a bounded native face stage directly from the
+            // coordinator. Plates then share the same budget, with each native
+            // mesher inline. No outer job waits for nested CAD pool jobs.
+            const auto displayStarted=std::chrono::steady_clock::now();
+            char* traceValue=nullptr;size_t traceLength=0;_dupenv_s(&traceValue,&traceLength,"ICAX_FIXTURE_TRACE");const bool traceEnabled=traceValue!=nullptr;std::free(traceValue);std::mutex traceMutex;
+            const auto trace=[&](const std::string& label,std::chrono::steady_clock::time_point phaseStarted)noexcept{
+                if(!traceEnabled)return;try{const auto now=std::chrono::steady_clock::now();std::ostringstream line;
+                    line<<"fixture display "<<std::chrono::duration_cast<std::chrono::milliseconds>(now-displayStarted).count()<<" ms "<<label<<" elapsedMs="<<std::chrono::duration_cast<std::chrono::milliseconds>(now-phaseStarted).count()<<'\n';
+                    std::lock_guard lock(traceMutex);std::cerr<<line.str();
+                }catch(...){/* Diagnostics never replace a geometry failure. */}
+            };
+            const size_t count=result->Plates.size()+1,maximumConcurrency=std::min<size_t>(4,input.MaximumConcurrency?input.MaximumConcurrency:4);
             result->PlateDisplayEdges.resize(result->Plates.size());
-            iCAX::OpenCascade::detail::ForGeometryIndices(result->Plates.size(),2,[&](size_t i){
-                if(cancelled->load())throw std::runtime_error("PLATE_CANCELLED");
-                iCAX::GeometryServices::BRepDisplayOptions options;options.IsCancelled=[cancelled]{return cancelled->load();};
-                result->PlateDisplayEdges[i]=display->BuildEdges(result->Plates[i].Geometry,options);
-            });return result;
+            std::vector<std::exception_ptr> failures(count);std::exception_ptr batchFailure;size_t workers=0;
+            trace("batch begin jobs="+std::to_string(count)+" maximumConcurrency="+std::to_string(maximumConcurrency),displayStarted);
+            const auto prepare=[&](size_t i){
+                const auto jobStarted=std::chrono::steady_clock::now();const auto label=i?"plate "+std::to_string(i-1):std::string("workpiece");
+                try{
+                    if(cancelled->load())throw std::runtime_error("PLATE_CANCELLED");
+                    iCAX::GeometryServices::BRepDisplayOptions options;options.IsCancelled=[cancelled]{return cancelled->load();};options.ParallelMeshing=i==0;options.MaximumConcurrency=i?1:maximumConcurrency;
+                    options.Deflection=i?.05:result->DisplayDeflection;
+                    const auto meshStarted=std::chrono::steady_clock::now();
+                    if(i)result->Plates[i-1].Geometry=display->RefineMesh(result->Plates[i-1].Geometry,options);else result->DisplayGeometry=display->RefineMesh(*input.Geometry,options);
+                    trace(label+" mesh complete",meshStarted);const auto edgesStarted=std::chrono::steady_clock::now();
+                    if(i)result->PlateDisplayEdges[i-1]=display->BuildEdges(result->Plates[i-1].Geometry,options);else result->DisplayEdges=display->BuildEdges(*input.Geometry,options);
+                    trace(label+" edges complete",edgesStarted);trace(label+" complete",jobStarted);
+                }catch(...){failures[i]=std::current_exception();trace(label+" failed",jobStarted);}
+            };
+            prepare(0);
+            if(failures[0]){trace("batch failed job=0",displayStarted);std::rethrow_exception(failures[0]);}
+            try{workers=iCAX::OpenCascade::detail::ForGeometryIndices(result->Plates.size(),maximumConcurrency,[&](size_t i){prepare(i+1);});}catch(...){batchFailure=std::current_exception();}
+            // All readers have drained, including cancellation or a scheduler
+            // failure. Match the old workpiece-then-plate error precedence.
+            for(size_t i=0;i<count;++i)if(failures[i]){trace("batch failed job="+std::to_string(i),displayStarted);std::rethrow_exception(failures[i]);}
+            if(batchFailure){trace("batch failed",displayStarted);std::rethrow_exception(batchFailure);}
+            trace("batch complete workers="+std::to_string(workers),displayStarted);return result;
         });
     }
 }

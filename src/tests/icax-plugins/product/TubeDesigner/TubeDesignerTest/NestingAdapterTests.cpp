@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <future>
 #include <limits>
 #include <map>
 #include <Task/Task.h>
@@ -77,6 +78,120 @@ namespace
             EXPECT_LE(_StockCounts[_Stock.ID], static_cast<std::size_t>(_Stock.Quantity));
         EXPECT_EQ(Result_.at("metrics").To<ObjectMap>().at("stockCount").To<unsigned long long>(), Result_.at("plans").To<VariantArray>().size());
     }
+}
+
+TEST(TubeDesignerNesting, PairTableCacheReusesGeometryButNotDemandQuantities)
+{
+    SNestingPart _Part{ "cache-quantity-part", "cache-quantity-profile", 100.0, 2 };
+    const std::vector<SNestingStock> _Stocks{
+        { "cache-quantity-stock", _Part.ProfileKey, 250.0, -1 } };
+    const auto _Before = GetNestingPairTableCacheStatistics();
+    const auto _First = SolveManufacturingNesting({ _Part }, _Stocks, 3.0);
+    const auto _AfterFirst = GetNestingPairTableCacheStatistics();
+    EXPECT_EQ(_AfterFirst.Builds, _Before.Builds + 1);
+    CheckAccounting(_First, { _Part }, _Stocks, 3.0);
+    _Part.Quantity = 5;
+    const auto _Second = SolveManufacturingNesting({ _Part }, _Stocks, 3.0);
+    const auto _AfterSecond = GetNestingPairTableCacheStatistics();
+    EXPECT_EQ(_AfterSecond.Hits, _AfterFirst.Hits + 1);
+    EXPECT_EQ(_AfterSecond.Builds, _AfterFirst.Builds);
+    CheckAccounting(_Second, { _Part }, _Stocks, 3.0);
+    EXPECT_EQ(_Second.at("metrics").To<ObjectMap>().at("placedPartCount").To<unsigned long long>(), 5u);
+    EXPECT_EQ(_Second.at("plans").To<VariantArray>().size(), 3u);
+    auto _ShortStocks = _Stocks;
+    _ShortStocks[0].Length = 150.0;
+    const auto _Third = SolveManufacturingNesting({ _Part }, _ShortStocks, 3.0);
+    CheckAccounting(_Third, { _Part }, _ShortStocks, 3.0);
+    EXPECT_EQ(_Third.at("plans").To<VariantArray>().size(), 5u);
+    EXPECT_EQ(GetNestingPairTableCacheStatistics().Builds, _AfterSecond.Builds);
+}
+
+TEST(TubeDesignerNesting, PairTableCacheInvalidatesActualGeometryProcessAndPoseDomain)
+{
+    SNestingPart _Part{ "cache-invalidation-part", "cache-invalidation-profile", 100.0, 2 };
+    _Part.DirectionAllowed = { true, false };
+    _Part.PairGeometry = InsetRightProfile(100.0, 10.0);
+    const std::vector<SNestingStock> _Stocks{
+        { "cache-invalidation-stock", _Part.ProfileKey, 250.0, -1 } };
+    const auto _ExpectBuildThenHit = [&](const double Gap_) {
+        const auto _Before = GetNestingPairTableCacheStatistics();
+        const auto _Built = SolveManufacturingNesting({ _Part }, _Stocks, Gap_);
+        const auto _AfterBuild = GetNestingPairTableCacheStatistics();
+        EXPECT_EQ(_AfterBuild.Builds, _Before.Builds + 1);
+        const auto _Hit = SolveManufacturingNesting({ _Part }, _Stocks, Gap_);
+        const auto _AfterHit = GetNestingPairTableCacheStatistics();
+        EXPECT_EQ(_AfterHit.Hits, _AfterBuild.Hits + 1);
+        EXPECT_EQ(_AfterHit.Builds, _AfterBuild.Builds);
+        // Parallel CP-SAT may visit a different number of search nodes for an
+        // identical model. Compare the complete result except that run counter.
+        auto _ComparableBuilt = _Built, _ComparableHit = _Hit;
+        for (auto* _Result : { &_ComparableBuilt, &_ComparableHit })
+        {
+            auto _Metrics = _Result->at("metrics").To<ObjectMap>();
+            _Metrics.erase("searchNodes");
+            (*_Result)["metrics"] = std::move(_Metrics);
+        }
+        EXPECT_EQ(_ComparableBuilt, _ComparableHit);
+        return _Hit;
+    };
+    _ExpectBuildThenHit(3.0);
+    // The source hash is deliberately unchanged: coefficients are authoritative.
+    _Part.PairGeometry->Right.Levels[0].Constant -= 500.0;
+    const auto _GeometryChanged = _ExpectBuildThenHit(3.0);
+    EXPECT_NEAR(_GeometryChanged.at("metrics").To<ObjectMap>().at("usedLength").To<double>(), 188.0, 0.011);
+    _ExpectBuildThenHit(4.0);
+    _Part.PairGeometry->RelativeRotationDomain.DiscreteRadians = { 0.75 };
+    _ExpectBuildThenHit(4.0);
+    _Part.PairGeometry->Left.SourceQuality =
+        iCAX::TubeNesting::ProfileSourceQuality::ApproximateCertified;
+    _ExpectBuildThenHit(4.0);
+    _Part.DirectionAllowed = { false, true };
+    _ExpectBuildThenHit(4.0);
+    _Part.PairGeometry->Left.SourceQuality =
+        iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+    const auto _Numeric = _ExpectBuildThenHit(4.0);
+    EXPECT_NEAR(_Numeric.at("metrics").To<ObjectMap>().at("usedLength").To<double>(), 204.0, 0.011);
+    EXPECT_FALSE(_Numeric.at("proof").To<ObjectMap>().at("nativePairBoundsCertified").To<bool>());
+}
+
+TEST(TubeDesignerNesting, PairTableCacheSharesConcurrentBuildWithoutSharingMutablePlans)
+{
+    SNestingPart _Part{ "cache-concurrent-part", "cache-concurrent-profile", 100.0, 1 };
+    const std::vector<SNestingStock> _Stocks{
+        { "cache-concurrent-stock", _Part.ProfileKey, 250.0, -1 } };
+    const auto _Before = GetNestingPairTableCacheStatistics();
+    std::vector<std::future<ObjectMap>> _Requests;
+    for (std::size_t _Count = 1; _Count <= 4; ++_Count)
+        _Requests.push_back(std::async(std::launch::async, [_Part, _Stocks, _Count]() mutable {
+            _Part.Quantity = _Count;
+            return SolveManufacturingNesting({ _Part }, _Stocks, 3.0, 1);
+        }));
+    for (std::size_t _Index = 0; _Index < _Requests.size(); ++_Index)
+    {
+        const auto _Result = _Requests[_Index].get();
+        _Part.Quantity = _Index + 1;
+        CheckAccounting(_Result, { _Part }, _Stocks, 3.0);
+    }
+    const auto _After = GetNestingPairTableCacheStatistics();
+    EXPECT_EQ(_After.Builds, _Before.Builds + 1);
+    EXPECT_EQ(_After.Hits, _Before.Hits + 3);
+}
+
+TEST(TubeDesignerNesting, PairTableCacheEvictsOldSnapshotsAndRebuildsCorrectly)
+{
+    SNestingPart _Part{ "cache-eviction-part", "cache-eviction-profile", 100.0, 2 };
+    const std::vector<SNestingStock> _Stocks{
+        { "cache-eviction-stock", _Part.ProfileKey, 250.0, -1 } };
+    SolveManufacturingNesting({ _Part }, _Stocks, 1.0);
+    for (int _Gap = 2; _Gap <= 10; ++_Gap)
+        SolveManufacturingNesting({ _Part }, _Stocks, static_cast<double>(_Gap));
+    const auto _BeforeRebuild = GetNestingPairTableCacheStatistics();
+    const auto _Rebuilt = SolveManufacturingNesting({ _Part }, _Stocks, 1.0);
+    const auto _After = GetNestingPairTableCacheStatistics();
+    EXPECT_EQ(_After.Builds, _BeforeRebuild.Builds + 1);
+    EXPECT_LE(_After.RetainedEntries, 8u);
+    EXPECT_LE(_After.RetainedBytes, 128u * 1024u * 1024u);
+    CheckAccounting(_Rebuilt, { _Part }, _Stocks, 1.0);
 }
 
 TEST(TubeDesignerNesting, ManufacturingKindGuardExcludesPlateAndUnknownItems)
@@ -749,6 +864,7 @@ TEST(TubeDesignerNesting, LargeResultIsDeliveredAsNoticeCatalogAndSelectedPlan)
         { "request", ObjectMap{ { "lockedPlans", VariantArray{ plans.front() } } } },
         { "result", ObjectMap{ { "status", std::string("feasible") },
             { "metrics", ObjectMap{ { "placedPartCount", 47495ull } } },
+            { "search", ObjectMap{{"optimizationMode", std::string("utilization")}, {"searchTimeSeconds", 60}} },
             { "unplaced", VariantArray{} }, { "plans", std::move(plans) } } }
     };
     const auto summary = access::Summary(task);
@@ -756,6 +872,7 @@ TEST(TubeDesignerNesting, LargeResultIsDeliveredAsNoticeCatalogAndSelectedPlan)
     const auto catalog = access::Catalog(task, "large-revision");
     const auto selected = access::Plan(task, "large-revision", "plan-42");
     EXPECT_FALSE(summary.contains("plans"));
+    EXPECT_EQ(access::Object(summary, "search"), access::Object(access::Object(task, "result"), "search"));
     EXPECT_FALSE(access::Object(snapshot, "result").contains("plans"));
     EXPECT_EQ(access::Array(access::Object(snapshot, "request"), "lockedPlans").size(), 1u);
     EXPECT_EQ(access::Array(catalog, "rows").size(), 9499u);
@@ -871,4 +988,135 @@ TEST(TubeDesignerNesting, SettingsArePersistentTransactionalSceneFields)
     EXPECT_TRUE(_Root->GetNestingSettings().empty());
     ASSERT_TRUE(_Repository->Redo());
     EXPECT_EQ(_Root->GetNestingSettings(), _Settings);
+}
+
+TEST(TubeDesignerNesting, SearchSettingsDefaultAndRoundTripBothPolicies)
+{
+    const ObjectMap _Legacy{{"version", 2}, {"stocks", VariantArray{}},
+        {"parameters", ObjectMap{{"partGap", 2.5}}}};
+    const auto _Defaults = NormalizeNestingSettings(_Legacy).at("parameters").To<ObjectMap>();
+    EXPECT_EQ(_Defaults.at("optimizationMode").To<std::string>(), "time");
+    EXPECT_EQ(_Defaults.at("searchTimeSeconds").To<unsigned long long>(), 5u);
+    EXPECT_EQ(ReadNestingSearchOptions(ObjectMap{{"optimizationMode", std::string("utilization")}})
+        .SearchTimeSeconds, 60u);
+    for (const auto* _Mode : {"time", "utilization"})
+    {
+        auto _Settings = _Legacy;
+        _Settings["parameters"] = ObjectMap{{"partGap", 2.5},
+            {"optimizationMode", std::string(_Mode)}, {"searchTimeSeconds", 60}};
+        const auto _Normalized = NormalizeNestingSettings(_Settings);
+        const auto _Text = iCAX::Data::VariantSerializer::Serialize(iCAX::Data::Variant(_Normalized));
+        EXPECT_EQ(iCAX::Data::VariantSerializer::Deserialize(_Text).To<ObjectMap>(), _Normalized);
+        const auto _Search = ReadNestingSearchOptions(_Normalized.at("parameters").To<ObjectMap>());
+        EXPECT_EQ(_Search.SearchTimeSeconds, 60u);
+        EXPECT_EQ(_Search.Mode, std::string(_Mode) == "time"
+            ? ENestingOptimizationMode::Time : ENestingOptimizationMode::Utilization);
+    }
+}
+
+TEST(TubeDesignerNesting, RejectsMalformedSearchPolicyAndNonIntegralTimeLimits)
+{
+    EXPECT_THROW(ReadNestingSearchOptions(ObjectMap{{"optimizationMode", std::string("fast")}}), std::invalid_argument);
+    EXPECT_THROW(ReadNestingSearchOptions(ObjectMap{{"optimizationMode", 1}}), std::invalid_argument);
+    for (const double _Time : {0.0, -1.0, 1.5, 3601.0, std::numeric_limits<double>::infinity()})
+        EXPECT_THROW(ReadNestingSearchOptions(ObjectMap{{"searchTimeSeconds", _Time}}), std::invalid_argument);
+    EXPECT_THROW(ReadNestingSearchOptions(ObjectMap{{"searchTimeSeconds", true}}), std::invalid_argument);
+    EXPECT_THROW(ReadNestingSearchOptions(ObjectMap{{"searchTimeSeconds", std::string("60")}}), std::invalid_argument);
+    SNestingSearchOptions _Invalid;
+    _Invalid.SearchTimeSeconds = 0;
+    EXPECT_THROW(SolveManufacturingNesting({{"p", "profile", 10, 1}},
+        {{"s", "profile", 100, -1}}, 0, _Invalid), std::invalid_argument);
+}
+
+TEST(TubeDesignerNesting, SearchBudgetIsSharedAcrossProfilesPriorityInventoryAndSubsetFallback)
+{
+    std::vector<SNestingPart> _Parts;
+    std::vector<SNestingStock> _Stocks;
+    for (const auto* _Profile : {"search-profile-a", "search-profile-b"})
+    {
+        SNestingPart _High{std::string(_Profile) + "-high", _Profile, 70.0, 12};
+        SNestingPart _Low{std::string(_Profile) + "-low", _Profile, 35.0, 12};
+        _Low.Priority = 1;
+        _Parts.push_back(std::move(_High)); _Parts.push_back(std::move(_Low));
+        _Stocks.push_back({std::string(_Profile) + "-finite", _Profile, 200.0, 1});
+        _Stocks.push_back({std::string(_Profile) + "-unlimited", _Profile, 200.0, -1});
+    }
+    const SNestingSearchOptions _Options{ENestingOptimizationMode::Utilization, 1};
+    for (const auto _Workers : {std::size_t{1}, std::size_t{8}})
+    {
+        const auto _Started = std::chrono::steady_clock::now();
+        const auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 0, _Options, _Workers);
+        const auto _Elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - _Started).count();
+        CheckAccounting(_Result, _Parts, _Stocks, 0);
+        EXPECT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+        for (const auto* _Profile : {"search-profile-a", "search-profile-b"})
+        {
+            std::size_t _FiniteRoots = 0, _FiniteHighParts = 0;
+            for (const auto& _Value : _Result.at("plans").To<VariantArray>())
+            {
+                const auto _Plan = _Value.To<ObjectMap>();
+                if (_Plan.at("stockTypeId").To<std::string>() != std::string(_Profile) + "-finite") continue;
+                ++_FiniteRoots;
+                for (const auto& _Placement : _Plan.at("placements").To<VariantArray>())
+                    if (_Placement.To<ObjectMap>().at("partId").To<std::string>() == std::string(_Profile) + "-high")
+                        ++_FiniteHighParts;
+            }
+            EXPECT_EQ(_FiniteRoots, 1u);
+            EXPECT_EQ(_FiniteHighParts, 2u);
+        }
+        const auto _Search = _Result.at("search").To<ObjectMap>();
+        EXPECT_EQ(_Search.at("optimizationMode").To<std::string>(), "utilization");
+        EXPECT_EQ(_Search.at("searchTimeSeconds").To<unsigned long long>(), 1u);
+        EXPECT_EQ(_Search.at("budgetScope").To<std::string>(), "shared-request");
+        EXPECT_EQ(_Search.at("stageCount").To<unsigned long long>(), 8u);
+        EXPECT_LE(_Search.at("allocatedSearchMilliseconds").To<unsigned long long>(), 1000u);
+        EXPECT_GT(_Result.at("metrics").To<ObjectMap>().at("refinementRounds").To<unsigned long long>(), 0u);
+        // A generous guard catches resetting a one-second budget for every
+        // profile/priority/inventory/subset call, without asserting a real-time SLA.
+        EXPECT_LT(_Elapsed, 3.0);
+        std::cout << "SEARCH_STRATEGY_ADAPTER_RESULT workers=" << _Workers
+            << " seconds=" << _Elapsed << " allocatedMilliseconds="
+            << _Search.at("allocatedSearchMilliseconds").To<unsigned long long>() << '\n';
+    }
+}
+
+TEST(TubeDesignerNesting, SearchPolicyDoesNotInvalidateTheGeometryPairTable)
+{
+    const std::vector<SNestingPart> _Parts{{"strategy-cache", "strategy-cache-profile", 125.0, 2}};
+    const std::vector<SNestingStock> _Stocks{{"strategy-stock", "strategy-cache-profile", 1000.0, -1}};
+    const auto _Time = SolveManufacturingNesting(_Parts, _Stocks, 0,
+        SNestingSearchOptions{ENestingOptimizationMode::Time, 1}, 1);
+    const auto _Before = GetNestingPairTableCacheStatistics();
+    const auto _Quality = SolveManufacturingNesting(_Parts, _Stocks, 0,
+        SNestingSearchOptions{ENestingOptimizationMode::Utilization, 1}, 1);
+    const auto _After = GetNestingPairTableCacheStatistics();
+    EXPECT_EQ(_After.Builds, _Before.Builds);
+    EXPECT_GT(_After.Hits, _Before.Hits);
+    EXPECT_EQ(_Time.at("plans"), _Quality.at("plans"));
+    CheckAccounting(_Quality, _Parts, _Stocks, 0);
+}
+
+TEST(TubeDesignerNesting, TinyLaterPriorityRetainsSearchTimeAfterALargeFastProvenBatch)
+{
+    SNestingPart _High{"skew-high", "skew-search-profile", 100.0, 10000};
+    SNestingPart _Low{"skew-low", "skew-search-profile", 5.0, 1};
+    _Low.Priority = 1;
+    const std::vector<SNestingPart> _Parts{_High, _Low};
+    const std::vector<SNestingStock> _Stocks{{"skew-stock", "skew-search-profile", 1000.0, -1}};
+    const auto _Started = std::chrono::steady_clock::now();
+    const auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 0,
+        SNestingSearchOptions{ENestingOptimizationMode::Time, 5}, 1);
+    const auto _Elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - _Started).count();
+    CheckAccounting(_Result, _Parts, _Stocks, 0);
+    EXPECT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+    bool _LowPlaced = false;
+    for (const auto& _Plan : _Result.at("plans").To<VariantArray>())
+        for (const auto& _Placement : _Plan.To<ObjectMap>().at("placements").To<VariantArray>())
+            _LowPlaced = _LowPlaced || _Placement.To<ObjectMap>().at("partId").To<std::string>() == _Low.ID;
+    EXPECT_TRUE(_LowPlaced);
+    const auto _Search = _Result.at("search").To<ObjectMap>();
+    EXPECT_EQ(_Search.at("stageCount").To<unsigned long long>(), 3u);
+    EXPECT_LE(_Search.at("allocatedSearchMilliseconds").To<unsigned long long>(), 5000u);
+    std::cout << "SEARCH_STRATEGY_SKEW_RESULT seconds=" << _Elapsed
+        << " placed=" << _Result.at("metrics").To<ObjectMap>().at("placedPartCount").To<unsigned long long>() << '\n';
 }

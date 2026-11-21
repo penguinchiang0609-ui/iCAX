@@ -1,0 +1,736 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="AB 长嘴切割头">
+  <link name="刀头安装基准" />
+  <joint name="ab_head_mount" type="fixed">
+    <parent link="刀头安装基准" />
+    <child link="AB 刀头安装座" />
+    <origin xyz="0.00299999862909317 0.0 -0.8994999676942825" />
+  </joint>
+  <link name="AB 刀头安装座">
+    <visual name="ab_ram_saddle">
+      <geometry>
+        <mesh filename="meshes/ab_ram_saddle.stl" />
+      </geometry>
+      <material name="ab_ram_saddle_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_ram_saddle_box">
+      <origin xyz="0 -0.065 0.181" />
+      <geometry>
+        <box size="0.17 0.23 0.025" />
+      </geometry>
+    </collision>
+    <visual name="ab_fixed_mount">
+      <geometry>
+        <mesh filename="meshes/ab_fixed_mount.stl" />
+      </geometry>
+      <material name="ab_fixed_mount_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_fixed_mount_box">
+      <origin xyz="0 -0.145 0.115" />
+      <geometry>
+        <box size="0.12 0.085 0.13" />
+      </geometry>
+    </collision>
+    <visual name="ab_B_mount_flange">
+      <geometry>
+        <mesh filename="meshes/ab_B_mount_flange.stl" />
+      </geometry>
+      <material name="ab_B_mount_flange_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_mount_flange_box">
+      <origin xyz="0 -0.205 0" />
+      <geometry>
+        <box size="0.19 0.018 0.19" />
+      </geometry>
+    </collision>
+    <visual name="ab_B_stator">
+      <geometry>
+        <mesh filename="meshes/ab_B_stator.stl" />
+      </geometry>
+      <material name="ab_B_stator_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_stator_box">
+      <origin xyz="0 -0.149 0" />
+      <geometry>
+        <box size="0.154 0.11 0.154" />
+      </geometry>
+    </collision>
+    <visual name="ab_B_rear_cap">
+      <geometry>
+        <mesh filename="meshes/ab_B_rear_cap.stl" />
+      </geometry>
+      <material name="ab_B_rear_cap_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_rear_cap_box">
+      <origin xyz="0 -0.212 0" />
+      <geometry>
+        <box size="0.132 0.018 0.132" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_0">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_0.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_0_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_0_box">
+      <origin xyz="0.082 -0.218 0" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_1">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_1.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_1_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_1_box">
+      <origin xyz="0.041 -0.218 0.071014083110324" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_2">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_2.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_2_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_2_box">
+      <origin xyz="-0.041 -0.218 0.071014083110324" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_3">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_3.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_3_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_3_box">
+      <origin xyz="-0.082 -0.218 1.00421037530083e-17" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_4">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_4.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_4_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_4_box">
+      <origin xyz="-0.041 -0.218 -0.071014083110324" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_flange_bolt_5">
+      <geometry>
+        <mesh filename="meshes/ab_flange_bolt_5.stl" />
+      </geometry>
+      <material name="ab_flange_bolt_5_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_flange_bolt_5_box">
+      <origin xyz="0.041 -0.218 -0.071014083110324" />
+      <geometry>
+        <box size="0.009 0.006 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_B_connector">
+      <geometry>
+        <mesh filename="meshes/ab_B_connector.stl" />
+      </geometry>
+      <material name="ab_B_connector_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_connector_box">
+      <origin xyz="0 -0.15 0.084" />
+      <geometry>
+        <box size="0.05 0.042 0.022" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="B 回转叉架">
+    <visual name="ab_B_shaft">
+      <geometry>
+        <mesh filename="meshes/ab_B_shaft.stl" />
+      </geometry>
+      <material name="ab_B_shaft_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_shaft_box">
+      <origin xyz="0 -0.082 0" />
+      <geometry>
+        <box size="0.072 0.065 0.072" />
+      </geometry>
+    </collision>
+    <visual name="ab_B_rotor">
+      <geometry>
+        <mesh filename="meshes/ab_B_rotor.stl" />
+      </geometry>
+      <material name="ab_B_rotor_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_B_rotor_box">
+      <origin xyz="0 -0.045 0" />
+      <geometry>
+        <box size="0.142 0.042 0.142" />
+      </geometry>
+    </collision>
+    <visual name="ab_shoulder">
+      <geometry>
+        <mesh filename="meshes/ab_shoulder.stl" />
+      </geometry>
+      <material name="ab_shoulder_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_shoulder_box">
+      <origin xyz="0.067 -0.005 -0.004" />
+      <geometry>
+        <box size="0.2 0.075 0.14" />
+      </geometry>
+    </collision>
+    <visual name="ab_side_arm">
+      <geometry>
+        <mesh filename="meshes/ab_side_arm.stl" />
+      </geometry>
+      <material name="ab_side_arm_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_side_arm_box">
+      <origin xyz="0.145 0.055 -0.0325" />
+      <geometry>
+        <box size="0.072 0.19 0.155" />
+      </geometry>
+    </collision>
+    <visual name="ab_A_bearing">
+      <geometry>
+        <mesh filename="meshes/ab_A_bearing.stl" />
+      </geometry>
+      <material name="ab_A_bearing_finish">
+        <color rgba="0.13 0.17 0.21 1" />
+      </material>
+    </visual>
+    <collision name="ab_A_bearing_box">
+      <origin xyz="0.135 0.14 -0.0750000041723251" />
+      <geometry>
+        <box size="0.065 0.132 0.132" />
+      </geometry>
+    </collision>
+    <visual name="ab_A_motor">
+      <geometry>
+        <mesh filename="meshes/ab_A_motor.stl" />
+      </geometry>
+      <material name="ab_A_motor_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_A_motor_box">
+      <origin xyz="0.194 0.14 -0.0750000041723251" />
+      <geometry>
+        <box size="0.075 0.092 0.092" />
+      </geometry>
+    </collision>
+    <visual name="ab_A_motor_cap">
+      <geometry>
+        <mesh filename="meshes/ab_A_motor_cap.stl" />
+      </geometry>
+      <material name="ab_A_motor_cap_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_A_motor_cap_box">
+      <origin xyz="0.235 0.14 -0.0750000041723251" />
+      <geometry>
+        <box size="0.009 0.078 0.078" />
+      </geometry>
+    </collision>
+    <visual name="ab_A_connector">
+      <geometry>
+        <mesh filename="meshes/ab_A_connector.stl" />
+      </geometry>
+      <material name="ab_A_connector_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_A_connector_box">
+      <origin xyz="0.195 0.14 -0.018" />
+      <geometry>
+        <box size="0.032 0.05 0.018" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="B" type="revolute">
+    <parent link="AB 刀头安装座" />
+    <child link="B 回转叉架" />
+    <origin xyz="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-0.8726646259971648" upper="0.8726646259971648" velocity="1.5" effort="5000" />
+  </joint>
+  <link name="A 激光切割头">
+    <icax_tool name="GAB-3015 物理喷嘴" type="laser_cutting_head" tcp_mm="-3.26246023178101 0 -300.2" beam="0 0 -1" />
+    <visual name="laser_head_dark">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.08 0.11 0.14 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <visual name="laser_head_shell">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.79 0.82 0.84 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <visual name="laser_head_steel">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.54 0.61 0.65 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <visual name="laser_head_copper">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_copper.stl" />
+      </geometry>
+      <material name="copper">
+        <color rgba="0.78 0.46 0.19 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <visual name="laser_head_black">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.025 0.035 0.043 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <visual name="laser_head_teal">
+      <geometry>
+        <mesh filename="meshes/GAB-3015_laser_head_teal.stl" />
+      </geometry>
+      <material name="teal">
+        <color rgba="0.035 0.39 0.43 1" />
+      </material>
+      <origin xyz="-0.003262460231781006 0.0 0.0" />
+    </visual>
+    <collision name="laser_head_box_1">
+      <origin xyz="-0.00326246023178101 0 -0.015" />
+      <geometry>
+        <box size="0.185002 0.116002 0.120002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_2">
+      <origin xyz="-0.00326246023178101 0 -0.116500003635883" />
+      <geometry>
+        <box size="0.088002 0.088002 0.0830020072717667" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_3">
+      <origin xyz="-0.00326246023178101 0 -0.165699998915195" />
+      <geometry>
+        <box size="0.068002003695488 0.068002003695488 0.0306020021696091" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_upper_slab">
+      <origin xyz="-0.00326246023178101 0 -0.197" />
+      <geometry>
+        <box size="0.048002 0.048002 0.034002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5">
+      <origin xyz="0.015786039768219 0.025 0.0863198262304068" />
+      <geometry>
+        <box size="0.171905 0.090002 0.0963623475391865" />
+      </geometry>
+    </collision>
+    <visual name="ab_A_shaft">
+      <geometry>
+        <mesh filename="meshes/ab_A_shaft.stl" />
+      </geometry>
+      <material name="ab_A_shaft_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_A_shaft_box">
+      <origin xyz="0.101737539768219 0 0" />
+      <geometry>
+        <box size="0.065 0.066 0.066" />
+      </geometry>
+    </collision>
+    <visual name="ab_tool_mount">
+      <geometry>
+        <mesh filename="meshes/ab_tool_mount.stl" />
+      </geometry>
+      <material name="ab_tool_mount_finish">
+        <color rgba="0.52 0.57 0.63 1" />
+      </material>
+    </visual>
+    <collision name="ab_tool_mount_box">
+      <origin xyz="0.096737539768219 0 0.015" />
+      <geometry>
+        <box size="0.018 0.12 0.17" />
+      </geometry>
+    </collision>
+    <visual name="ab_tool_bolt_-0.041_-0.045">
+      <geometry>
+        <mesh filename="meshes/ab_tool_bolt_-0.041_-0.045.stl" />
+      </geometry>
+      <material name="ab_tool_bolt_-0.041_-0.045_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_tool_bolt_-0.041_-0.045_box">
+      <origin xyz="0.108737539768219 -0.041 -0.045" />
+      <geometry>
+        <box size="0.008 0.009 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_tool_bolt_-0.041_0.075">
+      <geometry>
+        <mesh filename="meshes/ab_tool_bolt_-0.041_0.075.stl" />
+      </geometry>
+      <material name="ab_tool_bolt_-0.041_0.075_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_tool_bolt_-0.041_0.075_box">
+      <origin xyz="0.108737539768219 -0.041 0.075" />
+      <geometry>
+        <box size="0.008 0.009 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_tool_bolt_0.041_-0.045">
+      <geometry>
+        <mesh filename="meshes/ab_tool_bolt_0.041_-0.045.stl" />
+      </geometry>
+      <material name="ab_tool_bolt_0.041_-0.045_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_tool_bolt_0.041_-0.045_box">
+      <origin xyz="0.108737539768219 0.041 -0.045" />
+      <geometry>
+        <box size="0.008 0.009 0.009" />
+      </geometry>
+    </collision>
+    <visual name="ab_tool_bolt_0.041_0.075">
+      <geometry>
+        <mesh filename="meshes/ab_tool_bolt_0.041_0.075.stl" />
+      </geometry>
+      <material name="ab_tool_bolt_0.041_0.075_finish">
+        <color rgba="0.055 0.07 0.085 1" />
+      </material>
+    </visual>
+    <collision name="ab_tool_bolt_0.041_0.075_box">
+      <origin xyz="0.108737539768219 0.041 0.075" />
+      <geometry>
+        <box size="0.008 0.009 0.009" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_01">
+      <origin xyz="-0.00326246023178101 0 -0.215" />
+      <geometry>
+        <box size="0.0140020004321337 0.0140020004321337 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_02">
+      <origin xyz="-0.00326246023178101 0 -0.217" />
+      <geometry>
+        <box size="0.0136996748406887 0.0136996748406887 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_03">
+      <origin xyz="-0.00326246023178101 0 -0.219" />
+      <geometry>
+        <box size="0.0133973492492437 0.0133973492492437 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_04">
+      <origin xyz="-0.00326246023178101 0 -0.221" />
+      <geometry>
+        <box size="0.0130950236577988 0.0130950236577988 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_05">
+      <origin xyz="-0.00326246023178101 0 -0.223" />
+      <geometry>
+        <box size="0.0127926980663538 0.0127926980663538 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_06">
+      <origin xyz="-0.00326246023178101 0 -0.225" />
+      <geometry>
+        <box size="0.0124903724749088 0.0124903724749088 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_07">
+      <origin xyz="-0.00326246023178101 0 -0.227" />
+      <geometry>
+        <box size="0.0121880468834639 0.0121880468834639 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_08">
+      <origin xyz="-0.00326246023178101 0 -0.229" />
+      <geometry>
+        <box size="0.0118857212920189 0.0118857212920189 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_09">
+      <origin xyz="-0.00326246023178101 0 -0.231" />
+      <geometry>
+        <box size="0.0115833957005739 0.0115833957005739 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_10">
+      <origin xyz="-0.00326246023178101 0 -0.233" />
+      <geometry>
+        <box size="0.011281070109129 0.011281070109129 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_11">
+      <origin xyz="-0.00326246023178101 0 -0.235" />
+      <geometry>
+        <box size="0.010978744517684 0.010978744517684 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_12">
+      <origin xyz="-0.00326246023178101 0 -0.237" />
+      <geometry>
+        <box size="0.010676418926239 0.010676418926239 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_13">
+      <origin xyz="-0.00326246023178101 0 -0.239" />
+      <geometry>
+        <box size="0.010374093334794 0.010374093334794 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_14">
+      <origin xyz="-0.00326246023178101 0 -0.241" />
+      <geometry>
+        <box size="0.0100717677433491 0.0100717677433491 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_15">
+      <origin xyz="-0.00326246023178101 0 -0.243" />
+      <geometry>
+        <box size="0.00976944215190411 0.00976944215190411 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_16">
+      <origin xyz="-0.00326246023178101 0 -0.245" />
+      <geometry>
+        <box size="0.00946711656045914 0.00946711656045914 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_17">
+      <origin xyz="-0.00326246023178101 0 -0.247" />
+      <geometry>
+        <box size="0.00916479096901417 0.00916479096901417 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_18">
+      <origin xyz="-0.00326246023178101 0 -0.249" />
+      <geometry>
+        <box size="0.0088624653775692 0.0088624653775692 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_19">
+      <origin xyz="-0.00326246023178101 0 -0.251" />
+      <geometry>
+        <box size="0.00856013978612423 0.00856013978612423 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_20">
+      <origin xyz="-0.00326246023178101 0 -0.253" />
+      <geometry>
+        <box size="0.00825781419467926 0.00825781419467926 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_21">
+      <origin xyz="-0.00326246023178101 0 -0.255" />
+      <geometry>
+        <box size="0.00795548860323429 0.00795548860323429 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_22">
+      <origin xyz="-0.00326246023178101 0 -0.257" />
+      <geometry>
+        <box size="0.00765316301178932 0.00765316301178932 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_23">
+      <origin xyz="-0.00326246023178101 0 -0.259" />
+      <geometry>
+        <box size="0.00735083742034435 0.00735083742034435 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_24">
+      <origin xyz="-0.00326246023178101 0 -0.261" />
+      <geometry>
+        <box size="0.00704851182889938 0.00704851182889938 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_25">
+      <origin xyz="-0.00326246023178101 0 -0.263" />
+      <geometry>
+        <box size="0.00674618623745441 0.00674618623745441 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_26">
+      <origin xyz="-0.00326246023178101 0 -0.265" />
+      <geometry>
+        <box size="0.00644386064600944 0.00644386064600944 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_27">
+      <origin xyz="-0.00326246023178101 0 -0.267" />
+      <geometry>
+        <box size="0.00614153505456447 0.00614153505456447 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_28">
+      <origin xyz="-0.00326246023178101 0 -0.269" />
+      <geometry>
+        <box size="0.0058392094631195 0.0058392094631195 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_29">
+      <origin xyz="-0.00326246023178101 0 -0.271" />
+      <geometry>
+        <box size="0.00553688387167454 0.00553688387167454 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_30">
+      <origin xyz="-0.00326246023178101 0 -0.273" />
+      <geometry>
+        <box size="0.00523455828022957 0.00523455828022957 0.00200199999999995" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_31">
+      <origin xyz="-0.00326246023178101 0 -0.275" />
+      <geometry>
+        <box size="0.0049322326887846 0.0049322326887846 0.00200200000000006" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_32">
+      <origin xyz="-0.00326246023178101 0 -0.277" />
+      <geometry>
+        <box size="0.00462990709733963 0.00462990709733963 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_33">
+      <origin xyz="-0.00326246023178101 0 -0.279" />
+      <geometry>
+        <box size="0.00432758150589466 0.00432758150589466 0.00200199999999995" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_34">
+      <origin xyz="-0.00326246023178101 0 -0.281" />
+      <geometry>
+        <box size="0.00402525591444969 0.00402525591444969 0.00200200000000006" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_35">
+      <origin xyz="-0.00326246023178101 0 -0.283" />
+      <geometry>
+        <box size="0.00372293032300472 0.00372293032300472 0.00200199999999995" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_36">
+      <origin xyz="-0.00326246023178101 0 -0.285" />
+      <geometry>
+        <box size="0.00342060473155976 0.00342060473155976 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_37">
+      <origin xyz="-0.00326246023178101 0 -0.287" />
+      <geometry>
+        <box size="0.00311827914011479 0.00311827914011479 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_38">
+      <origin xyz="-0.00326246023178101 0 -0.289" />
+      <geometry>
+        <box size="0.00281595354866982 0.00281595354866982 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_39">
+      <origin xyz="-0.00326246023178101 0 -0.291" />
+      <geometry>
+        <box size="0.00251362795722485 0.00251362795722485 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_40">
+      <origin xyz="-0.00326246023178101 0 -0.293" />
+      <geometry>
+        <box size="0.00221130236577988 0.00221130236577988 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_41">
+      <origin xyz="-0.00326246023178101 0 -0.295" />
+      <geometry>
+        <box size="0.00190897677433491 0.00190897677433491 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_42">
+      <origin xyz="-0.00326246023178101 0 -0.297" />
+      <geometry>
+        <box size="0.00160665118288994 0.00160665118288994 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_nozzle_tip_slab_43">
+      <origin xyz="-0.00326246023178101 0 -0.299" />
+      <geometry>
+        <box size="0.00130432559144497 0.00130432559144497 0.002002" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="A" type="revolute">
+    <parent link="B 回转叉架" />
+    <child link="A 激光切割头" />
+    <origin xyz="0.00326246023178101 0.14 -0.0750000041723251" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.8028514559173916" upper="0.8726646259971648" velocity="1.5" effort="5000" />
+  </joint>
+</robot>

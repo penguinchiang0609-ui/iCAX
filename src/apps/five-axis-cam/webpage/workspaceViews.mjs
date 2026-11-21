@@ -18,9 +18,10 @@ import { renderWorkpieces } from './workpieceSelection.mjs';
 import { renderCutParameters, renderCollisionPoseEditor } from './cutParameters.mjs';
 import { renderCutTreeTools, renderCutTree, orderedCuts } from './cutTree.mjs';
 import { renderOrdering, renderOrderMenu, orderingPreview } from './toolpathOrdering.mjs';
-import { renderRapid, renderRapidTree, rapidKinds } from './rapidPlanning.mjs';
+import { renderRapid, renderRapidTree, renderRapidParameters, rapidKinds } from './rapidPlanning.mjs';
 import {rapidListModel} from './rapidListModel.mjs';
 import {rapidDefaultStrategy,renderRapidSafety} from './rapidDefaultStrategy.mjs';
+import {renderHeadWorkspaceList,renderHeadWorkspaceParameters} from './cuttingHeadWorkspace.mjs';
 import { renderSimulation,renderCollisionCheck,renderHeadSettings } from './trajectorySimulation.mjs';
 import {renderMachineLeft,renderMachineRight,renderMachineDock,renderMachineDefinitionManager} from './machineSimulation.mjs';
 import {camMachinePlayback} from './machinePlaybackContext.mjs';
@@ -51,10 +52,13 @@ import { renderFixtureEditor, renderFixtureList } from './fixtureViews.mjs';
 import { fixtures } from './fixtureActions.mjs';
 import {renderPreparationTree,renderWorkpieceParameters} from './preparationTree.mjs';
 import {preparationKind} from './workspaceModel.mjs';
-import {enabledWorkpiecesOnly} from './workpieceState.mjs';
+import {enabledWorkpiecesOnly,activeWorkpiece} from './workpieceState.mjs';
 import {camPreparationReason} from './workflow.mjs';
 import {commandAvailability} from './commandAvailability.mjs';
-import {camPage,renderCamInspectorTabs,renderProcessTabs} from './camWorkspace.mjs';
+import {camPage,renderCamInspectorTabs,renderProcessTabs,renderCamContext} from './camWorkspace.mjs';
+import {camPathKind} from './workspaceModel.mjs';
+import {renderCollisionPaths} from './collisionWorkspace.mjs';
+import {renderOperationList,renderOperationParameters} from './operationWorkspace.mjs';
 function availableOpen(view,id,label){
   const command=`five.tool.${id}`,state=commandAvailability(view,command);
   return button(command,label||TOOLS[id].title,state?.disabled?`disabled title="${attr(state.unavailableReason)}"`:'');
@@ -63,15 +67,23 @@ function treeGroup(id, title, rows, count) {
   return `<section class="five-tree-group" data-five-key="tree-${id}"><h3>${esc(title)}<span>${esc(count)}</span></h3><div class="five-tree-rows" data-five-key="rows-${id}">${rows}</div></section>`;
 }
 function renderRapidTools(view){
-  const tools=[['five.tool.settings','空移策略参数','parameters'],['five.tool.generate','更新刀路与空移','regenerate']];
+  const tools=[['five.tool.settings','生成参数','parameters'],['five.tool.generate','更新刀路与空移','regenerate']];
   const strategy=rapidDefaultStrategy(view);
   return `<div class="five-cut-tree-tools five-rapid-tools" role="toolbar" aria-label="空移管理">${tools.map(([id,title,icon])=>`<button type="button" data-five-key="${id}" data-five-command="${id}" title="${title}" aria-label="${title}" ${view.pending||view.fiveRapid?.request?'disabled':''}>${renderRibbonCommandIcon(icon)}</button>`).join('')}<select data-five-default-strategy aria-label="当前空移策略" title="选择下次生成使用的空移策略；点击更新刀路与空移后生效" ${view.pending||view.fiveRapid?.request?'disabled':''}>${rapidKinds.map(([id,title])=>`<option value="${id}" ${strategy===id?'selected':''}>${title}</option>`).join('')}</select>${renderRapidSafety(view)}</div>`;
 }
 export function renderLeft(context, view) {
+  return renderCamContext(view,view.fiveAxisArea)+renderLeftContent(context,view);
+}
+function renderLeftContent(context, view) {
+  if(view.fiveAxisArea==='toolpath'&&camPage(view)==='head')return renderHeadWorkspaceList(view);
   if(view.fiveAxisArea==='simulation')return renderMachineLeft(view);
   if(view.fiveAxisArea==='workpiece')return renderPreparationTree(view);
-  if(['toolpath','simulation'].includes(view.fiveAxisArea)&&camPreparationReason(view))return `${renderWorkpieces(view,true)}${renderSetupSelector(view)}${section('cam-preparation',view.fiveAxisArea==='simulation'?'孪生准备':'CAM 准备',hint(camPreparationReason(view))+button('five.area.workpiece','前往工件页'))}`;
-  if(enabledWorkpiecesOnly(view)&&!view.scene?.model?.isLoaded)return `${renderWorkpieces(view,true)}<div class="five-empty-row" data-five-key="no-enabled-workpiece">暂无已启用工件</div><div class="five-tree-footer">${button('five.area.workpiece','前往工件页')}</div>`;
+  if(view.fiveAxisArea==='operation')return renderOperationList(view);
+  if(['toolpath','simulation'].includes(view.fiveAxisArea)&&camPreparationReason(view)){
+    const workpiece=activeWorkpiece(view),area=!workpiece?.geometryRef?.url||workpiece.enabled===false?'workpiece':'operation';
+    return `${view.fiveAxisArea==='toolpath'?'':renderWorkpieces(view,true)+renderSetupSelector(view)}${section('cam-preparation',view.fiveAxisArea==='simulation'?'孪生准备':'刀路准备',hint(camPreparationReason(view))+button('five.area.'+area,area==='operation'?'前往工序页':'前往工件页'))}`;
+  }
+  if(enabledWorkpiecesOnly(view)&&!view.scene?.model?.isLoaded)return `${view.fiveAxisArea==='toolpath'?'':renderWorkpieces(view,true)}<div class="five-empty-row" data-five-key="no-enabled-workpiece">暂无已启用工件</div><div class="five-tree-footer">${button('five.area.workpiece','前往工件页')}</div>`;
   const state = workspaceState(view), items = sceneItems(view), search = state.search.toLocaleLowerCase();
   const name = item => item.name || item.label || item.sourcePath?.split(/[\\/]/).at(-1) || item.entityId || item.id || '未命名对象';
   const rows = (values, kind) => values.filter(item => name(item).toLocaleLowerCase().includes(search)).map(item => {
@@ -83,6 +95,7 @@ export function renderLeft(context, view) {
   const generated=orderingPreview(view,generatedGeometry(view)), orderedView=['generate','manual-order','auto-order','simulation'].includes(activeTool(view));
   const definitions = treeGroup('intents', '加工任务', rows(items.intents, 'intent'), items.intents.length);
   if (view.fiveAxisArea==='toolpath') {
+    if(camPage(view)==='collision')return renderCollisionPaths(view);
     const mode=camPage(view),rapid=mode==='rapid';
     const heading=`<header class="five-cam-list-heading" data-five-key="cam-list-heading"><strong>${rapid?'空移连接':mode==='order'?'加工顺序':'刀路列表'}</strong><span>${rapid?rapidListModel(view).transitions.length:items.intents.length} ${rapid?'段':'条'}</span></header>`;
     const searchBox=`<label class="five-search" data-five-key="cam-search"><input data-five-search data-five-key="cam-search-input" aria-label="查找刀路" value="${attr(state.search)}" placeholder="名称 / 序号 / 固定编号"></label>`;
@@ -95,7 +108,7 @@ export function renderLeft(context, view) {
     ${treeGroup('machines', '机床', rows(items.machines, 'machine'), items.machines.length)}
     ${treeGroup('fixtures', '工装', renderFixtureList(view), fixtures(view).length)}
     ${section('setup', '坐标与定位', facts([['编程坐标', selectedPlacement(view)?.applicationMode === 'AppliedInCAM' ? '已建立' : '待建立'], ['实测校准', selectedPlacement(view)?.registrationMethod === 'PairedPoints' ? '已应用' : '尚未应用'], ['现场定位计划', '尚未建立']]))}
-    ${section('tree-results', '加工状态', facts([['切割定义', `${items.intents.length} 项`], ['完整刀路', '尚未生成'], ['整机验证', '未验证']]) + open('generate', '查看 CAM 任务 →'))}
+    ${section('tree-results', '加工状态', facts([['切割定义', `${items.intents.length} 项`], ['完整刀路', '尚未生成'], ['整机验证', '未验证']]) + open('generate', '查看刀路任务 →'))}
     <div class="five-tree-footer" data-five-key="tree-footer">${button('five.refresh', '刷新', view.pending ? 'disabled' : '')}</div>`;
 }
 function poseEditor(d) {
@@ -124,9 +137,9 @@ function operationEditor(id, d, context, view) {
       + section('output-profile', '程序配置', facts([['目标设备', '尚未确认'], ['后处理', '尚未选择'], ['实际文件重放', '尚未执行']]))
       + section('output-package', '交付内容', steps(['设备加工程序', '装夹与定位计划 / 已应用定位记录', '工艺摘要、验证报告与输出记录']))
       + `<div class="five-apply" data-five-key="output-apply">${button('five.export', '生成程序并重放', 'class="five-primary" disabled')}<span>查看下方检查项，当前尚不具备输出资格</span></div>`;
-    case 'manual': return section('manual-flow', '按加工任务组织操作', steps(['工件：导入模型、缩放和重设自身坐标系', '工件树：建立装夹、摆放、准备三点定位资料和夹具单元', 'CAM：刀路提取、工艺设置和切割头轨迹仿真', '孪生：真实机型的数字孪生与整机验证', 'CAM：准备现场定位并导出加工程序']))
+    case 'manual': return section('manual-flow', '按加工任务组织操作', steps(['工件：导入模型、缩放和重设自身坐标系', '工序：选择工件、机型、摆放姿态并准备定位与工装', '刀路：提取、工艺设置和轨迹播放预览', '孪生：真实机型的数字孪生与整机验证', '刀路：准备现场定位并导出加工程序']))
       + section('manual-files', '工程文件', hint('新建、打开、保存和另存为统一使用 iCAX 的文件入口。'))
-      + section('manual-registration', '坐标与定位', hint('工件页设置自身几何坐标；工件树的装夹保存本次姿态和三点定位资料。现场测量对应三点求机床变换，不在 CAM 设置加工零点。'));
+      + section('manual-registration', '坐标与定位', hint('工件页设置自身几何坐标；每道工序保存本次装夹姿态和三点定位资料。现场测量对应三点求机床变换，不在刀路页设置加工零点。'));
     case 'diagnostics': return section('diagnostics', '诊断范围', facts([['工程', context.project?.projectName || '未命名'], ['最近错误', view.error || '无']]) + disabled('导出诊断包'));
     case 'logs': return section('logs', '运行日志', hint('实时记录显示在窗口底部的公共日志区。') + facts([['日期筛选', '待接入'], ['详细级别 / 消息类别', '待接入']]) + open('diagnostics', '查看诊断导出'));
     case 'about': return section('about', '产品信息', facts([['产品', '三维五轴 CAM'], ['界面版本', '0.1 · 操作逻辑预览'], ['框架', 'iCAX AppShell / CAM 工作台']]) + hint('参考 FACAM 汽车覆盖件版的操作逻辑；工程格式、参数语义和设备接口由本产品定义。'));
@@ -134,16 +147,20 @@ function operationEditor(id, d, context, view) {
   }
 }
 export function renderRight(context,view){
-  if(view.fiveAxisArea==='toolpath'&&camPreparationReason(view))return section('cam-preparation-state','当前装夹',hint(camPreparationReason(view)));
+  if(view.fiveAxisArea==='toolpath'&&camPage(view)==='head')return renderHeadWorkspaceParameters(view);
+  if(view.fiveAxisArea==='toolpath'&&camPreparationReason(view))return section('cam-preparation-state','当前工序',hint(camPreparationReason(view)));
   if(view.fiveAxisArea==='simulation')return renderMachineRight(view);
   if(enabledWorkpiecesOnly(view)&&!view.scene?.model?.isLoaded)return '';
-  if(view.fiveAxisArea==='workpiece'){
-    const kind=preparationKind(view);
-    if(kind==='workpiece')return renderWorkpieceParameters(view);
-    if(kind==='unit')return renderFixtureEditor(view);
-    return activeTool(view)==='registration'&&view.fiveLocatingOpen!==false?renderLocating(view):renderTransformParameters(view);
+  if(view.fiveAxisArea==='workpiece')return renderWorkpieceParameters(view);
+  if(view.fiveAxisArea==='operation'){
+    const reference=renderOperationParameters(view),kind=preparationKind(view);
+    if(activeTool(view)==='machine-type'||!view.scene?.domain?.activeSetupId)return reference;
+    if(kind==='unit')return reference+renderFixtureEditor(view);
+    if(activeTool(view)==='setup')return reference+renderSetupManager(view);
+    return reference+(activeTool(view)==='registration'&&view.fiveLocatingOpen!==false?renderLocating(view):renderTransformParameters(view));
   }
-  if(view.fiveAxisArea==='toolpath'&&view.fiveCamPage==='rapid')return renderCamInspectorTabs(view)+(view.fiveCamInspector==='collision'?renderCollisionCheck(view)+renderRapidPathEditor(view,view.pending):`<div class="five-cam-operation-panel" data-five-key="cam-rapid-operation">${renderRapid(view,true)}</div>`);
+  if(view.fiveAxisArea==='toolpath'&&camPage(view)==='collision')return renderCollisionCheck(view)+(camPathKind(view)==='rapid'?renderRapidPathEditor(view,view.pending||!view.fiveRapid?.id):renderCollisionPoseEditor(view));
+  if(view.fiveAxisArea==='toolpath'&&view.fiveCamPage==='rapid')return renderCamInspectorTabs(view)+(view.fiveCamInspector==='collision'?renderCollisionCheck(view)+renderRapidPathEditor(view,view.pending):`<div class="five-cam-operation-panel" data-five-key="cam-rapid-operation">${view.fiveRapid?.settings?renderRapidParameters(view):renderRapid(view,true)}</div>`);
   if(view.fiveAxisArea==='toolpath'&&camPage(view)==='process'){
     const tab=view.fiveCamProcessTab||'parameters';
     const editor=renderToolEditor(context,view);
@@ -194,7 +211,7 @@ export function renderSummary(context, view) {
 function renderSceneLegend(view){
   const item=(kind,title,color)=>`<span><i class="${kind}" style="--five-legend-color:${sceneColorCss(color)}" aria-hidden="true"></i>${title}</span>`;
   if(camMachinePlayback(view))return `<div class="five-legend" data-five-key="legend">${item('cut','已切割',sceneColors.simulationCut)}${item('rapid','已空移',sceneColors.simulationRapid)}</div>`;
-  const axes=view.fiveCamPage!=='rapid'&&view.fiveToolAxisDisplay?.visible!==false;
+  const axes=camPathKind(view)!=='rapid'&&view.fiveToolAxisDisplay?.visible!==false;
   const marking=view.scene?.intentToolpaths?.some(c=>c.enabled!==false&&c.machiningKind==='Mark');
   const layered=!!view.scene?.domain?.layers;
   const original=!layered&&currentCompensation(view).length>0?item('cut','原刀路',sceneColors.original):'';
@@ -203,6 +220,7 @@ function renderSceneLegend(view){
   return `<div class="five-legend" data-five-key="legend" style="--five-legend-text:${sceneColorCss(sceneColors.reference)}">${paths}${marking?item('mark','刻线',sceneColors.cutting):''}${item('selected','选中',sceneColors.selected)}${axes?item('axis','刀轴',sceneColors.toolAxis)+item('reference','法向参考',sceneColors.reference):''}${item('rapid','空移',sceneColors.reference)}${simulation?item('cut','已切割',sceneColors.simulationCut)+item('rapid','已空移',sceneColors.simulationRapid)+item('cut','碰撞',sceneColors.collision):''}${item('stale','过期',sceneColors.stale)}</div>`;
 }
 export function renderOverlay(context, view) {
+  if(view.fiveAxisArea==='toolpath'&&camPage(view)==='head')return renderHeadSettings(view)+renderJobExecution(view);
   const pendingTitle=pendingFeedbackTitle(context,view);
   if (view.fiveAxisImportActive) return '';
   if(enabledWorkpiecesOnly(view)&&!view.scene?.model?.isLoaded&&!activeTool(view).startsWith('machine-'))return '';
@@ -213,14 +231,14 @@ export function renderOverlay(context, view) {
   // layer rather than a movable viewport editor or its remembered position.
   const orderStatus=area==='toolpath'&&camPage(view)==='order'?renderOrdering(view):'';
   const sidebarOperation=area==='toolpath'&&['rapid','process','order'].includes(camPage(view));
-  const dialog=!sidebarOperation&&id!=='registration'&&editor.startsWith('<div class="five-position-dialog"')?id==='generate'
+  const dialog=(!sidebarOperation||id==='settings')&&id!=='registration'&&editor.startsWith('<div class="five-position-dialog"')?id==='generate'
     ?`<div class="cam-progress-backdrop" data-five-key="generation-modal">${editor.replace('class="five-position-dialog"','class="five-position-dialog five-centered-operation-dialog"')}</div>`
     :editor.replace('class="five-position-dialog"',`class="five-position-dialog five-floating-dialog" data-five-floating="${id}" ${floatingDialogStyle(view,id)}`).replace('class="five-position-title"','class="five-position-title" data-five-dialog-drag'):'';
   const poseHint=activeTool(view)==='keypoint'?`<div class="five-point-scene-hint" data-five-key="point-scene-hint" role="status">${view.fivePoseSelection?.active?'姿态选择中 · 点击紫色箭头 · 右键拖动旋转 / 中键拖动平移 / 滚轮缩放 · Esc 退出':view.fiveAxisPointInsert?'连续新增关键点 · 点击刀路依次添加并自动保存 · 再次点击按钮或 Esc 退出':view.fiveAxisPointDelete?'连续删除关键点 · 点击手动关键点依次删除并自动保存 · 系统关键点不可删除 · 再次点击按钮或 Esc 退出':'点选关键点后拖动旋转环 · 点环可输入角度'}</div>`:'';
-  const poseControls=area==='toolpath'&&!camMachinePlayback(view)&&view.fiveCamPage!=='rapid'?`<div class="five-pose-controls" data-five-key="pose-display" role="group" aria-label="姿态显示">${renderToolAxisDisplayControl(view)}</div>${poseHint?`<div class="five-pose-dock" data-five-key="pose-dock">${poseHint}</div>`:''}`:'';
+  const poseControls=area==='toolpath'&&!camMachinePlayback(view)&&camPathKind(view)!=='rapid'?`<div class="five-pose-controls" data-five-key="pose-display" role="group" aria-label="姿态显示">${renderToolAxisDisplayControl(view)}</div>${poseHint?`<div class="five-pose-dock" data-five-key="pose-dock">${poseHint}</div>`:''}`:'';
   return `${renderMachinePlanIssue(view)}${renderHeadSettings(view)}${renderMachineDefinitionManager(view)}${renderJobExecution(view)}${renderFixtureLibrary(view)}${dialog}${orderStatus}${activeTool(view)==='leads'&&!view.fiveAxisLeadsOpen?`<div class="five-lead-tool-hint five-point-scene-hint" data-five-key="lead-tool-hint" role="status">${view.fiveLeads?.saving?'正在应用引线…':esc(view.error||'连续设置引线 · 点击切割刀路应用 · 再次点击引线或 Esc 退出')}${view.fiveLeads?.request&&!view.fiveLeads.saving?button('five.leads.retry','重试'):''}</div>`:''}${renderFixturePlateEditor(view)}${renderFixtureBreakdown(view)}${renderAlignmentHint(view)}${renderOrderMenu(view)}${renderCutStarting(view)}${placementTools.includes(activeTool(view))?renderPlacement(view):''}${renderMachineColliderHud(view)}${renderMachineIKTransform(view)}${renderFixturePlacement(view)}${renderToolAxisPointRotation(view)}${renderRapidPathTransform(view)}${poseControls}
     ${renderPathTransform(view)}${camMachinePlayback(view)?'':renderToolpathLayers(view)}${area==='toolpath'&&!camMachinePlayback(view)?button('five.display.numbers',`序号：${workspaceState(view).showPathNumbers!==false?'显示':'隐藏'}`,`class="five-path-number-toggle" data-five-key="path-number-toggle" aria-label="刀路序号" aria-pressed="${workspaceState(view).showPathNumbers!==false}" title="显示或隐藏场景中的刀路序号"`):''}
-    ${twin ? `` : !hasGeometry ? `<div class="five-start-card" data-five-key="start-card"><svg viewBox="0 0 180 115" aria-hidden="true"><path d="M24 76 90 106 156 76 90 46zM24 76V35l66-27 66 27v41M90 106V65M24 35l66 30 66-30"/></svg><span class="five-eyebrow">导入加工</span><h2>从工件与装夹开始</h2><p>导入已有模型，选择装夹姿态后进入 CAM 编程。</p>${button('workpiece.import', '导入模型', view.pending ? 'disabled' : '')}<small>STEP / STP / IGES / IGS</small></div>` : ''}
+    ${twin ? `` : !hasGeometry ? `<div class="five-start-card" data-five-key="start-card"><svg viewBox="0 0 180 115" aria-hidden="true"><path d="M24 76 90 106 156 76 90 46zM24 76V35l66-27 66 27v41M90 106V65M24 35l66 30 66-30"/></svg><span class="five-eyebrow">导入加工</span><h2>从工件开始建立工序</h2><p>导入工件，在工序页选择机型并摆放，再进入刀路编程。</p>${button('workpiece.import', '导入模型', view.pending ? 'disabled' : '')}<small>STEP / STP / IGES / IGS</small></div>` : ''}
     ${area === 'toolpath' ? renderSceneLegend(view) : ''}${renderBlockingOperation(view)}
     ${pendingTitle && !view.error && !(activeTool(view)==='fixture'&&view.fiveFixtureDesignOpen) && !view.fivePlacement?.open && !view.fiveSimulation?.checking && !view.fiveAxisStartOpen && !view.fiveAxisRegistrationOpen && !view.fiveAxisExtractionOpen && !view.fiveAxisSplitOpen && !view.fiveAxisHoleOpen && !view.fiveAxisLeadsOpen && !view.fiveAxisReverseOpen && !(activeTool(view)==='clear'&&view.fiveAxisClearOpen)&&!(activeTool(view)==='generate'&&view.fiveGenerationOpen)&&!(['manual-order','auto-order'].includes(activeTool(view))&&view.fiveOrder?.open) ? `<div class="five-feedback" data-five-key="feedback" role="status">${view.fiveAxisFixtureTask?.status === 'Running' ? `${esc(view.progress?.title)} ${button('five.fixture.cancel','取消')}` : esc(pendingTitle)}</div>` : ''}`;
 }
@@ -229,7 +247,7 @@ export function renderDock(context, view) {
   if(enabledWorkpiecesOnly(view)&&!view.scene?.model?.isLoaded)return '';
   const area = normalizeArea(context.activeRibbonTabId);
   if(activeTool(view)==='simulation')return renderSimulation(view);
-  if (area==='workpiece') return '';
+  if (['workpiece','operation'].includes(area)) return '';
   const state = workspaceState(view), issues = state.dock === 'issues';
   const items = sceneItems(view);
   return `<div class="five-dock-head" data-five-key="dock-head"><div role="group" aria-label="底部面板">${button('five.dock.sequence', '加工顺序', `aria-pressed="${!issues}"`)}${button('five.dock.issues', '检查与问题', `aria-pressed="${issues}"`)}</div><span>${issues ? '尚未形成验证报告' : '完整计划生成后显示实际加工顺序'}</span></div>

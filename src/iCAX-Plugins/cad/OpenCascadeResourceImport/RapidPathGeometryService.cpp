@@ -150,7 +150,8 @@ namespace
         const auto pose=[](const TravelPose& p){for(auto x:p.Point)if(!std::isfinite(x)||std::abs(x)>1e8)throw std::invalid_argument("TRAVEL_POINT_INVALID");if(!std::isfinite(Length(p.Direction))||std::abs(Length(p.Direction)-1)>1e-8)throw std::invalid_argument("TRAVEL_DIRECTION_INVALID");};
         pose(q.Start);pose(q.End);if(q.Waypoints.size()>2048)throw std::invalid_argument("RAPID_EDIT_POINT_LIMIT");for(const auto& p:q.Waypoints)pose(p);
         if(q.ConstructedManual&&(!q.Manual||!q.Waypoints.empty()))throw std::invalid_argument("RAPID_CONSTRUCTION_INPUT_INVALID");
-        for(double x:{q.FollowHeight,q.LiftHeight,q.Tolerance,q.LinearSpeed,q.LinearAcceleration,q.AngularSpeed,q.AngularAcceleration})if(!std::isfinite(x)||x<=0||x>1e6)throw std::invalid_argument("TRAVEL_PARAMETER_INVALID");
+        if(!std::isfinite(q.FollowHeight)||q.FollowHeight<0||q.FollowHeight>1e6)throw std::invalid_argument("TRAVEL_PARAMETER_INVALID");
+        for(double x:{q.LiftHeight,q.Tolerance,q.LinearSpeed,q.LinearAcceleration,q.AngularSpeed,q.AngularAcceleration})if(!std::isfinite(x)||x<=0||x>1e6)throw std::invalid_argument("TRAVEL_PARAMETER_INVALID");
         for(double x:q.LateralOffset)if(!std::isfinite(x)||std::abs(x)>1e6)throw std::invalid_argument("TRAVEL_PARAMETER_INVALID");
         if(q.TurnPoint){
             if(q.Kind!=RapidPathKind::Retract||(q.Manual&&!q.ConstructedManual)||std::any_of(q.LateralOffset.begin(),q.LateralOffset.end(),[](double x){return x!=0;}))throw std::invalid_argument("RAPID_TURN_POINT_CONSTRUCTION_INVALID");

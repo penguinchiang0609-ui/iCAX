@@ -97,7 +97,9 @@ export function getNestingInputSignature(view, context = null) {
     stocks: getNestingStockInputs(view, context).filter((stock) => keys.has(stock.profileKey))
       .map(({ id, profileKey, length, quantity }) => ({ id, profileKey, length, quantity }))
       .sort((a, b) => a.id.localeCompare(b.id)),
-    parameters: getNestingParameters(view, context),
+    // Search preferences affect the next optimization, not the validity of an
+    // already verified physical arrangement or its locked prefixes.
+    parameters: { partGap: getNestingParameters(view, context).partGap },
   });
 }
 
@@ -300,7 +302,8 @@ function decorateResult(result, view, inputSignature, solveRequest) {
   const profileOrdinals = new Map();
   return {
     ...result, inputSignature, solveRequest: structuredClone(solveRequest), generatedAt: new Date().toISOString(), unplaced,
-    status: unplaced.length ? (result.plans.length ? "partial" : "infeasible") : result.status,
+    status: unplaced.length ? (result.plans.length ? "partial"
+      : result.status === "no_solution_found" ? "no_solution_found" : "infeasible") : result.status,
     plans: result.plans.map((plan) => {
       const profile = profiles.get(plan.profileKey)?.profile || "截面未指定";
       const ordinal = (profileOrdinals.get(profile) ?? 0) + 1;
@@ -340,7 +343,8 @@ export async function handleNestingRibbonCommand(context, view, commandId, ops) 
     ops.renderProject(context, view);
     // Give the busy overlay a frame before requesting the native calculation.
     await new Promise((resolve) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(resolve) : resolve());
-    const notice = await context.sceneProxy.invoke("TubeDesigner.Nest", request, { timeoutMs: 180000 });
+    const notice = await context.sceneProxy.invoke("TubeDesigner.Nest", request,
+      { timeoutMs: Math.max(180000, request.parameters.searchTimeSeconds * 1000 + 180000) });
     if (inputSignature !== getNestingInputSignature(view, context)) {
       throw new Error("计算期间零件或设置已变化，请重新开始排样。");
     }
@@ -370,7 +374,9 @@ export async function handleNestingRibbonCommand(context, view, commandId, ops) 
     const placed = Number(response.metrics?.placedPartCount)
       || response.plans.reduce((sum, plan) => sum + plan.partCount, 0);
     const lockedCount = request.lockedPlanIds.length;
-    view.notice = `排样完成：${response.plans.length} 根母材，已排 ${placed} 件${missing ? `，未排 ${missing} 件，请查看下方未排原因` : "，全部排入"}${lockedCount ? `；已保留 ${lockedCount} 根锁定结果` : ""}。`;
+    view.notice = response.status === "no_solution_found"
+      ? "本次搜索暂未找到可行排法，可增加搜索时间后重试。"
+      : `排样完成：${response.plans.length} 根母材，已排 ${placed} 件${missing ? `，未排 ${missing} 件，请查看下方未排原因` : "，全部排入"}${lockedCount ? `；已保留 ${lockedCount} 根锁定结果` : ""}。`;
     ops.appendProjectLog?.(context, missing ? "warning" : "info", view.notice);
   } catch (error) {
     if (provisionalResult && view.tubeDesignerNestingResult === provisionalResult)

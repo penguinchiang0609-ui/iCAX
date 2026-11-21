@@ -19,6 +19,7 @@
     <ClInclude Include="TubeCadDocumentSDO.inc"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RecoveredPartDrawingFeatures.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingAdapter.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="NestingPairTableCache.inc"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingResultExporter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PartListXlsxExporter.h"><Filter>Header Files</Filter></ClInclude>

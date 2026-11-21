@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration><ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{1D820478-16D4-44A4-ADBE-EBC3B253C7EA}</ProjectGuid><RootNamespace>iPlaneCAM</RootNamespace><ProjectName>iPlaneCAM</ProjectName><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>DynamicLibrary</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet><UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries><UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
+  <ItemDefinitionGroup><ClCompile><PrecompiledHeader>NotUsing</PrecompiledHeader><LanguageStandard>stdcpp20</LanguageStandard><PreprocessorDefinitions>IPLANE_CAM_BUILD;NOMINMAX;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /wd4251 /bigobj %(AdditionalOptions)</AdditionalOptions><WarningLevel>Level3</WarningLevel></ClCompile><Link><SubSystem>Windows</SubSystem></Link></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="PlaneCAM.cpp"/><ClCompile Include="PlaneSDO.cpp"/><ClCompile Include="PlaneSceneBehaviour.cpp"/>
+    <ClCompile Include="PlaneDrawingSDO.cpp"/><ClCompile Include="PlanePartSDO.cpp"/><ClCompile Include="PlaneStockSDO.cpp"/>
+    <ClCompile Include="PlaneObjectSDO.cpp"/><ClCompile Include="PlaneNestingSDO.cpp"/><ClCompile Include="PlaneLayerSDO.cpp"/>
+    <ClCompile Include="PlaneCurveLogic.cpp"/><ClCompile Include="PlaneSketchSDO.cpp"/><ClCompile Include="PlaneEditTasks.cpp"/>
+    <ClCompile Include="PlaneArtworkLogic.cpp"/><ClCompile Include="PlaneMachiningLogic.cpp"/>
+    <ClCompile Include="PlaneTextSDO.cpp"/><ClCompile Include="PlaneImageSDO.cpp"/><ClCompile Include="PlaneMachiningSDO.cpp"/>
+    <ClInclude Include="PlaneCAM.h"/><ClInclude Include="PlaneGeometry.h"/><ClInclude Include="PlaneComponents.h"/>
+    <ClInclude Include="PlaneDomainInternal.h"/><ClInclude Include="PlaneSDODispatch.h"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj"/>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectFile\ProjectFile.vcxproj"/>
+    <ProjectReference Include="..\..\common\Transform\Transform.vcxproj"/>
+    <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj"/>
+    <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj"/>
+    <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj"/>
+    <ProjectReference Include="..\..\geometry\PlaneNestingServices\PlaneNestingServices.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
+    <ProjectReference Include="..\..\geometry\PlaneGeometryServices\PlaneGeometryServices.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

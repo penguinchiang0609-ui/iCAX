@@ -1,3 +1,4 @@
+import {camPathKind} from './workspaceModel.mjs';
 import {supportsToolAxis} from './toolAxisEligibility.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 
@@ -11,7 +12,7 @@ const before=(a,b)=>!b||a.distance<b.distance-1e-7||Math.abs(a.distance-b.distan
 // the tool direction. Selection never queries CAD or changes the camera.
 export function pickDisplayedToolAxis(view,event){
   const display=view.fiveToolAxisDisplay,viewport=view.viewport,camera=viewport?.camera,canvas=viewport?.renderer?.domElement;
-  if(!display?.visible||!display.group?.visible||!camera||!canvas||!Number.isFinite(event?.clientX)||!Number.isFinite(event?.clientY)||view.fiveAxisArea!=='toolpath'||view.fiveCamPage==='rapid')return null;
+  if(!display?.visible||!display.group?.visible||!camera||!canvas||!Number.isFinite(event?.clientX)||!Number.isFinite(event?.clientY)||view.fiveAxisArea!=='toolpath'||camPathKind(view)==='rapid')return null;
   const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height||event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)return null;
   const size=viewport.renderer.getSize(new THREE.Vector2()),scaleX=rect.width/Math.max(1,size.x),scaleY=rect.height/Math.max(1,size.y),pointer={x:(event.clientX-rect.left)/scaleX,y:(event.clientY-rect.top)/scaleY};
   const enabled=new Set((view.scene?.intentToolpaths||[]).filter(c=>c.enabled!==false&&supportsToolAxis(c)).map(c=>c.id)),mvp=new THREE.Matrix4();let best=null;

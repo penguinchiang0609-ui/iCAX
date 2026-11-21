@@ -8,6 +8,8 @@ import {fixtureTaskRequestOptions,queryFixtureTask} from './fixtureTaskRequests.
 import {faceSelectionList,selectedFaceOverlay} from './faceSelectionPresentation.mjs';
 import {focusSelectedFace} from './faceSelectionFocus.mjs';
 import {fixtureUnitDesign,loadFixtureCandidate,loadFixtureBreakdown} from './fixtureQueries.mjs';
+import {setupWorldFrame} from './setupWorldFrame.mjs';
+import {fixtureDesignBusy} from './fixtureDesignState.mjs';
 const icons={manual:'m4 3 12 8-6 1-3 6-3-15Z M13 14l4 4',bulk:'M3 7h11v11H3z M7 3h11v11 M8 10v5 M5.5 12.5h5',clear:'M4 6h12 M8 3h4 M6 6l1 12h6l1-12 M9 9v6 M12 9v6',generate:'m11 2-7 10h6l-1 6 7-10h-6Z',confirm:'m4 10 4 4 9-9',cancel:'m5 5 10 10 M15 5 5 15'};
 const iconButton=(command,label,icon,extra='',caption=false)=>`<button type="button" data-five-command="${attr(command)}" title="${attr(label)}" aria-label="${attr(label)}" ${extra}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="${icons[icon]}"/></svg>${caption?`<span>${esc(label)}</span>`:''}</button>`;
 const setup = view => view.scene?.domain?.setups?.find(s => s.id === view.scene.domain.activeSetupId);
@@ -18,8 +20,9 @@ export function attachFixtureDirectionMenu(mount,onVisibilityChange,selector='.f
   const escape=event=>{if(event.key!=='Escape')return;const menu=event.target.closest?.(`${selector}[open]`);if(!menu)return;
     menu.open=false;menu.querySelector('summary')?.focus({preventScroll:true});event.preventDefault();event.stopPropagation();};
   const toggle=event=>{if(event.target.matches?.(selector))onVisibilityChange?.();};
-  doc.addEventListener('pointerdown',outside,true);mount.addEventListener('focusout',blur);mount.addEventListener('keydown',escape,true);mount.addEventListener('toggle',toggle,true);
-  return ()=>{doc.removeEventListener('pointerdown',outside,true);mount.removeEventListener('focusout',blur);mount.removeEventListener('keydown',escape,true);mount.removeEventListener('toggle',toggle,true);};
+  const guard=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;const summary=event.target.closest?.(`${selector}>summary[aria-disabled="true"]`);if(summary){event.preventDefault();event.stopPropagation();}};
+  doc.addEventListener('pointerdown',outside,true);mount.addEventListener('focusout',blur);mount.addEventListener('keydown',escape,true);mount.addEventListener('toggle',toggle,true);mount.addEventListener('click',guard,true);mount.addEventListener('keydown',guard,true);
+  return ()=>{doc.removeEventListener('pointerdown',outside,true);mount.removeEventListener('focusout',blur);mount.removeEventListener('keydown',escape,true);mount.removeEventListener('toggle',toggle,true);mount.removeEventListener('click',guard,true);mount.removeEventListener('keydown',guard,true);};
 }
 export const selectedFixtureUnit=view=>view.scene?.domain?.fixtureUnits?.find(u=>u.id===view.fiveAxisFixtures?.selected);
 const storedDesign=view=>view.fiveFixtureEditingUnit?fixtureUnitDesign(view,view.scene?.domain?.fixtureUnits?.find(u=>u.id===view.fiveFixtureEditingUnit)):!view.fiveFixtureDesignOpen&&selectedFixtureUnit(view)?.kind==='Generated'?fixtureUnitDesign(view,selectedFixtureUnit(view)):setup(view)?.fixtureDesign||{};
@@ -39,7 +42,7 @@ export function designDraft(view) {
   }
   return view.fixtureDesignDraft;
 }
-export function designChanged(view,key,value){const d=designDraft(view);d[key]=value;if(key==='supportCount'||key==='connectionCount')d[key+'Edited']=true;d.dirty=true;++d.revision;}
+export function designChanged(view,key,value){if(fixtureDesignBusy(view))return;const d=designDraft(view);d[key]=value;if(key==='supportCount'||key==='connectionCount')d[key+'Edited']=true;d.dirty=true;++d.revision;}
 export function supportDirection(d){
   const values=['supportX','supportY','supportZ'].map(k=>String(d[k]??'').trim());
   if(values.some(s=>!s||!Number.isFinite(Number(s))))throw Error('请填写有效的支撑方向向量。');
@@ -86,16 +89,26 @@ Object.assign(errors,{PLATE_TENON_RADIUS_INVALID:'公榫圆角 R 须为非负数
 Object.assign(errors,{PLATE_DIRECTION_INVALID:'支撑方向须为非零方向向量。',CAM_FIXTURE_SUPPORT_DIRECTION_INVALID:'支撑方向须为有效的非零方向向量。'});
 Object.assign(errors,{PLATE_JOINT_MODE_INVALID:'请选择连接方式。',PLATE_JOINT_DIMENSION_INVALID:'请检查榫宽、榫间距、配合间隙和最小保留板带。',PLATE_LAP_EDGE_WEB:'交叉槽距板边太近，请调整区域或支撑间距。',PLATE_LAP_MINIMUM_WEB:'交叉位置的板高不足以保留上下板带，请增大最小连接板带或减小榫卯保留板带。',PLATE_TENON_NO_SPACE:'部分支撑底边放不下插榫，请减小榫宽或调整支撑间距。',PLATE_MORTISE_EDGE_WEB:'榫孔距离底座边缘太近，请增大底座或边界留边。',PLATE_MORTISE_MINIMUM_WEB:'榫孔之间的板带不足，请调整支撑分布或榫宽。',PLATE_JOINT_DISCONNECTED:'开槽会切断板件，请增大板带或调整支撑间距。',PLATE_JOINT_CONTACT_LOST:'开槽后部分板件失去承托接触，请调整填充或连接参数。',PLATE_JOINT_LIMIT:'榫卯数量过多，请增大榫间距或支撑间距。'});
 const alive=(ctx,view)=>!view.disposed&&ctx.isCurrentProject?.()!==false;
+function designRequest(ctx,view,d,kind,title,ops){
+  const proxy=ctx.sceneProxy,projectId=ctx.project?.projectId,projectProxy=ctx.projectProxy;
+  const request={kind,title,setupId:d.setupId,epoch:view.scene?.domain?.expected?.epoch,session:view.fiveFixtureSession||0,revision:d.revision,open:view.fiveFixtureDesignOpen,placementId:view.scene?.activePlacementId||view.scene?.domain?.activePlacementId,ownerRequest:view.fixtureRequest,sequence:(view.fixtureLayoutSequence||0)+1};
+  view.fixtureLayoutSequence=request.sequence;view.fiveFixtureDesignRequest=request;
+  const owns=()=>alive(ctx,view)&&ctx.sceneProxy===proxy&&ctx.project?.projectId===projectId&&ctx.projectProxy===projectProxy&&view.fiveFixtureDesignRequest===request&&view.fixtureLayoutSequence===request.sequence&&view.fixtureDesignDraft===d&&setup(view)?.id===request.setupId&&view.scene?.domain?.expected?.epoch===request.epoch&&(view.fiveFixtureSession||0)===request.session&&view.fiveFixtureDesignOpen===request.open&&(view.scene?.activePlacementId||view.scene?.domain?.activePlacementId)===request.placementId;
+  return {current:()=>owns()&&d.revision===request.revision,finish(){const render=owns();if(view.fiveFixtureDesignRequest===request)view.fiveFixtureDesignRequest=null;if(render)ops.renderProject(ctx,view);}};
+}
 async function recommendLayout(ctx,view,ops,{resetCounts=false,fillPositions=false}={}){
   const d=designDraft(view);if(!d.supportFaces.length)return;
-  const revision=d.revision,session=view.fiveFixtureSession||0,token=(view.fixtureLayoutSequence||0)+1;view.fixtureLayoutSequence=token;
-  const draft={...d,positionMode:'Automatic',supportCount:resetCounts||!d.supportCountEdited?0:d.supportCount,connectionCount:resetCounts||!d.connectionCountEdited?0:d.connectionCount};
-  const info=await ctx.sceneProxy.invoke('CamFixture.SuggestLayout',{expected:view.scene.domain.expected,setupId:d.setupId,recipe:recipe(draft,true)},fixtureTaskRequestOptions);
-  if(!alive(ctx,view)||designDraft(view)!==d||d.revision!==revision||(view.fiveFixtureSession||0)!==session||view.fixtureLayoutSequence!==token)return;
-  d.layoutInfo=info;
-  for(const key of ['supportCount','connectionCount'])if(resetCounts||!d[key+'Edited']){d[key]=info[key];d[key+'Edited']=false;}
-  if(fillPositions||d.positionMode!=='Manual'){d.supportPositionText=info.supportPositions.join(', ');d.connectionPositionText=info.connectionPositions.join(', ');}
-  d.dirty=true;++d.revision;view.error='';ops.renderProject(ctx,view);
+  const request=designRequest(ctx,view,d,'layout','正在计算支撑板数量…',ops);ops.renderProject(ctx,view);
+  try{
+    const draft={...d,positionMode:'Automatic',supportCount:resetCounts||!d.supportCountEdited?0:d.supportCount,connectionCount:resetCounts||!d.connectionCountEdited?0:d.connectionCount};
+    const info=await ctx.sceneProxy.invoke('CamFixture.SuggestLayout',{expected:structuredClone(view.scene.domain.expected),setupId:d.setupId,recipe:recipe(draft,true)},fixtureTaskRequestOptions);
+    if(!request.current())return;
+    d.layoutInfo=info;
+    for(const key of ['supportCount','connectionCount'])if(resetCounts||!d[key+'Edited']){d[key]=info[key];d[key+'Edited']=false;}
+    if(fillPositions||d.positionMode!=='Manual'){d.supportPositionText=info.supportPositions.join(', ');d.connectionPositionText=info.connectionPositions.join(', ');}
+    d.dirty=true;++d.revision;view.error='';
+  }catch(e){if(request.current())view.error=message(e);}
+  finally{request.finish();}
 }
 async function invoke(ctx,method,payload) {
   try{return await ctx.sceneProxy.invoke(`CamFixture.${method}`,payload,fixtureTaskRequestOptions);}
@@ -110,15 +123,17 @@ export async function designCommand(ctx,view,action,ops) {
   if(!alive(ctx,view))return;
   if(action==='close'||action==='cancel'){
     if(view.fiveFixtureConfirming)return;
-    const task=view.fiveAxisFixtureTask||view.fiveFixtureGenerated?.task;
+    const localRequest=view.fiveFixtureDesignRequest;
+    const activeTask=view.fiveAxisFixtureTask,task=activeTask||view.fiveFixtureGenerated?.task;
     view.fiveFixtureSession=(view.fiveFixtureSession||0)+1;
     view.fiveFixtureDesignOpen=false;view.fiveFixtureEditingUnit=null;view.fixtureDesignPicking=false;view.fixtureDesignDraft=null;view.fiveFixtureGenerated=null;
-    view.fixtureDesignSelectedFace=null;view.fiveAxisFixtureTask=null;view.pending=false;view.progress=null;view.error='';disposeFixtureDesign(view);
+    view.fixtureDesignSelectedFace=null;view.fiveAxisFixtureTask=null;if(!localRequest||activeTask){view.pending=false;view.progress=null;}view.error='';disposeFixtureDesign(view);
+    if(localRequest?.ownerRequest&&view.fixtureRequest===localRequest.ownerRequest)view.fixtureRequest=null;
     if(!selectedFixtureUnit(view))selectTool(view,'translate');ops.renderProject(ctx,view);
     if(task)await ctx.sceneProxy.invoke('CamFixture.CancelTask',{epoch:task.epoch,taskId:task.taskId}).catch(()=>{});
     return;
   }
-  if(view.pending)return;
+  if(view.pending||view.fiveFixtureDesignRequest)return;
   if(action==='breakdown-close'){view.fiveFixtureBreakdown=null;ops.renderProject(ctx,view);return;}
   if(action.startsWith('page:')){view.fiveFixtureDesignPage=action.slice(5);view.fixtureDesignPicking=false;ops.renderProject(ctx,view);return;}
   const d=designDraft(view);
@@ -134,9 +149,13 @@ export async function designCommand(ctx,view,action,ops) {
     const id=action.slice(action.indexOf(':')+1);if(!d.supportFaces.includes(id))return;
     const p=view.scene.domain.placements.find(p=>p.setupId===d.setupId);if(!p)return;
     if(!view.fixtureDesignFaces||view.fixtureDesignPlacement!==p.id){
-      const revision=d.revision,result=await ctx.sceneProxy.invoke('CamPlacement.ReadReferenceFaces',{expected:view.scene.domain.expected,placementId:p.id,setupId:d.setupId});
-      if(!alive(ctx,view)||designDraft(view)!==d||d.revision!==revision)return;
-      view.fixtureDesignFaces=result.faces;view.fixtureDesignPlacement=p.id;
+      const request=designRequest(ctx,view,d,'faces','正在读取承托面…',ops);ops.renderProject(ctx,view);
+      try{
+        const result=await ctx.sceneProxy.invoke('CamPlacement.ReadReferenceFaces',{expected:structuredClone(view.scene.domain.expected),placementId:p.id,setupId:d.setupId});
+        if(!request.current())return;
+        view.fixtureDesignFaces=result.faces;view.fixtureDesignPlacement=p.id;
+      }catch(e){if(request.current())view.error=message(e);return;}
+      finally{request.finish();}
     }
     view.fixtureDesignSelectedFace=id;
     if(action.startsWith('focus-face:'))focusSelectedFace(view,view.viewport?.sceneObjects.get(p.id),view.fixtureDesignFaces.filter(f=>String(f.faceId)===id));
@@ -176,9 +195,13 @@ export async function designCommand(ctx,view,action,ops) {
     if(view.fixtureDesignPicking){view.fixtureDesignPicking=false;ops.renderProject(ctx,view);return;}
     const p=view.scene.domain.placements.find(p=>p.setupId===d.setupId);
     if(!p)throw Error('请先导入工件。');
-    const result=await ctx.sceneProxy.invoke('CamPlacement.ReadReferenceFaces',{expected:view.scene.domain.expected,placementId:p.id,setupId:d.setupId});
-    if(!alive(ctx,view)||designDraft(view)!==d)return;
-    view.fixtureDesignFaces=result.faces;view.fixtureDesignPlacement=p.id;view.fixtureDesignPicking=true;ops.renderProject(ctx,view);return;
+    const request=designRequest(ctx,view,d,'faces','正在读取承托面…',ops);ops.renderProject(ctx,view);
+    try{
+      const result=await ctx.sceneProxy.invoke('CamPlacement.ReadReferenceFaces',{expected:structuredClone(view.scene.domain.expected),placementId:p.id,setupId:d.setupId});
+      if(!request.current())return;
+      view.fixtureDesignFaces=result.faces;view.fixtureDesignPlacement=p.id;view.fixtureDesignPicking=true;
+    }catch(e){if(request.current())view.error=message(e);}
+    finally{request.finish();}return;
   }
   let destination;
   if(action==='export'){
@@ -230,13 +253,14 @@ export async function designCommand(ctx,view,action,ops) {
 }
 export function designPick(ctx,view,data,hit,_event,_hits,ops){
   if(activeTool(view)!=='fixture'||!view.fiveFixtureDesignOpen&&!view.fixtureDesignPicking)return false;
+  if(fixtureDesignBusy(view))return true;
   if(data?.objectId!==view.fixtureDesignPlacement||!Number.isInteger(hit?.faceIndex))return true;
   const face=view.fixtureDesignFaces?.find(f=>hit.faceIndex>=Number(f.first)&&hit.faceIndex<Number(f.first)+Number(f.count));
   if(face){const d=designDraft(view),id=String(face.faceId),i=d.supportFaces.indexOf(id);
     if(view.fixtureDesignPicking){if(i<0){d.supportFaces.push(id);view.fixtureDesignSelectedFace=id;}else{d.supportFaces.splice(i,1);if(view.fixtureDesignSelectedFace===id)view.fixtureDesignSelectedFace=null;}d.dirty=true;++d.revision;}
     else if(i>=0)view.fixtureDesignSelectedFace=id;
     ops.renderProject(ctx,view);if(d.supportFaces.includes(id))revealFaceListSelection(ctx.mount,'support-face-list',id);
-    if(view.fixtureDesignPicking&&d.supportFaces.length)void recommendLayout(ctx,view,ops).catch(e=>{if(alive(ctx,view)&&designDraft(view)===d){view.error=message(e);ops.renderProject(ctx,view);}});}return true;
+    if(view.fixtureDesignPicking&&d.supportFaces.length)void recommendLayout(ctx,view,ops);}return true;
 }
 export function highlightDesign(view){
   previewDesign(view);
@@ -258,12 +282,13 @@ function syncLayoutGuide(view){
   const d=view.fiveFixtureDesignOpen?designDraft(view):null,axis=d?.layoutInfo?.axis||d?.layoutAxis;
   const source=view.viewport?.sceneObjects.get(view.scene?.domain?.placements?.find(p=>p.setupId===view.scene.domain.activeSetupId)?.id);
   if(activeTool(view)!=='fixture'||!axis||!source?.geometry){disposeLayoutGuide(view);return;}
-  let normal;try{normal=new THREE.Vector3(...supportDirection(d));}catch{disposeLayoutGuide(view);return;}
-  source.updateWorldMatrix(true,false);const key=JSON.stringify([source.geometry.uuid,source.matrixWorld.elements,axis,normal.toArray(),d.baseDrop]);
+   let frame,normal;try{frame=setupWorldFrame(view,d.setupId);normal=new THREE.Vector3(...supportDirection(d));}catch{disposeLayoutGuide(view);return;}
+  source.updateWorldMatrix(true,false);const key=JSON.stringify([source.geometry.uuid,source.matrixWorld.elements,frame.elements,axis,normal.toArray(),d.baseDrop]);
   if(view.fixtureLayoutGuide?.key===key&&view.fixtureLayoutGuide.viewport===view.viewport)return;
   disposeLayoutGuide(view);if(!source.geometry.boundingBox)source.geometry.computeBoundingBox();
-  const box=source.geometry.boundingBox.clone().applyMatrix4(source.matrixWorld),size=box.getSize(new THREE.Vector3()),length=Math.max(20,Math.min(220,size.length()*.14));
+   const box=source.geometry.boundingBox.clone().applyMatrix4(source.matrixWorld),size=box.getSize(new THREE.Vector3()),length=Math.max(20,Math.min(220,size.length()*.14));
   let x=new THREE.Vector3(1,0,0).addScaledVector(normal,-normal.x);if(x.lengthSq()<1e-12)x=new THREE.Vector3(0,1,0).addScaledVector(normal,-normal.y);x.normalize();const y=new THREE.Vector3().crossVectors(normal,x).normalize();
+   x.transformDirection(frame);y.transformDirection(frame);normal.transformDirection(frame);
   const origin=box.getCenter(new THREE.Vector3()).addScaledVector(normal,-size.length()*.08-Number(d.baseDrop||40)),group=new THREE.Group();group.name='fixture-layout-directions';
   const doc=view.viewport.renderer.domElement.ownerDocument;
   for(const [direction,label,color] of [[axis==='X'?x:y,'横向板',0x56bfff],[axis==='X'?y:x,'纵向板',0xffc368]]){
@@ -278,7 +303,7 @@ export function syncSupportDirectionArrow(view){
   const menu=view.viewport?.renderer?.domElement?.closest('.five-workspace')?.querySelector('.five-support-direction-menu[open]');
   if(!menu){disposeSupportDirectionArrow(view);return;}
   const source=view.viewport?.sceneObjects.get(view.scene?.domain?.placements?.find(p=>p.setupId===view.scene.domain.activeSetupId)?.id);
-  let direction;try{direction=supportDirection(designDraft(view));}catch{}
+   let direction;try{const d=designDraft(view);direction=new THREE.Vector3(...supportDirection(d)).transformDirection(setupWorldFrame(view,d.setupId)).toArray();}catch{}
   if(activeTool(view)!=='fixture'||!source?.geometry||!direction){disposeSupportDirectionArrow(view);return;}
   source.updateWorldMatrix(true,false);
   const key=JSON.stringify([source.geometry.uuid,source.matrixWorld.elements,direction]);
@@ -307,16 +332,16 @@ function hidePreviousAssembly(view,preview,assembly){
   }
 }
 export function disposeFixtureDesign(view){
-  if(!view)return;disposePreview(view);disposeSupportDirectionArrow(view);disposeLayoutGuide(view);const old=view.fixtureDesignOverlay;
+  if(!view)return;view.fiveFixtureDesignRequest=null;disposePreview(view);disposeSupportDirectionArrow(view);disposeLayoutGuide(view);const old=view.fixtureDesignOverlay;
   old?.removeFromParent();old?.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});view.fixtureDesignOverlay=null;
 }
 function previewDesign(view){
   const design=fixtureDesign(view),candidate=design.candidate;
   const visible=view.fiveFixtureDesignOpen&&activeTool(view)==='fixture'&&!designDraft(view).dirty&&candidate?.validity==='Current'&&candidate.id!==design.assembly?.id;
-  const key=visible?candidate.id:'';
+   const frame=visible?setupWorldFrame(view,setup(view)?.id):new THREE.Matrix4(),key=visible?JSON.stringify([candidate.id,frame.elements]):'';
   if(view.fixtureCandidatePreview?.key===key&&view.fixtureCandidatePreview.viewport===view.viewport){hidePreviousAssembly(view,view.fixtureCandidatePreview,design.assembly);return;}
   disposePreview(view);if(!visible||!view.viewport?.scene)return;
-  const group=new THREE.Group();group.name='fixture-candidate';
+   const group=new THREE.Group();group.name='fixture-candidate';group.matrixAutoUpdate=false;group.matrix.copy(frame);
   for(const {data} of view.fiveFixtureGenerated?.renderParts||[]){
     if(data?.kind!=='mesh')continue;
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(data.positions,3));
@@ -340,13 +365,13 @@ export function renderFixtureCutClearance(assembly,options={}){
   return preclearance+`<section class="five-design-group" data-five-key="cut-clearance-result"><h3>${title}</h3>${valid?`<p>已按 ${Number(c.operationCount)} 条加工路径为竖板让出光路，并避让切割头，保留间隙 ${Number(c.clearanceMm)} mm，光束半径 ${Number(c.beamRadiusMm)} mm。</p><p>${c.headScope?.startsWith('Builtin')?'使用内置示意头的组合碰撞盒。':'使用已标定切割头的组合碰撞盒。'}空移需在采用夹具、重新生成刀路后进行完整仿真碰撞检查。</p>`:`<p>${c?.validity==='Stale'?'刀路、姿态、工件或切割头已变化，请重新生成夹具。':'可以先生成和采用支撑；有刀路后，可按实际刀路生成避让。'}</p>`}</section>`;
 }
 export function renderFixtureDesign(view){
-  const d=designDraft(view),design=fixtureDesign(view),busy=!!(view.pending||view.fixtureRequest),candidate=design.candidate;
+  const d=designDraft(view),design=fixtureDesign(view),busy=fixtureDesignBusy(view),candidate=design.candidate;
   const current=!d.dirty&&candidate?.validity==='Current',supported=current&&candidate.supportCheck?.status==='Supported',clearanceReady=fixtureCutClearanceReady(design,candidate);
   const disabled=busy?'disabled':'';
-  const field=(key,label,wide=false)=>`<label class="five-design-field ${wide?'is-wide':''}" data-five-key="design-${key}"><span>${label}</span><input type="text" inputmode="${key.includes('Position')?'text':key.endsWith('Count')?'numeric':'decimal'}" autocomplete="off" ${key.endsWith('Count')?'placeholder="选择承托面后推荐"':''} data-five-fixture-field="design:${key}" data-five-key="design-input-${key}" value="${attr(d[key]??'')}" aria-label="${label}"></label>`;
-  const choice=(key,label,values,wide=false)=>`<label class="five-design-field ${wide?'is-wide':''}" data-five-key="design-${key}"><span>${label}</span><select data-five-fixture-field="design:${key}" data-five-key="design-select-${key}" aria-label="${label}">${values.some(([v])=>v===d[key])?'':`<option value="" disabled selected>请选择${label}</option>`}${values.map(([v,t])=>`<option value="${v}" ${d[key]===v?'selected':''}>${t}</option>`).join('')}</select></label>`;
+  const field=(key,label,wide=false)=>`<label class="five-design-field ${wide?'is-wide':''}" data-five-key="design-${key}"><span>${label}</span><input type="text" inputmode="${key.includes('Position')?'text':key.endsWith('Count')?'numeric':'decimal'}" autocomplete="off" ${key.endsWith('Count')?'placeholder="选择承托面后推荐"':''} data-five-fixture-field="design:${key}" data-five-key="design-input-${key}" value="${attr(d[key]??'')}" aria-label="${label}" ${busy?'readonly':''}></label>`;
+  const choice=(key,label,values,wide=false)=>`<label class="five-design-field ${wide?'is-wide':''}" data-five-key="design-${key}"><span>${label}</span><select data-five-fixture-field="design:${key}" data-five-key="design-select-${key}" aria-label="${label}" ${disabled}>${values.some(([v])=>v===d[key])?'':`<option value="" disabled selected>请选择${label}</option>`}${values.map(([v,t])=>`<option value="${v}" ${d[key]===v?'selected':''}>${t}</option>`).join('')}</select></label>`;
   const group=(id,title,content)=>`<section class="five-design-group" data-five-key="design-group-${id}"><h3>${title}</h3><div class="five-design-grid">${content}</div></section>`;
-  const directionMenu=`<details class="five-support-direction-menu" data-five-key="support-direction-menu"><summary aria-label="高级配置" title="高级配置" ${busy?'aria-disabled="true"':''}><span aria-hidden="true">⌄</span></summary><div class="five-support-direction-popover"><strong>支撑方向</strong><div class="five-direction-vector">${field('supportX','X')}${field('supportY','Y')}${field('supportZ','Z')}</div><p>从底座指向工件 · 当前装夹坐标</p></div></details>`;
+  const directionMenu=`<details class="five-support-direction-menu" data-five-key="support-direction-menu"><summary aria-label="高级配置" title="高级配置" ${busy?'aria-disabled="true" tabindex="-1"':''}><span aria-hidden="true">⌄</span></summary><div class="five-support-direction-popover"><strong>支撑方向</strong><div class="five-direction-vector">${field('supportX','X')}${field('supportY','Y')}${field('supportZ','Z')}</div><p>从底座指向工件 · 当前装夹坐标</p></div></details>`;
   const support=`<section class="five-design-support ${view.fixtureDesignPicking?'is-picking':''}" data-five-key="design-support"><header><h3>承托面 <small>${d.supportFaces.length}</small></h3><div class="five-design-support-actions">${iconButton('five.fixture.design.pick','手动修改','manual',`${disabled} aria-pressed="${!!view.fixtureDesignPicking}"`)}<div class="five-support-auto">${iconButton('five.fixture.design.auto','批量添加','bulk',disabled)}${directionMenu}</div>${iconButton('five.fixture.design.clear','清空','clear',busy||!d.supportFaces.length?'disabled':'')}</div></header>${faceSelectionList({ids:d.supportFaces,selectedId:view.fixtureDesignSelectedFace,key:'support-face-list',label:'承托面列表',selectCommand:id=>'five.fixture.design.select-face:'+id,focusCommand:id=>'five.fixture.design.focus-face:'+id,removeCommand:id=>'five.fixture.design.remove-face:'+id,disabled,empty:'手动选择工件表面，或批量添加承托面。'})}${view.fixtureDesignPicking?'<p class="five-support-pick-hint">点击工件表面补选或取消选择。</p>':''}</section>`;
   const axis=d.layoutInfo?.axis||d.layoutAxis;
   const strategy=group('counts','骨架支撑',field('supportCount','横向板数量')+field('connectionCount','纵向板数量')+`<p class="five-hint is-wide">${axis?`横向承托板沿承托平面 ${axis} 分布；纵向连接板沿 ${axis==='X'?'Y':'X'} 分布。`:'选择承托面后，按工件长向推荐横向承托板数量。'}相交处局部挖槽避空，保留板件位置与数量；无法保留有效板带时提示处理。</p>`);
@@ -360,7 +385,8 @@ export function renderFixtureDesign(view){
     +(d.windowMode==='Automatic'?field('windowWeb','开孔保留板带')+'<p class="five-hint is-wide">横向板开一个中心大孔，纵向板开一个横向长孔；底板保持完整，保留承托上沿、底部连接板带和榫卯位置。空间不足的小区域保留实心。</p>':''));
   const options=group('options','连接与间隙',choice('jointMode','连接方式',[['TabSlot','榫卯插接'],['Weld','定位拼焊']],true)+field('gap','非承托区避空')+field('minimumWeb','最小连接板带')+(d.jointMode==='TabSlot'?field('jointClearance','总配合间隙')+field('jointWeb','最小榫卯板带')+field('tenonWidth','底部榫宽')+field('tenonPitch','榫间距')+field('tenonRadius','公榫圆角 R'):'')+'<p class="five-hint is-wide">底座退距从工件最靠近底座的位置计算；尺寸为成品尺寸。</p>');
   const clearance=group('cut-clearance','切割避让',field('openingReliefDepth','孔边避空深度')+choice('cutClearanceMode','光路避让',[['None','先按孔边界预避让'],['Toolpath','按实际切割刀路避让']],true)+(d.cutClearanceMode==='Toolpath'?field('cutClearanceMm','切割间隙')+field('beamRadiusMm','光束半径'):'')+'<p class="five-hint is-wide">孔边局部挖槽并保留下部板带。</p>');
-  const advanced=`<details class="five-design-options" data-five-key="design-options"><summary><strong>高级参数</strong><i aria-hidden="true">⌄</i></summary>${layout}${plates}${options}${clearance}</details>`;
+  const advanced=`<details class="five-design-options" data-five-key="design-options"><summary ${busy?'aria-disabled="true" tabindex="-1"':''}><strong>高级参数</strong><i aria-hidden="true">⌄</i></summary>${layout}${plates}${options}${clearance}</details>`;
   const generatedStatus=candidate?`<p class="five-design-generated-status" role="status">${!current?'参数已修改，请重新生成。':supported?`已生成 ${candidate.parts.filter(p=>p.role==='Support').length} 块承托板${candidate.parts.some(p=>p.role==='Connection')?` · ${candidate.parts.filter(p=>p.role==='Connection').length} 块连接板`:''} · ${candidate.parts.filter(p=>p.role==='Base').length} 块底板${candidate.layoutSummary?` · 最大间距 ${Number(candidate.layoutSummary.maximumSpacingMm).toFixed(1)} mm`:''}`:'承托分布不足，请调整后重新生成。'}</p>`:'';
-  return `<div class="five-fixture-generator" data-five-key="fixture-design"><header class="five-design-header"><div><h2>${view.fiveFixtureNewUnit?'新增支撑':'支撑参数'}</h2><span>${esc(setup(view)?.name||'当前装夹')} · 尺寸 mm</span></div>${iconButton('five.fixture.design.cancel','取消并关闭','cancel',view.fiveFixtureConfirming?'disabled':'')}</header><div class="five-design-body" data-five-key="design-body"><div data-five-key="design-parameters">${support}${strategy}${advanced}</div></div><footer class="five-design-footer" data-five-key="design-footer">${view.error?`<div class="five-design-error" role="alert">${esc(view.error)}</div>`:''}${generatedStatus}<div class="five-design-footer-actions">${iconButton('five.fixture.design.cancel','取消','cancel',view.fiveFixtureConfirming?'disabled':'',true)}${iconButton('five.fixture.design.generate','生成','generate',`${disabled} ${!d.supportFaces.length||!view.scene?.model?.isLoaded?'disabled':''}`,true)}${iconButton('five.fixture.design.confirm','确定','confirm',`class="five-primary" ${busy||!view.fiveFixtureGenerated||!current||!supported||!clearanceReady?'disabled':''}`,true)}</div></footer></div>`;
+  const busyStatus=busy?`<p class="five-design-busy" data-five-key="design-busy" role="status" aria-live="polite">${esc(view.fiveFixtureDesignRequest?.title||view.progress?.title||'正在处理支撑…')}</p>`:'';
+  return `<div class="five-fixture-generator ${busy?'is-busy':''}" data-five-key="fixture-design" aria-busy="${busy}"><header class="five-design-header"><div><h2>${view.fiveFixtureNewUnit?'新增支撑':'支撑参数'}</h2><span>${esc(setup(view)?.name||'当前装夹')} · 尺寸 mm</span></div>${iconButton('five.fixture.design.cancel','取消并关闭','cancel',view.fiveFixtureConfirming?'disabled':'')}</header><div class="five-design-body" data-five-key="design-body">${busyStatus}<div data-five-key="design-parameters">${support}${strategy}${advanced}</div></div><footer class="five-design-footer" data-five-key="design-footer">${view.error?`<div class="five-design-error" role="alert">${esc(view.error)}</div>`:''}${generatedStatus}<div class="five-design-footer-actions">${iconButton('five.fixture.design.cancel','取消','cancel',view.fiveFixtureConfirming?'disabled':'',true)}${iconButton('five.fixture.design.generate','生成','generate',`${disabled} ${!d.supportFaces.length||!view.scene?.model?.isLoaded?'disabled':''}`,true)}${iconButton('five.fixture.design.confirm','确定','confirm',`class="five-primary" ${busy||!view.fiveFixtureGenerated||!current||!supported||!clearanceReady?'disabled':''}`,true)}</div></footer></div>`;
 }

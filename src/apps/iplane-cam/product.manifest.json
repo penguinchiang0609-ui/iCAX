@@ -1,0 +1,55 @@
+{
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.iplane-cam",
+  "productName": "iPlaneCAM",
+  "productVersion": "0.1.0",
+  "capabilities": {
+    "platform": {
+      "domain": "plane-cad-cam",
+      "modules": ["drawing", "parts", "stocks", "nesting", "reports"]
+    },
+    "planeCam": { "protocolVersion": 1 }
+  },
+  "projectFile": {
+    "magic": "ICAX_IPLANE_CAM",
+    "formatVersion": "0.1",
+    "formatRevision": 1,
+    "quickSaveLogMagic": "ICAX_IPLANE_CAM_QSAVE",
+    "quickSaveLogVersion": 1,
+    "fileExtensions": [".ipcam"],
+    "magicOffset": 0,
+    "probeBytes": 256
+  },
+  "backend": {
+    "startupComponent": "CPlaneSceneComponent",
+    "pdo": { "enabled": true, "arenaSize": 134217728, "slotCapacity": 4096 },
+    "modules": {
+      "dependencies": [
+        "${ExecutableDirectory}/EntityViewRuntime.dll",
+        "${ExecutableDirectory}/RenderData.dll",
+        "${ExecutableDirectory}/Transform.dll",
+        "${ExecutableDirectory}/RenderInteraction.dll"
+      ],
+      "components": [
+        "${ExecutableDirectory}/Transform.dll",
+        "${ExecutableDirectory}/RenderInteraction.dll",
+        "${ExecutableDirectory}/iPlaneCAM.dll"
+      ],
+      "behaviours": [
+        "${ExecutableDirectory}/RenderInteraction.dll",
+        "${ExecutableDirectory}/iPlaneCAM.dll"
+      ],
+      "services": [
+        "${ExecutableDirectory}/OpenCascadeResourceImport.dll",
+        "${ExecutableDirectory}/PlaneGeometryServices.dll",
+        "${ExecutableDirectory}/PlaneNestingServices.dll"
+      ],
+      "sdo": [
+        "${ExecutableDirectory}/EntityViewRuntime.dll",
+        "${ExecutableDirectory}/iPlaneCAM.dll"
+      ]
+    }
+  },
+  "webpage": { "entry": "apps/iplane-cam/webpage/entry.mjs" }
+}

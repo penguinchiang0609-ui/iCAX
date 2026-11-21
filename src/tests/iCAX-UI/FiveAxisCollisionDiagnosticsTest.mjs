@@ -61,8 +61,8 @@ test('result grouping separates adjacent different obstacles and different head 
  const f=fixture();f.state.frames.push(...f.state.frames);f.report.segments=[{index:'0',status:'Collision',obstacleId:'a',witness:{headBoxIndex:0}},{index:'1',status:'Collision',obstacleId:'b',witness:{headBoxIndex:0}},{index:'2',status:'Collision',obstacleId:'b',witness:{headBoxIndex:1}}];assert.deepEqual(collisionIssues(f.state).map(g=>[g.index,g.count]),[[0,1],[1,1],[2,1]]);
 });
 
-test('repair UI is scoped to the current real collision and reports native local counts without fabricated percentages',()=>{
- const f=fixture();let html=renderCollisionRepair(f.view,f.state);assert.match(html,/自动修正当前问题/);assert.match(html,/优先调整 IJK/);assert.match(html,/沿原 IJK 方向移动 XYZ/);f.state.cursor=1;html=renderCollisionRepair(f.view,f.state);assert.match(html,/collision-repair" disabled/);
+test('repair UI is scoped to the current path and reports native local counts without fabricated percentages',()=>{
+ const f=fixture();let html=renderCollisionRepair(f.view,f.state);assert.match(html,/自动修复本条刀路/);assert.match(html,/优先调整 IJK/);assert.match(html,/沿原 IJK 方向移动 XYZ/);f.state.cursor=1;html=renderCollisionRepair(f.view,f.state);assert.match(html,/collision-repair-path" disabled/);
  f.state.repairTask={repairProgress:{stage:'Verifying',completedIssueCount:'0',totalIssueCount:'1',candidateCount:'7',completedSegmentCount:'12',totalSegmentCount:'30'}};assert.match(collisionRepairActivity(f.state).count,/12 \/ 30/);assert.match(collisionRepairActivity(f.state).candidates,/实际已尝试 7/);assert.doesNotMatch(collisionRepairActivity(f.state).detail,/整条/);
  f.state.repairResult={status:'Repaired',changed:true,changedIntentIds:['cut'],geometryDeferred:true};f.report.collisionCount='8';html=renderCollisionRepair(f.view,f.state);assert.match(html,/关键点修正已保存，请复检本条/);assert.doesNotMatch(html,/全部通过|全局复检|完整复检/);
 });

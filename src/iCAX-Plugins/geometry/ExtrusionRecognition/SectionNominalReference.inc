@@ -221,7 +221,8 @@ SSectionWiresResult ExtractCertifiedNominalSection(const BRepModel& geometry,con
     }
     struct Support {TopoDS_Face Face;double First,Last,Budget;std::vector<std::uint64_t> Faces;};
     std::vector<Support> supports;TopTools_IndexedMapOfShape axial;std::vector<int> faceGroups;
-    std::vector<std::uint64_t> faceIds;std::vector<double> faceBudgets,events;BRep_Builder builder;TopoDS_Compound sides;builder.MakeCompound(sides);
+    std::vector<std::uint64_t> faceIds;std::vector<double> faceBudgets,events;
+    std::vector<std::pair<double,double>> faceSpans;
     for(const auto& record:geometry.Faces) {
         if(!IsSideFace(record,index,options))continue;
         const int occurrence=occurrences.FindIndex(built.Faces.at(record.Id));if(!occurrence)continue;
@@ -250,7 +251,8 @@ SSectionWiresResult ExtractCertifiedNominalSection(const BRepModel& geometry,con
         if(group<0){group=static_cast<int>(supports.size());supports.push_back({face,x,X,budget,{}});}
         auto& support=supports[group];support.First=std::min(support.First,x);support.Last=std::max(support.Last,X);
         support.Budget=std::max(support.Budget,budget);support.Faces.push_back(record.Id);
-        axial.Add(face);faceGroups.push_back(group);faceIds.push_back(record.Id);faceBudgets.push_back(budget);builder.Add(sides,face);result.SideFaceIds.push_back(record.Id);
+        axial.Add(face);faceGroups.push_back(group);faceIds.push_back(record.Id);faceBudgets.push_back(budget);
+        faceSpans.emplace_back(x-budget,X+budget);result.SideFaceIds.push_back(record.Id);
     }
     const double tolerance=options.dConnectionTolerance;
     std::sort(events.begin(),events.end());events.erase(std::unique(events.begin(),events.end(),[&](double a,double b){return std::abs(a-b)<=tolerance;}),events.end());
@@ -262,6 +264,11 @@ SSectionWiresResult ExtractCertifiedNominalSection(const BRepModel& geometry,con
     for(const auto& interval:intervals) {
         const double station=(interval.First+interval.Last)/2;
         if(options.Progress)options.Progress("nominal reference section X="+std::to_string(station));
+        BRep_Builder builder;TopoDS_Compound sides;builder.MakeCompound(sides);
+        for(int i=1;i<=axial.Extent();++i) {
+            const auto [first,last]=faceSpans[i-1];
+            if(station>=first-tolerance&&station<=last+tolerance)builder.Add(sides,axial(i));
+        }
         BRepAlgoAPI_Section cut(sides,gp_Pln(gp_Pnt(station,0,0),gp_Dir(1,0,0)),false);
         cut.SetNonDestructive(true);cut.Build();if(!cut.IsDone())continue;
         std::vector<SNominalSectionEdge> edges;std::set<int> used;bool provenance=true;
@@ -275,7 +282,9 @@ SSectionWiresResult ExtractCertifiedNominalSection(const BRepModel& geometry,con
         }
         if(!provenance||edges.empty())continue;
         double score=std::numeric_limits<double>::max();for(const auto group:used)score=std::min(score,supports[group].Last-supports[group].First);
-        if(score<bestScore-tolerance)continue;
+        // Intervals are visited widest first, so a later equal-score station
+        // cannot replace the currently certified one.
+        if(!bestWires.empty()&&score<=bestScore+tolerance)continue;
         if(!JoinNominalSectionSupports(edges,station,tolerance)){if(options.Progress)options.Progress("nominal rejected open support junctions");continue;}
         // Retain ownership across both connection attempts. Passing a raw
         // pointer creates a temporary handle whose destruction frees it.

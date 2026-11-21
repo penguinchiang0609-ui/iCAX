@@ -37,6 +37,10 @@ namespace iCAX::OpenCascade
         IN const std::string& strSourceID_,
         IN double dTolerance_ = 0.001);
 
+    // Computational geometry only: never creates or exports triangulations.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP iCAX::GeometryData::BRepModel ConvertOpenCascadeShapeToBRepGeometry(
+        const TopoDS_Shape& shape,const std::string& displayName,const std::string& sourceID);
+
     // Exact topology export with caller-supplied display triangulations. The
     // provider must supply the corresponding current face, in model coordinates;
     // no remeshing or tessellation-derived CAD reconstruction is performed.

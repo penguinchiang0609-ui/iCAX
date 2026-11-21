@@ -8,6 +8,10 @@
 
 namespace iCAX::Geometry
 {
+    // Exact finite representation for exchange formats without a separate
+    // trimming interval. Knot insertion/conic conversion only; no fitting.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP iCAX::GeometryData::NURBS2 BoundedPlanarSpline(
+        const iCAX::GeometryData::CurveSegment2&);
     struct SCurveLocation { std::size_t SegmentIndex=0; double NativeParameter=0; };
     struct SCurvePiece
     {

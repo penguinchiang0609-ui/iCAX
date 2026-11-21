@@ -85,7 +85,7 @@ await test("Default selection includes all parts and only matching profile stock
   const request = buildNestingRequest(h.view);
   assert.deepEqual(new Set(request.parts.map((part) => part.partEntityId)), new Set(["rect-a", "rect-b", "round-a"]));
   assert.equal(request.stocks.length, 2);
-  assert.deepEqual(request.parameters, { partGap: 2 });
+  assert.deepEqual(request.parameters, { partGap: 2, optimizationMode: "time", searchTimeSeconds: 5 });
   assert.ok(request.parts.every((part) => part.priority === 0));
   h.view.tubeDesignerSelectedPartIds = ["rect-b", "missing-id"];
   const selected = buildNestingRequest(h.view);
@@ -746,5 +746,34 @@ if (process.env.ICAX_NESTING_NATIVE_RESULTS) {
     });
   }
 }
+
+await test("Long searches reach native service without expiring the bridge and retain physical result validity", async () => {
+  const h = harness();
+  await h.run();
+  const signature = getNestingInputSignature(h.view);
+  const locked = h.view.tubeDesignerNestingResult.plans[0].id;
+  h.view.tubeDesignerLockedNestingPlanIds = [locked];
+  h.view.tubeDesignerNestingSettings.parameters.optimizationMode = "utilization";
+  h.view.tubeDesignerNestingSettings.parameters.searchTimeSeconds = 3600;
+  assert.equal(getNestingInputSignature(h.view), signature);
+  assert.equal(isNestingResultStale(h.view), false, "Search preference does not invalidate a legal arrangement");
+  assert.deepEqual(buildNestingRequest(h.view).lockedPlanIds, [locked]);
+  await h.run();
+  assert.deepEqual(h.calls.at(-1).request.parameters,
+    { partGap: 2, optimizationMode: "utilization", searchTimeSeconds: 3600 });
+  assert.equal(h.calls.at(-1).settings.timeoutMs, 3_780_000);
+});
+
+await test("A timed search without an incumbent does not claim proven infeasibility", async () => {
+  const h = harness({ invoke: async (_method, request) => ({
+    status: "no_solution_found", plans: [],
+    unplaced: request.parts.map(part => ({ partId: part.partEntityId, quantity: part.quantity, reason: "搜索预算已用尽" })),
+    metrics: { placedPartCount: 0 }, diagnostics: [],
+  }) });
+  await h.run();
+  assert.equal(h.view.error, "");
+  assert.equal(h.view.tubeDesignerNestingResult.status, "no_solution_found");
+  assert.match(h.view.notice, /暂未找到可行排法/);
+});
 
 console.log(`TubeDesigner nesting workflow tests passed (${completed.length} cases${nativeResultCount ? `, including ${nativeResultCount} native solver results` : ""})`);

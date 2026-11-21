@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -106,6 +107,12 @@ namespace iCAX::TubeDesigner
         // carries its own rectangle because inner loops have their own period.
         STubeUnfoldedRectangle LateralRectangle;
         std::vector<STubeUnfoldedSurface> Surfaces;
+        // Optional evidence computed directly from the original analytic BRep,
+        // independently of the sampled unfolded wires. Currently limited to
+        // coaxial circular tubes with two complete planar annular end faces.
+        std::optional<iCAX::TubeNesting::PairTypeGeometry> AnalyticNestingGeometry;
+        iCAX::TubeNesting::Length AnalyticNestingMaximumLength = 0;
+        std::optional<std::array<double, 3>> AnalyticNestingLocalCenter;
     };
 
     struct STubeBRepUnfoldingOptions final
@@ -168,9 +175,10 @@ namespace iCAX::TubeDesigner
         bool bOK = false;
         iCAX::TubeNesting::PairTypeGeometry Geometry;
         // Absolute right-profile coordinates are based on this quantized
-        // maximum length (0.01 mm units).  Callers that enlarge the safety
-        // envelope must shift every right-level constant by the same delta.
+        // maximum length (0.01 mm units). Enlarge a centred safety envelope
+        // only through RebaseTubeNestingGeometry, which shifts both ends.
         iCAX::TubeNesting::Length MaximumLength = 0;
+        std::optional<std::array<double, 3>> CertifiedLocalCenter;
         std::string Diagnostic;
     };
 
@@ -225,12 +233,22 @@ namespace iCAX::TubeDesigner
 
     /**
      * Migration implementation of the recognition-to-nesting contract.  It
-     * converts sampled unfolded end boundaries into a NumericOnly periodic
-     * spectrum; its Fourier residual is bounded against that sampled signal,
-     * not against the original BRep.  A future native recognizer may return
-     * NativeCertified data through the same DTO without this bridge.
+     * Uses the original-BRep analytic certificate when one was produced by
+     * UnfoldTubeBRepSurface. Otherwise converts sampled unfolded boundaries
+     * into a NumericOnly spectrum; a sampled residual is never promoted to an
+     * original-geometry certificate.
      */
     _TUBE_DESIGNER_EXP STubeNestingEndProfiles EncodeTubeNestingEndProfiles(
         IN const STubeBRepUnfoldingResult& Result_,
         std::size_t SampleCount_ = 128, std::size_t MaximumFourierOrder_ = 32);
+
+    /**
+     * Enlarge a centred blank without changing its physical part or roll axis.
+     * Both end coordinates move by half the axial length increase. A shrink,
+     * invalid length or non-finite level is rejected without modifying input.
+     */
+    _TUBE_DESIGNER_EXP bool RebaseTubeNestingGeometry(
+        iCAX::TubeNesting::PairTypeGeometry& Geometry_,
+        iCAX::TubeNesting::Length SourceMaximumLength_,
+        iCAX::TubeNesting::Length TargetMaximumLength_);
 }

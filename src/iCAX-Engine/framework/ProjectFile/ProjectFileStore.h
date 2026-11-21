@@ -19,6 +19,21 @@ namespace iCAX::Resource
 
 namespace iCAX::ProjectFile
 {
+    // Resource-only sidecar for an operation journal. Identity is supplied
+    // by the owning Project; the normal project codec and version ordering
+    // are shared with archive persistence. Earlier checkpoint versions stay
+    // present even when current EC no longer references them (Undo/Redo).
+    class _PROJECT_FILE_EXP CProjectResourceCheckpoint final
+    {
+    public:
+        static void Save(const std::filesystem::path& Path_,
+            const CProjectDocumentInfo& Identity_,
+            const iCAX::Resource::CResourceLibrary& Resources_);
+        static void Restore(const std::filesystem::path& Path_,
+            const CProjectDocumentInfo& Identity_,
+            iCAX::Resource::CResourceLibrary& Resources_);
+    };
+
     /*
     * @brief 一个产品的项目文件固定定义。
     * @details 业务只在创建 CProjectFile 时配置一次，后续保存和打开只传

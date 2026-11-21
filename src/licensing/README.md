@@ -36,6 +36,13 @@ Application 清单要求管理员；启用授权检查的构建在每个业务�
 
 ## 构建与验证
 
+遇到 `Cannot open TPM 2.0` 时，可单独构建 `td-license-tpm-connection-probe`，与
+`tools/Run-TpmConnectionCheck.cmd`、`tools/TpmConnectionCheck.txt` 放在同一目录交付。
+在故障电脑解压后运行检测，报告保留设备版本、执行权限和 Windows TBS 原始返回码。
+该工具仅查询设备并打开、关闭连接，不发送 TPM 命令、不联网、不访问授权文件。
+连接通过不代表申请、证书或激活通过。运行时连接和传输错误也保留 TBS 返回码，
+按设备不可用、服务禁用/启动失败、权限不足等原因提供提示，不将所有失败归为需要重启。
+
 ```powershell
 cmake -S src/licensing -B Temp/licensing-build -G "Visual Studio 17 2022" -A x64
 cmake --build Temp/licensing-build --config Release

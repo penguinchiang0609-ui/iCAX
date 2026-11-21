@@ -1,4 +1,4 @@
-#include "SheetNesting.h"
+#include "NestingInternal.h"
 #include <algorithm>
 #include <iostream>
 #include <set>
@@ -95,7 +95,19 @@ int main()
             {
                 auto p = TightPair(); p.Parts.front().Quantity = 1;
                 auto other = p.Parts.front(); other.ID = "other-specification"; p.Parts.push_back(other);
-                CheckComplete(p, Solve(p, strategy)); ++groups;
+                const auto patterns = Detail::BuildPatterns(p, Budget(), {});
+                Require(std::all_of(patterns.begin(), patterns.end(), [](const auto& pattern)
+                    { return pattern.Members.size() == 1; }),
+                    "equal contours with different original IDs became a preassembled pair");
+                // The normal single-piece route still accepts both kinds on
+                // one stock when their independent positions fit.
+                p.Stocks.front().Width = 2*605 + p.PartGap + 2*p.EdgeMargin;
+                const auto job = Solve(p, strategy); CheckComplete(p, job);
+                for(const auto& a:job.Output.Layouts.front().Placements)
+                    for(const auto& b:job.Output.Layouts.front().Placements)
+                        Require(!a.Group||a.Group!=b.Group||a.PartID==b.PartID,
+                            "ordinary different-original placements were locked into one group");
+                ++groups;
             }
             {
                 auto p = TightPair(); p.Parts.front().AllowedAnglesDegrees = {0};

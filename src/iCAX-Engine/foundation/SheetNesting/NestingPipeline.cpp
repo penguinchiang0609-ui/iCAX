@@ -1,10 +1,12 @@
 #include "SheetNestingPipeline.h"
+#include "SheetNestingAxisCompaction.h"
 #include "NestingExecution.h"
 #include <algorithm>
 #include <chrono>
 #include <limits>
 #include <cmath>
 #include <map>
+#include <set>
 #include <tuple>
 #include <stdexcept>
 #include <utility>
@@ -20,7 +22,14 @@ namespace iCAX::SheetNesting
         class PipelineBudget
         {
         public:
-            explicit PipelineBudget(const Options& settings) : Settings(settings) {}
+            explicit PipelineBudget(const Options& settings) : Settings(settings)
+            {
+                if (!settings.EnableBasicCompaction) return;
+                const auto fraction = settings.BasicCompactionBudgetFraction;
+                if (!std::isfinite(fraction) || fraction <= 0 || fraction >= 1)
+                    throw std::invalid_argument("Invalid basic-compaction budget fraction.");
+                BasicSeconds = settings.TimeLimitSeconds * fraction;
+            }
             bool PollCancel()
             {
                 if (!Cancelled && Settings.Cancel && Settings.Cancel()) Cancelled = true;
@@ -28,7 +37,8 @@ namespace iCAX::SheetNesting
             }
             bool Stop()
             { return PollCancel() || WorkSeconds() >= Settings.TimeLimitSeconds || Attempts >= Settings.MaxPlacementAttempts; }
-            double WorkSeconds() const { return std::max(0.0, Seconds(Started) - AssessmentSeconds); }
+            double ElapsedSeconds() const { return Seconds(Started); }
+            double WorkSeconds() const { return ElapsedSeconds(); }
             void Observe(const Result& result)
             {
                 if (result.State == Status::Cancelled) Cancelled = true;
@@ -43,19 +53,42 @@ namespace iCAX::SheetNesting
                 settings.Cancel = [this] { return PollCancel(); };
                 return settings;
             }
-            void Assess(const Problem& input, JobResult& candidate)
+            bool SearchStop()
             {
-                const auto start = Clock::now();
-                try { Detail::AssessCandidate(input, candidate); }
-                catch (...) { AssessmentSeconds += Seconds(start); throw; }
-                AssessmentSeconds += Seconds(start);
+                if (Stop()) return true;
+                const auto left = Remaining();
+                return left.TimeLimitSeconds <= BasicSecondsLeft();
             }
+            Options RemainingSearch()
+            {
+                auto settings = Remaining();
+                settings.TimeLimitSeconds = std::max(1e-9, settings.TimeLimitSeconds - BasicSecondsLeft());
+                return settings;
+            }
+            Options RemainingCompaction(std::size_t slots)
+            {
+                auto settings = Remaining();
+                settings.TimeLimitSeconds = std::min(settings.TimeLimitSeconds,
+                    BasicSecondsLeft() / double(std::max<std::size_t>(1, slots)));
+                const auto attempts = settings.MaxPlacementAttempts;
+                settings.MaxPlacementAttempts = std::min(settings.MaxPlacementAttempts,
+                    attempts ? std::max<std::size_t>(1, attempts / std::max<std::size_t>(1, slots)) : 0);
+                return settings;
+            }
+            void ObserveCompaction(const Result& result, double seconds)
+            {
+                Observe(result);
+                BasicWorkSeconds += seconds;
+            }
+            void Assess(const Problem& input, JobResult& candidate)
+            { Detail::AssessCandidate(input, candidate); }
             bool Cancelled = false;
         private:
             const Options& Settings;
             Clock::time_point Started = Clock::now();
             std::size_t Attempts = 0;
-            double AssessmentSeconds = 0;
+            double BasicSeconds = 0, BasicWorkSeconds = 0;
+            double BasicSecondsLeft() const { return std::max(0., BasicSeconds - BasicWorkSeconds); }
         };
 
         void AddWork(Statistics& total, const Statistics& stage)
@@ -97,10 +130,56 @@ namespace iCAX::SheetNesting
             return moved;
         }
 
+        std::optional<Result> PrecedingSheetMoves(const JobResult& source, const Result& compacted)
+        {
+            using BoardIdentity = std::pair<std::string, std::size_t>;
+            std::set<BoardIdentity> tails;
+            for (const auto index : source.Remnants.FinalLayoutIndices)
+                if (index < source.Output.Layouts.size())
+                {
+                    const auto& board = source.Output.Layouts[index];
+                    tails.emplace(board.StockID, board.StockInstance);
+                }
+            if (tails.empty() || tails.size() == source.Output.Layouts.size()) return {};
+            std::map<BoardIdentity, const Layout*> proposals;
+            for (const auto& board : compacted.Layouts)
+                proposals.emplace(BoardIdentity{board.StockID, board.StockInstance}, &board);
+            auto retained = source.Output;
+            bool changed = false;
+            for (auto& board : retained.Layouts)
+            {
+                const BoardIdentity identity{board.StockID, board.StockInstance};
+                const auto proposed = proposals.find(identity);
+                if (tails.contains(identity) || proposed == proposals.end()) continue;
+                const auto& placements = proposed->second->Placements;
+                const bool same = board.Placements.size() == placements.size() &&
+                    std::equal(board.Placements.begin(), board.Placements.end(), placements.begin(),
+                        [](const Placement& a, const Placement& b)
+                        {
+                            return std::tie(a.PartID,a.Instance,a.Transform.X,a.Transform.Y,a.Transform.AngleDegrees,a.Group,a.GapFiller) ==
+                                std::tie(b.PartID,b.Instance,b.Transform.X,b.Transform.Y,b.Transform.AngleDegrees,b.Group,b.GapFiller);
+                        });
+                if (!same) { board = *proposed->second; changed = true; }
+            }
+            if (!changed) return {};
+            retained.Stats = {};
+            retained.Stats.CombinationGroups = source.Output.Stats.CombinationGroups;
+            retained.Stats.CircleLatticeGroups = source.Output.Stats.CircleLatticeGroups;
+            retained.Stats.GapFilledParts = source.Output.Stats.GapFilledParts;
+            retained.GeometryValidated = false;
+            return retained;
+        }
+
         class PipelineStrategy final : public IStrategy
         {
         public:
+            explicit PipelineStrategy(std::unique_ptr<IStrategy> constructor) : Construct(std::move(constructor))
+            {
+                if (!Construct) throw std::invalid_argument("Refinement executor needs a constructor.");
+            }
             explicit PipelineStrategy(const StrategyPipeline& definition)
+                : RequireCompleteConstruction(definition.RequireCompleteConstruction),
+                  ConstructionBudgetFraction(definition.ConstructionBudgetFraction)
             {
                 Construct = definition.Construct();
                 if (!Construct) throw std::runtime_error("Pipeline constructor factory returned null.");
@@ -114,38 +193,44 @@ namespace iCAX::SheetNesting
                 {
                     auto processor = stage.Factory();
                     if (!processor) throw std::runtime_error("Pipeline postprocessor factory returned null: " + stage.ID);
-                    Processors.push_back({stage.ID, std::move(processor), stage.MaxPrecisionAxisShift});
+                    Processors.push_back({stage.ID, std::move(processor), stage.MaxPrecisionAxisShift, stage.BudgetFraction});
                 }
             }
+
+            bool OwnsRefinementLifecycle() const noexcept override { return true; }
 
             Result Run(const Problem& input, const Options& options) override
             {
                 PipelineBudget budget(options);
                 std::vector<std::string> notes;
-                const auto empty = [&]
+                const auto empty = [&](std::string reason = {})
                 {
                     Result result;
                     result.State = budget.Cancelled ? Status::Cancelled : Status::Partial;
                     for (const auto& part : input.Parts)
                         if (part.Quantity) result.Remaining.push_back({ part.ID, part.Quantity });
-                    result.Stats.ElapsedSeconds = budget.WorkSeconds();
+                    result.Stats.ElapsedSeconds = budget.ElapsedSeconds();
                     result.Diagnostics = notes;
+                    if (reason.empty()) reason = budget.Cancelled ?
+                        "pipeline: cancelled before construction; original demand retained" :
+                        "pipeline: shared search budget exhausted before construction; original demand retained";
+                    result.Diagnostics.push_back(std::move(reason));
                     return result;
                 };
-                if (budget.Stop()) return empty();
+                if (budget.SearchStop()) return empty();
                 std::optional<Problem> ordered;
                 double orderSeconds = 0;
                 if (Order)
                 {
                     const auto start = Clock::now();
-                    const auto indices = Order->Order(input, budget.Remaining());
-                    if (budget.Stop()) return empty();
+                    const auto indices = Order->Order(input, budget.RemainingSearch());
+                    if (budget.SearchStop()) return empty();
                     if (indices.size() != input.Parts.size())
                         throw std::runtime_error("Part order must be a complete permutation: " + OrderID);
                     std::vector<bool> seen(indices.size(), false);
                     for (std::size_t i = 0; i < indices.size(); ++i)
                     {
-                        if ((i & 1023) == 0 && budget.Stop()) return empty();
+                        if ((i & 1023) == 0 && budget.SearchStop()) return empty();
                         if (indices[i] >= seen.size() || seen[indices[i]])
                             throw std::runtime_error("Part order contains an invalid or repeated index: " + OrderID);
                         seen[indices[i]] = true;
@@ -155,41 +240,192 @@ namespace iCAX::SheetNesting
                     orderSeconds = Seconds(start);
                     notes.push_back("pipeline.order=" + OrderID);
                 }
-                if (budget.Stop()) return empty();
+                if (budget.SearchStop()) return empty();
                 JobResult incumbent;
-                incumbent.Output = Construct->Run(ordered ? *ordered : input, budget.Remaining());
+                auto constructionOptions = budget.RemainingSearch();
+                if (ConstructionBudgetFraction < 1)
+                {
+                    constructionOptions.TimeLimitSeconds *= ConstructionBudgetFraction;
+                    const double attempts = static_cast<double>(constructionOptions.MaxPlacementAttempts) * ConstructionBudgetFraction;
+                    if (attempts < static_cast<double>(constructionOptions.MaxPlacementAttempts))
+                        constructionOptions.MaxPlacementAttempts = static_cast<std::size_t>(attempts);
+                }
+                if (constructionOptions.TimeLimitSeconds <= 0 || !constructionOptions.MaxPlacementAttempts)
+                    return empty("pipeline.construction reserved share has no usable search budget, original demand retained");
+                // The outer executor owns one pool, including nested composed
+                // constructors. A child must not reserve another basic pool.
+                constructionOptions.EnableBasicCompaction = false;
+                incumbent.Output = Construct->Run(ordered ? *ordered : input, constructionOptions);
                 budget.Observe(incumbent.Output);
                 if (Order && incumbent.Output.Stats.PreparationSeconds >= 0)
                     incumbent.Output.Stats.PreparationSeconds += orderSeconds;
 
-                if (!Processors.empty()) budget.Assess(input, incumbent);
+                if (options.EnableBasicCompaction || !Processors.empty() || RequireCompleteConstruction) budget.Assess(input, incumbent);
+                const bool constructionComplete = !RequireCompleteConstruction ||
+                    (Detail::Eligible(incumbent) && incumbent.Checked.Complete);
+                if (!constructionComplete)
+                    notes.push_back("pipeline.construction incomplete original demand, refinement deferred");
                 auto work = incumbent.Output.Stats;
                 double postSeconds = 0;
-                if (!Processors.empty() && Detail::Eligible(incumbent))
-                    for (auto& [id, processor, precisionShift] : Processors)
+                bool schedulingFailed = false;
+                auto polishSlots = Processors.size() + 1;
+                std::unique_ptr<IPostProcessor> compactor;
+                if (options.EnableBasicCompaction && constructionComplete)
+                {
+                    AxisCompactionSettings settings;
+                    settings.XFirst = options.BasicCompactionXFirst;
+                    compactor = MakeAxisCompactionStage(settings).Factory();
+                }
+                const auto polish = [&](JobResult& state, const std::string& phase)
+                {
+                    const auto slots = polishSlots;
+                    if (polishSlots) --polishSlots;
+                    if (!compactor) return;
+                    if (!Detail::Eligible(state))
                     {
-                        if (budget.Stop()) break;
+                        notes.push_back("pipeline.basic=" + phase + ": ineligible original result");
+                        return;
+                    }
+                    if (budget.Stop())
+                    {
+                        notes.push_back("pipeline.basic=" + phase + ": time/attempt/cancellation stop before normalization");
+                        return;
+                    }
+                    // Only an actual pose-bound no-move report can avoid a
+                    // repeated scan. Rejected or stale reports cannot do so.
+                    if (const auto report = GetAxisCompactionReport(input, state.Output);
+                        report && report->Closed && report->Supported && report->GeometryValidated)
+                    {
+                        notes.push_back("pipeline.basic=" + phase + ": already event-neighborhood closed");
+                        return;
+                    }
+                    auto settings = budget.RemainingCompaction(slots);
+                    if (settings.TimeLimitSeconds <= 0 || !settings.MaxPlacementAttempts)
+                    {
+                        notes.push_back("pipeline.basic=" + phase + ": reserved budget unavailable");
+                        return;
+                    }
+                    const auto start = Clock::now();
+                    bool returned = false;
+                    try
+                    {
+                        JobResult candidate;
+                        candidate.Output = compactor->Run(input, state.Output, settings);
+                        const auto seconds = Seconds(start);
+                        returned = true;
+                        postSeconds += seconds;
+                        budget.ObserveCompaction(candidate.Output, seconds);
+                        budget.Assess(input, candidate);
+                        AddWork(work, candidate.Output.Stats);
+                        // Down/left movement guides a private proposal. The
+                        // published result still obeys the original full key,
+                        // including the user's certified-tail priority.
+                        const bool accept = Detail::Eligible(candidate) &&
+                            Detail::Quality(candidate, input, options.Ranking) <= Detail::Quality(state, input, options.Ranking);
+                        if (accept)
+                        {
+                            state = std::move(candidate);
+                            notes.push_back("pipeline.basic=" + phase + ": accepted by shared quality");
+                        }
+                        else
+                        {
+                            bool keptFront = false;
+                            if (Detail::Eligible(candidate) && !budget.Stop())
+                                if (auto preceding = PrecedingSheetMoves(state, candidate.Output))
+                                {
+                                    JobResult front;
+                                    front.Output = std::move(*preceding);
+                                    budget.Assess(input, front);
+                                    AddWork(work, front.Output.Stats);
+                                    if (Detail::Eligible(front) &&
+                                        Detail::Quality(front,input,options.Ranking) <= Detail::Quality(state,input,options.Ranking))
+                                    {
+                                        state = std::move(front);
+                                        keptFront = true;
+                                    }
+                                }
+                            notes.push_back("pipeline.basic=" + phase + (keptFront ?
+                                ": preceding-sheet moves retained with original logical tail; full-candidate report not published" :
+                                ": rejected; candidate report not published"));
+                        }
+                    }
+                    catch (const std::exception& error)
+                    {
+                        if (!returned) postSeconds += Seconds(start);
+                        schedulingFailed = true;
+                        notes.push_back("pipeline.basic=" + phase + ": failed safely: " + error.what());
+                    }
+                    catch (...)
+                    {
+                        if (!returned) postSeconds += Seconds(start);
+                        schedulingFailed = true;
+                        notes.push_back("pipeline.basic=" + phase + ": failed safely with non-standard exception");
+                    }
+                };
+                polish(incumbent, "after-construction");
+                if (constructionComplete && !Processors.empty() && Detail::Eligible(incumbent))
+                    for (auto& [id, processor, precisionShift, budgetFraction] : Processors)
+                    {
+                        if (schedulingFailed || budget.SearchStop()) break;
                         JobResult candidate;
                         const auto start = Clock::now();
                         bool returned = false;
                         try
                         {
-                            candidate.Output = processor->Run(input, incumbent.Output, budget.Remaining());
+                            auto stageOptions = budget.RemainingSearch();
+                            stageOptions.EnableBasicCompaction = false;
+                            if (budgetFraction < 1)
+                            {
+                                stageOptions.TimeLimitSeconds *= budgetFraction;
+                                const double attempts = static_cast<double>(stageOptions.MaxPlacementAttempts) * budgetFraction;
+                                // The comparison also keeps the integer cast
+                                // within range when size_t rounds upward in double.
+                                if (attempts < static_cast<double>(stageOptions.MaxPlacementAttempts))
+                                    stageOptions.MaxPlacementAttempts = std::max<std::size_t>(1, static_cast<std::size_t>(attempts));
+                            }
+                            candidate.Output = processor->Run(input, incumbent.Output, stageOptions);
                             postSeconds += Seconds(start);
                             returned = true;
                             budget.Observe(candidate.Output);
                             budget.Assess(input, candidate);
                             AddWork(work, candidate.Output.Stats);
+                            // Complete a normal proposal's basic rearrangement
+                            // before comparing it with the public incumbent.
+                            // Precision-only stages are checked first against
+                            // their declared shift bound, then polished below.
                             bool accepted=false;
-                            if(Detail::Eligible(candidate))accepted=precisionShift>0
-                                ? IsBoundedPrecisionRepair(incumbent.Output,candidate.Output,precisionShift)
-                                : Detail::Quality(candidate,input,options.Ranking)<Detail::Quality(incumbent,input,options.Ranking);
+                            if (precisionShift == 0)
+                            {
+                                polish(candidate, "after-" + id);
+                                if (Detail::Eligible(candidate)) accepted =
+                                    Detail::Quality(candidate,input,options.Ranking) < Detail::Quality(incumbent,input,options.Ranking);
+                            }
+                            else if (Detail::Eligible(candidate) &&
+                                IsBoundedPrecisionRepair(incumbent.Output,candidate.Output,precisionShift))
+                            {
+                                // Check the precision stage's own output first;
+                                // subsequent basic moves have their own safety
+                                // and quality gates, not the precision bound.
+                                polish(candidate, "after-" + id);
+                                accepted = Detail::Eligible(candidate) && (!options.EnableBasicCompaction ||
+                                    Detail::Quality(candidate,input,options.Ranking) <= Detail::Quality(incumbent,input,options.Ranking));
+                            }
                             if (accepted)
                             {
                                 incumbent = std::move(candidate);
                                 notes.push_back("pipeline.post=" + id + ": accepted");
                             }
-                            else notes.push_back("pipeline.post=" + id + ": rejected");
+                            else
+                            {
+                                const auto& before = incumbent.Output.Diagnostics;
+                                const auto& proposed = candidate.Output.Diagnostics;
+                                std::size_t commonPrefix = 0;
+                                while (commonPrefix < before.size() && commonPrefix < proposed.size() &&
+                                    before[commonPrefix] == proposed[commonPrefix]) ++commonPrefix;
+                                for (std::size_t i = commonPrefix; i < proposed.size(); ++i)
+                                    notes.push_back("pipeline.rejected=" + id + " | " + proposed[i]);
+                                notes.push_back("pipeline.post=" + id + ": rejected");
+                            }
                         }
                         catch (const std::exception& error)
                         {
@@ -214,17 +450,19 @@ namespace iCAX::SheetNesting
                 incumbent.Output.Stats.EvaluationSeconds = work.EvaluationSeconds;
                 incumbent.Output.Stats.PreparationSeconds = work.PreparationSeconds;
                 incumbent.Output.Stats.PlacementSeconds = work.PlacementSeconds;
-                incumbent.Output.Stats.PostProcessingSeconds = Processors.empty() ? work.PostProcessingSeconds :
+                incumbent.Output.Stats.PostProcessingSeconds = Processors.empty() && !compactor ? work.PostProcessingSeconds :
                     std::max(0.0, work.PostProcessingSeconds) + postSeconds;
-                incumbent.Output.Stats.ElapsedSeconds = budget.WorkSeconds();
+                incumbent.Output.Stats.ElapsedSeconds = budget.ElapsedSeconds();
                 incumbent.Output.Diagnostics.insert(incumbent.Output.Diagnostics.end(), notes.begin(), notes.end());
                 return std::move(incumbent.Output);
             }
         private:
             std::unique_ptr<IStrategy> Construct;
+            bool RequireCompleteConstruction = false;
+            double ConstructionBudgetFraction = 1;
             std::unique_ptr<IPartOrder> Order;
             std::string OrderID;
-            struct Processor {std::string ID;std::unique_ptr<IPostProcessor> Value;double PrecisionShift;};
+            struct Processor {std::string ID;std::unique_ptr<IPostProcessor> Value;double PrecisionShift;double BudgetFraction;};
             std::vector<Processor> Processors;
         };
     }
@@ -232,11 +470,18 @@ namespace iCAX::SheetNesting
     StrategyFactory MakePipelineFactory(StrategyPipeline definition)
     {
         if (!definition.Construct) throw std::invalid_argument("Pipeline needs a constructor factory.");
+        if (!std::isfinite(definition.ConstructionBudgetFraction) || definition.ConstructionBudgetFraction <= 0 ||
+            definition.ConstructionBudgetFraction > 1)
+            throw std::invalid_argument("Construction budget fraction must be in (0, 1].");
         if (definition.Order.ID.empty() != !definition.Order.Factory)
             throw std::invalid_argument("Part-order stage needs both ID and factory, or neither.");
         for (const auto& stage : definition.PostProcessors)
-            if (stage.ID.empty() || !stage.Factory || !std::isfinite(stage.MaxPrecisionAxisShift) || stage.MaxPrecisionAxisShift<0)
-                throw std::invalid_argument("Postprocessing stage needs an ID, factory and valid precision shift.");
+            if (stage.ID.empty() || !stage.Factory || !std::isfinite(stage.MaxPrecisionAxisShift) || stage.MaxPrecisionAxisShift<0 ||
+                !std::isfinite(stage.BudgetFraction) || stage.BudgetFraction<=0 || stage.BudgetFraction>1)
+                throw std::invalid_argument("Postprocessing stage needs an ID, factory, valid precision shift and budget fraction in (0, 1].");
         return [definition = std::move(definition)] { return std::make_unique<PipelineStrategy>(definition); };
     }
+
+    std::unique_ptr<IStrategy> Detail::MakeRefinementExecutor(std::unique_ptr<IStrategy> constructor)
+    { return std::make_unique<PipelineStrategy>(std::move(constructor)); }
 }

@@ -1,8 +1,10 @@
 #include "SheetNestingDomainSearch.h"
 #include "SheetNestingNfp.h"
 #include "NestingInternal.h"
+#include "NestingAxisSafety.h"
 #include <clipper2/clipper.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -18,12 +20,18 @@ using namespace Clipper2Lib;
 struct Segment { Point A,B; std::size_t Owner; bool Contact=false; };
 struct Candidate {std::size_t Index; Pose P; double Score;std::vector<std::size_t> Blockers;};
 struct Choice {std::size_t Index; double FreeArea=0, Area=0, Tall=0;std::vector<Candidate> Fits;};
-std::vector<double> DistinctAngles(const Part& part,double tolerance)
+bool Near(Rect a,Rect b,double clearance)
+{
+    return a.X+a.Width+clearance>=b.X&&b.X+b.Width+clearance>=a.X&&
+        a.Y+a.Height+clearance>=b.Y&&b.Y+b.Height+clearance>=a.Y;
+}
+std::vector<double> DistinctAngles(const Part& part,double tolerance,const std::function<bool()>& stop)
 {
     const auto angles=CandidateAngles(part,tolerance);std::vector<double> output;
     std::set<std::vector<std::pair<long long,long long>>> seen;
     for(const auto angle:angles)
     {
+        if(stop())break;
         const auto bounds=Bounds(part.Geometry,{0,0,angle});
         if(bounds.Width>1e8||bounds.Height>1e8){output.push_back(angle);continue;}
         const double unit=std::max(1e-10,std::min(1e-8,tolerance*.01));
@@ -32,7 +40,12 @@ std::vector<double> DistinctAngles(const Part& part,double tolerance)
             ring.emplace_back(std::llround((q.X-bounds.X)/unit),std::llround((q.Y-bounds.Y)/unit));}
         if(ring.empty()){output.push_back(angle);continue;}
         auto canonical=ring;
-        for(std::size_t i=1;i<ring.size();++i){auto rotated=ring;std::rotate(rotated.begin(),rotated.begin()+i,rotated.end());if(rotated<canonical)canonical=std::move(rotated);}
+        for(std::size_t i=1;i<ring.size();++i)
+        {
+            if(stop())break;
+            auto rotated=ring;std::rotate(rotated.begin(),rotated.begin()+i,rotated.end());
+            if(rotated<canonical)canonical=std::move(rotated);
+        }
         if(seen.insert(std::move(canonical)).second)output.push_back(angle);
     }
     return output;
@@ -41,13 +54,22 @@ class DomainSearch final : public IStrategy {
     DomainOrderPolicy Policy;
     const Problem* P=nullptr; const Options* O=nullptr; std::chrono::steady_clock::time_point Start;
     NfpCache Cache; std::vector<NfpPreparedShape> Prepared;std::vector<std::vector<double>> Angles;
-    std::vector<std::size_t> Used, BestUsed;Layout Board,Best;std::size_t Attempts=0,Nodes=0,Queries=0,Intersections=0,DegenerateDomains=0,RootBranches=0;bool Cancelled=false;
+    std::vector<std::size_t> Used, BestUsed;Layout Board,Best;std::size_t Attempts=0,Nodes=0,Queries=0,Intersections=0,DegenerateDomains=0,RootBranches=0;bool Cancelled=false,QueryTruncated=false;
     double ActiveDeadline=std::numeric_limits<double>::infinity();
     std::size_t ActiveAttemptLimit=std::numeric_limits<std::size_t>::max();
     double elapsed() const {return std::chrono::duration<double>(std::chrono::steady_clock::now()-Start).count();}
-    bool stop(){if(O->Cancel&&O->Cancel()){Cancelled=true;return true;}return elapsed()>=O->TimeLimitSeconds||elapsed()>=ActiveDeadline||Attempts>=O->MaxPlacementAttempts||Attempts>=ActiveAttemptLimit;}
+    bool lifeStop()
+    {
+        if(Cancelled)return true;
+        if(O->Cancel&&O->Cancel()){Cancelled=true;return true;}
+        const double seconds=elapsed();
+        return !std::isfinite(O->TimeLimitSeconds)||O->TimeLimitSeconds<=0||seconds>=O->TimeLimitSeconds||
+            seconds>=ActiveDeadline;
+    }
+    bool stop(){return lifeStop()||Attempts>=O->MaxPlacementAttempts||Attempts>=ActiveAttemptLimit;}
     std::vector<Candidate> query(std::size_t index,double angle,double& area,std::size_t maxBlockers=0) {
         std::vector<Candidate> fits;const auto& p=*P;const auto& stock=p.Stocks[0];const auto& part=p.Parts[index];
+        if(stop())return fits;
         const auto b=Bounds(part.Geometry,{0,0,angle});const double lx=p.EdgeMargin-b.X,ly=p.EdgeMargin-b.Y;
         const double rx=stock.Width-p.EdgeMargin-b.X-b.Width,ty=stock.Height-p.EdgeMargin-b.Y-b.Height;
         if(rx<lx-p.Tolerance||ty<ly-p.Tolerance)return fits;
@@ -62,11 +84,18 @@ class DomainSearch final : public IStrategy {
         auto addEdge=[&](Point a,Point c,std::size_t owner,bool contact=false){if(edges.size()<2048&&std::hypot(c.X-a.X,c.Y-a.Y)>1e-14)edges.push_back({a,c,owner,contact});};
         addEdge({lx,ly},{rx,ly},0);addEdge({rx,ly},{rx,ty},0);addEdge({rx,ty},{lx,ty},0);addEdge({lx,ty},{lx,ly},0);
         PathsD forb;
+        struct Obstacle {std::size_t PartIndex;Pose Transform;Rect Box;AxisSafety::Geometry Material;};
+        std::vector<Obstacle> obstacles;
+        double obstacleRoundoff=0;
         for(std::size_t placed=0;placed<Board.Placements.size()&&!stop();++placed){
             const auto& x=Board.Placements[placed];auto it=std::find_if(p.Parts.begin(),p.Parts.end(),[&](const Part& y){return y.ID==x.PartID;});
+            if(it==p.Parts.end()){QueryTruncated=true;return {};}
             const auto si=static_cast<std::size_t>(it-p.Parts.begin());NfpBuildOptions options;options.TimeLimitSeconds=std::max(0.,O->TimeLimitSeconds-elapsed());options.Cancel=[&]{return stop();};
             const auto nfp=Cache.Get(Prepared[si],x.Transform.AngleDegrees,Prepared[index],angle,options);
-            if(nfp.State!=NfpStatus::Ready||!nfp.Region)return {};
+            if(nfp.State!=NfpStatus::Ready||!nfp.Region){QueryTruncated=true;return {};}
+            auto material=AxisSafety::Make(it->Geometry,x.Transform);
+            obstacleRoundoff=std::max(obstacleRoundoff,material.Roundoff);
+            obstacles.push_back({si,x.Transform,Bounds(it->Geometry,x.Transform),std::move(material)});
             for(const auto& loop:nfp.Region->Loops){std::vector<Point> path;path.reserve(loop.size());
                 for(const auto v:loop){auto q=Transform(v,nfp.Transform);q.X+=x.Transform.X;q.Y+=x.Transform.Y;path.push_back(q);emit(q);}
                 auto& pathD=forb.emplace_back();for(auto q:path)pathD.emplace_back(q.X,q.Y);
@@ -140,14 +169,65 @@ class DomainSearch final : public IStrategy {
             std::sort(origins.begin(),origins.end(),[&](Point a,Point b2){return rx-lx<=p.Tolerance?a.Y<b2.Y:a.X<b2.X;});
             const auto original=origins;for(std::size_t i=1;i<original.size();++i)emit({(original[i-1].X+original[i].X)*.5,(original[i-1].Y+original[i].Y)*.5});
         }
-        for(const auto q:origins){if(stop())break;++Attempts;Pose pose{q.X,q.Y,angle};
-            if(!InsideSheet(part.Geometry,pose,stock.Width,stock.Height,p.EdgeMargin,p.Tolerance))continue;
-            std::vector<std::size_t> blockers;bool bad=false;
-            for(std::size_t k=0;k<Board.Placements.size();++k){const auto& x=Board.Placements[k];auto it=std::find_if(p.Parts.begin(),p.Parts.end(),[&](const Part& v){return v.ID==x.PartID;});
-                if(ShapesConflict(it->Geometry,x.Transform,part.Geometry,pose,0,p.Tolerance)){
-                    blockers.push_back(k);if(blockers.size()>maxBlockers){bad=true;break;}}}
-            if(!bad){const auto box=Bounds(part.Geometry,pose);const double bottom=box.Y, left=box.X;
-                fits.push_back({index,pose,bottom+left*0.0001,std::move(blockers)});}
+        const auto tryPose=[&](Pose pose,bool retainBlocked,bool& retryable)
+        {
+            retryable=false;
+            if(stop())return false;
+            ++Attempts;
+            if(!InsideSheet(part.Geometry,pose,stock.Width,stock.Height,p.EdgeMargin,p.Tolerance))return false;
+            const auto material=AxisSafety::Make(part.Geometry,pose);
+            const auto containment=AxisSafety::Containment(material,stock.Width,stock.Height,p.EdgeMargin);
+            if(containment==AxisSafety::Verdict::Uncertain){QueryTruncated=true;return false;}
+            if(containment==AxisSafety::Verdict::Blocked){retryable=true;return false;}
+            const auto box=Bounds(part.Geometry,pose);
+            std::vector<std::size_t> blockers;
+            bool nativeBlocked=false,nominalBlocked=false;
+            for(std::size_t k=0;k<obstacles.size();++k)
+            {
+                if(lifeStop())return false;
+                const auto& obstacle=obstacles[k];
+                if(!Near(box,obstacle.Box,p.Tolerance+material.Roundoff+obstacle.Material.Roundoff))continue;
+                const bool conflict=ShapesConflict(p.Parts[obstacle.PartIndex].Geometry,obstacle.Transform,
+                    part.Geometry,pose,0,p.Tolerance,p.AllowCommonEdges);
+                const auto verdict=AxisSafety::Pair(material,obstacle.Material,0,p.AllowCommonEdges,p.Tolerance);
+                if(verdict==AxisSafety::Verdict::Uncertain){QueryTruncated=true;return false;}
+                nativeBlocked=nativeBlocked||conflict;
+                nominalBlocked=nominalBlocked||verdict==AxisSafety::Verdict::Blocked;
+                if(conflict||verdict==AxisSafety::Verdict::Blocked)blockers.push_back(k);
+            }
+            retryable=nominalBlocked&&!nativeBlocked;
+            if(blockers.empty()||(retainBlocked&&blockers.size()<=maxBlockers))
+                fits.push_back({index,pose,box.Y+box.X*.0001,blockers});
+            return blockers.empty();
+        };
+        constexpr std::array<Point,8> directions{{{1,0},{0,1},{-1,0},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}}};
+        for(const auto q:origins)
+        {
+            if(stop())break;
+            const Pose proposal{q.X,q.Y,angle};
+            bool retryable=false;
+            bool found=tryPose(proposal,true,retryable);
+            if(found||!retryable)continue;
+            const auto material=AxisSafety::Make(part.Geometry,proposal);
+            const auto box=Bounds(part.Geometry,proposal);
+            const double magnitude=std::max({1.,std::abs(q.X),std::abs(q.Y),stock.Width,stock.Height,
+                std::abs(box.X),std::abs(box.Y),std::abs(box.X+box.Width),std::abs(box.Y+box.Height)});
+            const double retreat=std::max(8*(1e-8+std::numeric_limits<double>::epsilon()*magnitude),
+                2*(material.Roundoff+obstacleRoundoff));
+            // Preserve exact collapsed contacts first. Numerical retreats are
+            // actual new poses after event deduplication, sharing every limit.
+            for(unsigned level=0;level<3&&!found;++level)
+            {
+                const double distance=std::ldexp(retreat,int(level)*2);
+                for(const auto direction:directions)
+                {
+                    if(stop())break;
+                    bool ignored=false;
+                    found=tryPose({q.X+direction.X*distance,q.Y+direction.Y*distance,angle},false,ignored);
+                    if(found)break;
+                }
+                if(stop())break;
+            }
         }
         return fits;
     }
@@ -216,20 +296,31 @@ class DomainSearch final : public IStrategy {
 public:
     explicit DomainSearch(DomainOrderPolicy policy=DomainOrderPolicy::FreeArea):Policy(policy){}
     Detail::PlacementDomainQueryResult Probe(const Problem& p,const Layout& layout,std::size_t partIndex,std::size_t maxBlockers,const Options& o) {
-        Start=std::chrono::steady_clock::now();P=&p;O=&o;Board=layout;Attempts=Nodes=Queries=Intersections=DegenerateDomains=RootBranches=0;Cancelled=false;ActiveDeadline=o.TimeLimitSeconds;ActiveAttemptLimit=o.MaxPlacementAttempts;
+        Start=std::chrono::steady_clock::now();P=&p;O=&o;Board=layout;Attempts=Nodes=Queries=Intersections=DegenerateDomains=RootBranches=0;Cancelled=QueryTruncated=false;ActiveDeadline=o.TimeLimitSeconds;ActiveAttemptLimit=o.MaxPlacementAttempts;
         Detail::PlacementDomainQueryResult result;
+        const auto finish=[&]{result.Attempts=Attempts;result.Truncated=QueryTruncated||stop();return result;};
+        if(stop())return finish();
         if(p.Stocks.size()!=1||partIndex>=p.Parts.size()||p.PartGap!=0||p.Tolerance<=0||maxBlockers>5)return result;
+        if(!CheckProblem(p).empty()){result.Truncated=true;return result;}
         for(const auto& x:layout.Placements)
             if(std::none_of(p.Parts.begin(),p.Parts.end(),[&](const Part& part){return part.ID==x.PartID;}))return result;
         Prepared.resize(p.Parts.size());
-        for(std::size_t i=0;i<p.Parts.size()&&!stop();++i){Prepared[i]=Cache.Prepare(p.Parts[i].Geometry);if(!Prepared[i])return result;}
+        for(std::size_t i=0;i<p.Parts.size()&&!stop();++i)
+        {
+            NfpBuildOptions build;build.TimeLimitSeconds=std::max(0.,o.TimeLimitSeconds-elapsed());
+            build.Cancel=[&]{return stop();};Prepared[i]=Cache.Prepare(p.Parts[i].Geometry,build);
+            if(!Prepared[i]){QueryTruncated=true;return finish();}
+        }
         double area=0;
-        for(double angle:DistinctAngles(p.Parts[partIndex],p.Tolerance))
+        for(double angle:DistinctAngles(p.Parts[partIndex],p.Tolerance,[&]{return stop();}))
+        {
+            if(stop())break;
             for(auto& c:query(partIndex,angle,area,maxBlockers))result.Candidates.push_back({c.P,std::move(c.Blockers)});
-        result.Attempts=Attempts;result.Truncated=stop();return result;
+        }
+        return finish();
     }
     Result Run(const Problem& p,const Options& o) override {
-        Start=std::chrono::steady_clock::now();P=&p;O=&o;Attempts=Nodes=Queries=Intersections=DegenerateDomains=RootBranches=0;Cancelled=false;ActiveDeadline=o.TimeLimitSeconds;ActiveAttemptLimit=o.MaxPlacementAttempts;Result result;result.State=Status::Partial;
+        Start=std::chrono::steady_clock::now();P=&p;O=&o;Attempts=Nodes=Queries=Intersections=DegenerateDomains=RootBranches=0;Cancelled=QueryTruncated=false;ActiveDeadline=o.TimeLimitSeconds;ActiveAttemptLimit=o.MaxPlacementAttempts;Result result;result.State=Status::Partial;
         for(const auto& part:p.Parts)if(part.Quantity)result.Remaining.push_back({part.ID,part.Quantity});
         const auto errors=CheckProblem(p);if(!errors.empty()){result.State=Status::InvalidInput;result.Diagnostics=errors;return result;}
         if(p.Stocks.size()!=1||p.Stocks[0].Quantity==0||p.PartGap!=0||p.Tolerance<=0||p.Parts.empty()){
@@ -239,7 +330,7 @@ public:
         Used.assign(p.Parts.size(),0);BestUsed=Used;Prepared.resize(p.Parts.size());Angles.resize(p.Parts.size());
         Board={p.Stocks[0].ID,0,p.Stocks[0].Width,p.Stocks[0].Height,{},0};Best=Board;
         for(std::size_t i=0;i<p.Parts.size()&&!stop();++i){NfpBuildOptions build;build.TimeLimitSeconds=std::max(0.,o.TimeLimitSeconds-elapsed());build.Cancel=[&]{return stop();};
-            Prepared[i]=Cache.Prepare(p.Parts[i].Geometry,build);Angles[i]=DistinctAngles(p.Parts[i],p.Tolerance);if(!Prepared[i]){result.Diagnostics.push_back("Unsupported or cancelled NFP shape preparation.");break;}}
+            Prepared[i]=Cache.Prepare(p.Parts[i].Geometry,build);Angles[i]=DistinctAngles(p.Parts[i],p.Tolerance,[&]{return stop();});if(!Prepared[i]){result.Diagnostics.push_back("Unsupported or cancelled NFP shape preparation.");break;}}
         bool ready=std::all_of(Prepared.begin(),Prepared.end(),[](const auto& v){return bool(v);});if(ready&&!stop())visit(o.TimeLimitSeconds,o.MaxPlacementAttempts);
         if(!Best.Placements.empty())result.Layouts.push_back(Best);result.Remaining.clear();
         for(std::size_t i=0;i<p.Parts.size();++i)if(BestUsed[i]<p.Parts[i].Quantity)result.Remaining.push_back({p.Parts[i].ID,p.Parts[i].Quantity-BestUsed[i]});

@@ -21,10 +21,10 @@ export const workpiecePlacements = view => {
   const all=visibleWorkpiecePlacements(view), ids=[...new Set(all.map(p=>p.workpieceId))];
   return ids.map(id=>all.find(p=>p.workpieceId===id&&p.id===view.scene.activePlacementId)||all.find(p=>p.workpieceId===id));
 };
-export const workpieceSelectionBusy = view => !!(view.pending || view.fiveJobRequest || view.fiveWorkpieceEnable?.request || view.fiveWorkpieceLock?.request || view.fiveWorkpieceRemoval?.request || view.fiveAlignment?.request || view.fixtureRequest || view.fiveWorkpieceSwitching || view.fivePlacement?.request || view.fiveTreeRequest
+export const workpieceSelectionBusy = view => !!(view.pending || view.fiveFixtureDesignRequest || view.fiveJobRequest || view.fiveWorkpieceEnable?.request || view.fiveWorkpieceLock?.request || view.fiveWorkpieceRemoval?.request || view.fiveAlignment?.request || view.fixtureRequest || view.fiveWorkpieceSwitching || view.fivePlacement?.request || view.fiveTreeRequest
   || view.fiveStart?.request || view.fiveHole?.request || view.fiveLeads?.request || view.fiveLeads?.saving
   || view.fiveReverseRequest || view.fiveClear?.request || view.fiveOrder?.request || view.fiveGeneration?.request
-  || view.fiveSetupRequest || view.fiveLocating?.request || view.fiveRapid?.request || view.fiveRapidBatch?.request || view.fiveSimulation?.request || view.fiveCommandSavingId || view.fiveToolAxisRequest || view.fiveAxisPointEdit?.dirty || view.fiveAxisPointEdit?.rotation?.gesture || view.fiveAxisPointLookup);
+  || view.fiveSetupRequest || view.fiveOperationRequest || view.fiveOperationBusy || view.fiveMachineTypeAssignments?.busy || view.fiveLocating?.request || view.fiveRapid?.request || view.fiveRapidBatch?.request || view.fiveSimulation?.request || view.fiveCommandSavingId || view.fiveToolAxisRequest || view.fiveAxisPointEdit?.dirty || view.fiveAxisPointEdit?.rotation?.gesture || view.fiveAxisPointLookup);
 export function workpieceLabel(view, placement) {
   const items=view.scene.domain.workpieces, item=view.scene.domain.workpieces.find(w=>w.id===placement.workpieceId);
   return `${items.indexOf(item)+1} · ${item?.name || '工件'}${item?.enabled===false?'（已禁用）':''}`;
@@ -39,6 +39,9 @@ export function renderWorkpieces(view, compact=false) {
 }
 export function resetWorkpieceTools(view) {
   disposeFixturePlacement(view);
+  view.fiveOperationCreateDialog=null;
+  view.fiveOperationReferenceEdit=null;
+  view.fiveFixtureDesignRequest=null;
   view.fiveSetupCheckOpen=false;
   view.fiveSetupNameEdit=null;view.fiveFixtureDesignOpen=false;view.fiveFixtureNewUnit=false;
   if(view.fiveFixtureLibrary){view.fiveFixtureLibrary.open=false;view.fiveFixtureLibrary.choosing=false;}
@@ -59,18 +62,22 @@ export function resetWorkpieceTools(view) {
   view.fiveAxisStartOpen=false;view.fiveAxisSplitOpen=false;view.fiveAxisHoleOpen=false;view.fiveAxisLeadsOpen=false;
   view.fiveStart=null;view.fiveSplit=null;view.fiveHole=null;view.fiveLeads=null;
   const ui=workspaceState(view);ui.selectedIntentId='';ui.selectedIntentIds=[];ui.selectedGroupId='';ui.selectedGroupIds=[];
-  ui.tools.workpiece='select';view.fivePreparationKind='workpiece';
+  ui.tools.workpiece='select';ui.tools.operation='machine-type';view.fivePreparationKind='workpiece';
   view.fiveLocating=null;view.fiveSetupRequest=null;
   view.viewport?.setSpecificationAnnotations?.([]);
 }
-export async function selectWorkpiece(context,view,id,ops,{kind='setup'}={}) {
+export async function selectWorkpiece(context,view,id,ops,{kind='setup',visibilityArea=view.fiveAxisArea,fitView=true}={}) {
   if(view.fiveAlignment&&!await flushAlignmentEdits(context,view,ops))return;
   if(!view.scene?.domain?.placements?.find(p=>p.id===id)?.setupId)kind='workpiece';
-  if(workpieceSelectionBusy(view)||view.viewport?.transformManipulator?.pointerId!=null||!visibleWorkpiecePlacements(view).some(p=>p.id===id))return;
+  if(workpieceSelectionBusy(view)||view.viewport?.transformManipulator?.pointerId!=null||!visibleWorkpiecePlacements({...view,fiveAxisArea:visibilityArea}).some(p=>p.id===id))return;
+  const oldPlacement=view.scene?.domain?.placements?.find(p=>p.id===view.scene.activePlacementId),operationTool=activeTool(view,'operation');
+  if(oldPlacement?.setupId){view.fiveOperationPlacementId=oldPlacement.id;(view.fiveCamPlacements??=new Map()).set(oldPlacement.workpieceId,oldPlacement.id);}
   const beginPlacement=()=>{
-    if(view.fiveAxisArea!=='workpiece'||view.disposed||context.isCurrentProject?.()===false)return;
+    if(!['workpiece','operation'].includes(view.fiveAxisArea)||view.disposed||context.isCurrentProject?.()===false)return;
     resetWorkpieceTools(view);
-    selectTool(view,kind==='workpiece'?'select':'translate');if(kind!=='workpiece'&&view.viewport?.sceneObjects.get(id)?.geometry)openPlacement(view,'translate');
+    const tool=kind==='workpiece'?'select':view.fiveAxisArea==='operation'&&operationTool==='machine-type'?'machine-type':'translate';
+    selectTool(view,tool);view.fivePreparationKind=kind==='workpiece'?'workpiece':'setup';
+    if(kind!=='workpiece'){view.fiveOperationPlacementId=id;const selected=view.scene.domain.placements.find(p=>p.id===id);if(selected)(view.fiveCamPlacements??=new Map()).set(selected.workpieceId,id);if(tool==='translate'&&view.viewport?.sceneObjects.get(id)?.geometry)openPlacement(view,'translate');}
   };
   if(id===view.scene.activePlacementId){beginPlacement();ops.renderProject(context,view);return;}
   resetWorkpieceTools(view);view.fiveWorkpieceSwitching=true;view.pending=true;view.error='';ops.renderProject(context,view);
@@ -79,8 +86,9 @@ export async function selectWorkpiece(context,view,id,ops,{kind='setup'}={}) {
     await saveCommittedProjectEdit(context,view,ops);
     if(view.disposed||context.isCurrentProject?.()===false)return;
     view.fiveActivePlacementId=id;
-    await ops.refreshSceneState(context,view);
-    await ops.fitViewAfterRenderPublish(context,view,{entityIds:[id]});
+    if(await ops.refreshSceneState(context,view)===false)return;
+    const selected=view.scene?.domain?.placements?.find(p=>p.id===id);if(selected?.setupId){view.fiveOperationPlacementId=id;(view.fiveCamPlacements??=new Map()).set(selected.workpieceId,id);}
+    if(fitView&&visibilityArea===view.fiveAxisArea)await ops.fitViewAfterRenderPublish(context,view,{entityIds:[id]});
   } catch(error) { if(!view.disposed)view.error=error.message; }
   finally {view.fiveWorkpieceSwitching=false;view.pending=false;if(!view.disposed&&context.isCurrentProject?.()!==false){if(!view.error)beginPlacement();ops.renderProject(context,view);}}
 }

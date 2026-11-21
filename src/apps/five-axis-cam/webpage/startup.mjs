@@ -1,7 +1,7 @@
 export function getStartupPresentation() {
   return {
     eyebrow: '三维设计与五轴加工',
-    description: '工件 · CAD · CAM · 孪生',
+    description: '工件 · 工序 · 刀路 · 孪生',
     illustration: `<svg class="td-startup__drawing" viewBox="0 0 420 360" fill="none" xmlns="http://www.w3.org/2000/svg">
       <g stroke="#83dfc3" stroke-linejoin="round">
         <path d="M66 218 239 158 356 219 183 287Z" fill="#337d73"/>

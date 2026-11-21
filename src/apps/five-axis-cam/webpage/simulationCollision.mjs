@@ -8,6 +8,7 @@ import {waitForTaskResult} from './taskProgressStream.mjs';
 import {sceneColors} from './scenePalette.mjs';
 import {rapidSegmentDistances} from './simulationTrace.mjs';
 import {readMachiningState,mergeDomainState} from './domainActions.mjs';
+import {applySetupDisplayFrame} from './setupWorldFrame.mjs';
 
 const setupOf=view=>view.scene?.domain?.setups?.find(s=>s.id===view.scene.domain.activeSetupId);
 export function syncCollision(view,s) {
@@ -51,6 +52,7 @@ export function paintCollision(view,s) {
     }
     view.viewport.scene.add(group);
   }
+  applySetupDisplayFrame(view,s.collisionOverlay);
 }
 export function jumpCollision(s,forward) {
   const checks=collisionChecks(s.collisionReport)?.filter(r=>r.status==='Collision'||r.reason==='CAM_HEAD_LIMIT_NO_SOLUTION');
@@ -68,26 +70,28 @@ export function jumpCollision(s,forward) {
 }
 export async function checkCollision(context,view,s,ops,active,onPose,scope=null) {
   if(s.checking)return false;
-  const requested={setupId:view.scene.domain.activeSetupId,...scope},pending=s.collisionRequest??s.collisionPreparationRequest;
-  if(pending&&['setupId','intentId','from','to'].some(key=>pending[key]!==requested[key])){
+  const requested={setupId:view.scene.domain.activeSetupId,...scope},pending=s.collisionRequest??s.collisionPreparationScope;
+  if(pending&&['setupId','intentId','from','to','pathKind'].some(key=>pending[key]!==requested[key])){
     s.message=pending.intentId||pending.to?'上一次单条检测结果尚未确认，请先回到该刀路重试。':'上一次全局检测结果尚未确认，请先点击顶部碰撞检测重试。';
     ops.renderProject(context,view);return false;
   }
   const initialCursor=s.cursor;
-  s.checkScope=scope?'SelectedPath':'AllPaths';
+  s.checkScope=scope?.pathKind||(scope?'SelectedPath':'AllPaths');
   s.checking=true;s.checkProgress=0;s.checkExactProgress=null;s.checkStage='preparing';s.collisionCancelRequested=false;s.message='';view.pending=true;
   ops.renderProject(context,view);
   try{
-    if(scope?.intentId&&!s.collisionRequest){
-      const setup=setupOf(view),operation=setup?.generatedGeometry?.operations?.find(op=>op.intentId===scope.intentId);
-      if(operation?.status!=='Current'){
-        s.collisionPreparationRequest??={commandId:crypto.randomUUID(),expected:structuredClone(view.scene.domain.expected),setupId:setup.id,intentId:scope.intentId};
+    if((scope?.intentId||scope?.pathKind==='Cutting')&&!s.collisionRequest){
+      const setup=setupOf(view),operations=setup?.generatedGeometry?.operations||[],targets=scope.intentId?[scope.intentId]:operations.map(op=>op.intentId);
+      for(const intentId of targets)if(operations.find(op=>op.intentId===intentId)?.status!=='Current'){
+        if(s.collisionCancelRequested||!active())return false;
+        s.collisionPreparationScope=requested;
+        s.collisionPreparationRequest??={commandId:crypto.randomUUID(),expected:structuredClone(view.scene.domain.expected),setupId:setup.id,intentId};
         let generation=await context.sceneProxy.invoke('CamPlan.Generate',s.collisionPreparationRequest,{timeoutMs:machiningTaskTimeoutMs});
         let cancellation;s.cancelCheck=()=>cancellation??=context.sceneProxy.invoke('CamPlan.CancelTask',{epoch:generation.epoch,taskId:generation.taskId});
         if(s.collisionCancelRequested||!active())await s.cancelCheck();
         generation=await waitForTaskResult(context,generation,{active,cancel:()=>s.cancelCheck(),queryMethod:'CamPlan.QueryStatus',cancelMethod:'CamPlan.CancelTask',timeoutMs:machiningTaskTimeoutMs});
         if(!generation)return false;
-        s.collisionPreparationRequest=null;
+        s.collisionPreparationRequest=null;s.collisionPreparationScope=null;
         if(generation.status==='Cancelled'){s.message='碰撞检测已取消';return false;}
         if(generation.status!=='Completed')throw Error(generation.error||'当前刀路姿态读取失败。');
         s.selectedPreparation=generation.result;
@@ -124,12 +128,12 @@ export async function checkCollision(context,view,s,ops,active,onPose,scope=null
     }
   }catch(error){
     const message=error?.message||String(error);
-    if(/CAM_|MOTION_/.test(message)){s.collisionRequest=null;s.collisionPreparationRequest=null;}
+    if(/CAM_|MOTION_/.test(message)){s.collisionRequest=null;s.collisionPreparationRequest=null;s.collisionPreparationScope=null;}
     s.message=message.includes('HEAD_CALIBRATION_REQUIRED')?'请先标定切割头。':message.includes('GEOMETRY_REQUIRED')?'请先重新生成刀路。':message.includes('REVISION_CONFLICT')?'工程已变化，请刷新后重新检测。':s.collisionRequest?'检测结果尚未确认，请重试。':message;
   }finally{disposeCollisionProgress(s);s.cancelCheck=null;s.checking=false;s.checkStage='';view.pending=false;if(!view.disposed&&context.isCurrentProject?.()!==false)ops.renderProject(context,view);}
   return false;
 }
-export async function repairCollision(context,view,s,ops,active){
+export async function repairCollision(context,view,s,ops,active,options={}){
  if(s.repairing||s.checking)return false;
  const report=s.collisionReport,selected=selectedCollisionCheck(s)||report?.segments?.find(r=>Number(r.index)===Math.floor(s.cursor)&&r.status==='Collision'),segmentIndex=Number(selected?.index);if(report?.validity!=='Current'||!selected)return false;
  const rapid=s.frames[segmentIndex]?.role==='Rapid',draft=s.repairDeviationDraft??String(s.repairDeviationDeg??15),angle=Number(draft);
@@ -138,7 +142,7 @@ export async function repairCollision(context,view,s,ops,active){
  s.repairing=true;s.repairCancelRequested=false;s.repairTask=null;s.repairResult=null;s.message='';view.pending=true;
  const frame=s.frames[segmentIndex];s.repairFocus={index:segmentIndex,intentId:frame?.intentId,role:frame?.role,target:frame?.target?.toArray()};
  try{
-  s.repairRequest??={commandId:crypto.randomUUID(),expected:structuredClone(view.scene.domain.expected),setupId:view.scene.domain.activeSetupId,segmentIndex:String(segmentIndex),maxDeviationDeg:angle,maxTranslationMm:distance,localPoseDeviationAuthorized:true,...(selected.kind==='keypose'?{keyposeFrameIndex:selected.key}:selected.kind==='interval'?{intervalFirstFrameIndex:selected.key}:{})};
+  s.repairRequest??={commandId:crypto.randomUUID(),expected:structuredClone(view.scene.domain.expected),setupId:view.scene.domain.activeSetupId,segmentIndex:String(segmentIndex),maxDeviationDeg:angle,maxTranslationMm:distance,localPoseDeviationAuthorized:true,...options,...(selected.kind==='keypose'?{keyposeFrameIndex:selected.key}:selected.kind==='interval'?{intervalFirstFrameIndex:selected.key}:{})};
   ops.renderProject(context,view);
   let task=await context.sceneProxy.invoke('CamSimulation.AutoRepairCollision',s.repairRequest,{timeoutMs:machiningTaskTimeoutMs});s.repairTask=task;
   let cancelPromise;s.cancelRepair=()=>cancelPromise??=context.sceneProxy.invoke('CamSimulation.CancelTask',{epoch:task.epoch,taskId:task.taskId});

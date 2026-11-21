@@ -9,16 +9,17 @@ import {rapidListModel} from './rapidListModel.mjs';
 
 const result=reason=>({disabled:!!reason,unavailableReason:reason||''});
 export function commandAvailability(view,id){
-  if(id==='five.simulation.collision-check')id='five.tool.collision';
+  if(/^five\.simulation\.collision-(check|manual-scope|auto-scope)(:(Cutting|Rapid))?$/.test(id))id='five.tool.collision';
   const d=view.scene?.domain,p=d?.placements?.find(p=>p.id===view.scene.activePlacementId)||d?.placements?.find(p=>p.setupId===d.activeSetupId),w=activeWorkpiece(view),s=d?.setups?.find(s=>s.id===p?.setupId),kind=preparationKind(view);
   const unit=d?.fixtureUnits?.find(u=>u.setupId===s?.id&&u.id===view.fiveAxisFixtures?.selected);
   const root=!!p&&kind==='workpiece',pose=!!p&&!!s&&kind==='setup',fixture=!!unit&&kind==='unit'&&!view.fiveFixtureDesignOpen;
   const busy=workpieceSelectionBusy(view)||view.viewport?.transformManipulator?.pointerId!=null,wait=busy?(operationUnavailableReason(view)||'请先结束当前拖动或确认正在编辑的坐标。'):'';
   const displayReason=view.viewport?.sceneObjects?.get(p?.id)?.geometry?'':'工件显示尚未就绪，请稍候。';
-  const enabledReason=!w||!p?'请先选择工件。':w.enabled===false?'请先启用当前工件。':s?.enabled===false?'请先启用当前装夹姿态。':'';
+  const enabledReason=!w||!p?'请先选择工件。':w.enabled===false?'请先启用当前工件。':s?.enabled===false?'请先启用当前工序。':'';
   const rootReason=!root?'请先选择工件。':w?.enabled===false?'请先启用当前工件。':w?.locked?'请先解锁当前工件。':'';
   const poseReason=!pose?'请先选择装夹姿态。':enabledReason;
   const fixtureReason=!fixture?'请先选择夹具单元。':enabledReason;
+  if(view.fiveOperationCreateDialog&&(id.startsWith('five.fixture.')||id.startsWith('five.setup.')&&!id.startsWith('five.setup.activate:')||['five.preparation.copy:setup','five.preparation.copy:fixture','five.tool.translate','five.tool.rotate','five.tool.registration','five.tool.machine-type'].includes(id)))return result('请先创建工序或取消新建。');
   if(id.startsWith('five.extraction.begin'))return result(wait||camPreparationReason(view)||displayReason);
   if(id.startsWith('five.machine-ik.')){const m=view.scene?.machines?.find(m=>m.entityId===view.fiveMachine?.machineId);return result(wait||view.pending||view.fiveMachine?.busy||view.fiveMachineIK?.inflight||view.fiveMachineJog?.running?'请先完成当前操作。':!m||m.enabled===false?'请选择已启用的机床实例。':id==='five.machine-ik.fk'&&!selectedMachineJoint(view)?'请选择具有独立运动关节的节点。':id!=='five.machine-ik.close'&&!canAdjustMachinePart(view)?'请选择有运动关节的部件。':id==='five.machine-ik.rotate'&&!canRotateMachinePart(view)?'当前节点到根之间没有可用的旋转关节。':'');}
   if(id.startsWith('five.machine-panel.')){
@@ -41,12 +42,14 @@ export function commandAvailability(view,id){
     if(action==='export'||action==='program')return result(report?.status==='Ready'&&report?.collisionStatus==='Clear'&&machine?.postprocessor?.name?'':'请先完成仿真检查并配置实例后置。');
   }
   switch(id){
+    case 'five.operation.create':return result(wait||(!d?.workpieces?.some(w=>w.enabled!==false)?'请先导入并启用工件。':''));
+    case 'five.tool.machine-type':return result(wait||(!s?'请先新增工序。':''));
     case 'workpiece.import':return result(wait);
     case 'workpiece.remove':return result(wait||(!root?'请先选择工件。':w.locked?'请先解锁当前工件。':''));
     case 'five.preparation.copy:workpiece':return result(wait||(!root?'请先选择工件。':enabledReason));
     case 'five.tool.scale':case 'five.tool.align':return result(wait||rootReason||displayReason);
     case 'five.setup.create':return result(wait||(!root&&!pose?'请先选择工件或装夹姿态。':enabledReason));
-    case 'five.setup.remove':return result(wait||(!pose?'请先选择装夹姿态。':s.locked?'请先解锁当前装夹姿态。':''));
+    case 'five.setup.remove':return result(wait||(!s?'请先选择工序。':s.locked?'请先解锁当前工序。':''));
     case 'five.preparation.copy:setup':return result(wait||poseReason);
     case 'five.tool.translate':case 'five.tool.rotate':return result(wait||poseReason||(s?.locked?'请先解锁当前装夹姿态。':'')||displayReason);
     case 'five.tool.registration':return result(wait||poseReason||displayReason);

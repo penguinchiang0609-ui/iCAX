@@ -1,5 +1,5 @@
 // Select a sparse frame from already checked profiles. Spare stations have no
-// solid/mesh cost and let a missing contact or joint use a neighbouring position.
+// final solid/export cost and let a missing contact or joint use a neighbouring position.
 std::vector<size_t> SkeletonSequence(std::vector<std::pair<double,size_t>> available,
                                    double maximumSpan,double first,double last,bool bearing){
     if(available.size()<2)throw std::runtime_error("PLATE_SKELETON_INSUFFICIENT");

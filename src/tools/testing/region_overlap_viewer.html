@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>截面分区对照</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#233044;font:14px system-ui,"Microsoft YaHei",sans-serif}header{display:flex;align-items:center;gap:18px;padding:13px 20px;background:#fff;border-bottom:1px solid #dce2e8}h1{font-size:19px;margin:0}header small{color:#657487}a{color:#2864a0}main{height:calc(100vh - 57px);display:grid;grid-template-columns:270px minmax(360px,1fr) 285px}aside{background:white;padding:15px;overflow:auto}aside:first-child{border-right:1px solid #dce2e8}aside:last-child{border-left:1px solid #dce2e8}input,button{font:inherit}input{width:100%;padding:8px;border:1px solid #c7d1dc;border-radius:5px}button{padding:7px 9px;border:1px solid #ccd4dc;border-radius:5px;background:#fff;color:inherit;cursor:pointer}button.active{background:#e5eff9;border-color:#6696c4}#list{margin-top:10px;display:grid;gap:5px}#list button{text-align:left;overflow-wrap:anywhere}#list small{display:block;margin-top:3px;color:#657487}.workspace{display:flex;flex-direction:column;min-width:0}.toolbar{padding:10px 15px;display:flex;align-items:center;flex-wrap:wrap;gap:12px}.toolbar label{display:flex;align-items:center;gap:5px}.toolbar input{width:auto}.canvas{margin:0 13px 13px;flex:1;min-height:330px;border:1px solid #dfe5eb;border-radius:6px;background:white;overflow:hidden}svg{display:block;width:100%;height:100%;touch-action:none}.cell{cursor:pointer;stroke:#3b4f62;stroke-width:1.15;vector-effect:non-scaling-stroke;fill-opacity:.8}.cell:hover,.cell.selected{stroke:#0d2742;stroke-width:3;fill-opacity:1}.source{fill-opacity:.3;stroke:#38516b;stroke-width:1.3;vector-effect:non-scaling-stroke}.outline{fill:none;stroke:#102d44;stroke-width:1.8;vector-effect:non-scaling-stroke;pointer-events:none}#hint{padding:0 15px 12px;color:#67798a}h2{font-size:15px;margin:0 0 9px}section.block{border-bottom:1px solid #e1e6eb;padding-bottom:15px;margin-bottom:15px}dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:7px 8px}dt{color:#667486}dd{margin:0;text-align:right;overflow-wrap:anywhere}#owners{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}#detail{line-height:1.7;white-space:pre-wrap}.legend{display:flex;align-items:center;gap:10px;color:#586b7d}.swatch{display:inline-block;width:12px;height:12px;border:1px solid #8595a3;border-radius:2px;margin-right:4px}#reason{color:#a43f27;white-space:pre-wrap;overflow-wrap:anywhere}#files a{display:block;margin:7px 0}@media(max-width:1000px){main{grid-template-columns:210px minmax(300px,1fr)}aside:last-child{grid-column:1/-1;max-height:300px}.canvas{height:480px;flex:auto}}
+@media(max-width:650px){
+  header{flex-wrap:wrap;gap:5px 12px;padding:8px 12px}
+  header h1{flex-basis:100%}
+  main{height:auto;grid-template-columns:minmax(0,1fr)}
+  aside:first-child{max-height:130px;border-right:0;border-bottom:1px solid #dce2e8}
+  aside:last-child{grid-column:auto;max-height:none;border-left:0;border-top:1px solid #dce2e8}
+  .toolbar{gap:6px 10px;padding:8px 12px}
+  .canvas{height:clamp(250px,55vw,380px);min-height:0}
+}
+</style>
+</head>
+<body>
+<header><h1>截面分区对照</h1><small id="summary">读取结果…</small><a href="index.html">原完整区域</a><a href="fitting.html">轮廓简化</a></header>
+<main>
+<aside><input id="search" aria-label="查找轮廓" placeholder="查找轮廓"><div id="list"></div></aside>
+<section class="workspace">
+<div class="toolbar"><strong id="name"></strong>
+<label><input id="wall" name="mode" type="radio" value="wall" disabled>按轮廓过渡分区</label>
+<label><input id="disjoint" name="mode" type="radio" value="disjoint" checked>按重合关系拆分</label>
+<label><input id="source" name="mode" type="radio" value="source">原完整区域</label>
+<button id="fit">适应窗口</button><span class="legend" id="legend"></span></div>
+<div class="canvas"><svg id="svg" aria-label="截面与分区"></svg></div>
+<div id="hint">点选彩色区域查看详情。黑线是原截面。中键拖动，滚轮缩放。</div>
+</section>
+<aside><section class="block"><h2>求解状态</h2><div id="status"></div><p id="reason"></p><dl id="facts"></dl></section><section class="block"><h2>区域与来源</h2><div id="owners"></div><p id="detail">点选彩色区域查看详情。</p></section><section class="block"><h2>输出</h2><div id="files"></div></section><p>每种分区结果包含一个完整 BREP，网页使用曲线点列显示。</p></aside>
+</main>
+<script type="module">
+const el=id=>document.getElementById(id),svg=el('svg'),ns='http://www.w3.org/2000/svg';
+const colors=['#77b7d8','#8ac9a5','#b4a3d5','#d9b878','#90a8dc','#d7a3b4','#9ebd80'];
+const curvedColor='#efaa57';
+const areaText=value=>`${value.toFixed(6)} mm²`;
+const residualText=value=>`${value.toPrecision(4)} mm²`;
+const wallRecords=new Map();
+let manifest,record,sourceData,data,wallData,view,baseView,selected=null,request=0,mode='disjoint';
+let overlapLoadError,wallLoadError;
+const add=(tag,attrs,parent=svg)=>{const node=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))node.setAttribute(k,v);parent.append(node);return node};
+const pathOf=wires=>(wires||[]).filter(w=>w.length>1).map(w=>'M'+w.map(p=>p[0]+','+(-p[1])).join('L')+'Z').join('');
+function visibleRegions(){
+  if(mode==='wall')return wallData?.cells||[];
+  if(mode==='source')return sourceData?.regions||[];
+  return data?.cells||[];
+}
+function regionColor(region){
+  if(mode==='wall')return region.kind==='curved-wall'?curvedColor:colors[0];
+  if(mode==='source')return colors[(region.id-1)%colors.length];
+  if(region.kind==='shared'){
+    const owners=region.sourceRegionIds.reduce((sum,id)=>sum+id,0);
+    return [curvedColor,'#e99960','#f4bd69','#df8d54'][owners%4];
+  }
+  return colors[(region.sourceRegionIds[0]-1)%colors.length];
+}
+function regionDetails(region){
+  if(mode==='wall')return [
+    `C${region.id} · ${region.kind==='curved-wall'?'曲壁区':'直壁区'}`,
+    `外轮廓曲线 ${region.outerCurveId} · 内轮廓曲线 ${region.innerCurveId}`,
+    `面积 ${areaText(region.area)}`,
+  ];
+  if(mode==='source')return [`原区域 R${region.id}`,`面积 ${areaText(region.area)}`];
+  return [
+    `C${region.id} · ${region.kind==='shared'?'重合区':'独占区'}`,
+    `来源 ${region.sourceRegionIds.map(id=>'R'+id).join('、')}`,
+    `面积 ${areaText(region.area)}`,
+  ];
+}
+function setView(){if(view)svg.setAttribute('viewBox',view.join(' '));}
+function draw(){
+  svg.replaceChildren();
+  if(!sourceData)return;
+  for(const region of visibleRegions()){
+    const shape=add('path',{
+      d:pathOf(region.displayWires),fill:regionColor(region),'fill-rule':'evenodd',
+      class:`cell${mode==='source'?' source':''}`,'data-region':region.id,
+    });
+    shape.onclick=()=>select(region.id);
+    add('title',{},shape).textContent=regionDetails(region).join(' · ');
+  }
+  for(const wires of sourceData.originalDisplayWires)add('path',{d:pathOf(wires),class:'outline'});
+  select(selected);
+  setView();
+}
+function select(id){
+  selected=id;
+  const region=visibleRegions().find(region=>region.id===id);
+  el('detail').textContent=region?regionDetails(region).join('\n'):'点选彩色区域查看详情。';
+  for(const shape of svg.querySelectorAll('.cell'))shape.classList.toggle('selected',shape.dataset.region===String(id));
+  for(const button of el('owners').children)button.classList.toggle('active',button.dataset.region===String(id));
+}
+function list(){
+  if(!manifest)return;
+  const query=el('search').value.trim().toLowerCase();
+  el('list').replaceChildren();
+  for(const item of manifest.records.filter(r=>r.name.toLowerCase().includes(query))){
+    const button=document.createElement('button');
+    button.className=item.id===record?.id?'active':'';
+    button.dataset.caseId=item.id;
+    button.textContent=item.name;
+    const small=document.createElement('small');
+    const wall=wallRecords.get(item.id);
+    if(wall?.status==='wall-regions')small.textContent=`${wall.cellCount} 区 · ${wall.curvedCellCount} 个曲壁区`;
+    else small.textContent=item.status==='disjoint-regions'?`${item.cellCount} 区 · ${item.sharedCellCount} 个重合区`:item.reason||item.status;
+    button.append(small);
+    button.onclick=()=>load(item);
+    el('list').append(button);
+  }
+}
+function facts(rows){el('facts').replaceChildren();for(const[label,value]of rows){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=String(value);el('facts').append(dt,dd);}}
+function file(label,url){const link=document.createElement('a');link.textContent=label;link.href=url;link.target='_blank';el('files').append(link);}
+function legend(entries){
+  el('legend').replaceChildren();
+  for(const [color,label] of entries){
+    const entry=document.createElement('span'),swatch=document.createElement('i');
+    swatch.className='swatch';swatch.style.background=color;
+    entry.append(swatch,label);el('legend').append(entry);
+  }
+}
+function regionButton(label,region){
+  const button=document.createElement('button');
+  button.textContent=label;
+  button.dataset.region=region.id;
+  button.title=regionDetails(region).join(' · ');
+  button.onclick=()=>select(region.id);
+  el('owners').append(button);
+}
+function showMode(next){
+  mode=next;selected=null;el(mode).checked=true;
+  const wall=wallRecords.get(record.id);
+  el('owners').replaceChildren();
+  const wallReason=wallLoadError||(wall?.status==='failed'?wall.reason||'计算未完成':'');
+  el('reason').textContent=wallReason?`轮廓过渡分区未完成。${wallReason}`:'';
+  if(mode==='wall'){
+    legend([[colors[0],'直壁区'],[curvedColor,'曲壁区']]);
+    el('status').textContent='按内外轮廓的过渡位置划分';
+    facts([['区域总数',wall.cellCount],['曲壁区',wall.curvedCellCount],
+      ['重叠面积',residualText(wallData.remainingOverlapArea)],
+      ['遗漏面积',residualText(wallData.missingArea)],['多出面积',residualText(wallData.excessArea)]]);
+    for(const cell of wallData.cells)regionButton(`C${cell.id}`,cell);
+  }else if(mode==='disjoint'&&data){
+    legend([[colors[0],'独占区'],[curvedColor,'重合区']]);
+    el('status').textContent='重合区已单独成区';
+    facts([['原完整区域',data.sourceRegionCount],['拆分后区域',data.cellCount],['重合区',record.sharedCellCount],
+      ['实际重合区面积',areaText(data.sharedArea)],['原重复计入面积',areaText(sourceData.overlapArea||0)],
+      ['拆分后重叠面积',residualText(data.remainingOverlapArea)],
+      ['遗漏 / 多出',`${residualText(data.missingArea)} / ${residualText(data.excessArea)}`]]);
+    for(let id=1;id<=data.sourceRegionCount;id++){
+      const cell=data.cells.find(cell=>cell.sourceRegionIds.includes(id));
+      if(cell)regionButton(`R${id}`,cell);
+    }
+  }else{
+    legend([]);
+    el('status').textContent='显示原完整区域';
+    if(overlapLoadError||record.reason)el('reason').textContent=overlapLoadError||record.reason;
+    facts([['原完整区域',sourceData.regions.length],['原重复计入面积',areaText(sourceData.overlapArea||0)]]);
+    for(const region of sourceData.regions)regionButton(`R${region.id}`,region);
+  }
+  draw();
+}
+async function readJson(url){
+  const response=await fetch(url);
+  if(!response.ok)throw new Error(`读取结果失败（${response.status}）`);
+  return response.json();
+}
+async function load(item){
+  const token=++request;
+  record=item;data=null;sourceData=null;wallData=null;selected=null;view=null;baseView=null;
+  overlapLoadError=null;wallLoadError=null;
+  svg.replaceChildren();facts([]);legend([]);el('name').textContent=item.name;
+  el('status').textContent='读取结果…';el('reason').textContent='';
+  el('detail').textContent='点选彩色区域查看详情。';el('owners').replaceChildren();el('files').replaceChildren();
+  for(const id of ['wall','disjoint','source'])el(id).disabled=true;
+  for(const button of el('list').children)button.classList.toggle('active',button.dataset.caseId===item.id);
+  history.replaceState(null,'','#'+encodeURIComponent(item.name));
+  const dir=`contours/${item.id}/`,wall=wallRecords.get(item.id);
+  const wallAvailable=wall?.status==='wall-regions'&&wall.result&&wall.brep;
+  el('wall').parentElement.title=wall?.status==='not-applicable'?wall.reason||'轮廓过渡点无法配对':'';
+  if(wallAvailable){
+    file('轮廓过渡分区完整 BREP','contours/'+wall.brep);
+    file('轮廓过渡分区数据','contours/'+wall.result);
+  }
+  if(item.brep)file('拆分后完整 BREP','contours/'+item.brep);
+  file('拆分前完整 BREP',dir+'regions.brep');
+  if(item.result)file('区域与归属数据','contours/'+item.result);
+  file('Work 运行记录',dir+'overlap-work.json');
+  try{
+    const [sourceResult,overlapResult,wallResult]=await Promise.allSettled([
+      readJson(dir+'regions.json'),
+      item.result?readJson('contours/'+item.result):null,
+      wallAvailable?readJson('contours/'+wall.result):null,
+    ]);
+    if(token!==request)return;
+    if(sourceResult.status==='rejected')throw sourceResult.reason;
+    sourceData=sourceResult.value;data=overlapResult.value;wallData=wallResult.value;
+    overlapLoadError=overlapResult.reason?.message;
+    wallLoadError=wallResult.reason?.message;
+    const points=sourceData.originalDisplayWires.flat(2);
+    const xs=points.map(p=>p[0]),ys=points.map(p=>-p[1]);
+    const x=Math.min(...xs),y=Math.min(...ys),w=Math.max(...xs)-x,h=Math.max(...ys)-y;
+    const pad=Math.max(w,h)*.08;
+    baseView=[x-pad,y-pad,w+2*pad,h+2*pad];view=[...baseView];
+    el('wall').disabled=!wallData;el('disjoint').disabled=!data;el('source').disabled=false;
+    const requestedMode=new URLSearchParams(location.search).get('mode');
+    const modes={wall:wallData,disjoint:data,source:sourceData};
+    showMode(Object.hasOwn(modes,requestedMode)&&modes[requestedMode]?requestedMode:wallData?'wall':data?'disjoint':'source');
+  }catch(error){
+    if(token!==request)return;
+    el('status').textContent='未能显示分区';el('reason').textContent=error.message;
+  }
+}
+async function init(){
+  const [overlap,wall]=await Promise.all([
+    readJson('contours/overlap-manifest.json'),
+    readJson('contours/wall-manifest.json').catch(()=>null),
+  ]);
+  for(const row of wall?.records||[])wallRecords.set(row.id,row);
+  manifest=overlap;
+  const done=manifest.records.filter(r=>r.status==='disjoint-regions').length;
+  const wallDone=(wall?.records||[]).filter(r=>r.status==='wall-regions').length;
+  el('summary').textContent=`${manifest.inputCount} 份轮廓 · ${done} 份重合拆分${wall?` · ${wallDone} 份轮廓过渡分区`:''}`;
+  list();
+  const wanted=decodeURIComponent(location.hash.slice(1));
+  load(manifest.records.find(r=>r.name===wanted)||manifest.records.find(r=>wallRecords.get(r.id)?.status==='wall-regions')||manifest.records.find(r=>r.sharedCellCount>0)||manifest.records[0]);
+}
+el('search').oninput=list;
+for(const control of document.querySelectorAll('input[name="mode"]'))control.onchange=()=>showMode(control.value);
+el('fit').onclick=()=>{if(baseView){view=[...baseView];setView()}};
+window.addEventListener('hashchange',()=>{const wanted=decodeURIComponent(location.hash.slice(1));const next=manifest?.records.find(r=>r.name===wanted);if(next&&next!==record)load(next)});
+svg.addEventListener('wheel',event=>{if(!view)return;event.preventDefault();const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(svg.getScreenCTM().inverse()),factor=Math.exp(Math.sign(event.deltaY)*.12);view=[point.x+(view[0]-point.x)*factor,point.y+(view[1]-point.y)*factor,view[2]*factor,view[3]*factor];setView()},{passive:false});let drag=null;svg.addEventListener('pointerdown',event=>{if(event.button!==1||!view)return;event.preventDefault();drag=[event.clientX,event.clientY,...view];svg.setPointerCapture(event.pointerId)});svg.addEventListener('pointermove',event=>{if(!drag)return;const screen=svg.getScreenCTM();view=[drag[2]-(event.clientX-drag[0])/screen.a,drag[3]-(event.clientY-drag[1])/screen.d,drag[4],drag[5]];setView()});svg.addEventListener('pointerup',()=>drag=null);svg.addEventListener('pointercancel',()=>drag=null);
+init().catch(error=>el('summary').textContent=error.message);
+</script>
+</body></html>

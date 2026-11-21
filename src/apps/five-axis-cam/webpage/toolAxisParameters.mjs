@@ -2,6 +2,7 @@ import { toolAxisErrorText } from './toolAxisErrors.mjs';
 import {supportsToolAxis} from './toolAxisEligibility.mjs';
 import { saveCommittedCutEdit } from './cutEditPersistence.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import { activeTool, workspaceState } from './workspaceModel.mjs';
 import { reloadReversedPointDraft } from './toolAxisPoints.mjs';
 import { mergeDomainState, refreshMachiningState, readMachiningState } from './domainActions.mjs';
@@ -105,8 +106,8 @@ export function syncToolAxisParameters(context,view,ops){
     }).catch(error=>{if(alive(context,view)&&drafts.get(cut.id)===state){state.loading=false;state.error=toolAxisErrorText(error);ops.renderProject(context,view);}});
   }
   const vp=view.viewport,p=placement(view,cut);if(!vp||!p||!d?.data||d.stale||!d.dirty||view.fiveToolAxisDisplay?.visible===false){disposeToolAxisPreview(view);return;}
-  const signature=JSON.stringify([vp.id,cut.id,d.key,d.values,d.frame,d.mode,d.dirty,p.transform]);if(view.fiveToolAxisPreview?.key===signature)return;
-  disposeToolAxisPreview(view);const group=new THREE.Group();group.name='five-axis-tool-axis';group.matrixAutoUpdate=false;group.matrix.set(...p.transform);
+  const signature=JSON.stringify([vp.id,cut.id,d.key,d.values,d.frame,d.mode,d.dirty,placementWorldMatrix(view,p).elements]);if(view.fiveToolAxisPreview?.key===signature)return;
+  disposeToolAxisPreview(view);const group=new THREE.Group();group.name='five-axis-tool-axis';group.matrixAutoUpdate=false;group.matrix.copy(placementWorldMatrix(view,p));
   const origin=new THREE.Vector3(...d.data.point),object=vp.sceneObjects.get(p.id);object?.geometry?.computeBoundingBox();const length=Math.max(.1,(object?.geometry?.boundingBox?.getSize(new THREE.Vector3()).length()||10)*.075);
   const arrow=(values,color,size)=>{const a=new THREE.ArrowHelper(new THREE.Vector3(...values).normalize(),origin,size,color,size*.2,size*.09);a.traverse(o=>{o.raycast=()=>{};o.renderOrder=45;if(o.material)o.material.depthTest=false;});group.add(a);};
   try{let v=new THREE.Vector3(...(!d.dirty?d.data.direction:d.mode==='SurfaceNormal'?d.data.surfaceNormal:unit(d.values)));if(d.dirty&&d.mode==='Fixed'&&d.frame==='Setup')v.transformDirection(new THREE.Matrix4().set(...p.transform).invert());if(v.dot(new THREE.Vector3(...d.data.surfaceNormal))<1-1e-6)arrow(d.data.surfaceNormal,sceneColors.reference,length*.7);arrow(v.toArray(),sceneColors.toolAxis,length);}catch{}

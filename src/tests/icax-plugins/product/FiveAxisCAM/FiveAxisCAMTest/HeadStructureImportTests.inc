@@ -13,7 +13,7 @@ namespace {
 }
 TEST(FiveAxisHead, StaticGeometryFormatsDeclareNoRotaryJoints)
 {
-    Scene scene;File stock(BRepPrimAPI_MakeBox(10,20,30).Shape());Imported(scene,stock);HeadImportFiles files;files.Meshes();
+    Scene scene;File stock(BRepPrimAPI_MakeBox(10,20,30).Shape());Imported(scene,stock,"TableTable");HeadImportFiles files;files.Meshes();
     IGESControl_Writer writer;writer.AddShape(BRepPrimAPI_MakeBox(10,15,50).Shape());ASSERT_TRUE(writer.Write((files.Directory/"body.iges").string().c_str()));
     const auto workpiece=Read(scene).at("workpieces");
     auto request=ImportTestHead(scene,stock);ASSERT_EQ("Completed",Wait(scene,Invoke(&scene,"CamHead","Import",request)).at("status").To<Text>());

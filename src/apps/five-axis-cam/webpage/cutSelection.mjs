@@ -1,7 +1,9 @@
+import {camPathKind} from './workspaceModel.mjs';
 import { projectWorkpiece } from './domainActions.mjs';
 import { orderedCuts, cutTreeBusy } from './cutTree.mjs';
 import { buildCutTree } from './cutTreeModel.mjs';
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
+import {placementWorldMatrix} from './setupWorldFrame.mjs';
 import { workspaceState, activeTool } from './workspaceModel.mjs';
 import { polylineMatchesRectangle } from '../../../iCAX-UI/SDK/Viewport/rectangleSelection.mjs';
 import { loadCutDraft } from './cutEditing.mjs';
@@ -33,7 +35,7 @@ export function nearestCutLine(view,event) {
   for(const cut of view.scene.intentToolpaths||[]){
     if(cut.locked||cut.enabled===false||!toolpathLayerVisible(view,cut.id))continue;
     const placement=view.scene.domain?.placements.find(p=>p.id===cut.placementId);if(!placement)continue;
-    const matrix=new THREE.Matrix4().set(...placement.transform);
+    const matrix=placementWorldMatrix(view,placement);
     const points=(cut.previewPoints||[]).map(p=>{
       const q=new THREE.Vector3(...p).applyMatrix4(matrix).project(v.camera);
       return [box.x+(q.x+1)*box.width/2,box.y+(1-q.y)*box.height/2,q.z];
@@ -57,7 +59,7 @@ export function nearestCutLine(view,event) {
   return chosen;
 }
 export function handleCutLinePick(context,view,_data,_hit,event,_hits,ops) {
-  if(view.fiveAxisArea!=='toolpath'||view.fiveCamPage==='rapid'||view.fiveToolAxisRequest||view.fiveReverseRequest||view.fiveClear?.request||view.fiveAxisExtractionPick||view.fiveStart?.request||view.fiveHole?.request||view.fiveLeads?.request||view.fiveLeads?.saving||view.pending||!event)return false;
+  if(view.fiveAxisArea!=='toolpath'||camPathKind(view)==='rapid'||view.fiveToolAxisRequest||view.fiveReverseRequest||view.fiveClear?.request||view.fiveAxisExtractionPick||view.fiveStart?.request||view.fiveHole?.request||view.fiveLeads?.request||view.fiveLeads?.saving||view.pending||!event)return false;
   if(view.fiveAxisPointEdit?.dirty){view.fiveAxisPointEdit.error='请先应用或取消当前关键点修改。';ops.renderProject(context,view);return true;}
   const chosen=nearestCutLine(view,event);
   if(!chosen){
@@ -74,7 +76,7 @@ export function handleCutLinePick(context,view,_data,_hit,event,_hits,ops) {
 }
 
 export function cutRectangleSelectionKey(context,view) {
-  if(view.fivePoseSelection?.active||view.disposed||context.isCurrentProject?.()===false||view.fiveAxisArea!=='toolpath'||view.fiveCamPage==='rapid'
+  if(view.fivePoseSelection?.active||view.disposed||context.isCurrentProject?.()===false||view.fiveAxisArea!=='toolpath'||camPathKind(view)==='rapid'
     ||cutTreeBusy(view)||view.fiveTreeRequest||view.fiveAxisStartOpen||view.fiveAxisSplitOpen
     ||['rapid','simulation','leads'].includes(activeTool(view))||!view.scene?.intentToolpaths?.length)return null;
   return JSON.stringify([view.scene.domain?.expected,activeTool(view),view.fiveCutPreview?.group.uuid,view.fiveGeneratedPreview?.group.uuid]);

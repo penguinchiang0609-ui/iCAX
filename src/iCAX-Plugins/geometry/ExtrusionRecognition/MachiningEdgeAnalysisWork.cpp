@@ -10,15 +10,25 @@
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRep_Tool.hxx>
+#include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <Geom2dAPI_ProjectPointOnCurve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <GeomAdaptor_Surface.hxx>
+#include <GeomConvert_SurfToAnaSurf.hxx>
+#include <GeomConvert.hxx>
 #include <GeomLib_IsPlanarSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <GeomConvert_BSplineCurveToBezierCurve.hxx>
+#include <BSplCLib.hxx>
+#include <NCollection_Array1.hxx>
 #include <GeomProjLib.hxx>
 #include <GeomAPI.hxx>
 #include <Geom_Plane.hxx>
+#include <Geom_Line.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom2d_TrimmedCurve.hxx>
 #include <Geom2dAPI_InterCurveCurve.hxx>
@@ -104,7 +114,13 @@ struct SectionCurve final
     Handle(Geom2d_Curve) Curve;
     double First = 0.0;
     double Last = 0.0;
+    std::uint64_t SourceEdgeId = 0;
+    TopoDS_Edge SourceNativeEdge;
+    double DeclaredTolerance = kSupportTolerance;
 };
+
+bool IsCertifiedNativeExtrusionSkinFace(const TopoDS_Face&,const std::vector<SectionCurve>&,
+    std::string*);
 
 double SkinDistance(const gp_Pnt& point, const std::vector<SectionCurve>& section)
 {
@@ -139,19 +155,36 @@ bool Plane(const TopoDS_Face& face, gp_Pln& plane)
 // Shared source coedges are a membership proof only when the other support
 // really is stock skin. Recess floors are non-machining too, so membership in
 // the NonMachining partition alone is deliberately insufficient.
-bool IsSourceSkinFace(const TopoDS_Face& face, const std::vector<SectionCurve>& section)
+bool IsSourceSkinFace(const TopoDS_Face& face, const std::vector<SectionCurve>& section,
+    std::string* nativeProof=nullptr)
 {
+    if(IsCertifiedNativeExtrusionSkinFace(face,section,nativeProof))return true;
     BRepAdaptor_Surface surface(face, true);
     gp_Pln plane;
     if (Plane(face, plane))
     {
         if (std::abs(plane.Axis().Direction().X()) > 1.0e-10) return false;
     }
-    else if (surface.GetType() == GeomAbs_Cylinder)
+    else
     {
-        if (std::abs(surface.Cylinder().Axis().Direction().X()) < 1.0 - 1.0e-10) return false;
+        auto support = BRep_Tool::Surface(face);
+        const auto type = surface.GetType();
+        if (type == GeomAbs_BSplineSurface || type == GeomAbs_BezierSurface)
+        {
+            // Recognize the unchanged support only. A valid IGES skin can
+            // retain an approximate 3D trim, so healing that trim is neither
+            // necessary nor permitted for this source-membership proof.
+            double u0, u1, v0, v1;
+            BRepTools::UVBounds(face, u0, u1, v0, v1);
+            GeomConvert_SurfToAnaSurf conversion(support);
+            support = conversion.ConvertToAnalytical(kSupportTolerance, u0, u1, v0, v1);
+            if (support.IsNull() || !std::isfinite(conversion.Gap())
+                || conversion.Gap() < 0.0 || conversion.Gap() > kSupportTolerance) return false;
+        }
+        GeomAdaptor_Surface analytic(support);
+        if (analytic.GetType() != GeomAbs_Cylinder
+            || std::abs(analytic.Cylinder().Axis().Direction().X()) < 1.0 - 1.0e-10) return false;
     }
-    else return false;
 
     std::size_t samples = 0;
     for (TopExp_Explorer edges(face, TopAbs_EDGE); edges.More(); edges.Next())
@@ -301,6 +334,7 @@ struct FiniteEdge final
     double First = 0.0, Last = 0.0;
     gp_Pnt Start, End;
     bool Closed = false;
+    double DeclaredTolerance = 0.0;
     std::array<double,3> Minimum{}, Maximum{};
 };
 
@@ -313,6 +347,7 @@ struct EdgeProjection final
 FiniteEdge ReadFinite(const TopoDS_Edge& edge,const std::uint64_t id)
 {
     FiniteEdge result;result.Id=id;result.Curve=BRep_Tool::Curve(edge,result.First,result.Last);
+    result.DeclaredTolerance=BRep_Tool::Tolerance(edge);
     if(result.Curve.IsNull()||!std::isfinite(result.First)||!std::isfinite(result.Last)||result.First>=result.Last)
         throw std::runtime_error("Invalid finite source edge E"+std::to_string(id));
     result.Start=result.Curve->Value(result.First);result.End=result.Curve->Value(result.Last);
@@ -392,6 +427,18 @@ class EdgeBoxTree final
         }
         else {Query(node.Left,edgeIndex,found);Query(node.Right,edgeIndex,found);}
     }
+    void Query(const int index,const FiniteEdge& edge,std::vector<std::size_t>& found)const
+    {
+        const auto& node=Nodes[index];
+        if(!BoxesIntersect(node.Minimum,node.Maximum,edge.Minimum,edge.Maximum))return;
+        if(node.Left<0)
+        {
+            for(std::size_t i=node.Begin;i<node.End;++i)
+                if(BoxesIntersect(Edges[Order[i]].Minimum,Edges[Order[i]].Maximum,edge.Minimum,edge.Maximum))
+                    found.push_back(Order[i]);
+        }
+        else {Query(node.Left,edge,found);Query(node.Right,edge,found);}
+    }
 public:
     explicit EdgeBoxTree(const std::vector<FiniteEdge>& edges):Edges(edges)
     {
@@ -401,6 +448,10 @@ public:
     std::vector<std::size_t> Candidates(const std::size_t index)const
     {
         std::vector<std::size_t> result;if(!Nodes.empty())Query(0,index,result);return result;
+    }
+    std::vector<std::size_t> Candidates(const FiniteEdge& edge)const
+    {
+        std::vector<std::size_t> result;if(!Nodes.empty())Query(0,edge,result);return result;
     }
 };
 
@@ -653,6 +704,126 @@ bool SpanContained(const FiniteEdge& span,const FiniteEdge& target,double& maxGa
         maxGap=std::max(maxGap,projection.Distance);
     }
     return true;
+}
+
+bool OrderedSkinProjection(const FiniteEdge& source,const FiniteEdge& target,double& maxGap)
+{
+    if(source.Closed!=target.Closed)return false;
+    const double epsilon=EventTolerance(target),range=target.Last-target.First;
+    const auto first=Project(source.Start,target),last=Project(source.End,target);
+    double sense=last.Parameter>=first.Parameter?1.0:-1.0;
+    if(source.Closed)
+    {
+        gp_Pnt a,b;gp_Vec ta,tb;
+        source.Curve->D1(source.First,a,ta);target.Curve->D1(first.Parameter,b,tb);
+        if(ta.SquareMagnitude()<=1.0e-24||tb.SquareMagnitude()<=1.0e-24)return false;
+        sense=ta.Dot(tb)>=0.0?1.0:-1.0;
+    }
+    else if(std::abs(first.Parameter-(sense>0.0?target.First:target.Last))>epsilon
+        ||std::abs(last.Parameter-(sense>0.0?target.Last:target.First))>epsilon)return false;
+    double previous=first.Parameter,progress=0.0;
+    for(int i=0;i<=32;++i)
+    {
+        const auto projection=Project(source.Curve->Value(source.First+(source.Last-source.First)*double(i)/32.0),target);
+        if(projection.Distance>kAdjacencyTolerance)return false;
+        maxGap=std::max(maxGap,projection.Distance);
+        if(i)
+        {
+            double delta=projection.Parameter-previous;
+            if(source.Closed)
+            {
+                if(sense>0.0&&delta<-range*.5)delta+=range;
+                if(sense<0.0&&delta>range*.5)delta-=range;
+            }
+            if(sense*delta<-epsilon)return false;
+            progress+=sense*delta;
+        }
+        previous=projection.Parameter;
+    }
+    return std::abs(progress-range)<=epsilon*4.0;
+}
+
+#include "MachiningEdgeNativeSkinCertificate.inc"
+
+struct SkinBoundaryCoverage final
+{
+    std::set<std::uint64_t> FaceIds,EdgeIds;
+    double MaxGap=0.0;
+    std::vector<NativeSkinBoundaryCertificate> NativeCertificates;
+};
+
+SkinBoundaryCoverage CertifiedSourceSkinBoundaryCoverage(const FiniteEdge& target,
+    const std::vector<FiniteEdge>& boundaries,const EdgeBoxTree& index,
+    const std::map<std::uint64_t,std::set<std::uint64_t>>& boundaryOwners)
+{
+    SkinBoundaryCoverage result;
+    for(const auto candidate:index.Candidates(target))
+    {
+        NativeSkinBoundaryCertificate proof;
+        if(!CertifyNativeSkinBoundary(target,boundaries[candidate],proof))continue;
+        proof.FaceIds=boundaryOwners.at(proof.EdgeId);
+        result.FaceIds.insert(proof.FaceIds.begin(),proof.FaceIds.end());
+        result.EdgeIds.insert(proof.EdgeId);result.MaxGap=std::max(result.MaxGap,proof.Bound);
+        result.NativeCertificates.push_back(std::move(proof));
+    }
+    return result;
+}
+
+SkinBoundaryCoverage SourceSkinBoundaryCoverage(const FiniteEdge& target,
+    const std::vector<FiniteEdge>& boundaries,const EdgeBoxTree& index,
+    const std::map<std::uint64_t,std::set<std::uint64_t>>& boundaryOwners)
+{
+    struct Interval final {double First=0.0,Last=0.0,Gap=0.0;std::uint64_t EdgeId=0;};
+    std::vector<Interval> intervals;
+    for(const auto candidate:index.Candidates(target))
+    {
+        const auto& boundary=boundaries[candidate];
+        double first=target.First,last=target.Last,gap=0.0;
+        if(target.Closed||boundary.Closed)
+        {
+            if(!FullyEquivalent(target,boundary,gap)
+                ||!OrderedSkinProjection(target,boundary,gap)
+                ||!OrderedSkinProjection(boundary,target,gap))continue;
+        }
+        else
+        {
+            std::vector<double> events;
+            if(Project(target.Start,boundary).Distance<=kAdjacencyTolerance)events.push_back(target.First);
+            if(Project(target.End,boundary).Distance<=kAdjacencyTolerance)events.push_back(target.Last);
+            for(const auto& point:{boundary.Start,boundary.End})
+            {
+                const auto projection=Project(point,target);
+                if(projection.Distance<=kAdjacencyTolerance)events.push_back(projection.Parameter);
+            }
+            if(events.size()<2)continue;
+            const auto limits=std::minmax_element(events.begin(),events.end());
+            first=*limits.first;last=*limits.second;
+            if(last-first<=EventTolerance(target))continue;
+            const auto span=RestrictFinite(target,first,last);
+            const auto a=Project(span.Start,boundary),b=Project(span.End,boundary);
+            if(a.Distance>kAdjacencyTolerance||b.Distance>kAdjacencyTolerance
+                ||std::abs(a.Parameter-b.Parameter)<=EventTolerance(boundary))continue;
+            const auto other=RestrictFinite(boundary,std::min(a.Parameter,b.Parameter),std::max(a.Parameter,b.Parameter));
+            // Both directions must preserve parameter order. Proximity at
+            // two endpoints alone never establishes skin-boundary ownership.
+            if(!OrderedSkinProjection(span,other,gap)||!OrderedSkinProjection(other,span,gap))continue;
+        }
+        intervals.push_back({first,last,gap,boundary.Id});
+    }
+    std::sort(intervals.begin(),intervals.end(),[](const auto& a,const auto& b)
+        {return a.First<b.First||(a.First==b.First&&a.Last>b.Last);});
+    SkinBoundaryCoverage result;double covered=target.First;
+    for(const auto& interval:intervals)
+    {
+        if(interval.First>covered+EventTolerance(target))return {};
+        if(interval.Last<=covered+EventTolerance(target))continue;
+        covered=interval.Last;result.MaxGap=std::max(result.MaxGap,interval.Gap);
+        result.EdgeIds.insert(interval.EdgeId);
+        const auto& faces=boundaryOwners.at(interval.EdgeId);result.FaceIds.insert(faces.begin(),faces.end());
+        if(covered>=target.Last-EventTolerance(target))return result;
+    }
+    // A partial source match must not reclassify the unmatched remainder.
+    return {};
 }
 
 ResolvedAdjacency ActiveSpanAdjacency(const FiniteEdge& span,
@@ -1057,8 +1228,15 @@ SMachiningFaceEdgeAnalysis GroupFace(const G::BRepFace& face,
 {
     SMachiningFaceEdgeAnalysis result;
     result.FaceId = face.Id;
+    // SourceUses is a walk in the support's UV boundary frame. The wires
+    // below deliberately omit the owning face's material orientation. Pass
+    // the same forward support frame to WireExplorer: pairing a relative
+    // forward wire with a reversed material face can stop at a cylinder's
+    // repeated seam even though all four original coedges form a valid wire.
+    // builtFace itself keeps its material orientation for normals/convexity.
+    const auto supportFace = TopoDS::Face(builtFace.Oriented(TopAbs_FORWARD));
     std::vector<TopoDS_Wire> nativeWires;
-    for (TopoDS_Iterator children(builtFace, false, true); children.More(); children.Next())
+    for (TopoDS_Iterator children(supportFace, false, true); children.More(); children.Next())
         if (children.Value().ShapeType() == TopAbs_WIRE)
             nativeWires.push_back(TopoDS::Wire(children.Value()));
     if (nativeWires.size() != face.WireIds.size())
@@ -1073,7 +1251,7 @@ SMachiningFaceEdgeAnalysis GroupFace(const G::BRepFace& face,
         std::vector<SMachiningBoundaryUse> uses;
         std::map<std::uint64_t, std::size_t> remaining;
         for (const auto& use : wire.Coedges) ++remaining[use.EdgeId];
-        for (BRepTools_WireExplorer ordered(nativeWires[wi], builtFace); ordered.More(); ordered.Next())
+        for (BRepTools_WireExplorer ordered(nativeWires[wi], supportFace); ordered.More(); ordered.Next())
         {
             const auto nativeEdge = ordered.Current();
             bool found = false;
@@ -1170,7 +1348,9 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
                 if (curve.IsNull() || !std::isfinite(edge.Range.First) || !std::isfinite(edge.Range.Last)
                     || edge.Range.First == edge.Range.Last)
                     throw std::invalid_argument("Section contains an invalid finite curve");
-                sectionCurves.push_back({ curve, std::min(edge.Range.First, edge.Range.Last), std::max(edge.Range.First, edge.Range.Last) });
+                SectionCurve item;item.Curve=curve;item.First=std::min(edge.Range.First,edge.Range.Last);
+                item.Last=std::max(edge.Range.First,edge.Range.Last);item.SourceEdgeId=edge.SourceEdgeId;
+                sectionCurves.push_back(std::move(item));
             }
         if (sectionCurves.empty()) throw std::invalid_argument("Section has no finite boundary curves");
         const auto& model = classification.MachiningGeometry;
@@ -1185,6 +1365,8 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
         const auto& allModel = classification.SplitGeometry.Faces.empty() ? model : classification.SplitGeometry;
         auto built = O::ReconstructOpenCascadeShape(allModel);
         if (!built.bOK) throw std::runtime_error("Cannot reconstruct classified topology");
+        for(auto& curve:sectionCurves)if(const auto source=built.Edges.find(curve.SourceEdgeId);source!=built.Edges.end())
+        {curve.SourceNativeEdge=source->second;curve.DeclaredTolerance=BRep_Tool::Tolerance(source->second);}
         std::map<std::uint64_t, const G::BRepWire*> wires;
         std::map<std::uint64_t, std::map<std::uint64_t, std::size_t>> owners;
         std::map<std::uint64_t, std::set<std::uint64_t>> allOwners;
@@ -1229,8 +1411,10 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
         std::map<std::uint64_t,FiniteEdge> finite;
         std::map<std::uint64_t,std::vector<double>> events;
         std::map<std::uint64_t,bool> sourceSkin;
+        std::map<std::uint64_t,std::string> sourceSkinFaceProofs;
         std::map<std::uint64_t,bool> wholeParentOnSkin;
         std::map<std::uint64_t,std::vector<std::uint64_t>> skinSources;
+        std::map<std::uint64_t,std::string> skinBoundaryWitnesses;
         for(const auto& [id,uses]:activeOwners)
         {
             finite[id]=ReadFinite(built.Edges.at(id),id);
@@ -1238,12 +1422,48 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
             {
                 if(!sourceSkin.contains(face))
                 {
-                    try{sourceSkin[face]=IsSourceSkinFace(built.Faces.at(face),sectionCurves);}
+                    try{sourceSkin[face]=IsSourceSkinFace(built.Faces.at(face),sectionCurves,&sourceSkinFaceProofs[face]);}
                     catch(const Standard_Failure&){sourceSkin[face]=false;}
                 }
                 if(sourceSkin.at(face))skinSources[id].push_back(face);
             }
         }
+        // Stock skin participates only in this provenance index. It never
+        // becomes a second machining owner for convexity or face grouping.
+        std::map<std::uint64_t,std::set<std::uint64_t>> skinBoundaryOwners;
+        for(const auto& face:allModel.Faces)if(!machiningIds.contains(face.Id))
+        {
+            if(!sourceSkin.contains(face.Id))
+            {
+                try{sourceSkin[face.Id]=IsSourceSkinFace(built.Faces.at(face.Id),sectionCurves,&sourceSkinFaceProofs[face.Id]);}
+                catch(const Standard_Failure&){sourceSkin[face.Id]=false;}
+            }
+            if(!sourceSkin.at(face.Id))continue;
+            const auto& nativeFace=built.Faces.at(face.Id);
+            for(const auto wireId:face.WireIds)for(const auto& use:wires.at(wireId)->Coedges)
+            {
+                const auto& edge=built.Edges.at(use.EdgeId);
+                if(!BRep_Tool::Degenerated(edge)&&!BRep_Tool::IsClosed(edge,nativeFace))
+                    skinBoundaryOwners[use.EdgeId].insert(face.Id);
+            }
+        }
+        std::vector<FiniteEdge> skinBoundaries;
+        for(const auto& [id,faces]:skinBoundaryOwners)
+        {
+            try{skinBoundaries.push_back(ReadFinite(built.Edges.at(id),id));}
+            catch(const Standard_Failure&){}
+            catch(const std::runtime_error&){}
+        }
+        const EdgeBoxTree skinBoundaryIndex(skinBoundaries);
+        // This provenance-only broad phase admits each candidate's declared
+        // native CAD uncertainty. The actual certificate still has to fit
+        // inside the smaller of the two original edge tolerances. No machining
+        // adjacency, ideal-skin threshold, or source geometry is changed.
+        auto skinCertificateBoxes=skinBoundaries;
+        for(auto& edge:skinCertificateBoxes)if(std::isfinite(edge.DeclaredTolerance)&&edge.DeclaredTolerance>0.)
+            for(std::size_t axis=0;axis<3;++axis)
+            {edge.Minimum[axis]-=edge.DeclaredTolerance;edge.Maximum[axis]+=edge.DeclaredTolerance;}
+        const EdgeBoxTree skinCertificateIndex(skinCertificateBoxes);
         const auto protectedMaterialEdges=ProtectNativeMaterialPairsOnConflict(resolvedAdjacency,finite,activeOwners,allOwners);
         for(const auto id:protectedMaterialEdges)
         {
@@ -1267,6 +1487,44 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
                 const double parameter=edge.First+(edge.Last-edge.First)*double(i)/double(options.nCurveSampleCount-1);
                 const double distance=SkinDistance(edge.Curve->Value(parameter),sectionCurves);
                 allOnSkin=allOnSkin&&distance<=options.dSkinDistanceTolerance;
+            }
+            // Geometric OnSkin and source-skin ownership are separate facts.
+            // An exact detached rim can already satisfy the ideal distance
+            // test and still need its original source-skin certificate.
+            if(skinSources[id].empty())
+            {
+                auto coverage=CertifiedSourceSkinBoundaryCoverage(edge,skinBoundaries,skinCertificateIndex,skinBoundaryOwners);
+                // Keep the pre-existing sampled fallback in its previous
+                // off-ideal scope; exact OnSkin alone never invents provenance.
+                if(coverage.FaceIds.empty()&&!allOnSkin)
+                    coverage=SourceSkinBoundaryCoverage(edge,skinBoundaries,skinBoundaryIndex,skinBoundaryOwners);
+                if(!coverage.FaceIds.empty())
+                {
+                    skinSources[id]={coverage.FaceIds.begin(),coverage.FaceIds.end()};
+                    std::ostringstream witness;witness<<std::setprecision(17)
+                        <<(coverage.NativeCertificates.empty()?"source-skin-boundary-coverage-within-1e-6;faces=":
+                            "source-skin-native-bspline-whole-domain-certificate;faces=");
+                    for(const auto face:coverage.FaceIds)witness<<face<<",";
+                    witness<<";edges=";for(const auto source:coverage.EdgeIds)witness<<source<<",";
+                    if(coverage.NativeCertificates.empty())witness<<";max-3d-correspondence-gap-mm="<<coverage.MaxGap;
+                    else for(const auto& proof:coverage.NativeCertificates)
+                    {
+                        witness<<";witness-edge="<<proof.EdgeId<<";witness-faces=";
+                        for(const auto face:proof.FaceIds)witness<<face<<",";
+                        witness<<";certificate-bound-mm="<<proof.Bound
+                            <<";certificate-method="<<proof.Method
+                            <<";target-declared-tolerance-mm="<<proof.TargetTolerance
+                            <<";witness-declared-tolerance-mm="<<proof.WitnessTolerance
+                            <<";accepted-declared-tolerance-mm="<<proof.AcceptedTolerance
+                            <<";native-parameter-map="<<(proof.ParameterPairs.size()>2?
+                                "native-event-piecewise-affine":proof.bReversed?"reversed-affine":"affine")
+                            <<";native-parameter-event-pairs=";
+                        for(const auto& pair:proof.ParameterPairs)witness<<"["<<pair.first<<","<<pair.second<<"],";
+                    }
+                    for(const auto face:coverage.FaceIds)if(!sourceSkinFaceProofs[face].empty())
+                        witness<<";skin-face-proof-F"<<face<<"="<<sourceSkinFaceProofs[face];
+                    skinBoundaryWitnesses[id]=witness.str();
+                }
             }
             wholeParentOnSkin[id]=allOnSkin||!skinSources[id].empty();
             events[id]=wholeParentOnSkin[id]?std::vector<double>{edge.First,edge.Last}
@@ -1316,7 +1574,8 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
                     {
                         output.bSourceSkinMembership=true;output.bSkinRelationValid=true;output.SkinRelation=ESkinRelation::OnSkin;
                         output.bStartOnSkin=output.bEndOnSkin=true;
-                        output.SkinReason="shared-source-skin-attribution-for-analysis-span";
+                        output.SkinReason=skinBoundaryWitnesses.contains(id)?skinBoundaryWitnesses.at(id)
+                            :"shared-source-skin-attribution-for-analysis-span";
                     }
                     AnalyzeConvexity(output,built.Faces,built.Edges,adjacency,options);
                     if(!output.bConvexityValid&&output.ConvexityReason=="convexity-changes-along-edge")
@@ -1404,9 +1663,10 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
             }
             if(!inherited.empty())
             {
+                const bool ownSource=output.bSourceSkinMembership;
                 output.SourceSkinFaceIds={inherited.begin(),inherited.end()};output.bSourceSkinMembership=true;
                 output.SkinRelation=ESkinRelation::OnSkin;output.bStartOnSkin=output.bEndOnSkin=true;
-                output.SkinReason="source-skin-attribution-propagated-through-coincident-analysis-span";
+                if(!ownSource)output.SkinReason="source-skin-attribution-propagated-through-coincident-analysis-span";
             }
             else if(output.SkinRelation!=ESkinRelation::OnSkin&&!wholeParentWitness.empty())
             {
@@ -1427,7 +1687,7 @@ SMachiningEdgeAnalysisResult MachiningEdgeAnalysisWork::Run(
         result.Diagnostics.push_back("Convexity uses source closed-solid material orientation when available; otherwise the first source face anchors a local second-face orientation correction. Original CAD orientation records are unchanged");
         result.Diagnostics.push_back("Coplanar in this edge analysis means a zero local dihedral within angular tolerance, including smoothly joined curved supports; it does not authorize whole-face merging");
         result.Diagnostics.push_back("Detached machining boundaries may be paired by 33 bidirectional finite-curve samples within 1e-6 mm; this is sampled correspondence, not a continuous coincidence certificate or sewn topology");
-        result.Diagnostics.push_back("Source skin attribution uses existing shared coedges and sampled finite analytic skin support; detached near-coincident sources remain geometric classifications");
+        result.Diagnostics.push_back("Source skin attribution uses finite skin support evaluated through original pcurves; detached native B-spline boundaries may use a whole-domain common-basis control-pole certificate inside both original declared edge tolerances. Other detached boundaries retain complete interval coverage and ordered bidirectional 3D correspondence within 1e-6 mm. Ideal skin distances, machining adjacency and source CAD are unchanged");
     }
     catch (const Standard_Failure& e)
     {

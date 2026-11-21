@@ -1,8 +1,11 @@
 #include "NestingInternal.h"
+#include "NestingAxisSafety.h"
+#include "NestingPairSummary.h"
 #include <clipper2/clipper.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <unordered_set>
 #include <unordered_map>
@@ -61,7 +64,7 @@ namespace
                 const double length = std::hypot(b.X - a.X, b.Y - a.Y);
                 if (length > tolerance)
                 {
-                    const double side = signedArea >= 0 ? 1.0 : -1.0;
+                    const double side = (signedArea >= 0 ? 1.0 : -1.0)*(pose.Mirrored?-1.:1.);
                     edges.push_back({ a, b, length, reentrant(i) || reentrant((i + 1) % points.size()),
                         { side * (b.Y - a.Y) / length, -side * (b.X - a.X) / length } });
                 }
@@ -92,7 +95,7 @@ namespace
         for (const auto& m : pattern.Members)
         {
             std::ostringstream s; s << m.PartIndex << ':' << std::llround(m.Transform.X / quantum) << ':'
-                << std::llround(m.Transform.Y / quantum) << ':' << std::llround(NormalizeAngle(m.Transform.AngleDegrees) * 1e6);
+                << std::llround(m.Transform.Y / quantum) << ':' << std::llround(NormalizeAngle(m.Transform.AngleDegrees) * 1e6)<<':'<<m.Transform.Mirrored;
             members.push_back(s.str());
         }
         std::sort(members.begin(), members.end()); std::string key;
@@ -185,28 +188,17 @@ namespace
         { auto e = Edges(problem.Parts[m.PartIndex].Geometry, m.Transform, problem.Tolerance); edges.insert(edges.end(), e.begin(), e.end()); }
         SelectEdges(edges); return edges;
     }
-    double PatternScore(const Pattern& p, const Problem& problem)
+    double PatternScore(const Pattern& p, const Problem&)
     {
-        double separate = 0;
-        for (const auto& m : p.Members)
-        { const auto b = Bounds(problem.Parts[m.PartIndex].Geometry, m.Transform); separate += (b.Width + problem.PartGap) * (b.Height + problem.PartGap); }
-        const double combined = (p.Width + problem.PartGap) * (p.Height + problem.PartGap);
-        if (separate <= 0 || combined <= 0) return -std::numeric_limits<double>::infinity();
-        return (separate - combined) / separate + .1 * std::clamp(p.MaterialArea / (p.Width * p.Height), 0.0, 1.0);
+        // Net original material over the actual stored-pose planning envelope.
+        // Shape recognition and savings never promote a looser placement.
+        return p.Width>0&&p.Height>0?p.MaterialArea/(p.Width*p.Height):
+            -std::numeric_limits<double>::infinity();
     }
     bool Better(const Pattern& a, const Pattern& b, const Problem& problem)
     {
-        const auto basic = [](const Pattern& p) { return p.Kind == ShapeKind::Rectangle || p.Kind == ShapeKind::Parallelogram; };
-        if (basic(a) != basic(b)) return basic(a);
-        const auto density = [](const Pattern& p)
-        { return std::round(std::clamp(p.MaterialArea / std::max(p.Width * p.Height, 1e-20), 0.0, 1.0) * 1e8) / 1e8; };
-        const double da = density(a), db = density(b);
-        if (da != db) return da > db;
         const double sa = PatternScore(a, problem), sb = PatternScore(b, problem);
-        if (std::abs(sa - sb) > 1e-12) return sa > sb;
-        if (a.MaterialArea != b.MaterialArea) return a.MaterialArea > b.MaterialArea;
-        if (a.Width != b.Width) return a.Width < b.Width;
-        if (a.Height != b.Height) return a.Height < b.Height;
+        if (sa != sb) return sa > sb;
         return Key(a, problem.Tolerance) < Key(b, problem.Tolerance);
     }
 }
@@ -232,34 +224,56 @@ void NormalizePattern(Pattern& pattern, const Problem& problem)
     }
 }
 
-std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& options, const std::function<bool()>& stop)
+std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& options, const std::function<bool()>& stop, std::size_t* attemptsUsed)
 {
+    if(attemptsUsed)*attemptsUsed=0;
     std::vector<Pattern> output;
+    PairPreparationSummary summary(problem,options,"ordinary",stop);
     if (options.MaxPatterns == 0 || options.MaxPatternMembers == 0) return output;
     const auto stopped = [&]() { return stop && stop(); };
-    std::vector<std::vector<double>> angles(problem.Parts.size());
+    std::vector<std::vector<Pose>> angles(problem.Parts.size());
     for (std::size_t i = 0; i < problem.Parts.size() && !stopped(); ++i)
-        if (problem.Parts[i].Quantity > 0) angles[i] = CandidateAngles(problem.Parts[i], problem.Tolerance);
+        if (problem.Parts[i].Quantity > 0)
+        {
+            angles[i] = CandidateOrientations(problem.Parts[i], problem.Tolerance,options.OrientationProposals);
+            if(auto* record=summary.For(i))record->PlannedAngles=angles[i].size();
+        }
     const std::size_t maxDepth = std::min<std::size_t>(4, options.MaxPatternMembers);
     const bool combinations = options.EnableCombinations && maxDepth >= 2;
     std::unordered_set<std::string> keys;
+    // Classification belongs to the source specification and is independent of direction.
+    std::vector<std::optional<ShapeKind>> singletonKinds(problem.Parts.size());
     // Singleton candidates are the baseline representation of every active type
     // and its supported directions. The additional-combination budget must not
     // silently remove an input type or its only direction that fits the sheet.
     // Round robin also keeps types represented fairly when the job is cancelled.
-    for (std::size_t angleIndex = 0; !stopped(); ++angleIndex)
+    const auto reflectedProposals=[&](std::size_t i)
+    {return problem.Parts[i].AllowMirror&&options.OrientationProposals==OrientationProposalPolicy::AllowedReflections;};
+    for (std::size_t orientationRound = 0; !stopped(); ++orientationRound)
     {
         bool any = false;
         for (std::size_t i = 0; i < angles.size() && !stopped(); ++i)
+        for(std::size_t parity=0;parity<(reflectedProposals(i)?2u:1u)&&!stopped();++parity)
         {
+            const auto angleIndex=reflectedProposals(i)?2*orientationRound+parity:orientationRound;
             if (angleIndex >= angles[i].size()) continue;
-            any = true; Pattern p; p.Members.push_back({ i, { 0, 0, angles[i][angleIndex] } });
-            NormalizePattern(p, problem);
+            if (!singletonKinds[i])
+                singletonKinds[i] = Classify(problem.Parts[i].Geometry, problem.Tolerance).Kind;
+            any = true; Pattern p; p.Members.push_back({ i, angles[i][angleIndex] });
+            // Preserve NormalizePattern's exact bound reconstruction and pose arithmetic.
+            const auto box = PatternBounds(p, problem);
+            auto& pose = p.Members.front().Transform;
+            pose.X -= box.X; pose.Y -= box.Y;
+            pose.AngleDegrees = NormalizeAngle(pose.AngleDegrees);
+            p.Width = box.Width; p.Height = box.Height;
+            p.MaterialArea += Area(problem.Parts[i].Geometry);
+            p.Kind = *singletonKinds[i];
             if (keys.insert(Key(p, problem.Tolerance)).second) output.push_back(std::move(p));
         }
         if (!any) break;
     }
-    if (!combinations || stopped()) return output;
+    if (!combinations || stopped() || std::none_of(problem.Parts.begin(), problem.Parts.end(),
+        [](const Part& part) { return part.Quantity >= 2; })) return output;
     const std::size_t singletonCount = output.size();
     const std::size_t totalLimit = options.MaxPatterns > std::numeric_limits<std::size_t>::max() - singletonCount
         ? std::numeric_limits<std::size_t>::max() : singletonCount + options.MaxPatterns;
@@ -272,7 +286,8 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
     std::vector<std::vector<Edge>> partFeatures(problem.Parts.size());
     std::unordered_map<std::string, double> largestSheetArea;
     for (std::size_t i = 0; i < problem.Parts.size() && !stopped(); ++i)
-    { partAreas[i] = Area(problem.Parts[i].Geometry); partFeatures[i] = Edges(problem.Parts[i].Geometry, {}, problem.Tolerance); }
+        if (problem.Parts[i].Quantity >= 2)
+        { partAreas[i] = Area(problem.Parts[i].Geometry); partFeatures[i] = Edges(problem.Parts[i].Geometry, {}, problem.Tolerance); }
     for (const auto& stock : problem.Stocks) if (stock.Quantity)
         largestSheetArea[stock.Material] = std::max(largestSheetArea[stock.Material],
             std::max(0.0, stock.Width - 2 * problem.EdgeMargin) * std::max(0.0, stock.Height - 2 * problem.EdgeMargin));
@@ -280,79 +295,41 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
     {
         const Pattern* Anchor = nullptr;
         std::vector<Edge> Contact;
-        std::vector<std::pair<std::size_t, std::size_t>> Demand;
-        std::vector<std::size_t> Next;
+        std::size_t PartIndex = 0;
         std::size_t ConcaveFeatures = 0;
+        std::size_t AnchorRound = 0;
     };
     for (std::size_t depth = 2; depth <= maxDepth && output.size() < totalLimit && !stopped(); ++depth)
     {
         std::vector<Pattern> pool;
         std::vector<Work> work;
+        std::vector<std::size_t> anchorRounds(problem.Parts.size());
         std::size_t taskCount = 0;
         for (const auto& anchor : frontier)
         {
             if (stopped()) break;
-            Work w; w.Anchor = &anchor;
-            for (const auto& m : anchor.Members)
-            {
-                auto d = std::find_if(w.Demand.begin(), w.Demand.end(), [&](auto item) { return item.first == m.PartIndex; });
-                if (d == w.Demand.end()) w.Demand.emplace_back(m.PartIndex, 1); else ++d->second;
-            }
+            if (!HasSinglePartType(anchor.Members)) continue;
+            const auto partIndex = anchor.Members.front().PartIndex;
+            const auto& part = problem.Parts[partIndex];
+            // Decide eligibility before extracting contacts or considering any
+            // partner. Different source indices never lend each other inventory,
+            // even when their material and geometry are identical.
+            if (anchor.Members.size() >= part.Quantity || angles[partIndex].empty()) continue;
+            const double maxArea = largestSheetArea[part.Material];
+            if (anchor.MaterialArea + partAreas[partIndex] > maxArea + std::max(1.0, maxArea) * 1e-12) continue;
+            auto* preparationRecord=summary.For(partIndex);
+            PairPreparationSummary::WorkTime preparationTime(preparationRecord,true);
+            if(preparationRecord)++preparationRecord->PreworkVisits;
+            Work w; w.Anchor = &anchor; w.PartIndex = partIndex;
             w.Contact = PatternEdges(anchor, problem);
             w.ConcaveFeatures = std::count_if(w.Contact.begin(), w.Contact.end(), [](const Edge& e) { return e.Reentrant; });
-            const auto& material = problem.Parts[anchor.Members.front().PartIndex].Material;
-            const double maxArea = largestSheetArea[material];
-            struct Partner { int MatchingNotchFeatures; double Promise; std::size_t Index; };
-            std::vector<Partner> next;
-            for (std::size_t i = 0; i < problem.Parts.size() && !stopped(); ++i)
-            {
-                const auto& part = problem.Parts[i];
-                if (!part.Quantity || part.Material != material || angles[i].empty()) continue;
-                const auto d = std::find_if(w.Demand.begin(), w.Demand.end(), [&](auto item) { return item.first == i; });
-                if (d != w.Demand.end() && d->second >= part.Quantity) continue;
-                const double sum = anchor.MaterialArea + partAreas[i];
-                if (sum > maxArea + std::max(1.0, maxArea) * 1e-12) continue;
-                double promise = std::numeric_limits<double>::infinity();
-                for (double angle : angles[i])
-                {
-                    const auto box = Bounds(part.Geometry, { 0, 0, angle });
-                    const double overlay = std::max(anchor.Width, box.Width) * std::max(anchor.Height, box.Height);
-                    if (overlay > 0) promise = std::min(promise, std::abs(sum - overlay) / overlay);
-                }
-                int matching = 0;
-                for (const auto& local : partFeatures[i])
-                {
-                    bool match = false;
-                    for (const auto& a : w.Contact)
-                    {
-                        if (!(local.Reentrant || a.Reentrant) || std::abs(local.Length - a.Length) > 8 * problem.Tolerance) continue;
-                        if (part.FreeRotation) { match = true; break; }
-                        for (double angle : angles[i])
-                        {
-                            const auto p0 = Transform(local.A, { 0, 0, angle }), p1 = Transform(local.B, { 0, 0, angle });
-                            const double cross = (a.B.X - a.A.X) * (p1.Y - p0.Y) - (a.B.Y - a.A.Y) * (p1.X - p0.X);
-                            if (std::abs(cross) <= problem.Tolerance * std::max(a.Length, local.Length)) { match = true; break; }
-                        }
-                        if (match) break;
-                    }
-                    if (match) ++matching;
-                }
-                next.push_back({ matching, promise, i });
-            }
-            std::stable_sort(next.begin(), next.end(), [](const auto& a, const auto& b)
-            {
-                if (a.MatchingNotchFeatures != b.MatchingNotchFeatures) return a.MatchingNotchFeatures > b.MatchingNotchFeatures;
-                if (a.Promise != b.Promise) return a.Promise < b.Promise;
-                return a.Index < b.Index;
-            });
-            // The job has finite candidate/time budgets; retain promising partners without an unbounded pair matrix.
-            if (next.size() > 64) next.resize(64);
-            for (auto item : next) w.Next.push_back(item.Index);
-            if (!w.Next.empty()) { taskCount += w.Next.size(); work.push_back(std::move(w)); }
+            w.AnchorRound = anchorRounds[partIndex]++;
+            ++taskCount; work.push_back(std::move(w));
         }
         if (work.empty() || stopped()) break;
         std::stable_sort(work.begin(), work.end(), [](const Work& a, const Work& b)
         {
+            if (a.AnchorRound != b.AnchorRound) return a.AnchorRound < b.AnchorRound;
             const auto basic = [](const Pattern& p) { return p.Kind == ShapeKind::Rectangle || p.Kind == ShapeKind::Parallelogram; };
             if (basic(*a.Anchor) != basic(*b.Anchor)) return basic(*a.Anchor);
             return a.ConcaveFeatures > b.ConcaveFeatures;
@@ -361,11 +338,17 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
         const std::size_t depthEnd = attempts + (attemptLimit - attempts) / (maxDepth - depth + 1);
         if (depthEnd <= attempts) break;
         const std::size_t pairQuota = std::clamp<std::size_t>((depthEnd - attempts) / std::max<std::size_t>(1, taskCount), 48, 384);
-        const auto processPair = [&](const Work& w, std::size_t next)
+        const auto processPair = [&](const Work& w)
         {
             if (attempts >= depthEnd || stopped()) return;
             const auto& anchor = *w.Anchor;
+            const auto next = w.PartIndex;
+            if (!HasSinglePartType(anchor.Members) || anchor.Members.front().PartIndex != next) return;
             const auto& part = problem.Parts[next];
+            const bool selfPair=anchor.Members.size()==1&&anchor.Members.front().PartIndex==next;
+            auto* pairRecord=selfPair?summary.For(next):nullptr;
+            PairPreparationSummary::WorkTime pairTime(pairRecord);
+            if(pairRecord)++pairRecord->Entered;
             const auto& anchorEdges = w.Contact;
             const auto localEdges = Edges(part.Geometry, {}, problem.Tolerance);
             const bool prioritizeContacts = w.ConcaveFeatures > 0 && std::any_of(localEdges.begin(), localEdges.end(),
@@ -373,15 +356,21 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
             auto candidateAngles = angles[next];
             if (part.FreeRotation)
             {
-                const auto addAngle = [&](double a)
+                const auto addAngle = [&](double a,bool mirrored)
                 {
                     a = NormalizeAngle(a);
                     for (auto old : candidateAngles)
-                    { const auto d = std::abs(a - old); if (std::min(d, 360 - d) <= problem.Tolerance) return; }
-                    if (candidateAngles.size() < 32) candidateAngles.push_back(a);
+                    { const auto d = std::abs(a - old.AngleDegrees); if (old.Mirrored==mirrored&&std::min(d, 360 - d) <= problem.Tolerance) return; }
+                    if(std::count_if(candidateAngles.begin(),candidateAngles.end(),[&](Pose pose){return pose.Mirrored==mirrored;})<32)
+                        candidateAngles.push_back({0,0,a,mirrored});
                 };
-                for (const auto& a : anchorEdges) for (const auto& b : localEdges)
-                { addAngle(EdgeAngle(a) - EdgeAngle(b)); addAngle(EdgeAngle(a) - EdgeAngle(b) + 180); }
+                for (const auto& a : anchorEdges) for (const auto& b : localEdges)for(const bool mirrored:{false,true})
+                {
+                    if(mirrored&&(!part.AllowMirror||options.OrientationProposals==OrientationProposalPolicy::OriginalOnly))continue;
+                    const auto ba=Transform(b.A,{0,0,0,mirrored}),bb=Transform(b.B,{0,0,0,mirrored});
+                    const auto localAngle=std::atan2(bb.Y-ba.Y,bb.X-ba.X)*180/Pi;
+                    addAngle(EdgeAngle(a)-localAngle,mirrored);addAngle(EdgeAngle(a)-localAngle+180,mirrored);
+                }
             }
             const std::size_t pairEnd = attempts + std::min(pairQuota, depthEnd - attempts);
             std::size_t angleEnd = pairEnd;
@@ -394,20 +383,23 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                 if (angleDone()) return;
                 std::ostringstream poseKey;
                 poseKey << std::llround(pose.X / problem.Tolerance) << ':' << std::llround(pose.Y / problem.Tolerance)
-                    << ':' << std::llround(NormalizeAngle(pose.AngleDegrees) * 1e6);
-                if (!seenPoses.insert(poseKey.str()).second) return;
+                    << ':' << std::llround(NormalizeAngle(pose.AngleDegrees) * 1e6)<<':'<<pose.Mirrored;
+                if (!seenPoses.insert(poseKey.str()).second) {if(pairRecord)++pairRecord->DuplicateRejected;return;}
                 ++attempts;
-                if (!AngleAllowed(part, pose.AngleDegrees, problem.Tolerance)) return;
+                if(pairRecord){++pairRecord->Exact;PairPreparationSummary::ValidatedAngle(pairRecord,pose.AngleDegrees);}
+                if (!PoseAllowed(part,pose,problem.Tolerance)) return;
                 Pattern p = anchor; p.Members.push_back({ next, pose });
                 const auto box = PatternBounds(p, problem);
                 double separate = 0;
                 for (const auto& m : p.Members)
                 { const auto b = Bounds(problem.Parts[m.PartIndex].Geometry, m.Transform); separate += (b.Width + problem.PartGap) * (b.Height + problem.PartGap); }
-                if ((box.Width + problem.PartGap) * (box.Height + problem.PartGap) > separate * 1.000001) return;
+                if ((box.Width + problem.PartGap) * (box.Height + problem.PartGap) > separate * 1.000001)
+                {if(pairRecord)++pairRecord->EnvelopeRejected;return;}
                 for (const auto& m : anchor.Members)
                 {
                     if (ShapesConflict(problem.Parts[m.PartIndex].Geometry, m.Transform, part.Geometry, pose,
-                        problem.PartGap, problem.Tolerance)) return;
+                        problem.PartGap, problem.Tolerance, problem.AllowCommonEdges))
+                    {if(pairRecord)++pairRecord->ConflictRejected;return;}
                     for (const auto& hole : problem.Parts[m.PartIndex].Geometry.Holes)
                     {
                         Shape filledHole; filledHole.Outer = hole;
@@ -420,7 +412,15 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                     }
                 }
                 NormalizePattern(p, problem);
-                if (!keys.insert(Key(p, problem.Tolerance)).second) return;
+                if(selfPair)
+                {
+                    if(AxisSafety::Pair(AxisSafety::Make(part.Geometry,p.Members[0].Transform),
+                        AxisSafety::Make(part.Geometry,p.Members[1].Transform),problem.PartGap,problem.AllowCommonEdges,
+                        problem.Tolerance)!=AxisSafety::Verdict::Safe)
+                    {if(pairRecord)++pairRecord->NormalizationRejected;return;}
+                    summary.Legal(next,p);
+                }
+                if (!keys.insert(Key(p, problem.Tolerance)).second) {if(pairRecord)++pairRecord->DuplicateRejected;return;}
                 if (best.size() < 4) best.push_back(std::move(p));
                 else
                 {
@@ -428,17 +428,20 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                     if (Better(p, *worst, problem)) *worst = std::move(p);
                 }
             };
+            struct DirectionProposals { std::vector<Pose> Values; };
+            std::vector<DirectionProposals> directions;
             const double gap = problem.PartGap;
-            for (const double angle : candidateAngles)
+            for (const auto orientation : candidateAngles)
             {
+                const auto angle=orientation.AngleDegrees;
                 if (pairDone()) break;
-                angleEnd = attempts + std::min(std::max<std::size_t>(12, pairQuota / std::max<std::size_t>(1, candidateAngles.size())), pairEnd - attempts);
-                const auto b = Bounds(part.Geometry, { 0, 0, angle });
+                PairPreparationSummary::Angle(pairRecord,anchor.Members.front().Transform.AngleDegrees,angle);
+                const auto b = Bounds(part.Geometry,orientation);
                 const double xs[] = { 0, (anchor.Width - b.Width) / 2, anchor.Width - b.Width };
                 const double ys[] = { 0, (anchor.Height - b.Height) / 2, anchor.Height - b.Height };
-                // Overlay phases find complementary L/step shapes before their conservative boxes are put side by side.
-                for (const double x : xs) for (const double y : ys) tryPose({ x - b.X, y - b.Y, angle });
-                const auto rotatedEdges = Edges(part.Geometry, { 0, 0, angle }, problem.Tolerance);
+                std::vector<Pose> overlays;
+                for (const double x : xs) for (const double y : ys) overlays.push_back({ x - b.X, y - b.Y, angle,orientation.Mirrored });
+                const auto rotatedEdges = Edges(part.Geometry,orientation,problem.Tolerance);
                 struct ContactPose { Pose Transform; double EnvelopeArea = 0; bool Facing = false; };
                 std::vector<ContactPose> contacts;
                 // Inspect the bounded feature list before spending geometric trials. A single early
@@ -455,11 +458,11 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                         const Point n{ -(a.B.Y - a.A.Y) / a.Length, (a.B.X - a.A.X) / a.Length };
                         const Point ap[] = { a.A, a.B, { (a.A.X + a.B.X) / 2, (a.A.Y + a.B.Y) / 2 } };
                         const Point bp[] = { e.A, e.B, { (e.A.X + e.B.X) / 2, (e.A.Y + e.B.Y) / 2 } };
-                        for (int side : { -1, 1 }) for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j)
+                        for (int side : { 0, -1, 1 }) for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j)
                         {
+                            if (side == 0 && (!problem.AllowCommonEdges || gap == 0)) continue;
                             const Pose pose{ ap[i].X - bp[j].X + side * gap * n.X,
-                                ap[i].Y - bp[j].Y + side * gap * n.Y, angle };
-                            if (!prioritizeContacts) { tryPose(pose); continue; }
+                                ap[i].Y - bp[j].Y + side * gap * n.Y, angle,orientation.Mirrored };
                             const double width = std::max(anchor.Width, b.X + pose.X + b.Width) - std::min(0.0, b.X + pose.X);
                             const double height = std::max(anchor.Height, b.Y + pose.Y + b.Height) - std::min(0.0, b.Y + pose.Y);
                             const double envelope = width * height;
@@ -469,7 +472,7 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                                 + 64 * std::numeric_limits<double>::epsilon() * std::max(envelope, anchor.MaterialArea + partAreas[next]);
                             if (anchor.MaterialArea + partAreas[next] > envelope + allowance) continue;
                             const bool facing = a.ExteriorNormal.X * e.ExteriorNormal.X + a.ExteriorNormal.Y * e.ExteriorNormal.Y < -.5
-                                && side * (n.X * a.ExteriorNormal.X + n.Y * a.ExteriorNormal.Y) > .5;
+                                && (side == 0 || side * (n.X * a.ExteriorNormal.X + n.Y * a.ExteriorNormal.Y) > .5);
                             contacts.push_back({ pose, envelope, facing });
                         }
                     }
@@ -479,26 +482,85 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
                     if (a.Facing != b.Facing) return a.Facing;
                     return a.EnvelopeArea < b.EnvelopeArea;
                 });
-                for (const auto& contact : contacts)
-                { if (angleDone()) break; tryPose(contact.Transform); }
+                DirectionProposals proposals;
+                // Exact contact candidates lead for concave originals. The
+                // nine box overlays must not spend three quarters of every
+                // direction's allowance before a real contour contact is tried.
+                if (!prioritizeContacts) proposals.Values = overlays;
+                const auto contactLimit = std::min(pairQuota, contacts.size());
+                for (std::size_t i = 0; i < contactLimit; ++i) proposals.Values.push_back(contacts[i].Transform);
+                if (prioritizeContacts) proposals.Values.insert(proposals.Values.end(), overlays.begin(), overlays.end());
                 for (const double y : ys)
-                { tryPose({ anchor.Width + gap - b.X, y - b.Y, angle }); tryPose({ -b.Width - gap - b.X, y - b.Y, angle }); }
+                { proposals.Values.push_back({ anchor.Width + gap - b.X, y - b.Y, angle,orientation.Mirrored }); proposals.Values.push_back({ -b.Width - gap - b.X, y - b.Y, angle,orientation.Mirrored }); }
                 for (const double x : xs)
-                { tryPose({ x - b.X, anchor.Height + gap - b.Y, angle }); tryPose({ x - b.X, -b.Height - gap - b.Y, angle }); }
+                { proposals.Values.push_back({ x - b.X, anchor.Height + gap - b.Y, angle,orientation.Mirrored }); proposals.Values.push_back({ x - b.X, -b.Height - gap - b.Y, angle,orientation.Mirrored }); }
+                if(pairRecord)pairRecord->Generated+=proposals.Values.size();
+                directions.push_back(std::move(proposals));
+            }
+            // Cover every sampled legal direction before revisiting an early
+            // one. A 48-attempt pair budget used to stop after four directions
+            // although a free original may have 20 to 32 useful directions.
+            angleEnd = pairEnd;
+            for (std::size_t rank = 0; !pairDone(); ++rank)
+            {
+                bool any = false;
+                for (const auto& direction : directions)
+                {
+                    if (pairDone()) break;
+                    if (rank >= direction.Values.size()) continue;
+                    any = true; tryPose(direction.Values[rank]);
+                }
+                if (!any) break;
+            }
+            // A real self pair can be carried at another jointly legal angle
+            // without rebuilding its contacts for each absolute orientation.
+            // These are initial carrier candidates; the original pieces and
+            // final normalized coordinates still receive exact safety checks.
+            if (anchor.Members.size() == 1 && anchor.Members.front().PartIndex == next)
+            {
+                std::vector<Pattern> rotated;
+                for (const auto& pattern : best) for (const auto orientation : angles[next])
+                {
+                    if (stopped()) break;
+                    auto first=pattern.Members.front().Transform;first.X=first.Y=0;
+                    const auto turn=ComposePose(orientation,InversePose(first));
+                    if (!turn.Mirrored&&(turn.AngleDegrees<=problem.Tolerance||360-turn.AngleDegrees<=problem.Tolerance))continue;
+                    auto variant = pattern; bool legal = true;
+                    for (auto& member : variant.Members)
+                    {
+                        member.Transform=ComposePose(turn,member.Transform);
+                        legal &= PoseAllowed(problem.Parts[member.PartIndex],member.Transform,problem.Tolerance);
+                    }
+                    if (!legal) continue;
+                    NormalizePattern(variant, problem);
+                    if (Better(variant, pattern, problem)) rotated.push_back(std::move(variant));
+                }
+                std::stable_sort(rotated.begin(), rotated.end(), [&](const auto& a, const auto& b) { return Better(a, b, problem); });
+                std::size_t retained = 0;
+                for (auto& variant : rotated)
+                {
+                    if (retained >= 4 || attempts >= depthEnd || stopped()) break;
+                    if (!keys.insert(Key(variant, problem.Tolerance)).second) continue;
+                    ++attempts;
+                    if(pairRecord){++pairRecord->Exact;PairPreparationSummary::ValidatedAngle(pairRecord,variant.Members[1].Transform.AngleDegrees);}
+                    const auto& a = variant.Members[0]; const auto& b = variant.Members[1];
+                    if (ShapesConflict(part.Geometry, a.Transform, part.Geometry, b.Transform,
+                        problem.PartGap, problem.Tolerance, problem.AllowCommonEdges) ||
+                        AxisSafety::Pair(AxisSafety::Make(part.Geometry, a.Transform), AxisSafety::Make(part.Geometry, b.Transform),
+                            problem.PartGap, problem.AllowCommonEdges, problem.Tolerance) != AxisSafety::Verdict::Safe)
+                    {if(pairRecord)++pairRecord->NormalizationRejected;continue;}
+                    summary.Legal(next,variant);
+                    pool.push_back(std::move(variant)); ++retained;
+                }
             }
             for (auto& p : best) pool.push_back(std::move(p));
         };
-        // Round robin across anchors/specifications: no early type exhausts the budget before later types get a turn.
-        for (std::size_t partnerRank = 0; attempts < depthEnd && !stopped(); ++partnerRank)
+        // Each source type receives one self-combination anchor per round
+        // before further orientations of a prolific type consume the layer.
+        for (const auto& w : work)
         {
-            bool any = false;
-            for (const auto& w : work)
-            {
-                if (attempts >= depthEnd || stopped()) break;
-                if (partnerRank >= w.Next.size()) continue;
-                any = true; processPair(w, w.Next[partnerRank]);
-            }
-            if (!any) break;
+            if (attempts >= depthEnd || stopped()) break;
+            processPair(w);
         }
         if (pool.empty()) break;
         std::stable_sort(pool.begin(), pool.end(), [&](const Pattern& a, const Pattern& b) { return Better(a, b, problem); });
@@ -508,17 +570,15 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
         std::vector<bool> selected(pool.size());
         std::vector<std::size_t> represented(problem.Parts.size());
         std::vector<Rect> representedBounds(problem.Parts.size());
-        const auto basic = [](const Pattern& p) { return p.Kind == ShapeKind::Rectangle || p.Kind == ShapeKind::Parallelogram; };
         std::size_t count = 0;
-        // Filled basic shapes retain priority. Within the remaining finite pool, preserve a few
-        // distinct repeating concave demands even when their real density is below NearRectangle.
-        // Otherwise unrelated dense mixed-specification patterns can erase every useful self-pair.
-        while (count < take && basic(pool[count])) { selected[count] = true; ++count; }
-        const auto firstNonBasic = count;
+        // Keep the tightest certified result first. The remaining self quota
+        // provides bounded search coverage for recurring concave demands; it
+        // is not a quality bonus and cannot displace that best utilization.
+        if(take){selected[0]=true;++count;}
         const auto selfQuota = count == take ? 0 : std::max<std::size_t>(1, (take - count) / 4);
         std::size_t selfCount = 0;
         for (std::size_t pass = 0; pass < 2 && selfCount < selfQuota; ++pass)
-        for (std::size_t i = firstNonBasic; i < pool.size() && selfCount < selfQuota; ++i)
+        for (std::size_t i = 0; i < pool.size() && selfCount < selfQuota; ++i)
         {
             const auto& pattern = pool[i];
             const auto partIndex = pattern.Members.front().PartIndex;
@@ -544,9 +604,10 @@ std::vector<Pattern> BuildPatterns(const Problem& problem, const Options& option
             if (!selected[i]) { selected[i] = true; ++count; }
         frontier.clear(); frontier.reserve(take);
         for (std::size_t i = 0; i < pool.size(); ++i)
-            if (selected[i]) { frontier.push_back(pool[i]); output.push_back(std::move(pool[i])); }
+            if (selected[i]) { summary.Retain(pool[i]);frontier.push_back(pool[i]); output.push_back(std::move(pool[i])); }
         if (attempts >= attemptLimit) break;
     }
+    if(attemptsUsed)*attemptsUsed=attempts;
     return output;
 }
 }
@@ -566,7 +627,9 @@ std::vector<Pattern> BuildClosurePatterns(const Problem& problem, const Options&
         if (part.Quantity > maxDepth - inventory) { inventory = maxDepth + 1; break; }
         inventory += part.Quantity;
     }
-    if (!options.EnableCombinations || problem.PartGap > 0 || inventory < 2 || inventory > maxDepth)
+    const bool hasSelfDemand = std::any_of(problem.Parts.begin(), problem.Parts.end(),
+        [](const Part& part) { return part.Quantity >= 2; });
+    if (!options.EnableCombinations || problem.PartGap > 0 || inventory < 2 || inventory > maxDepth || !hasSelfDemand)
     {
         auto base = options; base.EnableCombinations = false;
         return BuildPatterns(problem, base, halted);

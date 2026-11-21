@@ -3,6 +3,7 @@ import {escapeText as esc} from '../../_shared/workbench/utils/format.mjs';
 
 // A blocking owner must remain visible even after its original editor hides.
 export function blockingOperation(view){
+ if(view.fiveFixtureDesignRequest)return {title:view.fiveFixtureDesignRequest.title||'正在计算支撑参数',detail:'计算完成后会自动恢复操作。',inline:true};
  const s=view.fiveSimulation;
  if(s?.checking)return {title:s.collisionCancelRequested?'正在停止碰撞与限位检测':'正在检测碰撞与限位',detail:'进度和取消操作显示在碰撞与限位页。',cancel:!s.collisionCancelRequested,inline:true};
  if(s?.repairing)return {title:s.repairCancelRequested?'正在停止自动修正':'正在修正当前问题',detail:'进度和取消操作显示在碰撞与限位页。',cancel:!s.repairCancelRequested,inline:true};
@@ -18,6 +19,7 @@ export function blockingOperation(view){
   [view.fiveWorkpieceSwitching,'切换工件'],[view.fiveMachine?.busy,'机床操作']
  ];
  const owner=requests.find(([busy])=>busy)?.[1];
+ if(owner==='切换工件'&&(view.fiveOperationNavigationPreparing||view.fiveOperationAreaSync))return {title:'正在切换页面',detail:'正在读取目标页面的工件与工序。',inline:true};
  // fixtureRequest is the live command promise, not an uncertain receipt.
  // Scene readback may clear pending while that owner is still calculating,
  // publishing or saving its result.

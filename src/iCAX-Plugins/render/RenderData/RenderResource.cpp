@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 
 #include "RenderResource.h"
+#include <stdexcept>
 
 namespace
 {
@@ -217,8 +218,38 @@ bool iCAX::Render::IsRenderGeometryResource(
     return HasIdentifier(Resource_, kRenderGeometryIdentifier);
 }
 
+iCAX::Resource::CFlatBufferResource iCAX::Render::MakeRenderTextureResource(
+    const std::vector<std::uint8_t>& EncodedImage_, uint32_t nPixelWidth_,
+    uint32_t nPixelHeight_, const std::string& strMimeType_, uint64_t nDataVersion_)
+{
+    if (EncodedImage_.empty() || !nPixelWidth_ || !nPixelHeight_
+        || strMimeType_.empty() || strMimeType_.size() > 256)
+    {
+        throw std::invalid_argument("RENDER_TEXTURE_IMAGE_REQUIRED");
+    }
+    flatbuffers::FlatBufferBuilder _Builder;
+    const auto _Mime = _Builder.CreateString(strMimeType_);
+    const auto _Image = _Builder.CreateVector(EncodedImage_);
+    const auto _Start = _Builder.StartTable();
+    _Builder.AddElement<uint32_t>(4, kRenderResourceSchemaVersion, 0);
+    _Builder.AddElement<uint64_t>(6, nDataVersion_, 0);
+    _Builder.AddOffset(8, _Mime);
+    _Builder.AddElement<uint32_t>(10, nPixelWidth_, 0);
+    _Builder.AddElement<uint32_t>(12, nPixelHeight_, 0);
+    _Builder.AddOffset(14, _Image);
+    const auto _Root = _Builder.EndTable(_Start);
+    _Builder.Finish(flatbuffers::Offset<void>(_Root), kRenderTextureIdentifier);
+    return iCAX::Resource::MakeFlatBufferResource(_Builder);
+}
+
 bool iCAX::Render::IsRenderMaterialResource(
     IN const iCAX::Resource::CFlatBufferResource& Resource_) noexcept
 {
     return HasIdentifier(Resource_, kRenderMaterialIdentifier);
+}
+
+bool iCAX::Render::IsRenderTextureResource(
+    IN const iCAX::Resource::CFlatBufferResource& Resource_) noexcept
+{
+    return HasIdentifier(Resource_, kRenderTextureIdentifier);
 }

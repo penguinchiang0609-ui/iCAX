@@ -50,7 +50,7 @@ Map ConfigureMachinePost(Scene& scene,const Map& request){
 Map ExportMachineProgram(Scene& scene,const Map& request){
     CutFields(request,{"expected","setupId","modelKey","destination"});CheckExpected(*Runtime(scene),request);SetupIdle(scene);
     const auto setup=Require<CFiveAxisSetupComponent>(scene.Database(),Identifier(request,"setupId"));
-    const auto machine=CaptureMachine(scene,setup->GetMachineSetup());const auto snapshot=MachineSnapshotState(machine);
+    const auto machine=CaptureSetupMachine(scene,*setup);const auto snapshot=MachineSnapshotState(machine);
     if(String(request,"modelKey")!=String(snapshot,"modelKey"))throw std::invalid_argument("机床或后置已变化，请重新仿真后导出。");
     const auto post=ValidateMachinePost(scene,Identifier(machine.Configuration,"machineId"),machine.Postprocessor);
     if(String(post,"format")!="JointJSON")throw std::invalid_argument("CAM_OUTPUT_CAPABILITY_UNSUPPORTED: 当前通用 G1 后置不能保持连续五次轴轨迹，请使用连续轴运动 JSON，或配置经过验证的控制器适配器。");

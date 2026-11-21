@@ -1,0 +1,354 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="Fixed 长嘴切割头">
+  <link name="刀头安装基准" />
+  <joint name="head_mount" type="fixed">
+    <parent link="刀头安装基准" />
+    <child link="固定激光切割头" />
+    <origin xyz="0.00299999862909317 -0.003 -0.9019999676942825" />
+  </joint>
+  <link name="固定激光切割头">
+    <icax_tool name="GF-3015 物理喷嘴" type="laser_cutting_head" tcp_mm="0 3 -227.7" beam="0 0 -1" />
+    <visual name="laser_head_dark">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_dark.stl" />
+      </geometry>
+      <material name="dark">
+        <color rgba="0.075 0.1 0.13 1" />
+      </material>
+    </visual>
+    <visual name="laser_head_shell">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_shell.stl" />
+      </geometry>
+      <material name="shell">
+        <color rgba="0.8 0.83 0.85 1" />
+      </material>
+    </visual>
+    <visual name="laser_head_steel">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_steel.stl" />
+      </geometry>
+      <material name="steel">
+        <color rgba="0.48 0.56 0.62 1" />
+      </material>
+    </visual>
+    <visual name="laser_head_copper">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_copper.stl" />
+      </geometry>
+      <material name="copper">
+        <color rgba="0.8 0.46 0.18 1" />
+      </material>
+    </visual>
+    <visual name="laser_head_black">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_black.stl" />
+      </geometry>
+      <material name="black">
+        <color rgba="0.024 0.032 0.044 1" />
+      </material>
+    </visual>
+    <visual name="laser_head_blue">
+      <origin xyz="-0.0 0.003 0.1025" />
+      <geometry>
+        <mesh filename="meshes/bare_laser_head_blue.stl" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.035 0.29 0.52 1" />
+      </material>
+    </visual>
+    <collision name="laser_head_box_1">
+      <origin xyz="0 0.001 0.0785" />
+      <geometry>
+        <box size="0.116004 0.124004 0.096004" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_2">
+      <origin xyz="0 0.003 -0.0095" />
+      <geometry>
+        <box size="0.098004 0.098004 0.104004" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_3">
+      <origin xyz="0 0.003 -0.0765" />
+      <geometry>
+        <box size="0.076004 0.076004 0.038004" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_4">
+      <origin xyz="0 0.003 -0.1145" />
+      <geometry>
+        <box size="0.048004 0.048004 0.054004" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_6">
+      <origin xyz="0.025 0.003 0.1345" />
+      <geometry>
+        <box size="0.022004 0.022004 0.026004" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_01">
+      <origin xyz="0 0.003 -0.1425" />
+      <geometry>
+        <box size="0.0120020004056987 0.0120020004056987 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_02">
+      <origin xyz="0 0.003 -0.1445" />
+      <geometry>
+        <box size="0.0117461864427754 0.0117461864427754 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_03">
+      <origin xyz="0 0.003 -0.1465" />
+      <geometry>
+        <box size="0.0114903724798522 0.0114903724798522 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_04">
+      <origin xyz="0 0.003 -0.1485" />
+      <geometry>
+        <box size="0.011234558516929 0.011234558516929 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_05">
+      <origin xyz="0 0.003 -0.1505" />
+      <geometry>
+        <box size="0.0109787445540058 0.0109787445540058 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_06">
+      <origin xyz="0 0.003 -0.1525" />
+      <geometry>
+        <box size="0.0107229305910825 0.0107229305910825 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_07">
+      <origin xyz="0 0.003 -0.1545" />
+      <geometry>
+        <box size="0.0104671166281593 0.0104671166281593 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_08">
+      <origin xyz="0 0.003 -0.1565" />
+      <geometry>
+        <box size="0.0102113026652361 0.0102113026652361 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_09">
+      <origin xyz="0 0.003 -0.1585" />
+      <geometry>
+        <box size="0.00995548870231288 0.00995548870231288 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_10">
+      <origin xyz="0 0.003 -0.1605" />
+      <geometry>
+        <box size="0.00969967473938965 0.00969967473938965 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_11">
+      <origin xyz="0 0.003 -0.1625" />
+      <geometry>
+        <box size="0.00944386077646643 0.00944386077646643 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_12">
+      <origin xyz="0 0.003 -0.1645" />
+      <geometry>
+        <box size="0.0091880468135432 0.0091880468135432 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_13">
+      <origin xyz="0 0.003 -0.1665" />
+      <geometry>
+        <box size="0.00893223285061998 0.00893223285061998 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_14">
+      <origin xyz="0 0.003 -0.1685" />
+      <geometry>
+        <box size="0.00867641888769675 0.00867641888769675 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_15">
+      <origin xyz="0 0.003 -0.1705" />
+      <geometry>
+        <box size="0.00842060492477353 0.00842060492477353 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_16">
+      <origin xyz="0 0.003 -0.1725" />
+      <geometry>
+        <box size="0.0081647909618503 0.0081647909618503 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_17">
+      <origin xyz="0 0.003 -0.1745" />
+      <geometry>
+        <box size="0.00790897699892707 0.00790897699892707 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_18">
+      <origin xyz="0 0.003 -0.1765" />
+      <geometry>
+        <box size="0.00765316303600385 0.00765316303600385 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_19">
+      <origin xyz="0 0.003 -0.1785" />
+      <geometry>
+        <box size="0.00739734907308062 0.00739734907308062 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_20">
+      <origin xyz="0 0.003 -0.1805" />
+      <geometry>
+        <box size="0.0071415351101574 0.0071415351101574 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_21">
+      <origin xyz="0 0.003 -0.1825" />
+      <geometry>
+        <box size="0.00688572114723417 0.00688572114723417 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_22">
+      <origin xyz="0 0.003 -0.1845" />
+      <geometry>
+        <box size="0.00662990718431095 0.00662990718431095 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_23">
+      <origin xyz="0 0.003 -0.1865" />
+      <geometry>
+        <box size="0.00637409322138772 0.00637409322138772 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_24">
+      <origin xyz="0 0.003 -0.1885" />
+      <geometry>
+        <box size="0.0061182792584645 0.0061182792584645 0.00200200000000003" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_25">
+      <origin xyz="0 0.003 -0.1905" />
+      <geometry>
+        <box size="0.00586246529554127 0.00586246529554127 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_26">
+      <origin xyz="0 0.003 -0.1925" />
+      <geometry>
+        <box size="0.00560665133261805 0.00560665133261805 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_27">
+      <origin xyz="0 0.003 -0.1945" />
+      <geometry>
+        <box size="0.00535083736969483 0.00535083736969483 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_28">
+      <origin xyz="0 0.003 -0.1965" />
+      <geometry>
+        <box size="0.0050950234067716 0.0050950234067716 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_29">
+      <origin xyz="0 0.003 -0.1985" />
+      <geometry>
+        <box size="0.00483920944384838 0.00483920944384838 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_30">
+      <origin xyz="0 0.003 -0.2005" />
+      <geometry>
+        <box size="0.00458339548092515 0.00458339548092515 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_31">
+      <origin xyz="0 0.003 -0.2025" />
+      <geometry>
+        <box size="0.00432758151800192 0.00432758151800192 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_32">
+      <origin xyz="0 0.003 -0.2045" />
+      <geometry>
+        <box size="0.0040717675550787 0.0040717675550787 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_33">
+      <origin xyz="0 0.003 -0.2065" />
+      <geometry>
+        <box size="0.00381595359215547 0.00381595359215547 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_34">
+      <origin xyz="0 0.003 -0.2085" />
+      <geometry>
+        <box size="0.00356013962923225 0.00356013962923225 0.00200200000000003" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_35">
+      <origin xyz="0 0.003 -0.2105" />
+      <geometry>
+        <box size="0.00330432566630902 0.00330432566630902 0.00200199999999997" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_36">
+      <origin xyz="0 0.003 -0.2125" />
+      <geometry>
+        <box size="0.0030485117033858 0.0030485117033858 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_37">
+      <origin xyz="0 0.003 -0.2145" />
+      <geometry>
+        <box size="0.00279269774046258 0.00279269774046258 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_38">
+      <origin xyz="0 0.003 -0.2165" />
+      <geometry>
+        <box size="0.00253688377753935 0.00253688377753935 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_39">
+      <origin xyz="0 0.003 -0.2185" />
+      <geometry>
+        <box size="0.00228106981461613 0.00228106981461613 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_40">
+      <origin xyz="0 0.003 -0.2205" />
+      <geometry>
+        <box size="0.0020252558516929 0.0020252558516929 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_41">
+      <origin xyz="0 0.003 -0.2225" />
+      <geometry>
+        <box size="0.00176944188876967 0.00176944188876967 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_42">
+      <origin xyz="0 0.003 -0.2245" />
+      <geometry>
+        <box size="0.00151362792584645 0.00151362792584645 0.002002" />
+      </geometry>
+    </collision>
+    <collision name="laser_head_box_5_43">
+      <origin xyz="0 0.003 -0.2265" />
+      <geometry>
+        <box size="0.00125781396292322 0.00125781396292322 0.002002" />
+      </geometry>
+    </collision>
+  </link>
+</robot>

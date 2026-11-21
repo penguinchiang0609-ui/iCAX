@@ -6,14 +6,14 @@
       "sectionGroups": {
         "frame": {
           "title": {
-            "zh-CN": "A 管 · 边框"
+            "zh-CN": "A 料 · 边框"
           },
           "order": 40,
           "defaultOpen": true
         },
         "inner": {
           "title": {
-            "zh-CN": "B 管 · 内杆"
+            "zh-CN": "B 料 · 内杆"
           },
           "order": 50,
           "defaultOpen": true
@@ -30,6 +30,41 @@
             "zh-CN": "安装孔"
           },
           "order": 70,
+          "defaultOpen": true
+        },
+        "support": {
+          "title": {
+            "zh-CN": "C 料 · 支撑竖杆"
+          },
+          "order": 55,
+          "defaultOpen": true
+        },
+        "projectionVertical": {
+          "title": {
+            "zh-CN": "飘面竖向骨架"
+          },
+          "order": 56,
+          "defaultOpen": true
+        },
+        "projectionHorizontal": {
+          "title": {
+            "zh-CN": "飘面横向骨架"
+          },
+          "order": 57,
+          "defaultOpen": true
+        },
+        "drying": {
+          "title": {
+            "zh-CN": "晾衣杆及吊臂用料"
+          },
+          "order": 59,
+          "defaultOpen": true
+        },
+        "dryingLayout": {
+          "title": {
+            "zh-CN": "晾衣杆"
+          },
+          "order": 35,
           "defaultOpen": true
         }
       },
@@ -94,6 +129,41 @@
           "category": "process",
           "sectionGroup": "joint",
           "order": 63,
+          "defaultOpen": true
+        },
+        "projection": {
+          "category": "specifications",
+          "order": 15,
+          "defaultOpen": true
+        },
+        "support_profile": {
+          "category": "materials",
+          "sectionGroup": "support",
+          "order": 55,
+          "defaultOpen": true
+        },
+        "projection_vertical_profile": {
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "order": 56,
+          "defaultOpen": true
+        },
+        "projection_horizontal_profile": {
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "order": 57,
+          "defaultOpen": true
+        },
+        "drying_profile": {
+          "category": "materials",
+          "sectionGroup": "drying",
+          "order": 59,
+          "defaultOpen": true
+        },
+        "drying_layout": {
+          "category": "specifications",
+          "sectionGroup": "dryingLayout",
+          "order": 35,
           "defaultOpen": true
         }
       },
@@ -563,6 +633,376 @@
             "preferred": 140,
             "max": 220
           }
+        },
+        "projectionDepth": {
+          "order": 41,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "topDrop": {
+          "order": 42,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportMaxSpacing": {
+          "order": 44,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "layoutStyle": {
+          "order": 15,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "returnMaximumClearGap": {
+          "order": 45,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportProfileType": {
+          "order": 292,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "supportWidth": {
+          "order": 293,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportDepth": {
+          "order": 294,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportWallThickness": {
+          "order": 295,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportCornerRadius": {
+          "order": 296,
+          "category": "materials",
+          "sectionGroup": "frame",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "returnJointMode": {
+          "order": 301,
+          "category": "process",
+          "sectionGroup": "joint",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "balconyTopDepth": {
+          "order": 41,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "balconyBottomDepth": {
+          "order": 42,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "balconyTopDrop": {
+          "order": 43,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportStyle": {
+          "order": 43.5,
+          "category": "specifications",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          }
+        },
+        "supportPairClearGap": {
+          "order": 44.5,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "supportLinkCount": {
+          "order": 46,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 180
+          }
+        },
+        "supportLinkBottomOffset": {
+          "order": 47,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 180
+          }
+        },
+        "supportLinkTopOffset": {
+          "order": 48,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 180
+          }
+        },
+        "projectionVerticalProfileType": {
+          "order": 297,
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "projectionVerticalWidth": {
+          "order": 298,
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionVerticalDepth": {
+          "order": 299,
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionVerticalWallThickness": {
+          "order": 300,
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionVerticalCornerRadius": {
+          "order": 301,
+          "category": "materials",
+          "sectionGroup": "projectionVertical",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionHorizontalProfileType": {
+          "order": 302,
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "projectionHorizontalWidth": {
+          "order": 303,
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionHorizontalDepth": {
+          "order": 304,
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionHorizontalWallThickness": {
+          "order": 305,
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "projectionHorizontalCornerRadius": {
+          "order": 306,
+          "category": "materials",
+          "sectionGroup": "projectionHorizontal",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "barCenterSpacing": {
+          "order": 125,
+          "category": "specifications",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "dryingRodEnabled": {
+          "order": 340,
+          "category": "specifications",
+          "sectionGroup": "dryingLayout",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingRodRearOffset": {
+          "order": 341,
+          "category": "specifications",
+          "sectionGroup": "dryingLayout",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingRodDrop": {
+          "order": 342,
+          "category": "specifications",
+          "sectionGroup": "dryingLayout",
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingProfileType": {
+          "order": 352,
+          "category": "materials",
+          "sectionGroup": "drying",
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "dryingWidth": {
+          "order": 353,
+          "category": "materials",
+          "sectionGroup": "drying",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "dryingDepth": {
+          "order": 354,
+          "category": "materials",
+          "sectionGroup": "drying",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "dryingWallThickness": {
+          "order": 355,
+          "category": "materials",
+          "sectionGroup": "drying",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
+        },
+        "dryingCornerRadius": {
+          "order": 356,
+          "category": "materials",
+          "sectionGroup": "drying",
+          "width": {
+            "min": 64,
+            "preferred": 90,
+            "max": 140
+          }
         }
       }
     },
@@ -700,6 +1140,54 @@
             "preferred": 90,
             "max": 140
           }
+        },
+        "supportStyle": {
+          "order": 43.5,
+          "width": {
+            "min": 140,
+            "preferred": 210,
+            "max": 340
+          },
+          "line": "full"
+        },
+        "dryingRodEnabled": {
+          "order": 340,
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingRodRearOffset": {
+          "order": 341,
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingRodDrop": {
+          "order": 342,
+          "width": {
+            "min": 64,
+            "preferred": 100,
+            "max": 160
+          }
+        },
+        "dryingProfileType": {
+          "order": 352
+        },
+        "dryingWidth": {
+          "order": 353
+        },
+        "dryingDepth": {
+          "order": 354
+        },
+        "dryingWallThickness": {
+          "order": 355
+        },
+        "dryingCornerRadius": {
+          "order": 356
         }
       }
     },
@@ -728,6 +1216,18 @@
             "zh-CN": "安装孔位"
           },
           "order": 40
+        },
+        "projection": {
+          "title": {
+            "zh-CN": "飘面与支撑"
+          },
+          "order": 15
+        },
+        "drying_layout": {
+          "title": {
+            "zh-CN": "晾衣杆"
+          },
+          "order": 16
         }
       },
       "annotations": {
@@ -735,7 +1235,7 @@
           "kind": "linear",
           "group": "overall",
           "label": {
-            "zh-CN": "成品宽"
+            "zh-CN": "正面外包宽"
           },
           "order": 0,
           "editable": true
@@ -744,7 +1244,7 @@
           "kind": "linear",
           "group": "overall",
           "label": {
-            "zh-CN": "成品高"
+            "zh-CN": "正面外包高"
           },
           "order": 10,
           "editable": true
@@ -980,9 +1480,44 @@
           "order": 150,
           "editable": true,
           "visibleWhen": {
-            "op": "ne",
-            "parameter": "frameType",
-            "value": "closed_frame"
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "planar"
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "frameType",
+                    "value": "closed_frame"
+                  }
+                ]
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "barLayoutMode",
+                    "value": "center_spacing"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "handleEnabled",
+                    "value": "yes"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "frameType",
+                    "value": "bottom_rail"
+                  }
+                ]
+              }
+            ]
           }
         },
         "lastBarBottomOffset": {
@@ -994,16 +1529,26 @@
           "order": 160,
           "editable": true,
           "visibleWhen": {
-            "op": "eq",
-            "parameter": "frameType",
-            "value": "two_vertical"
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "planar"
+              },
+              {
+                "op": "eq",
+                "parameter": "frameType",
+                "value": "two_vertical"
+              }
+            ]
           }
         },
         "installHoleEnabled": {
           "kind": "parameter",
           "group": "mounting_layout",
           "label": {
-            "zh-CN": "安装孔"
+            "zh-CN": "立柱安装孔"
           },
           "order": 170,
           "editable": true
@@ -1049,12 +1594,432 @@
             "parameter": "installHoleEnabled",
             "value": "yes"
           }
+        },
+        "projectionDepth": {
+          "kind": "linear",
+          "group": "projection",
+          "label": {
+            "zh-CN": "前后框外包进深"
+          },
+          "order": 11,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layoutStyle",
+            "value": "five_face"
+          }
+        },
+        "topDrop": {
+          "kind": "parameter",
+          "group": "projection",
+          "label": {
+            "zh-CN": "顶部内外落差"
+          },
+          "order": 12,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layoutStyle",
+            "value": "five_face"
+          }
+        },
+        "supportMaxSpacing": {
+          "kind": "parameter",
+          "group": "projection",
+          "label": {
+            "zh-CN": "支撑组最大中心距"
+          },
+          "order": 14,
+          "editable": true,
+          "visibleWhen": {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "five_face"
+              },
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "balcony_closure"
+              }
+            ]
+          }
+        },
+        "returnMaximumClearGap": {
+          "kind": "parameter",
+          "group": "projection",
+          "label": {
+            "zh-CN": "顶底杆最大净距"
+          },
+          "order": 15,
+          "editable": true,
+          "visibleWhen": {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "five_face"
+              },
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "balcony_closure"
+              }
+            ]
+          }
+        },
+        "balconyTopDepth": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "顶部框外包进深"
+          },
+          "group": "projection",
+          "order": 16,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layoutStyle",
+            "value": "balcony_closure"
+          }
+        },
+        "balconyBottomDepth": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "底部框外包进深"
+          },
+          "group": "projection",
+          "order": 17,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layoutStyle",
+            "value": "balcony_closure"
+          }
+        },
+        "balconyTopDrop": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "顶部后端抬高"
+          },
+          "group": "projection",
+          "order": 18,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "layoutStyle",
+            "value": "balcony_closure"
+          }
+        },
+        "supportPairClearGap": {
+          "kind": "linear",
+          "group": "projection",
+          "label": {
+            "zh-CN": "双竖杆净距"
+          },
+          "order": 19,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "five_face"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "balcony_closure"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "supportStyle",
+                "value": "double"
+              }
+            ]
+          }
+        },
+        "supportLinkCount": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "双杆内短横杆数"
+          },
+          "group": "projection",
+          "order": 20,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "five_face"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "balcony_closure"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "supportStyle",
+                "value": "double"
+              }
+            ]
+          }
+        },
+        "supportLinkBottomOffset": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "首根短横杆中心离底"
+          },
+          "group": "projection",
+          "order": 21,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "layoutStyle",
+                        "value": "five_face"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "layoutStyle",
+                        "value": "balcony_closure"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "supportStyle",
+                    "value": "double"
+                  }
+                ]
+              },
+              {
+                "op": "ne",
+                "parameter": "supportLinkCount",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "supportLinkTopOffset": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "末根短横杆中心离顶"
+          },
+          "group": "projection",
+          "order": 22,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "all",
+                "conditions": [
+                  {
+                    "op": "any",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "parameter": "layoutStyle",
+                        "value": "five_face"
+                      },
+                      {
+                        "op": "eq",
+                        "parameter": "layoutStyle",
+                        "value": "balcony_closure"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "supportStyle",
+                    "value": "double"
+                  }
+                ]
+              },
+              {
+                "op": "ne",
+                "parameter": "supportLinkCount",
+                "value": 0
+              },
+              {
+                "op": "ne",
+                "parameter": "supportLinkCount",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "barCenterSpacing": {
+          "kind": "parameter",
+          "group": "layout",
+          "label": {
+            "zh-CN": "横杆中心距"
+          },
+          "order": 95,
+          "editable": true,
+          "visibleWhen": {
+            "op": "eq",
+            "parameter": "barLayoutMode",
+            "value": "center_spacing"
+          }
+        },
+        "dryingRodEnabled": {
+          "kind": "parameter",
+          "label": {
+            "zh-CN": "晾衣杆"
+          },
+          "group": "drying_layout",
+          "order": 340,
+          "editable": true,
+          "visibleWhen": {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "five_face"
+              },
+              {
+                "op": "eq",
+                "parameter": "layoutStyle",
+                "value": "balcony_closure"
+              }
+            ]
+          },
+          "offset": [
+            300,
+            0,
+            0
+          ]
+        },
+        "dryingRodRearOffset": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "杆中心距后侧外表面"
+          },
+          "group": "drying_layout",
+          "order": 341,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "five_face"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "balcony_closure"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "dryingRodEnabled",
+                "value": "yes"
+              }
+            ]
+          },
+          "offset": [
+            300,
+            0,
+            0
+          ]
+        },
+        "dryingRodDrop": {
+          "kind": "linear",
+          "label": {
+            "zh-CN": "杆中心距正面顶部"
+          },
+          "group": "drying_layout",
+          "order": 342,
+          "editable": true,
+          "visibleWhen": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "five_face"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "layoutStyle",
+                    "value": "balcony_closure"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "dryingRodEnabled",
+                "value": "yes"
+              }
+            ]
+          },
+          "offset": [
+            300,
+            0,
+            0
+          ]
         }
       }
     }
   },
   "shared": {
     "instanceSummary": [
+      {
+        "text": {
+          "zh-CN": "阳台上下收口 · {width} × {height} · 上深 {balconyTopDepth} / 下深 {balconyBottomDepth} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layoutStyle",
+          "value": "balcony_closure"
+        }
+      },
+      {
+        "text": {
+          "zh-CN": "五面 · 正面 {width} × {height} · 框外包深 {projectionDepth} mm"
+        },
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "layoutStyle",
+          "value": "five_face"
+        }
+      },
       {
         "text": {
           "zh-CN": "{width} × {height} mm"

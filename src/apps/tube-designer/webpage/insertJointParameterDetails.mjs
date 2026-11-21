@@ -118,9 +118,13 @@ function profileFor(declaration, values, role) {
   const get = name => values?.[bound(declaration, role + name)];
   let contours, source, approximate = false;
   if (entry) {
+    if (entry.contours?.length === 1 || entry.hollow === false)
+      throw new Error('当前公母工艺适用于中空管；实心型材请使用对接焊');
     if (!Array.isArray(entry.contours) || entry.contours.length < 2) throw new Error('等待所选管型的截面轮廓');
     contours = clone(entry.contours); source = 'snapshot';
   } else {
+    if (get('ProfileType') === 'rect-bar')
+      throw new Error('当前公母工艺适用于中空管；实心型材请使用对接焊');
     const width = get('Width'), round = ['round', 'circle'].includes(String(get('ProfileType')));
     const depth = round ? width : get('Depth'), wall = get('WallThickness'), radius = get('CornerRadius') ?? 0;
     if (![width, depth, wall, radius].every(finite) || Math.min(width, depth, wall) <= 0 || 2 * wall >= Math.min(width, depth)) throw new Error('请完善管型尺寸');
@@ -227,7 +231,9 @@ export function insertJointParameterDetailModel(declaration, values = {}, { temp
   const fields = fieldMap(template);
   const label = (name, fallback) => catalogText(fields.get(bound(declaration, name))?.displayName, fallback);
   try {
-    const frame = profileFor(declaration, values, 'frame'), inner = profileFor(declaration, values, 'inner');
+    const receiver = profileFor(declaration, values, 'frame'), inner = profileFor(declaration, values, 'inner');
+    const frame = declaration.receiverAxis === 'depth' && receiver.kind !== 'round'
+      ? { ...receiver, width: receiver.depth, depth: receiver.width } : receiver;
     const full = base.form === 'full_section';
     const count = get('maleTabCount') === 'four' || get('maleTabCount') === 4 ? 4 : 2;
     const angle = full ? 0 : get('maleTabAngle') ?? 0;

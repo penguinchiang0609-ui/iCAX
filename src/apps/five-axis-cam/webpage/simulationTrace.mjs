@@ -1,5 +1,6 @@
 import * as THREE from '../../../iCAX-UI/SDK/ThirdParty/three/three.module.js';
 import {sceneColors} from './scenePalette.mjs';
+import {applySetupDisplayFrame} from './setupWorldFrame.mjs';
 
 const point=(frame,rapid)=>rapid?frame.position:frame.target;
 export function rapidSegmentDistances(frames){
@@ -92,6 +93,7 @@ export function paintSimulationTrace(view,state) {
     }
     trace.report=state.collisionReport;trace.paintedHitsVersion=trace.hitsVersion;trace.cursor=null;
   }
+  lines(trace).forEach(track=>applySetupDisplayFrame(view,track.line));
   if(trace.cursor===cursor&&trace.start===start)return;
   lines(trace).forEach(track=>clipLine(track,frames,start,cursor));
   trace.cursor=cursor;trace.start=start;

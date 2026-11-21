@@ -1,0 +1,9 @@
+/build/
+/dist/
+/validation/
+/CMakeUserPresets.json
+*.user
+
+# These are pinned Boost headers, not Visual Studio Debug build products.
+!third_party/boost-1.87.0/boost/preprocessor/debug/
+!third_party/boost-1.87.0/boost/preprocessor/debug/*.hpp

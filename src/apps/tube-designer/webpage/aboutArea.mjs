@@ -21,7 +21,7 @@ export function renderAboutRightPane(_context, view) {
       <div class="tube-designer-heading"><strong>产品信息</strong><span>当前版本</span></div>
       <dl>
         <div><dt>产品名称</dt><dd>TubeDesigner</dd></div>
-        <div><dt>版本</dt><dd>0.3.3</dd></div>
+        <div><dt>版本</dt><dd>0.3.4</dd></div>
       </dl>
     </div>${renderLicenseStatus(view)}`;
 }

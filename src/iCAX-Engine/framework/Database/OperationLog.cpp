@@ -237,6 +237,7 @@ namespace
         _Header["record"] = Variant(std::string(S_OperationLogHeaderRecord));
         _Header["magic"] = Variant(strMagic_);
         _Header["version"] = Variant(static_cast<unsigned int>(nVersion_));
+        _Header["journalId"] = Variant(iCAX::Data::to_string(iCAX::Data::GenerateNewUUID()));
         return Variant(_Header);
     }
 
@@ -919,6 +920,20 @@ bool iCAX::Database::COperationBatchJournal::IsOpen() const
 const std::string& iCAX::Database::COperationBatchJournal::GetPath() const
 {
     return m_strPath;
+}
+
+std::string iCAX::Database::COperationBatchJournal::ReadIdentity(
+    const std::string& Path_, const std::string& Magic_, uint32_t Version_)
+{
+    std::ifstream input(std::filesystem::path(std::u8string(Path_.begin(), Path_.end())), std::ios::binary);
+    std::string line;
+    if (!input || !ReadNextNonBlankLine(input, line))
+        throw std::runtime_error("Operation journal identity is unavailable");
+    ValidateOperationLogHeader(line, Magic_, Version_);
+    const auto header = iCAX::Data::VariantSerializer::Deserialize(line).To<iCAX::Data::ObjectMap>();
+    const auto identity = Require(header, "journalId").To<std::string>();
+    if (identity.empty()) throw std::runtime_error("Operation journal identity is empty");
+    return identity;
 }
 
 void iCAX::Database::COperationBatchJournal::Append(IN const COperationBatch& Batch_)

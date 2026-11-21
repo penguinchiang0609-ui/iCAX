@@ -1,3 +1,4 @@
+import {camPathKind} from './workspaceModel.mjs';
 import {supportsToolAxis} from './toolAxisEligibility.mjs';
 import { activeTool, selectTool } from './workspaceModel.mjs';
 import { flushToolAxisPointEdits, inspectToolAxisSample,exitToolAxisPointModes } from './toolAxisPoints.mjs';
@@ -7,7 +8,7 @@ import { pickDisplayedToolAxis, syncToolAxisPickHighlight, setToolAxisDisplayVis
 
 const alive=(context,view)=>!view.disposed&&context.isCurrentProject?.()!==false;
 const state=view=>view.fivePoseSelection??={active:false,hover:null,selected:null};
-const inCutting=view=>view.fiveAxisArea==='toolpath'&&view.fiveCamPage!=='rapid';
+const inCutting=view=>view.fiveAxisArea==='toolpath'&&camPathKind(view)!=='rapid';
 const selectable=view=>(view.scene?.intentToolpaths||[]).some(c=>c.enabled!==false&&supportsToolAxis(c));
 const sourceKey=(view,cut)=>JSON.stringify([cut.id,cut.poseRef,cut.processRef,cut.featureRef,cut.curveRef,cut.sourceState,cut.start,cut.reversed,
   view.scene?.domain?.placements?.find(p=>p.id===cut.placementId)?.transform]);
@@ -78,7 +79,7 @@ export async function poseSelectionCommand(context,view,action,ops){
     await flushToolAxisEdits(context,view,ops);
   }catch(error){if(alive(context,view)){view.error=error.message;ops.renderProject(context,view);}return;}
   if(!alive(context,view)||busy(view)||!inCutting(view))return;
-  closeOtherInteractions(view);selectTool(view,'keypoint');view.fiveCamPage='cutting';
+  closeOtherInteractions(view);selectTool(view,'keypoint');if(view.fiveCamPage!=='collision')view.fiveCamPage='cutting';
   Object.assign(d,{active:true,hover:null,selected:null,selectedKey:null,epoch:view.scene?.domain?.expected?.epoch});view.error='';
   setToolAxisDisplayVisible(view,true);syncPoseSelection(context,view);ops.renderProject(context,view);
 }

@@ -7,14 +7,14 @@ namespace
         auto request=GenerateRequest(scene);request["mode"]=mode;
         if(mode=="Manual")request["intentIds"]=ids;return request;
     }
-    void PrepareOrderPart(Scene& scene,bool generate=true){
+    void PrepareOrderPart(Scene& scene,bool generate=true,const Text& machineType="HeadHead"){
         auto part=RecognitionPart();for(const auto& center:{gp_Pnt(12,0,-1),gp_Pnt(-10,7,-1)})
             part=BRepAlgoAPI_Cut(part,BRepPrimAPI_MakeCylinder(gp_Ax2(center,gp::DZ()),3,12).Shape()).Shape();
         TopoDS_Shape surface;
         for(TopExp_Explorer faces(part,TopAbs_FACE);faces.More();faces.Next()){
             BRepAdaptor_Surface candidate(TopoDS::Face(faces.Current()));
             if(candidate.GetType()==GeomAbs_Plane&&std::abs(candidate.Plane().Location().Z()-10.)<1e-8){surface=faces.Current();break;}}
-        ASSERT_FALSE(surface.IsNull());File file(surface);const auto placement=Imported(scene,file);auto extraction=ExtractRequest(scene,placement);
+        ASSERT_FALSE(surface.IsNull());File file(surface);const auto placement=Imported(scene,file,machineType);auto extraction=ExtractRequest(scene,placement);
         extraction["representation"]=Text("SkinSurface");extraction["workpieceFamily"]=Text("SheetSurface");extraction["declaredThicknessMm"]=2.;
         const auto terminal=WaitCut(scene,Invoke(&scene,"CamCut","ExtractCandidates",extraction));
         const auto created=Invoke(&scene,"CamCut","Create",CreateRequest(scene,extraction,terminal));

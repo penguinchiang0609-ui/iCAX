@@ -11,7 +11,7 @@ TEST(FiveAxisWorkpieceRemoval, RemovesOwnedMachiningAtomicallyWithoutChangingOth
     auto request=ActivateRequest(scene,second);request["setupId"]=second.at("setupId");
     const auto removed=Invoke(&scene,"CamWorkpiece","Remove",request);
     const auto after=Read(scene);
-    EXPECT_EQ(1u,after.at("workpieces").To<Array>().size());EXPECT_EQ(1u,after.at("placements").To<Array>().size());
+    EXPECT_EQ(1u,after.at("workpieces").To<Array>().size());EXPECT_EQ(2u,after.at("placements").To<Array>().size());
     EXPECT_EQ(1u,after.at("setups").To<Array>().size());EXPECT_EQ(1u,after.at("fixtures").To<Array>().size());
     EXPECT_EQ(first.at("setupId"),after.at("activeSetupId"));EXPECT_EQ(firstSetup,SetupState(scene,first.at("setupId")));
     for(const auto& c:after.at("intentToolpaths").To<Array>())EXPECT_EQ(first.at("placementId"),c.To<Map>().at("placementId"));

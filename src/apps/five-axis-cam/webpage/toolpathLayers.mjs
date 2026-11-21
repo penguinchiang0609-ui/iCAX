@@ -1,3 +1,4 @@
+import {camPathKind} from './workspaceModel.mjs';
 import { escapeText as esc,escapeAttr as attr } from '../../_shared/workbench/utils/format.mjs';
 import { workspaceState, activeTool } from './workspaceModel.mjs';
 import { mergeDomainState } from './domainActions.mjs';
@@ -14,10 +15,10 @@ const cutFor=(view,id)=>(view.scene?.intentToolpaths??[]).find(c=>c.id===id);
 export function toolpathLayerColor(view,id){const cut=cutFor(view,id),layer=catalog(view)?.catalog?.[cut?.layers?.visibleLayerId];return state(view).drafts[layer?.id]?.color??layer?.color??cut?.layers?.color??sceneColors.cutting;}
 export function toolpathLayerVisible(view,id){const cut=cutFor(view,id),layer=catalog(view)?.catalog?.[cut?.layers?.visibleLayerId];return (layer?.visible??cut?.layers?.visible)!==false;}
 export function toolpathLayerRevision(view){return JSON.stringify([catalog(view),Object.entries(state(view).drafts).map(([id,d])=>[id,d.color]),(view.scene?.intentToolpaths??[]).map(c=>[c.id,c.layers])]);}
-export function syncToolpathLayerMaterials(view,group){const chosen=new Set(view.fiveAxisArea==='toolpath'&&view.fiveCamPage!=='rapid'?selected(view):[]);group?.traverse(object=>{
+export function syncToolpathLayerMaterials(view,group){const chosen=new Set(view.fiveAxisArea==='toolpath'&&camPathKind(view)!=='rapid'?selected(view):[]);group?.traverse(object=>{
  const data=object.userData??{};
  if(data.rapidTransitionId){
-  const highlight=view.fiveAxisArea==='toolpath'&&view.fiveCamPage==='rapid'&&activeTool(view)==='rapid'&&view.fiveRapid?.id===data.rapidTransitionId;
+  const highlight=view.fiveAxisArea==='toolpath'&&camPathKind(view)==='rapid'&&activeTool(view)==='rapid'&&view.fiveRapid?.id===data.rapidTransitionId;
   const warning=data.rapidCollision?sceneColors.error:data.rapidUnverified?sceneColors.rapidUnverified:null;
   object.material.color.set(warning??(highlight?sceneColors.selected:sceneColors.reference));
   object.material.depthTest=!highlight;syncPathSelectionStroke(object,highlight,warning??sceneColors.selected);return;

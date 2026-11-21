@@ -20,3 +20,10 @@ Checks:
 - `node src/tests/iCAX-UI/ProductIsolationTest.mjs`
 - `node src/tests/iCAX-UI/SDKTest.mjs`
 - After building TubeDesigner and ProductTest: `ProductTest.exe --gtest_filter=ProductRuntimeIntegrationTest.* --gtest_also_run_disabled_tests`. This checks simultaneous product-scoped registration using the active manifest and isolated test product definitions; it does not use interactive projects.
+# 场景状态栏扩展
+
+产品可在 `createWorkbench` 的上下文中声明 `renderSceneStatusBar(context, view, scene)`。
+共享工作台将其结果放在 `.cam-viewer` 内、`.cam-viewport` 之后；未声明时不增加节点。
+产品负责状态栏内容和对应的 viewer 行布局，可沿既有局部 patch 更新状态，不替换画布。
+AppShell 的命令／日志面板通过 SDK 的 `getBottomDockDefinition` 与 `mountBottomDockPanel`
+契约接入，日志继续由 AppShell 管理，不在场景状态栏中复制。

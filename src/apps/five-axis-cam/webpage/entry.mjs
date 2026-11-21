@@ -9,6 +9,7 @@ import {syncMachineCollisionFeedback,disposeMachineCollisionFeedback,machineColl
 import {syncFixturePlacement,disposeFixturePlacement} from './fixturePlacement.mjs';
 import {attachFixturePlateEditor,disposeFixturePlateEditor,fixturePlateHistoryState,fixturePlateHistoryCommand,fixturePlateCommand} from './fixturePlateEditor.mjs';
 import { disposeFixtureDesign,attachFixtureDirectionMenu,syncSupportDirectionArrow,designCommand,highlightDesign } from './fixtureDesign.mjs';
+import {fixtureDesignBusy} from './fixtureDesignState.mjs';
 import {syncSelectionFeedback,handleSelectionFeedbackHover,disposeSelectionFeedback} from './selectionFeedback.mjs';
 import {attachFaceListFocus,faceFocusShortcut} from './faceSelectionFocus.mjs';
 import {cutFocusShortcut,focusSelectedCuts,focusCutNode} from './cutFocus.mjs';
@@ -48,6 +49,7 @@ import { simulationCommand, simulationField, syncSimulation, disposeSimulation, 
 import {syncCuttingHeadPreview,disposeCuttingHeadPreview} from './cuttingHeadPreview.mjs';
 import {headColliderField,headColliderCommand,flushHeadColliderSaves,scheduleHeadColliderSave,cancelInvalidHeadColliderEdits} from './cuttingHeadColliders.mjs';
 import {headInstanceField,headInstanceCommand} from './cuttingHeadInstances.mjs';
+import {headScopeCommand,headScopeField,refreshHeadAssignments} from './headAssignmentScopes.mjs';
 import {syncAlertPanel,disposeAlertPanel,renderWorkspaceAlerts,workspaceAlertItems,installAlertStyle} from './alerts.mjs';
 import {installCollisionProgressStyle} from './collisionProgress.mjs';
 import {installCollisionDiagnosticsStyle} from './collisionDiagnostics.mjs';
@@ -71,7 +73,7 @@ import { RENDER_ENTITY_VIEW_PROJECTION } from '../../_shared/workbench/projectio
 import { projectWorkpiece, mergeDomainState, importModelPath, chooseWorkpiece, cancelImport, readMachiningState,syncIntentGeneration } from './domainActions.mjs';
 import { releaseProject as releaseWorkbench } from '../../_shared/workbench/createWorkbench.mjs';
 import { getProjectView, findProjectView } from '../../_shared/workbench/state/projectViewStore.mjs';
-import { AREAS, TOOLS, activeTool, selectTool, normalizeArea, workspaceState, currentDraft, geometryEditing, preparationKind, switchCamPage } from './workspaceModel.mjs';
+import { AREAS, TOOLS, activeTool, selectTool, normalizeArea, workspaceState, currentDraft, geometryEditing, preparationKind, switchCamPage,camPathKind,switchCamPathKind } from './workspaceModel.mjs';
 import { renderLeft, renderRight, renderSummary, renderOverlay, renderDock } from './workspaceViews.mjs';
 import { patchWorkspacePanels } from './workspaceDom.mjs';
 import { attachFloatingDialogs, syncFloatingDialogs, disposeFloatingDialogs } from './floatingDialogs.mjs';
@@ -88,6 +90,9 @@ import { generationCommand, updateGeneratedPreview, disposeGeneratedPreview, gen
 import { fixtureCommand, fixtureDraft, fixtureFieldChanged, fixturePicked, highlightFixture, beginFixtureInput, finishFixtureInput, flushFixtureEdits } from './fixtureActions.mjs';
 import {fixtureLibraryField,closeFixtureChooser} from './fixtureLibrary.mjs';
 import {preparationCommand} from './preparationTree.mjs';
+import {operationCommand,operationField,syncMachineTypeAssignments,prepareOperationArea,syncOperationPreparationKind} from './operationWorkspace.mjs';
+import {prepareOperationNavigation} from './operationNavigation.mjs';
+import {syncOperationCreateDialog,disposeOperationCreateDialog} from './operationCreateDialog.mjs';
 import { placementTools, preparePlacement, openPlacement, placementCommand, placementFieldChanged, placementSpaceChanged, syncPlacementInteraction, disposePlacementPreview, transformParameterCommand, transformParameterChanged } from './workpiecePlacement.mjs';
 import { updateCutPreview, disposeCutPreview } from './cutPreview.mjs';
 import { selectCut, handleCutLinePick, cutRectangleSelectionKey, handleCutRectangleSelect } from './cutSelection.mjs';
@@ -101,7 +106,7 @@ import { openStandardHoles, standardHoleChanged, standardHoleCommand } from './s
 import { openLeads, openLeadSettings, applyLeadToCut, syncLeads, leadFieldChanged, leadCommand, disposeLeadOverlay } from './cutLeads.mjs';
 import { syncCompensation, disposeCompensationOverlay } from './cutCompensation.mjs';
 import { getRibbonDefinition,syncRibbonCommandAvailability } from './ribbon.mjs';
-import {camPage,camPageForTool,CAM_PAGES} from './camWorkspace.mjs';
+import {camPage,camPageForTool,CAM_PAGES,camContextCommand,camContextKey,positionCamContextPicker,attachCamContextPickers} from './camWorkspace.mjs';
 import {cancelBlockingOperation} from './operationFeedback.mjs';
 import {openAlignment,disposeAlignment,alignmentCommand,alignmentFieldChanged,finishAlignmentField,scheduleAlignmentSave,flushAlignmentEdits,handleAlignmentPick,handleAlignmentHover,syncAlignment} from './workpieceAlignment.mjs';
 import {disposeSceneSnapping} from './sceneSnapping.mjs';
@@ -131,14 +136,15 @@ export function activeWorkpieceView(view) {
   const configuration=view.scene?.domain?.setups?.find(s=>s.id===setupId)?.machineSetup;
   const machineId=camMachinePlayback(view)?configuration?.machineId:view.fiveMachine?.machineId||configuration?.machineId;
   const showSetup=view.fiveAxisArea!=='simulation'||activeTool(view)==='machine-simulation'&&view.scene?.machines?.some(m=>m.entityId===machineId)&&configuration?.machineId===machineId;
-  const id=!showSetup||enabledWorkpiecesOnly(view)&&!workpieceEnabled(view)?null:setupId;
-  const standalone=showSetup&&!setupId&&view.scene?.activePlacementId;
+  const sourceOnly=view.fiveAxisArea==='workpiece';
+  const id=sourceOnly||!showSetup||enabledWorkpiecesOnly(view)&&!workpieceEnabled(view)?null:setupId;
+  const standalone=showSetup&&(sourceOnly||!setupId)&&view.scene?.activePlacementId;
   const workpieceId=standalone?view.scene.domain.placements.find(p=>p.id===standalone)?.workpieceId:null;
   const sources=['CFiveAxisPlacementComponent','CFiveAxisFixtureComponent'].map((component,index)=>({
     sourceId:`five-axis-active-${index}`,role:'scene',language:'sql',
     where:id?`WHERE HAS CRenderInstanceComponent AND HAS ${component} AND ${component}.SetupID = :setupId`
-      :index===0&&workpieceId?`WHERE HAS CRenderInstanceComponent AND HAS ${component} AND ${component}.WorkpieceID = :workpieceId`:'WHERE FALSE',
-    parameters:id?{setupId:typedVariant('uuid',id)}:index===0&&workpieceId?{workpieceId:typedVariant('uuid',workpieceId)}:{},
+      :index===0&&workpieceId?`WHERE HAS CRenderInstanceComponent AND HAS ${component} AND ${component}.WorkpieceID = :workpieceId AND ${component}.SetupID = :sourceSetupId`:'WHERE FALSE',
+    parameters:id?{setupId:typedVariant('uuid',id)}:index===0&&workpieceId?{workpieceId:typedVariant('uuid',workpieceId),sourceSetupId:typedVariant('uuid','00000000-0000-0000-0000-000000000000')}:{},
     projection:machineFrame?RENDER_ENTITY_VIEW_PROJECTION:[...RENDER_ENTITY_VIEW_PROJECTION,
       {alias:index===0?'setupPlacementTransform':'setupFixtureTransform',component,property:'Transform'}],
   }));
@@ -241,6 +247,9 @@ async function inspectFace(context,view,id,ops){
 async function command(context, view, id, ops) {
   if(id.startsWith('five.fixture.light-'))return true;
   if(id.startsWith('five.head-collider.')){await headColliderCommand(context,view,id.slice('five.head-collider.'.length),ops);return true;}
+  if(id==='five.head-workspace.use'){await headScopeCommand(context,view,'set',ops);return true;}
+  if(id==='five.head-workspace.inherit'){await headScopeCommand(context,view,'inherit',ops);return true;}
+  if(id==='five.head-workspace.refresh'){await refreshHeadAssignments(context,view,ops);return true;}
   if(id.startsWith('five.plan-issue.')){await machinePlanIssueCommand(context,view,id.slice('five.plan-issue.'.length),ops,next=>command(context,view,next,ops));return true;}
   if(id==='five.head-instance.machine'){view.fiveSimulation.headOpen=false;await context.actions?.selectRibbonTab?.('simulation');await command(context,view,'five.tool.machine-instances',ops);return true;}
   if(id.startsWith('five.head-instance.')){await headInstanceCommand(context,view,id.slice('five.head-instance.'.length),ops);return true;}
@@ -349,6 +358,7 @@ async function command(context, view, id, ops) {
   if(view.fiveFixtureLibrary?.choosing&&!id.startsWith('five.fixture.'))closeFixtureChooser(context,view);
   if(id.startsWith('five.workpiece-name.save:')){await saveWorkpieceName(context,view,id.slice('five.workpiece-name.save:'.length),ops);return true;}
   if(id.startsWith('five.preparation.')){await preparationCommand(context,view,id.slice('five.preparation.'.length),ops);return true;}
+  if(id.startsWith('five.operation.')){await operationCommand(context,view,id.slice('five.operation.'.length),ops);return true;}
   if(id.startsWith('five.job.')){await jobCommand(context,view,id.slice(9),ops);return true;}
   if(id==='five.tool.export'){await jobCommand(context,view,'open',ops);return true;}
   if(view.fiveJobRequest&&id!=='five.refresh')return true;
@@ -398,13 +408,12 @@ async function command(context, view, id, ops) {
     if(workpieceSelectionBusy(view))return true;
     let placementId=id.slice(id.indexOf(':')+1);const placement=view.scene?.domain?.placements.find(p=>p.id===placementId);
     if(!placement)return true;
-    if(id.startsWith('five.cam-context.pose:')&&placement.workpieceId!==selectedPlacement(view)?.workpieceId)return true;
-    const memory=view.fiveCamPlacements??=new Map(),previous=selectedPlacement(view);if(previous)memory.set(previous.workpieceId,previous.id);
+    const memory=view.fiveCamPlacements??=new Map(),previous=selectedPlacement(view);if(previous?.setupId)memory.set(previous.workpieceId,previous.id);
     if(id.startsWith('five.cam-context.workpiece:')){
-      const remembered=view.scene.domain.placements.find(p=>p.id===memory.get(placement.workpieceId)&&p.workpieceId===placement.workpieceId);
-      if(remembered&&view.scene.domain.setups.find(s=>s.id===remembered.setupId)?.enabled!==false)placementId=remembered.id;
+      const eligible=view.scene.domain.placements.filter(p=>p.setupId&&p.workpieceId===placement.workpieceId&&(view.fiveAxisArea==='operation'||view.scene.domain.setups.find(s=>s.id===p.setupId)?.enabled!==false));
+      placementId=(eligible.find(p=>p.id===memory.get(placement.workpieceId))||eligible[0]||placement).id;
     }
-    await selectWorkpiece(context,view,placementId,ops);if(!view.error)memory.set(placement.workpieceId,placementId);return true;
+    await selectWorkpiece(context,view,placementId,ops);const selected=view.scene.domain.placements.find(p=>p.id===placementId);if(!view.error&&selected?.setupId)memory.set(selected.workpieceId,selected.id);return true;
   }
   if(id.startsWith('five.cam-inspector.')){
     const tab=id.slice('five.cam-inspector.'.length);if(!['properties','collision'].includes(tab)||view.pending)return true;
@@ -412,10 +421,10 @@ async function command(context, view, id, ops) {
     if(tab==='collision'){
       pauseSimulation(view);exitToolAxisPointModes(view);
       view.fiveAxisExtractionOpen=false;view.fiveAxisSplitOpen=false;view.fiveAxisHoleOpen=false;
-      ui.tools.toolpath=camPage(view)==='rapid'?'rapid':'select';
+      ui.tools.toolpath=camPathKind(view)==='rapid'?'rapid':'select';
       ops.renderProject(context,view);return true;
     }
-    if(camPage(view)==='rapid'){ui.tools.toolpath='rapid';ops.renderProject(context,view);return true;}
+    if(camPathKind(view)==='rapid'){ui.tools.toolpath='rapid';ops.renderProject(context,view);return true;}
     exitToolAxisPointModes(view);ui.tools.toolpath='select';
     ops.renderProject(context,view);return true;
   }
@@ -426,12 +435,26 @@ async function command(context, view, id, ops) {
     view.fiveAxisLeadsOpen=false;view.fiveAxisClearOpen=false;view.fiveAxisStartOpen=false;
     ops.renderProject(context,view);if(tab==='parameters')await loadProcessDraft(context,view,ops);return true;
   }
+  if(id.startsWith('five.collision-details.')){
+    const kind=id.slice('five.collision-details.'.length);if(!['cutting','rapid','all'].includes(kind)||view.pending)return true;
+    if(camPage(view)!=='collision')await command(context,view,'five.cam-page.collision',ops);
+    exitToolAxisPointModes(view);cancelRapidPathMode(view);
+    view.fiveCollisionDetails=kind;
+    if(kind!=='all')switchCamPathKind(view,kind);
+    ui.tools.toolpath=camPathKind(view)==='rapid'?'rapid':'select';view.fiveCamInspector='collision';
+    if(camPathKind(view)==='rapid'&&(!view.fiveRapid?.open||!view.fiveRapid?.id))openRapid(view);
+    if(view.fiveSimulation){view.fiveSimulation.repairScope=null;view.fiveSimulation.collisionPathSelection=null;}
+    ops.renderProject(context,view);return true;
+  }
   if(id.startsWith('five.cam-page.')){
     if(view.pending||view.fiveRapid?.request||view.fiveOrder?.request)return true;
     const page=id.slice('five.cam-page.'.length);if(!CAM_PAGES.some(([id])=>id===page))return true;
-    const rapid=page==='rapid';
     if(view.fiveAxisExtractionOpen)await extractionCommand(context,view,'close',null,ops);
-    switchCamPage(view,page);ui.tools.toolpath=({cutting:'select',rapid:'rapid',process:'process',order:'order'})[page];
+    if(camPage(view)==='head'&&page!=='head')await flushHeadColliderSaves(context,view,ops);
+    pauseSimulation(view);switchCamPage(view,page);const rapid=camPathKind(view)==='rapid';
+    ui.tools.toolpath=({cutting:'select',rapid:'rapid',process:'process',order:'order',collision:rapid?'rapid':'select',simulation:'simulation',head:'select'})[page];
+    if(page==='collision')view.fiveCamInspector='collision';
+    if(page==='simulation')view.fiveCamInspector='properties';
     view.fiveCamProcessTab='parameters';
     if(view.fiveOrder){view.fiveOrder.open=false;view.fiveOrder.menu=null;}
     view.fiveAxisLeadsOpen=false;view.fiveAxisClearOpen=false;view.fiveAxisStartOpen=false;
@@ -439,16 +462,16 @@ async function command(context, view, id, ops) {
     if(view.fiveAxisPointInsert||view.fiveAxisPointDelete)exitToolAxisPointModes(view);
     view.fiveRapid?.cancel?.();if(view.fiveRapid){view.fiveRapid.running=false;view.fiveRapid.open=false;view.fiveRapid.token++;}
     view.error='';if(rapid)openRapid(view);
-    ops.renderProject(context,view);if(page==='process')await loadProcessDraft(context,view,ops);return true;
+    if(view.fiveSimulation)view.fiveSimulation.headOpen=page==='head';
+    ops.renderProject(context,view);if(page==='head')await simulationCommand(context,view,'head-open',ops);if(page==='process')await loadProcessDraft(context,view,ops);return true;
   }
   if(id.startsWith('five.tree.')){await cutTreeCommand(context,view,id.slice(10),ops);return true;}
   if(view.fiveTreeRequest&&id!=='five.refresh')return true;
-  if(id==='five.simulation.collision-check'){
-    // The ribbon starts a setup-wide check. Opening an inspector or an alert
-    // remains navigation; its own button passes the selected path separately.
+  if(/^five\.simulation\.collision-(check|manual-scope|auto-scope)(:(Cutting|Rapid))?$/.test(id)){
     await command(context,view,'five.tool.collision',ops);
-    await simulationCommand(context,view,'collision-check',ops);return true;
+    await simulationCommand(context,view,id.slice(16),ops);return true;
   }
+  if(id==='five.simulation.head-open')return command(context,view,'five.cam-page.head',ops);
   if(id.startsWith('five.simulation.')){await simulationCommand(context,view,id.slice(16),ops);return true;}
   if(view.fiveSimulation?.request&&!['five.refresh','five.tool.simulation'].includes(id))return true;
   if(id.startsWith('five.rapid.')){await rapidCommand(context,view,id.slice(11),ops);return true;}
@@ -534,13 +557,10 @@ async function command(context, view, id, ops) {
     if(toolId!=='simulation'&&view.fiveJobPlayback){pauseSimulation(view);view.fiveJobPlayback=null;}
     if(!TOOLS[toolId])return false;
     if(toolId==='manual-order'&&(!manualStartMode||manualStartMode===view.fiveOrder?.mode)&&activeTool(view)==='manual-order'&&view.fiveOrder?.open){await orderCommand(context,view,view.fiveOrder.prefix.length?'apply':'close',ops);return true;}
-    if(toolId==='simulation'){
-      const {prepareToolpathAction}=await import('./toolpathGeneration.mjs');
-      if(!await prepareToolpathAction(context,view,ops))return true;
-    }
+    if(toolId==='simulation')return command(context,view,'five.cam-page.simulation',ops);
     if(toolId==='collision'){
-      if(!['cutting','rapid'].includes(camPage(view)))switchCamPage(view,'cutting');
-      if(camPage(view)==='rapid'&&!view.fiveRapid?.open)openRapid(view);
+      if(!['cutting','rapid','collision'].includes(camPage(view)))switchCamPage(view,'collision');
+      if(camPathKind(view)==='rapid'&&!view.fiveRapid?.open)openRapid(view);
       return command(context,view,'five.cam-inspector.collision',ops);
     }
     if(toolId==='scale'&&view.scene?.domain?.workpieces?.find(w=>w.id===selectedPlacement(view)?.workpieceId)?.locked)return true;
@@ -619,6 +639,7 @@ function attach(context, view, mount, ops) {
   let binding = bindings.get(mount);
   if (!binding) {
     binding = { context, view, ops }; bindings.set(mount, binding);
+    binding.disposeCamContextPickers=attachCamContextPickers(mount);
     binding.disposeSupportMenu=attachFixtureDirectionMenu(mount,()=>syncSupportDirectionArrow(binding.view));
     binding.disposeExtractionMenu=attachFixtureDirectionMenu(mount,()=>syncExtractionDirection(binding.view),'.five-extraction-direction-menu');
     binding.disposeFaceListFocus=attachFaceListFocus(mount,id=>{
@@ -632,9 +653,9 @@ function attach(context, view, mount, ops) {
     mount.addEventListener('focusout',event=>{if(binding.context.isCurrentProject?.()!==false&&binding.view.fiveRapid?.settings&&event.target.hasAttribute?.('data-five-rapid-field'))binding.view.fiveRapid.savePath?.(0);});
     mount.addEventListener('dblclick',async event=>{
       const part=event.target.closest?.('[data-five-part-select]');
-      if(part){const {context:ctx,view:current,ops:activeOps}=binding;if(!event.target.closest('.five-plate-row-actions')&&!current.disposed&&!current.pending&&!current.fixtureRequest&&current.fiveAxisArea==='workpiece'&&ctx.isCurrentProject?.()!==false){event.preventDefault();await command(ctx,current,'five.fixture.part-select:'+part.dataset.fivePartSelect,activeOps);if(ctx.isCurrentProject?.()!==false&&!current.disposed)focusFixturePart(current,part.dataset.fivePartSelect);}return;}
+      if(part){const {context:ctx,view:current,ops:activeOps}=binding;if(!event.target.closest('.five-plate-row-actions')&&!current.disposed&&!current.pending&&!current.fixtureRequest&&current.fiveAxisArea==='operation'&&ctx.isCurrentProject?.()!==false){event.preventDefault();await command(ctx,current,'five.fixture.part-select:'+part.dataset.fivePartSelect,activeOps);if(ctx.isCurrentProject?.()!==false&&!current.disposed)focusFixturePart(current,part.dataset.fivePartSelect);}return;}
       const rapid=event.target.closest?.('.five-tree-row[data-five-rapid-id]');
-      if(rapid){const {context:ctx,view:current}=binding;if(!rapid.disabled&&!current.disposed&&!current.pending&&current.fiveCamPage==='rapid'&&ctx.isCurrentProject?.()!==false){event.preventDefault();focusRapid(current,rapid.dataset.fiveRapidId);}return;}
+      if(rapid){const {context:ctx,view:current}=binding;if(!rapid.disabled&&!current.disposed&&!current.pending&&camPathKind(current)==='rapid'&&ctx.isCurrentProject?.()!==false){event.preventDefault();focusRapid(current,rapid.dataset.fiveRapidId);}return;}
       const cut=event.target.closest?.('.five-tree-row[data-five-node]');
       if(cut){const {context:ctx,view:current}=binding;if(!cut.disabled&&!current.disposed&&!current.pending&&current.fiveAxisArea==='toolpath'&&ctx.isCurrentProject?.()!==false){event.preventDefault();focusCutNode(current,cut.dataset.fiveNode);}return;}
       const library=event.target.closest?.('[data-five-library-select]');
@@ -663,6 +684,19 @@ function attach(context, view, mount, ops) {
       const { context: ctx, view: current, ops: activeOps } = binding;
       if(consumeMachineJogClick(current,event))return;
       if (ctx.isCurrentProject?.() === false) return;
+      const camContext=event.target.closest?.('[data-five-cam-context-area]');
+      if(camContext){
+        if(camContext.dataset.fiveCamContextArea!==current.fiveAxisArea){event.preventDefault();return;}
+        const picker=event.target.closest('[data-five-cam-context-picker]'),summary=event.target.closest('[data-five-cam-context-picker]>summary');
+        if(summary){event.preventDefault();if(workpieceSelectionBusy(current)||summary.getAttribute('aria-disabled')==='true')return;picker.open=!picker.open;positionCamContextPicker(picker);return;}
+        const choice=event.target.closest('[data-five-cam-context-choice]');
+        if(choice){
+          event.preventDefault();const id=camContextCommand(current,camContext.dataset.fiveCamContextArea,choice.dataset.fiveCamContextChoice,choice.dataset.value);if(!id||choice.disabled)return;
+          if(picker){picker.open=false;picker.querySelector('summary').focus({preventScroll:true});}
+          try{await command(ctx,current,id,activeOps);}catch(error){if(ctx.isCurrentProject?.()!==false){current.error=error.message;activeOps.renderProject(ctx,current);}}return;
+        }
+      }
+      if(event.target.closest?.('.five-fixture-generator summary')&&fixtureDesignBusy(current)){event.preventDefault();return;}
       if(event.target.closest?.('.five-extraction-direction-menu>summary')&&(current.pending||currentDraft(current,'extract').extraction?.confirmationRequest)){event.preventDefault();return;}
       const chooser=event.target.closest?.('[data-five-workpiece-chooser], [data-five-setup-chooser]');
       if(chooser&&workpieceSelectionBusy(current)){event.preventDefault();return;}
@@ -678,6 +712,16 @@ function attach(context, view, mount, ops) {
         if((current.pending&&!current.fiveCommandSavingId&&!current.fiveNameSavingId)||current.fiveTreeRequest||current.fiveToolAxisRequest){if(!target.hasAttribute('data-five-command'))return;}
         if(!target.hasAttribute('data-five-command')&&current.fivePoseSelection?.active)await poseSelectionCommand(ctx,current,'exit',activeOps);
         if(!target.hasAttribute('data-five-command')&&current.fiveAxisPointEdit?.dirty)await flushToolAxisPointEdits(ctx,current,activeOps);
+        if(current.fiveCamPage==='collision'&&(target.hasAttribute('data-five-intent')||target.hasAttribute('data-five-rapid-id'))){
+          await flushRapidPathSave(ctx,current,activeOps);
+          exitToolAxisPointModes(current);cancelRapidPathMode(current);
+          const rapid=target.hasAttribute('data-five-rapid-id');switchCamPathKind(current,rapid?'rapid':'cutting');
+          workspaceState(current).tools.toolpath=rapid?'rapid':'select';current.fiveCamInspector='collision';
+          if(rapid){if(!current.fiveRapid?.open||!current.fiveRapid?.id)openRapid(current);rapidPick(current,target.dataset.fiveRapidId);}
+          else{if(current.fiveRapid)current.fiveRapid.open=false;selectCut(current,target.dataset.fiveIntent);}
+          if(current.fiveSimulation){current.fiveSimulation.repairScope=null;current.fiveSimulation.collisionPathSelection=null;}
+          activeOps.renderProject(ctx,current);return;
+        }
         if(target.hasAttribute('data-five-workpiece')){if(chooser){chooser.open=false;chooser.querySelector('summary').focus({preventScroll:true});}await selectWorkpiece(ctx,current,target.dataset.fiveWorkpiece,activeOps);return;}
         if(target.hasAttribute('data-five-part-select')){await cam.handleRibbonCommand(ctx,'five.fixture.part-select:'+target.dataset.fivePartSelect);return;}
         if(target.hasAttribute('data-five-check')){const key=target.dataset.fiveCheck;if(key.startsWith('g:'))selectCutGroup(current,key.slice(2),{ctrlKey:true});else selectCut(current,key.slice(2),{ctrlKey:true});activeOps.renderProject(ctx,current);return;}
@@ -705,7 +749,9 @@ function attach(context, view, mount, ops) {
     mount.addEventListener('contextmenu',event=>{const label=event.target.closest?.('[data-five-order-id]');if(label&&orderContextMenu(binding.view,label.dataset.fiveOrderId,event))binding.ops.renderProject(binding.context,binding.view);});
     binding.keydown=ownedProjectKeydown(mount,binding,()=>bindings.get(mount)===binding,event=>{
       const {context:ctx,view:current,ops:activeOps}=binding;
+      if(['Enter',' '].includes(event.key)&&event.target.closest?.('.five-fixture-generator summary')&&fixtureDesignBusy(current)){event.preventDefault();return;}
       if(event.isComposing&&['Enter','Escape'].includes(event.key))return;
+      if(ctx.isCurrentProject?.()!==false&&mount.contains(event.target)&&camContextKey(event,workpieceSelectionBusy(current)))return;
       const run=promise=>void Promise.resolve(promise).catch(error=>{if(ctx.isCurrentProject?.()!==false&&!current.disposed){current.error=error.message;activeOps.renderProject(ctx,current);}});
       if(event.key==='Enter'&&event.target.dataset?.fiveHeadInstanceField==='name'&&ctx.isCurrentProject?.()!==false){event.preventDefault();run(command(ctx,current,'five.head-instance.rename',activeOps));return;}
       if(event.key==='Escape'&&event.target.dataset?.fiveHeadInstanceField==='name'&&ctx.isCurrentProject?.()!==false){event.preventDefault();run(command(ctx,current,'five.head-instance.rename-cancel',activeOps));return;}
@@ -717,7 +763,7 @@ function attach(context, view, mount, ops) {
       const navigation=listKeyboardAction(event,mount);
       if(navigation){
         event.preventDefault();
-        if(current.pending||current.fixtureRequest||current.fiveTreeRequest||current.fiveToolAxisRequest||event.key==='Enter'&&!navigation.focus)return;
+        if(current.pending||current.fixtureRequest||current.fiveFixtureDesignRequest||current.fiveTreeRequest||current.fiveToolAxisRequest||event.key==='Enter'&&!navigation.focus)return;
         const row=navigation.row;
         if(row.dataset.fiveNode&&cutTreeBusy(current))return;
         revealListRow(row,mount);
@@ -767,7 +813,7 @@ function attach(context, view, mount, ops) {
         if(transformShortcutMode(event)==='focus'&&!current.pending&&!current.fiveMachine?.busy&&!current.fiveMachineJog?.running){event.preventDefault();focusMachineCollider(current,current.fiveMachineColliders.active);return;}
       }
       const placementMode=transformShortcutMode(event);
-      if(['translate','rotate','scale'].includes(placementMode)&&(current.fiveAxisArea==='workpiece'&&((placementMode==='scale')===geometryEditing(current)))&&ctx.isCurrentProject?.()!==false&&mount.contains(event.target)
+      if(['translate','rotate','scale'].includes(placementMode)&&(placementMode==='scale'?current.fiveAxisArea==='workpiece':current.fiveAxisArea==='operation')&&ctx.isCurrentProject?.()!==false&&mount.contains(event.target)
         && !event.defaultPrevented&&!event.repeat&&!event.isComposing&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.shiftKey
         && !event.target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="dialog"]')
         && ['select',...placementTools].includes(activeTool(current))&&current.scene?.model?.isLoaded
@@ -797,7 +843,7 @@ function attach(context, view, mount, ops) {
       if(event.key==='Escape'&&!event.defaultPrevented&&mount.isConnected&&activeTool(current)==='registration'&&current.fiveLocatingOpen!==false&&ctx.isCurrentProject?.()!==false){event.preventDefault();void locatingCommand(ctx,current,current.fiveLocating?.picking!=null?'cancel-pick':'close',activeOps);return;}
       if(event.key==='Escape'&&current.fivePlacement?.open&&ctx.isCurrentProject?.()!==false){event.preventDefault();void placementCommand(ctx,current,'close',activeOps);}
       if(event.key==='Escape'&&current.fiveAxisRegistrationOpen&&!current.pending&&ctx.isCurrentProject?.()!==false){event.preventDefault();current.fiveAxisRegistrationOpen=false;current.fiveAxisRegistrationPick=null;current.error='';activeOps.renderProject(ctx,current);}
-      if(event.key==='Escape'&&current.fiveSimulation?.headOpen&&ctx.isCurrentProject?.()!==false){event.preventDefault();void simulationCommand(ctx,current,'head-close',activeOps);}
+      if(event.key==='Escape'&&current.fiveCamPage!=='head'&&current.fiveSimulation?.headOpen&&ctx.isCurrentProject?.()!==false){event.preventDefault();void simulationCommand(ctx,current,'head-close',activeOps);}
       else if(event.key==='Escape'&&activeTool(current)==='simulation'&&ctx.isCurrentProject?.()!==false){event.preventDefault();void simulationCommand(ctx,current,'pause',activeOps);}
       if(event.key==='Escape'&&['rapid','settings'].includes(activeTool(current))&&ctx.isCurrentProject?.()!==false){event.preventDefault();void rapidCommand(ctx,current,'close',activeOps);}
       if(ctx.isCurrentProject?.()!==false&&ctx.mount.contains(event.target)&&['Enter',' '].includes(event.key)&&event.target.hasAttribute?.('data-five-order-id')){event.preventDefault();orderingPick(current,event.target.dataset.fiveOrderId);activeOps.renderProject(ctx,current);}
@@ -865,6 +911,14 @@ function attach(context, view, mount, ops) {
     });
     mount.addEventListener('change', event => {
       const { context: ctx, view: current, ops: activeOps } = binding;
+      if(event.target.tagName==='SELECT'&&event.target.hasAttribute('data-five-cam-context-field')){
+        if(ctx.isCurrentProject?.()===false)return;
+        const area=event.target.closest('[data-five-cam-context-area]')?.dataset.fiveCamContextArea,id=camContextCommand(current,area,event.target.dataset.fiveCamContextField,event.target.value);
+        if(id)void command(ctx,current,id,activeOps).catch(error=>{if(ctx.isCurrentProject?.()!==false){current.error=error.message;activeOps.renderProject(ctx,current);}});else activeOps.renderProject(ctx,current);
+        return;
+      }
+      if(ctx.isCurrentProject?.()!==false&&event.target.hasAttribute('data-five-operation-field')){void operationField(ctx,current,event.target.dataset.fiveOperationField,event.target.value,activeOps);return;}
+      if(event.target.hasAttribute('data-five-head-scope')){headScopeField(ctx,current,event.target.value,activeOps);return;}
       if(event.target.hasAttribute('data-five-head-collider-field')){if(ctx.isCurrentProject?.()!==false&&event.target.tagName==='SELECT')headColliderField(ctx,current,event.target.dataset.fiveHeadColliderField,event.target.value,activeOps);return;}
       if(event.target.hasAttribute('data-five-head-instance-field')){if(ctx.isCurrentProject?.()!==false&&event.target.tagName==='SELECT'){headInstanceField(ctx,current,event.target.dataset.fiveHeadInstanceField,event.target.value,activeOps);activeOps.renderProject(ctx,current);}return;}
       if(ctx.isCurrentProject?.()!==false&&event.target.hasAttribute('data-five-extraction-scope')){const group=event.target.closest('[data-five-key="extraction-scope"]'),inner=group.querySelector('[value="inner"]').checked,outer=group.querySelector('[value="outer"]').checked;void command(ctx,current,'five.extraction.scope.'+(inner&&outer?'all':inner?'inner':outer?'outer':'none'),activeOps);return;}
@@ -899,19 +953,36 @@ function attach(context, view, mount, ops) {
     });
   }
   Object.assign(binding, { context, view, ops, area: view.activeAreaId, sceneProxy: context.sceneProxy });
+  const placement=selectedPlacement(view),placements=view.scene?.domain?.placements||[];
+  const needsSource=view.fiveAxisArea==='workpiece'&&placement?.setupId&&placements.some(p=>!p.setupId&&p.workpieceId===placement.workpieceId);
+  const owner=placement?.workpieceId||placements.find(p=>p.id===view.scene?.domain?.activePlacementId)?.workpieceId;
+  const needsOperation=['operation','toolpath','simulation'].includes(view.fiveAxisArea)&&!placement?.setupId&&placements.some(p=>p.setupId&&p.workpieceId===owner&&(view.fiveAxisArea==='operation'||view.scene.domain.workpieces.some(w=>w.id===p.workpieceId&&w.enabled!==false)&&view.scene.domain.setups.some(s=>s.id===p.setupId&&s.enabled!==false)));
+  const areaSyncKey=JSON.stringify([view.fiveAxisArea,view.scene?.domain?.expected,placement?.id]);
+  if(!view.error&&!view.fiveOperationCreateDialog&&!view.fiveOperationNavigationPending&&!view.fiveOperationAreaSync&&view.fiveOperationAreaSyncKey!==areaSyncKey&&!workpieceSelectionBusy(view)&&(needsSource||needsOperation)){
+    const area=view.fiveAxisArea;view.fiveOperationAreaSync=true;view.fiveOperationAreaSyncKey=areaSyncKey;
+    void Promise.resolve().then(()=>{
+      if(!view.disposed&&context.isCurrentProject?.()!==false&&view.fiveAxisArea===area)return prepareOperationArea(context,view,ops,area);
+    }).catch(error=>{if(!view.disposed&&context.isCurrentProject?.()!==false)view.error=error.message;}).finally(()=>{
+      view.fiveOperationAreaSync=false;
+      if(!view.disposed&&context.isCurrentProject?.()!==false&&view.fiveAxisArea===area)ops.renderProject(context,view);
+    });return;
+  }
   activateProjectDocumentBinding(mount,binding,()=>attachMachineJog(mount,binding));
   syncFloatingDialogs(mount,binding);
+  syncOperationCreateDialog(context,view,mount,ops);
   hydrateWorkpieceThumbnails(context,view);
   ensureFixtureUnitDetails(context,view,ops);
   for(const picker of mount.querySelectorAll('[data-ribbon-workspace-picker][open]'))positionRibbonWorkspacePicker(picker);
+  for(const picker of mount.querySelectorAll('[data-five-cam-context-picker][open]'))positionCamContextPicker(picker);
   flushWaitingWorkpieceNames(context,view,ops);
   flushWaitingCommands(context,view,ops);
   context.actions?.refreshProjectHistoryControls?.();
   ensureFixtureLibraryHistory(context,view,ops);
+  mount.querySelector('.five-workspace')?.setAttribute('data-head-workspace',String(view.fiveAxisArea==='toolpath'&&camPage(view)==='head'));
   mount.querySelector('.five-workspace')?.setAttribute('data-cam-page',String(view.fiveAxisArea==='toolpath'));
   mount.querySelector('.five-workspace')?.setAttribute('data-positioning', String(['select', 'rough', 'fine', ...placementTools].includes(activeTool(view))));
   mount.querySelector('.five-workspace')?.setAttribute('data-generating',String(activeTool(view)==='generate'));
-  mount.querySelector('.five-workspace')?.setAttribute('data-fixture-design',String(view.fiveAxisArea==='workpiece'&&activeTool(view)==='fixture'&&!!view.fiveFixtureDesignOpen));
+  mount.querySelector('.five-workspace')?.setAttribute('data-fixture-design',String(view.fiveAxisArea==='operation'&&activeTool(view)==='fixture'&&!!view.fiveFixtureDesignOpen));
   mount.querySelector('.five-workspace')?.setAttribute('data-preparation-kind',preparationKind(view));
   mount.querySelector('.five-workspace')?.setAttribute('data-trajectory-simulation',String(activeTool(view)==='simulation'));
   mount.querySelector('.five-workspace')?.setAttribute('data-machine-program-open',String(machineViewportActive(view)&&!!view.fiveMachine?.programOpen&&view.fiveMachine?.programReport===view.fiveMachine?.report));
@@ -937,6 +1008,7 @@ function attach(context, view, mount, ops) {
   syncMachine(context,view,ops);
   syncMachineJog(context,view);
   syncIntentGeneration(context,view,ops);
+  syncMachineTypeAssignments(context,view,ops);
   syncLeads(context,view,ops);
   highlightFixture(view);
   syncFixturePresentation(view);
@@ -968,6 +1040,8 @@ function attach(context, view, mount, ops) {
   const signature = JSON.stringify([view.pending, view.scene?.model?.isLoaded, view.scene?.selection?.id, activeTool(view), currentDraft(view, 'rough').roughMethod, definition]);
   if (signature !== binding.ribbonSignature) { binding.ribbonSignature = signature; context.actions?.refreshProductRibbon?.(); }
   syncRibbonCommandAvailability(mount.closest('.workbench')?.querySelector('.product-ribbon'),definition);
+  const fixtureDesignHistoryBusy=!!view.fiveFixtureDesignRequest;
+  if(binding.fixtureDesignHistoryBusy!==fixtureDesignHistoryBusy){binding.fixtureDesignHistoryBusy=fixtureDesignHistoryBusy;context.actions?.refreshProjectHistoryControls?.();}
   syncAlertPanel(context,view,binding);
   const historySignature=JSON.stringify(view.scene?.domain?.expected);
   if(!view.pending&&historySignature&&historySignature!==binding.historySignature){
@@ -1032,7 +1106,7 @@ function decorate(context) {
       projectWorkpiece(current.scene,current.fiveActivePlacementId,enabledWorkpiecesOnly(current));
       if(current.fiveBoundPlacementId!==current.scene.activePlacementId){resetWorkpieceTools(current);current.fiveBoundPlacementId=current.scene.activePlacementId;}
       current.fiveActivePlacementId=current.scene.activePlacementId;
-    }current.fiveAxisArea=workflowArea(current,current.fiveAxisArea);prepareToolAxisPointModes(current);preparePlacement(current);preparePoseSelection(current);},
+    }current.fiveAxisArea=workflowArea(current,current.fiveAxisArea);syncOperationPreparationKind(current);prepareToolAxisPointModes(current);preparePlacement(current);preparePoseSelection(current);},
     noticePresentation: 'log',
     pendingPresentation: 'explicit',
     areaTitleOverrides: Object.fromEntries(AREAS.map(item => [item.id, item.title])),
@@ -1071,6 +1145,10 @@ function decorate(context) {
   };
 }
 export function mountProduct(context) { styles(); return cam.mountProduct(context); }
+export function beforeSelectRibbonTab(context,tabId){
+  const view=getProjectView(context.project?.projectId),binding=bindings.get(context.mount),area=workflowArea(view,tabId);
+  return prepareOperationNavigation(context,view,binding?.view===view?binding.ops:null,area);
+}
 export function mountProject(context) {
   if (context.isCurrentProject?.() === false) return;
   styles();
@@ -1081,6 +1159,7 @@ export function mountProject(context) {
   disposeInactiveWorkpieceFilePicker(context, view);
   disposeInactiveCuttingHeadFilePicker(context,view);
   view.fiveAxisArea = area;
+  syncOperationPreparationKind(view);
   return cam.mountProject(decorate(context));
 }
 export function handleRibbonCommand(context, id) { return cam.handleRibbonCommand(decorate(context), id); }
@@ -1089,7 +1168,7 @@ export function getProjectHistoryState(context){
  if(view.fiveFixturePlate?.open)return fixturePlateHistoryState(view);
  if(view.fiveFixtureLibrary?.open){const h=fixtureLibraryHistoryState();return {...h,canUndo:h.canUndo||!!view.fiveFixtureLibrary.editing,blocked:h.blocked||!!view.pending};}
  if(view.fiveMachineDefinitionsOpen&&view.fiveAxisArea==='simulation'){const h=definitionHistoryState();return {...h,blocked:h.blocked||!!view.fiveMachine?.busy};}
- return {blocked:!!(view.pending||view.fiveLayers?.queued||view.fiveFloatingInputCommit||view.fivePlacement?.gesture||view.fiveFixtureGizmo?.gesture||view.viewport?.transformManipulator?.pointerId!=null||view.fixtureRequest||view.fiveToolAxisRequest||view.fiveAxisPointEdit?.rotation?.gesture||view.fiveAxisPointEdit?.influence?.gesture||view.fiveHistoryBusy||view.fiveMachineAssembly?.gesture||view.fiveMachineAssembly?.saving||view.fiveMachine?.busy||view.fiveMachineJog?.running||s?.gesture||s?.inflight||s?.editTask||s?.finishing||c?.dragging||h?.dragging),
+ return {blocked:!!(view.pending||view.fiveFixtureDesignRequest||view.fiveLayers?.queued||view.fiveFloatingInputCommit||view.fivePlacement?.gesture||view.fiveFixtureGizmo?.gesture||view.viewport?.transformManipulator?.pointerId!=null||view.fixtureRequest||view.fiveToolAxisRequest||view.fiveAxisPointEdit?.rotation?.gesture||view.fiveAxisPointEdit?.influence?.gesture||view.fiveHistoryBusy||view.fiveMachineAssembly?.gesture||view.fiveMachineAssembly?.saving||view.fiveMachine?.busy||view.fiveMachineJog?.running||s?.gesture||s?.inflight||s?.editTask||s?.finishing||c?.dragging||h?.dragging),
   canUndo:!!(floatingTransformDraft(view)||hasUnappliedWorkpieceDrafts(view)||hasUnappliedCutDrafts(view)||view.fiveRapid?.pathEdit?.changed||view.fiveRapid?.policyChanged||view.fiveRapid?.settingsChanged||view.fiveRapid?.automaticChanged||view.fiveMachineParameterEdits?.entries.size||view.fiveMachine?.dirty||c?.hud?.error||[...(c?.drafts.values()||[])].some(d=>d.dirty)||[...(s?.drafts?.values()||[])].some(d=>d.dirty)||h?.parts.some(p=>p.dirty))};
 }
 export async function handleProjectHistoryCommand(context,direction){
@@ -1168,7 +1247,7 @@ export async function onProjectHistoryChanged(context) {
   const ui=workspaceState(view),selection=[...(view.fivePreferredCutSelection??ui.selectedIntentIds??[])];
   const leadsOpen=view.fiveAxisLeadsOpen,tool=activeTool(view);
  const orderOpen=view.fiveOrder?.open,headEditorSimulation=view.fiveSimulation?.headOpen?view.fiveSimulation:null;
-  const workpieceTool=activeTool(view,'workpiece'),kind=view.fivePreparationKind,fixtureId=view.fiveAxisFixtures?.selected;
+  const workpieceTool=activeTool(view,view.fiveAxisArea),kind=view.fivePreparationKind,fixtureId=view.fiveAxisFixtures?.selected;
   const fixtureDesignOpen=view.fiveFixtureDesignOpen,fixtureDesignPage=view.fiveFixtureDesignPage,setupCheckOpen=view.fiveSetupCheckOpen;
   // Native history changes the product domain as well as the render view.
   // Keep the next pick/command on the restored revision before re-enabling UI.
@@ -1185,13 +1264,13 @@ export async function onProjectHistoryChanged(context) {
 
   // Keep the current editor during the pending render as well as the final
   // refresh; briefly showing the workpiece editor would replace fixture inputs.
-  if(view.fiveAxisArea==='workpiece'){
+  if(['workpiece','operation'].includes(view.fiveAxisArea)){
     selectTool(view,workpieceTool);view.fivePreparationKind=kind;
     view.fiveFixtureDesignOpen=fixtureDesignOpen;view.fiveFixtureDesignPage=fixtureDesignPage;view.fiveSetupCheckOpen=setupCheckOpen;
   }
   if(await binding.ops.refreshSceneState(binding.context,view)===false)
     throw Error(view.error||'撤销或重做已完成，但场景状态刷新失败，请刷新后继续。');
-  if(view.fiveAxisArea==='workpiece'){
+  if(['workpiece','operation'].includes(view.fiveAxisArea)){
     selectTool(view,workpieceTool);view.fivePreparationKind=kind;
     view.fiveFixtureDesignOpen=fixtureDesignOpen;view.fiveFixtureDesignPage=fixtureDesignPage;view.fiveSetupCheckOpen=setupCheckOpen;
     if(view.fiveAxisFixtures?.selected&&view.scene.domain.fixtureUnits?.some(f=>f.id===fixtureId))view.fiveAxisFixtures.selected=fixtureId;
@@ -1309,14 +1388,14 @@ export async function releaseProject(context) {
   const view=findProjectView(context.project?.projectId);
   if(!view)return releaseWorkbench(context);
   const mount=context.mount,binding=mount?bindings.get(mount):null;
-  if(mount)disposeBlockingProgress(view,mount.ownerDocument);
+  if(mount){disposeBlockingProgress(view,mount.ownerDocument);disposeOperationCreateDialog(view,mount.ownerDocument);}
   releaseProjectDocumentBindings(view);
   // A background project has no mount, or the shared mount already belongs
   // to another project. Detach only this view's binding, before awaiting any
   // native cleanup which could allow that mount to be reused.
   if(binding?.view===view){
     disposeHeadChoicePicker(context,view);
-    binding.disposeSupportMenu?.();binding.disposeExtractionMenu?.();binding.disposeFaceListFocus?.();binding.disposeMachineJog?.();disposeFloatingDialogs(binding);disposeAlertPanel(binding);
+    binding.disposeCamContextPickers?.();binding.disposeSupportMenu?.();binding.disposeExtractionMenu?.();binding.disposeFaceListFocus?.();binding.disposeMachineJog?.();disposeFloatingDialogs(binding);disposeAlertPanel(binding);
     mount.ownerDocument?.removeEventListener('keydown',binding.keydown);
     mount.ownerDocument?.removeEventListener('visibilitychange',binding.visibility);
     bindings.delete(mount);

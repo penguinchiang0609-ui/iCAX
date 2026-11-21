@@ -1,3 +1,4 @@
+#include "FiveAxisHeadLimitCheck.inc"
 namespace {
     // Frozen selected-head data only. No machine instance, avoidance search,
     // generated geometry or editable state is changed by this checker.
@@ -87,17 +88,32 @@ namespace {
         input.KeyposeChecks.resize(input.KeypointFrames.size());
         for(const auto& job:scheduled)input.InterpolationStarts.push_back(input.SegmentIndices.at(job.Rows.front()));
         input.InterpolationChecks.resize(scheduled.size());
+        auto motion=std::make_shared<HeadJointMotion>();motion->Machine=machine;motion->Kinematics=kinematics;motion->Model=built;motion->Task=task;
+        motion->Frames=frames;motion->Keys=keys;motion->Fractions=fractions;
+        auto* output=&input;
+        input.CheckHeadLimits=[motion,scheduled,output](const auto& cancelled){
+            const bool valid=motion->Prepare(output->KeypointFrames,scheduled,output->ParallelWorkers,output->Query.MaxSegmentTimeMs,cancelled);
+            output->HeadLimitsUnverified=false;
+            for(const auto& [_,reason]:motion->Errors)output->HeadLimitsUnverified|=reason!="CAM_HEAD_LIMIT_NO_SOLUTION";
+            for(const auto& [_,reason]:motion->IntervalErrors)output->HeadLimitsUnverified|=reason!="CAM_HEAD_LIMIT_NO_SOLUTION";
+            output->HeadCoverage["inverseSolveCount"]=std::to_string(motion->Solves.load());
+            output->HeadCoverage["checkOrder"]=Text("LimitsThenCollision");
+            Array knots;for(const auto frame:motion->Keys){Map knot{{"frameIndex",std::to_string(frame)}};
+                if(motion->Solutions.contains(frame))knot["joints"]=MachineNumbers(motion->Solutions.at(frame));
+                else if(motion->Errors.contains(frame))knot["reason"]=motion->Errors.at(frame);knots.emplace_back(std::move(knot));}
+            output->HeadCoverage["keyposes"]=std::move(knots);return valid;
+        };
         struct Shared {
             std::mutex Mutex;
-            std::map<std::size_t,std::vector<double>> Solutions;
-            std::map<std::size_t,Text> Errors;
             std::map<std::size_t,Collision::RigidMotionCollisionSegment> Verdicts;
             std::map<std::size_t,Map> Poses;
-            std::atomic_size_t Solves=0;
         };
-        auto shared=std::make_shared<Shared>();auto* output=&input;
-        input.CheckFullHead=[machine,boxes,obstacles,kinematics,built,task,distanceService,output,frames,keys,fractions,scheduled,shared]
+        auto shared=std::make_shared<Shared>();
+        input.CheckFullHead=[machine,boxes,obstacles,task,distanceService,output,frames,scheduled,shared,motion]
             (const auto& segments,bool keypoints,std::optional<std::size_t> singleFrame,const auto& cancelled,const auto& started,const auto& completed){
+            // Complete the limit phase before any collision worker starts. A
+            // failed limit remains an issue; it is never certified collision-free.
+            output->CheckHeadLimits(cancelled);
             Result result;result.Segments.resize(segments.size());std::atomic_size_t queries=0;
             const auto diagnostic=[&](const auto& joints,const auto& pose){
                 const auto world=Motion::Forward(machine.Nodes,joints);const auto supportInverse=Motion::Inverse(world.at(machine.Target.Support));
@@ -145,26 +161,10 @@ namespace {
                     if(!skipped){
                         const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(output->Query.MaxSegmentTimeMs);
                         const auto checkStop=[&]{if(cancelled&&cancelled())throw std::runtime_error("MOTION_CANCELLED");if(std::chrono::steady_clock::now()>=deadline)throw std::runtime_error("CAM_HEAD_COLLISION_BUDGET");};
-                        const auto solveKey=[&](std::size_t key){
-                            {std::lock_guard lock(shared->Mutex);if(shared->Errors.contains(key))throw std::runtime_error(shared->Errors.at(key));if(shared->Solutions.contains(key))return shared->Solutions.at(key);}
-                            checkStop();K::Request request;request.TaskDefinition=task;request.Goal.Direction=R::Unit(R::Rotate(frames.at(key).Rotation,{0,0,-1}));
-                            request.MaxTimeMs=std::min(500.,std::chrono::duration<double,std::milli>(deadline-std::chrono::steady_clock::now()).count());
-                            request.MaxSeeds=8;request.MaxCandidates=1;request.PositionToleranceMm=.0001;request.DirectionToleranceRad=1e-7;
-                            auto seed=MachineJointValues(machine);const auto initial=Motion::Forward(machine.Nodes,seed);
-                            const auto tcp=Motion::Transform(initial.at(machine.Target.Tool),task.TCP),origin=Motion::Transform(initial.at(machine.Target.Support),{0,0,0});
-                            for(int k=0;k<3;++k)seed.at(1+k)+=origin[k]-tcp[k];request.Seeds={seed};++shared->Solves;
-                            const auto solved=kinematics->InverseCandidates(built,request,[&]{return (cancelled&&cancelled())||std::chrono::steady_clock::now()>=deadline;});
-                            std::lock_guard lock(shared->Mutex);
-                            if(solved.Candidates.empty()){shared->Errors[key]=solved.State==K::Status::BudgetExhausted?"CAM_HEAD_IK_BUDGET":solved.State==K::Status::NoCandidate?"CAM_HEAD_LIMIT_NO_SOLUTION":"CAM_HEAD_JOINT_POSE_UNRESOLVED";throw std::runtime_error(shared->Errors.at(key));}
-                            return shared->Solutions.emplace(key,solved.Candidates.front().Positions).first->second;
-                        };
-                        const auto interpolated=[&](std::size_t frame){const auto upper=std::lower_bound(keys.begin(),keys.end(),frame);
-                            if(upper==keys.end())return solveKey(keys.back());if(*upper==frame||upper==keys.begin())return solveKey(*upper);
-                            auto a=solveKey(*std::prev(upper));const auto b=solveKey(*upper);for(std::size_t k=0;k<a.size();++k)a[k]+=(b[k]-a[k])*fractions[frame];return a;};
-                        auto first=interpolated(job.First),last=interpolated(job.Last);for(int k=1;k<=3;++k)first[k]=last[k]=0;
-                        const auto placed=[&](std::vector<double> q,double t){for(int k=1;k<=3;++k)q[k]=0;const auto world=Motion::Forward(machine.Nodes,q);
-                            const auto requested=Motion::Transform(world.at(machine.Target.Support),at(t).Position),tcp=Motion::Transform(world.at(machine.Target.Tool),task.TCP);
-                            for(int k=0;k<3;++k){q[k+1]=requested[k]-tcp[k];if(q[k+1]<machine.Nodes[k+1].Lower||q[k+1]>machine.Nodes[k+1].Upper)throw std::runtime_error("CAM_HEAD_JOINT_POSE_UNRESOLVED");}return q;};
+                        if(singleFrame)motion->CheckInterval(job.First,job.Last,output->Query.MaxSegmentTimeMs,cancelled);
+                        if(const auto error=motion->IntervalErrors.find({job.First,job.Last});error!=motion->IntervalErrors.end())throw std::runtime_error(error->second);
+                        auto first=motion->At(job.First),last=motion->At(job.Last);for(int k=1;k<=3;++k)first[k]=last[k]=0;
+                        const auto placed=[&](std::vector<double> q,double t){return motion->Place(std::move(q),at(t).Position);};
                         auto sweptFirst=first,sweptLast=last;sweptFirst.push_back(0);sweptLast.push_back(1);
                         bool unresolved=false;
                         for(std::size_t boxIndex=0;boxIndex<boxes.size()&&verdict.Status!="Collision";++boxIndex){const auto& box=boxes[boxIndex];
@@ -222,10 +222,7 @@ namespace {
                 if(completed)completed(row,verdict);
             };
             KeyposeCollision::ParallelKeyposes(jobs.size(),keypoints?output->ParallelWorkers:1u,cancelled,run);
-            output->HeadCoverage["inverseSolveCount"]=std::to_string(shared->Solves.load());
             output->HeadCoverage["interpolationTaskCount"]=std::to_string(scheduled.size());
-            Array motion;for(const auto frame:keys){Map knot{{"frameIndex",std::to_string(frame)}};if(shared->Solutions.contains(frame))knot["joints"]=MachineNumbers(shared->Solutions.at(frame));else if(shared->Errors.contains(frame))knot["reason"]=shared->Errors.at(frame);motion.emplace_back(std::move(knot));}
-            output->HeadCoverage["keyposes"]=std::move(motion);
             result.DistanceQueries=queries.load();return result;
         };
         };
